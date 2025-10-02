@@ -27,10 +27,17 @@ struct NoteDetailView: View {
     @State private var hoveredTag: String?
     @State private var pressedTag: String?
     @State private var selectedTags: Set<String> = []
-    
+    @Namespace private var glassNamespace
+
     // Edit toolbar state
     @State private var isEditToolbarExpanded = false
     @StateObject private var textFormattingManager = TextFormattingManager()
+
+    // Scroll tracking state
+    @State private var showStickyHeader = false
+    @State private var headerRevealProgress: CGFloat = 0
+    @State private var titleOffset: CGFloat = 0
+    @State private var commandMenuNeedsSpace = false
 
     init(note: Note, isPresented: Binding<Bool>, onSave: @escaping (Note) -> Void) {
         self.note = note
@@ -39,34 +46,132 @@ struct NoteDetailView: View {
         self._editedTitle = State(initialValue: note.title)
         self._editedContent = State(initialValue: note.content)
         self._editedTags = State(initialValue: note.tags)
+
+        print("DEBUG: NoteDetailView init - note.content: '\(note.content.prefix(100))...'")
+        print(
+            "DEBUG: NoteDetailView init - editedContent will be initialized with: '\(note.content.prefix(100))...'"
+        )
     }
 
     var body: some View {
-        ZStack {
-            Color("BackgroundColor").ignoresSafeArea()
+        ZStack(alignment: .topLeading) {
+            Color.clear
+                .ignoresSafeArea()
 
-            VStack(spacing: 0) {
-                header
-
-                ScrollView {
+            ScrollViewReader { proxy in
+                ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 16) {
                         headerMeta
                         titleField
+                            .background(
+                                GeometryReader { geo in
+                                    Color.clear
+                                        .onChange(of: geo.frame(in: .named("scroll")).minY) {
+                                            oldValue, newValue in
+                                            titleOffset = newValue
+                                            let shouldShow = newValue < 0
+
+                                            print(
+                                                "🔵 SCROLL: titleOffset=\(newValue), shouldShow=\(shouldShow)"
+                                            )
+
+                                            if shouldShow != showStickyHeader {
+                                                print("🟢 TOGGLING HEADER TO: \(shouldShow)")
+                                                withAnimation(.smooth(duration: 0.3)) {
+                                                    showStickyHeader = shouldShow
+                                                }
+                                            }
+                                        }
+                                }
+                            )
                         tagsRow
-                        contentEditor
+
+                        // Body text editor - unified with header, flows naturally
+                        TodoRichTextEditor(
+                            text: $editedContent,
+                            onToolbarAction: handleEditToolAction
+                        )
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                        // Dynamic spacer for CommandMenu when it appears at bottom
+                        if commandMenuNeedsSpace {
+                            Color.clear
+                                .frame(height: 320)
+                                .id("menuSpacer")
+                        }
                     }
-                    .padding(.horizontal, 60)
-                    .padding(.bottom, 24)
+                    .padding(.top, 72)
+                    .padding(.horizontal, 42)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .scrollIndicators(.never)
+                .scrollClipDisabled()  // Prevent clipping of CommandMenu overlay
+                .coordinateSpace(name: "scroll")
+                .contentMargins(.bottom, 100, for: .scrollContent)
+                .onChange(of: commandMenuNeedsSpace) { _, needsSpace in
+                    if needsSpace {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            withAnimation(.easeOut(duration: 0.3)) {
+                                proxy.scrollTo("menuSpacer", anchor: .top)
+                            }
+                        }
+                    }
+                }
             }
 
-            // Floating bottom controls
-            VStack {
-                Spacer()
-                bottomGlassControls
+            // Progressive blur header - Apple style
+            if showStickyHeader {
+                ZStack(alignment: .top) {
+                    // Single blur layer with progressive gradient mask
+                    Rectangle()
+                        .fill(Color.clear)
+                        .frame(height: 150)
+                        .background(.ultraThickMaterial, ignoresSafeAreaEdges: .top)
+                        .mask(
+                            LinearGradient(
+                                gradient: Gradient(stops: [
+                                    .init(color: .black, location: 0.0),
+                                    .init(color: .black.opacity(0.9), location: 0.25),
+                                    .init(color: .black.opacity(0.85), location: 0.35),
+                                    .init(color: .black.opacity(0.7), location: 0.5),
+                                    .init(color: .black.opacity(0.5), location: 0.65),
+                                    .init(color: .black.opacity(0.2), location: 0.8),
+                                    .init(color: .black.opacity(0.03), location: 0.9),
+                                    .init(color: .clear, location: 1.0),
+                                ]),
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                        .blur(radius: 0.01)
+
+                    // Title text on top
+                    HStack {
+                        Spacer()
+                        Text(editedTitle.isEmpty ? "Untitled" : editedTitle)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(Color("PrimaryTextColor"))
+                            .opacity(0.5)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .padding(.horizontal, 80)
+                        Spacer()
+                    }
+                    .padding(.top, 14)
+                }
+                .frame(maxWidth: .infinity)
+                .ignoresSafeArea(edges: .top)
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .zIndex(15)
             }
+
+            // Back button stays on top
+            backButton
+                .padding(.horizontal, 24)
+                .padding(.top, 16)
+                .zIndex(20)
+        }
+        .overlay(alignment: .bottom) {
+            bottomGlassControls
         }
         .opacity(isViewMaterialized ? 1 : 0)
         .scaleEffect(isViewMaterialized ? 1 : 0.98)
@@ -83,37 +188,120 @@ struct NoteDetailView: View {
                 bottomControlsExpanded = false
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("ShowCommandMenu")))
+        { notification in
+            if let info = notification.object as? [String: Any],
+                let needsSpace = info["needsSpace"] as? Bool
+            {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    commandMenuNeedsSpace = needsSpace
+                }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("HideCommandMenu")))
+        { _ in
+            withAnimation(.easeOut(duration: 0.15)) {
+                commandMenuNeedsSpace = false
+            }
+        }
         .transition(.opacity)
     }
 
-    // MARK: - Header
-    private var header: some View {
-        HStack(spacing: 12) {
-            Button(action: closeNote) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(Color("PrimaryTextColor"))
-                    .frame(width: 32, height: 32)
-                    .liquidGlass(in: Circle())
-                    .scaleEffect(glassElementsVisible ? 1 : 0.9)
-                    .opacity(glassElementsVisible ? 1 : 0)
-            }
-            .buttonStyle(.plain)
-
-            Spacer()
+    private var available26: Bool {
+        if #available(iOS 26.0, macOS 26.0, *) {
+            return true
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 16)
-        .padding(.bottom, 20)
+        return false
+    }
+
+    // MARK: - Computed Properties
+
+    // Determine if this is a new note based on content
+    private var isNewNote: Bool {
+        // Consider it a new note if title is empty/untitled and content is minimal
+        let hasMinimalTitle =
+            editedTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || editedTitle == "Untitled" || editedTitle == "Note Title"
+        let hasMinimalContent = editedContent.trimmingCharacters(in: .whitespacesAndNewlines)
+            .isEmpty
+        return hasMinimalTitle && hasMinimalContent
+    }
+
+    // MARK: - Header Components
+
+    private var headerSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            headerMeta
+            titleField
+        }
+    }
+
+    // Floating back button
+    @ViewBuilder
+    private var backButton: some View {
+        Button(action: closeNote) {
+            Image(systemName: "chevron.left")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(Color("PrimaryTextColor"))
+                .frame(width: 32, height: 32)
+        }
+        .buttonStyle(.plain)
+        .if(available26) { view in
+            view.glassEffect(.regular.interactive(true), in: Circle())
+                .glassID("back-button", in: glassNamespace)
+        }
+        .if(!available26) { view in
+            view.liquidGlass(in: Circle())
+        }
+        .scaleEffect(glassElementsVisible ? 1 : 0.9)
+        .opacity(glassElementsVisible ? 1 : 0)
+    }
+
+    // Progressive blur header with centered title - Apple style
+    @ViewBuilder
+    private var progressiveBlurHeader: some View {
+        ZStack(alignment: .top) {
+            // Main blur layer with smooth progressive fade (no banding)
+            Rectangle()
+                .fill(Color.clear)
+                .frame(height: 140)
+                .background(.ultraThinMaterial, ignoresSafeAreaEdges: .top)
+                .mask(
+                    LinearGradient(
+                        gradient: Gradient(stops: [
+                            .init(color: .black, location: 0.0),
+                            .init(color: .black, location: 0.2),
+                            .init(color: .black.opacity(0.95), location: 0.35),
+                            .init(color: .black.opacity(0.85), location: 0.5),
+                            .init(color: .black.opacity(0.6), location: 0.65),
+                            .init(color: .black.opacity(0.3), location: 0.8),
+                            .init(color: .black.opacity(0.1), location: 0.9),
+                            .init(color: .clear, location: 1.0),
+                        ]),
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+            HStack {
+                Spacer()
+                Text(editedTitle.isEmpty ? "Untitled" : editedTitle)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(Color("PrimaryTextColor"))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .padding(.horizontal, 80)
+            }
+            .padding(.top, 16)
+        }
+        .frame(maxWidth: .infinity)
+        .ignoresSafeArea(edges: .top)
+        .transition(.move(edge: .top).combined(with: .opacity))
+        .zIndex(15)
     }
 
     // MARK: - Meta (Date + Last Edited)
     private var headerMeta: some View {
         HStack(spacing: 4) {
-            Image(systemName: "calendar")
-                .font(.system(size: 12))
-                .foregroundColor(Color("TertiaryTextColor"))
-
             Text(dateFormatter.string(from: note.date))
                 .font(.system(size: 12, weight: .medium))
                 .foregroundColor(Color("TertiaryTextColor"))
@@ -132,98 +320,164 @@ struct NoteDetailView: View {
 
     // MARK: - Title
     private var titleField: some View {
-        TextField("Note Title", text: $editedTitle)
+        TextField("Note Title", text: $editedTitle, axis: .vertical)
             .font(.system(size: 32, weight: .medium))
             .foregroundColor(Color("PrimaryTextColor"))
             .textFieldStyle(.plain)
+            .lineLimit(nil)
+            .fixedSize(horizontal: false, vertical: true)
             .padding(.top, 4)
     }
 
     // MARK: - Tags
     private var tagsRow: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                if isAddingTag {
-                    HStack(spacing: 6) {
-                        Image(systemName: "plus")
-                            .font(.system(size: 12))
-                            .foregroundColor(Color("AccentColor"))
-                        TextField("New tag", text: $newTagText)
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(Color("PrimaryTextColor"))
-                            .textFieldStyle(.plain)
-                            .lineLimit(1)
-                            .focused($isAddingTagFocused)
-                            .onSubmit(addTag)
-                            .onExitCommand { cancelTagInput() }
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(
-                        Capsule()
-                            .fill(Color("SurfaceTranslucentColor"))
-                    )
-                    // Removed dashed border per design feedback
-                    .onAppear { isAddingTagFocused = true }
-                } else {
-                    Button(action: { isAddingTag = true }) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "plus")
-                                .font(.system(size: 12))
-                            Text("New tag")
-                                .font(.system(size: 12, weight: .semibold))
-                        }
-                        .foregroundColor(Color("TertiaryTextColor"))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(
-                            Capsule().fill(Color("SurfaceTranslucentColor"))
-                        )
-                    }
-                    .buttonStyle(.plain)
-                }
+        HStack(alignment: .top, spacing: 6) {
+            // Morphing tag input container
+            HStack(spacing: 6) {
+                // Plus icon - always visible at leading edge
+                Image(systemName: "plus")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(
+                        isAddingTag ? Color("AccentColor") : Color("TertiaryTextColor"))
 
-                ForEach(editedTags, id: \.self) { tag in
-                    TagPill(
-                        text: tag,
-                        isSelected: selectedTags.contains(tag),
-                        isHovered: hoveredTag == tag,
-                        isPressed: pressedTag == tag,
-                        visible: glassElementsVisible,
-                        onRemove: { removeTag(tag) }
-                    )
-                    .onHover { hovering in
-                        hoveredTag = hovering ? tag : (hoveredTag == tag ? nil : hoveredTag)
+                // Text or input field
+                if isAddingTag {
+                    // Expanded state: show input field
+                    TextField("New tag", text: $newTagText)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(Color("PrimaryTextColor"))
+                        .textFieldStyle(.plain)
+                        .lineLimit(1)
+                        .focused($isAddingTagFocused)
+                        .onSubmit(addTag)
+                        .onExitCommand { cancelTagInput() }
+                        .transition(.opacity)
+                        .onAppear {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                                isAddingTagFocused = true
+                            }
+                        }
+                } else if isNewNote {
+                    // Collapsed state for new notes: show "New tag" text
+                    Text("New tag")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(Color("TertiaryTextColor"))
+                        .transition(.opacity)
+                }
+                // For existing notes with collapsed state: no text shown, just icon
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .frame(height: 28)
+            .frame(width: isAddingTag ? 128 : (isNewNote ? nil : 28))  // Expand to 128pt when active, adaptive for "New tag", 28pt circle for existing
+            .background(
+                Capsule()
+                    .fill(Color("SurfaceTranslucentColor"))
+            )
+            .contentShape(Capsule())
+            .onTapGesture {
+                if !isAddingTag {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+                        isAddingTag = true
                     }
-                    .onTapGesture {
-                        if selectedTags.contains(tag) { selectedTags.remove(tag) } else { selectedTags.insert(tag) }
-                    }
-                    .onLongPressGesture(minimumDuration: 0, pressing: { pressing in
-                        pressedTag = pressing ? tag : (pressedTag == tag ? nil : pressedTag)
-                    }, perform: {})
                 }
             }
+            .animation(.spring(response: 0.35, dampingFraction: 0.75), value: isAddingTag)
+
+            // Existing tags in separate scrollable container
+            if !editedTags.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(editedTags, id: \.self) { tag in
+                            TagPill(
+                                text: tag,
+                                isSelected: selectedTags.contains(tag),
+                                isHovered: hoveredTag == tag,
+                                isPressed: pressedTag == tag,
+                                visible: glassElementsVisible,
+                                onRemove: { removeTag(tag) },
+                                glassNamespace: glassNamespace
+                            )
+                            .onHover { hovering in
+                                withAnimation(.bouncy(duration: 0.2)) {
+                                    hoveredTag =
+                                        hovering ? tag : (hoveredTag == tag ? nil : hoveredTag)
+                                }
+                            }
+                            .onTapGesture {
+                                withAnimation(.bouncy(duration: 0.3)) {
+                                    if selectedTags.contains(tag) {
+                                        selectedTags.remove(tag)
+                                    } else {
+                                        selectedTags.insert(tag)
+                                    }
+                                }
+                            }
+                            .onLongPressGesture(
+                                minimumDuration: 0,
+                                pressing: { pressing in
+                                    withAnimation(.bouncy(duration: 0.15)) {
+                                        pressedTag =
+                                            pressing ? tag : (pressedTag == tag ? nil : pressedTag)
+                                    }
+                                }, perform: {})
+                        }
+                    }
+                    .padding(.horizontal, 4)
+                }
+                .scrollClipDisabled(true)
+            }
+
+            Spacer()
         }
-        .background(Color.clear)
-        .scrollClipDisabled(true)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .onExitCommand {
             if isAddingTag { cancelTagInput() }
         }
     }
 
-    // MARK: - Content
-    private var contentEditor: some View {
-        TodoRichTextEditor(
-            text: $editedContent,
-            onToolbarAction: handleEditToolAction
-        )
-        .padding(.top, 4)
+    // MARK: - Bottom Controls
+    @ViewBuilder
+    private var bottomGlassControls: some View {
+        if #available(iOS 26.0, macOS 26.0, *) {
+            HStack(alignment: .bottom, spacing: 8) {
+                // Edit toolbar - positioned at bottom-left
+                LiquidGlassContainer(spacing: 12) {
+                    EditToolbar(
+                        isExpanded: $isEditToolbarExpanded,
+                        onToolAction: handleEditToolAction,
+                        onLinkInsert: handleLinkInsert
+                    )
+                    .glassID("edit-toolbar", in: glassNamespace)
+                    .scaleEffect(bottomControlsExpanded ? 1 : 0.7)
+                    .opacity(bottomControlsExpanded ? 1 : 0)
+                }
+
+                Spacer(minLength: 8)
+
+                // Mic button - positioned at bottom-right
+                MicCaptureControl(
+                    onSend: { result in
+                        handleVoiceRecording(result)
+                    },
+                    onCancel: {},
+                    autoStart: false
+                )
+                .scaleEffect(bottomControlsExpanded ? 1 : 0.7)
+                .opacity(bottomControlsExpanded ? 1 : 0)
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 24)
+            .animation(.bouncy(duration: 0.6), value: bottomControlsExpanded)
+        } else {
+            // Fallback for older OS versions
+            legacyBottomControls
+        }
     }
 
-    // MARK: - Bottom Controls
-    private var bottomGlassControls: some View {
-        HStack(spacing: 12) {
-            // Edit toolbar
+    private var legacyBottomControls: some View {
+        HStack(alignment: .bottom, spacing: 8) {
+            // Edit toolbar - positioned at bottom-left
             EditToolbar(
                 isExpanded: $isEditToolbarExpanded,
                 onToolAction: handleEditToolAction,
@@ -232,68 +486,45 @@ struct NoteDetailView: View {
             .scaleEffect(bottomControlsExpanded ? 1 : 0.7)
             .opacity(bottomControlsExpanded ? 1 : 0)
 
-            Spacer()
+            Spacer(minLength: 8)
 
-            HStack(spacing: 12) {
-                Button(action: {}) {
-                    Image(systemName: "mic")
-                        .font(.system(size: 20))
-                        .foregroundColor(Color("PrimaryTextColor"))
-                        .frame(width: 44, height: 44)
-                        .liquidGlass(in: Circle())
-                        .scaleEffect(bottomControlsExpanded ? 1 : 0.7)
-                        .opacity(bottomControlsExpanded ? 1 : 0)
-                }
-                .buttonStyle(.plain)
-
-                Button(action: {}) {
-                    // Apple Intelligence symbol with gradient mask
-                    let aiGradient = AngularGradient(
-                        gradient: Gradient(colors: [
-                            Color(red: 0.63, green: 0.38, blue: 0.98),   // purple
-                            Color(red: 0.25, green: 0.63, blue: 0.98),   // blue
-                            Color(red: 0.24, green: 0.84, blue: 0.55),   // green
-                            Color(red: 0.98, green: 0.85, blue: 0.29),   // yellow
-                            Color(red: 0.95, green: 0.44, blue: 0.32),   // orange
-                            Color(red: 0.92, green: 0.29, blue: 0.60)    // pink
-                        ]),
-                        center: .center
-                    )
-                    ZStack {
-                        aiGradient
-                            .mask(
-                                Image(systemName: "apple.intelligence")
-                                    .font(.system(size: 20, weight: .regular))
-                            )
-                    }
-                    .frame(width: 44, height: 44)
-                    .liquidGlass(in: Circle())
-                    .scaleEffect(bottomControlsExpanded ? 1 : 0.7)
-                    .opacity(bottomControlsExpanded ? 1 : 0)
-                }
-                .buttonStyle(.plain)
-            }
+            // Mic button - positioned at bottom-right
+            MicCaptureControl(
+                onSend: { result in
+                    handleVoiceRecording(result)
+                },
+                onCancel: {},
+                autoStart: false
+            )
+            .scaleEffect(bottomControlsExpanded ? 1 : 0.7)
+            .opacity(bottomControlsExpanded ? 1 : 0)
         }
         .padding(.horizontal, 24)
         .padding(.bottom, 24)
-        .frame(maxWidth: .infinity)
         .animation(.bouncy(duration: 0.6), value: bottomControlsExpanded)
     }
 
     // MARK: - Helpers
     private func closeNote() {
-        // Persist edits
-        var updated = note
-        updated.title = editedTitle
-        updated.content = editedContent
-        updated.tags = editedTags
-        updated.date = Date()
-        onSave(updated)
+        // Persist edits safely by creating a new note with updated values
+        var updatedNote = note
+        updatedNote.title = editedTitle
+        updatedNote.content = editedContent
+        updatedNote.tags = editedTags
+        updatedNote.date = Date()
 
+        // Save the updated note
+        onSave(updatedNote)
+
+        // Animate the exit
         withAnimation(.bouncy(duration: 0.4)) { bottomControlsExpanded = false }
         withAnimation(.bouncy(duration: 0.4).delay(0.05)) { glassElementsVisible = false }
         withAnimation(.bouncy(duration: 0.5).delay(0.1)) { isViewMaterialized = false }
+
+        // Close the view after animation completes with safety check
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            // Ensure we're still on the main thread and the view is still valid
+            guard Thread.isMainThread else { return }
             isPresented = false
         }
     }
@@ -312,8 +543,11 @@ struct NoteDetailView: View {
     }
 
     private func cancelTagInput() {
+        // Animate the morph back to button
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+            isAddingTag = false
+        }
         newTagText = ""
-        isAddingTag = false
         isAddingTagFocused = false
     }
 
@@ -341,47 +575,75 @@ struct NoteDetailView: View {
             return "Edited \(date) at \(time)"
         }
     }
-    
+
     private func handleEditToolAction(_ tool: EditTool) {
-        // For now, we'll implement basic functionality
-        // In a full implementation, this would interact with the text editor
+        print("🔧 DEBUG: handleEditToolAction called with tool: \(tool)")
+        print("🔧 DEBUG: Tool rawValue: \(tool.rawValue)")
         switch tool {
-        case .titleCase:
-            editedContent = editedContent.capitalized
-        case .bold:
-            // Toggle markdown bold syntax for selected text
-            // This is a simplified implementation
-            if !editedContent.contains("**") {
-                editedContent = "**\(editedContent)**"
-            }
-        case .italic:
-            if !editedContent.contains("*") && !editedContent.contains("**") {
-                editedContent = "*\(editedContent)*"
-            }
-        case .bulletList:
-            // Add bullet point to current line
-            let lines = editedContent.components(separatedBy: .newlines)
-            if let lastLine = lines.last, !lastLine.hasPrefix("• ") {
-                editedContent = editedContent + "\n• "
-            }
         case .todo:
-            // Trigger todo insertion via notification
-            NotificationCenter.default.post(name: Notification.Name("TodoToolbarAction"), object: nil)
-        case .divider:
-            editedContent = editedContent + "\n---\n"
-        case .lineBreak:
-            editedContent = editedContent + "\n"
+            print("🔧 DEBUG: Posting TodoToolbarAction")
+            NotificationCenter.default.post(
+                name: Notification.Name("TodoToolbarAction"), object: nil)
         default:
-            // For other tools, we'll implement them later when we have NSTextView integration
-            break
+            print("🔧 DEBUG: Posting applyEditTool with userInfo: [\"tool\": \"\(tool.rawValue)\"]")
+            NotificationCenter.default.post(
+                name: .applyEditTool, object: nil, userInfo: ["tool": tool.rawValue])
         }
     }
-    
+
     private func handleLinkInsert(_ url: String) {
-        // Create a web clip element in the content
-        // This will be processed by the TodoRichTextEditor to render as a thumbnail
-        let webClipMarkdown = "\n[webclip](\(url))\n"
-        editedContent = editedContent + webClipMarkdown
+        // Ask the editor to insert a web link at the current cursor location
+        NotificationCenter.default.post(name: Notification.Name("InsertWebLink"), object: url)
+    }
+
+    private func handleVoiceRecording(_ result: MicCaptureControl.Result) {
+        // Insert transcript at cursor position in the editor
+        if let transcript = result.transcript, !transcript.isEmpty {
+            // Send to editor to insert at cursor position
+            NotificationCenter.default.post(
+                name: Notification.Name("InsertVoiceTranscript"), object: transcript)
+        }
+
+        // TODO: Save audio file if needed
+        // The audio file is available at result.audioURL
+    }
+
+    // MARK: - Scroll Helpers
+
+    private func headerTopInset(for progress: CGFloat) -> CGFloat {
+        max(14, 20 + (1 - progress) * 8)
+    }
+
+    private func blurMaterial(for progress: CGFloat) -> Material {
+        // Use thicker materials for stronger blur
+        switch progress {
+        case ..<CGFloat(0.33):
+            return .thickMaterial
+        case ..<CGFloat(0.66):
+            return .ultraThickMaterial
+        default:
+            return .ultraThickMaterial
+        }
+    }
+}
+
+// MARK: - Preference Keys
+struct TitleOffsetPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+// MARK: - View Extensions
+extension View {
+    @ViewBuilder
+    func `if`<Transform: View>(_ condition: Bool, transform: (Self) -> Transform) -> some View {
+        if condition {
+            transform(self)
+        } else {
+            self
+        }
     }
 }
 
@@ -393,29 +655,40 @@ private struct TagPill: View {
     let isPressed: Bool
     let visible: Bool
     let onRemove: () -> Void
+    let glassNamespace: Namespace.ID
 
+    @ViewBuilder
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "tag.fill")
                 .font(.system(size: 10))
-                .foregroundColor(Color("AccentColor"))
+                .foregroundColor(Color("TagTextColor"))
             Text(text)
                 .font(.system(size: 12, weight: .medium))
-                .foregroundColor(Color("PrimaryTextColor"))
+                .foregroundColor(Color("TagTextColor"))
                 .lineLimit(1)
                 .truncationMode(.tail)
             Button(action: onRemove) {
                 Image(systemName: "xmark")
                     .font(.system(size: 10, weight: .semibold))
-                    .foregroundColor(Color("PrimaryTextColor"))
+                    .foregroundColor(Color("TagTextColor"))
                     .opacity(0.7)
             }
             .buttonStyle(.plain)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
-        .tintedLiquidGlass(in: Capsule(), tint: Color("TagBackgroundColor"))
-        .scaleEffect((visible ? 1 : 0.92) * (isPressed ? 0.96 : 1.0))
+        .background(Color("TagBackgroundColor"), in: Capsule())
+        .scaleEffect((visible ? 1 : 0.92) * (isPressed ? 0.96 : 1.0) * (isHovered ? 1.02 : 1.0))
         .opacity(visible ? 1 : 0)
+        .animation(.bouncy(duration: 0.3), value: isHovered)
+        .animation(.bouncy(duration: 0.2), value: isPressed)
+    }
+
+    private var available26: Bool {
+        if #available(iOS 26.0, macOS 26.0, *) {
+            return true
+        }
+        return false
     }
 }

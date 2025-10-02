@@ -70,7 +70,7 @@ struct NoteCard: View {
                 VStack(alignment: .leading, spacing: 8) {
                     // Title
                     Text(note.title)
-                        .font(.system(size: 17, weight: .medium))
+                        .font(.system(size: 17, weight: .semibold))
                         .foregroundColor(Color("PrimaryTextColor"))
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -178,22 +178,22 @@ struct NoteCard: View {
 // Tag Component for NoteCard thumbnails
 struct TagView: View {
     let tag: String
-    
+
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: "tag.fill")
                 .font(.system(size: 10))
-                .foregroundColor(Color("AccentColor"))
-            
+                .foregroundColor(Color("TagTextColor"))
+
             Text(tag)
                 .font(.system(size: 12, weight: .medium))
-                .foregroundColor(Color("PrimaryTextColor"))
+                .foregroundColor(Color("TagTextColor"))
                 .lineLimit(1)
                 .truncationMode(.tail)
         }
         .padding(.leading, 4)
         .padding(.trailing, 8)
         .padding(.vertical, 4)
-        .tintedLiquidGlass(in: Capsule(), tint: Color("TagBackgroundColor"))
+        .background(Color("TagBackgroundColor"), in: Capsule())
     }
 }

@@ -17,5 +17,6 @@ struct NotyApp: App {
                 .environmentObject(notesManager)
                 .environmentObject(themeManager)
         }
+        .windowStyle(.hiddenTitleBar)
     }
 }

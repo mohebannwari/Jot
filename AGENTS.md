@@ -1,38 +1,33 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- App entry: `Noty/App/NotyApp.swift` with root view in `Noty/App/ContentView.swift`.
-- UI: reusable components in `Noty/Views/Components`, screens in `Noty/Views/Screens`.
-- Domain: models and managers in `Noty/Models` (e.g., `NotesManager`, `SearchManager`).
-- Utilities: helpers and extensions in `Noty/Utils`.
-- Assets: images and colors in `Noty/Ressources` and `Noty/Ressources/Assets.xcassets`.
-- Xcode project: `Noty.xcodeproj`. No test target is present yet.
+- Entry point lives in `Noty/App/NotyApp.swift` with the root view defined in `Noty/App/ContentView.swift`.
+- Screens reside under `Noty/Views/Screens`, while reusable UI components belong in `Noty/Views/Components`.
+- Domain logic and managers (e.g., `NotesManager`, `SearchManager`) are placed in `Noty/Models`.
+- Helpers and extensions live in `Noty/Utils`; assets are stored in `Noty/Ressources` and `Noty/Ressources/Assets.xcassets`.
+- Maintain one primary type per Swift file; align filenames with the contained type.
 
 ## Build, Test, and Development Commands
-- Open in Xcode: `open Noty.xcodeproj` (select the `Noty` scheme, choose a Simulator, Run).
-- Build (CLI): `xcodebuild -project Noty.xcodeproj -scheme Noty -configuration Debug build`.
-- Clean: `xcodebuild -project Noty.xcodeproj -scheme Noty clean`.
-- Test (when tests exist): `xcodebuild -project Noty.xcodeproj -scheme Noty -destination 'platform=iOS Simulator,name=iPhone 15' test`.
+- `open Noty.xcodeproj` — launch the project in Xcode, choose the `Noty` scheme, select a Simulator, then Run.
+- `xcodebuild -project Noty.xcodeproj -scheme Noty -configuration Debug build` — perform a command-line build of the Debug configuration.
+- `xcodebuild -project Noty.xcodeproj -scheme Noty clean` — clean derived build artifacts before a fresh build.
+- When tests exist: `xcodebuild -project Noty.xcodeproj -scheme Noty -destination 'platform=iOS Simulator,name=iPhone 15' test` — execute the XCTest suite on the chosen simulator.
 
 ## Coding Style & Naming Conventions
-- Swift 5+, 4‑space indentation; keep lines readable (~120 cols).
-- Types: PascalCase (`NoteCard`, `ThemeManager`); methods/vars: camelCase; enum cases: lowerCamelCase.
-- One primary type per file; filename matches type (e.g., `Note.swift`).
-- Organize UI by feature: shared UI in `Views/Components`, screens in `Views/Screens`.
-- No linter configured; follow Swift API Design Guidelines and keep public APIs documented.
+- Target Swift 5+, using 4-space indentation and keeping lines under roughly 120 characters.
+- Types adopt PascalCase (`NoteCard`, `ThemeManager`); properties, methods, and variables use camelCase; enum cases stay lowerCamelCase.
+- Organize views by feature, keep shared UI generic, and document any public-facing APIs.
 
 ## Testing Guidelines
-- Framework: `XCTest`. Create a `NotyTests` target under `Noty.xcodeproj`.
-- File naming: `FeatureNameTests.swift`; test methods start with `test...`.
-- Focus coverage on `Models` and `Utils`; add lightweight UI smoke tests if needed.
-- Run via Xcode (Command-U) or CLI (see Test command above).
+- Use XCTest under a `NotyTests` target; name files `FeatureNameTests.swift` and methods `test...`.
+- Focus coverage on `Models` and `Utils`, adding lightweight UI smoke tests as needed.
+- Run tests via Xcode (Command-U) or the CLI command listed above; ensure new tests fail before fixes and pass afterward.
 
 ## Commit & Pull Request Guidelines
-- History shows short, descriptive messages; no strict convention enforced.
-- Prefer imperative mood and clear scope (e.g., `feat: add note search`, `fix(models): prevent empty titles`).
-- PRs include: concise description, rationale, linked issues, and screenshots for UI changes.
-- Before submitting: build succeeds, no unused assets, docs updated (e.g., guides under repo root).
+- Write concise, imperative commits reflecting scope (e.g., `feat: add note search`, `fix(models): prevent empty titles`).
+- PRs should include a clear summary, rationale, relevant issue links, and screenshots for visual changes.
+- Verify builds succeed, remove unused assets, and update documentation before requesting review.
 
 ## Security & Configuration Tips
-- Do not commit secrets or credentials to `Info.plist` or source.
-- Place new assets under `Noty/Ressources` or `Assets.xcassets`; avoid renaming folders (e.g., `Ressources`) without updating project settings.
+- Never commit secrets or credentials to `Info.plist` or source files.
+- Place new assets only under `Noty/Ressources` or `Noty/Ressources/Assets.xcassets`, and update project settings if folders move.

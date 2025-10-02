@@ -50,20 +50,21 @@ class WebMetadataFetcher: ObservableObject {
             }
             if let img = thumbnail { thumbnail = self.normalizePreview(img) }
 
+            let metadata = WebMetadata(
+                title: metaTitle,
+                description: metaDescription,
+                domain: domain,
+                url: urlString,
+                thumbnail: thumbnail
+            )
             await MainActor.run {
-                completion(WebMetadata(
-                    title: metaTitle,
-                    description: metaDescription,
-                    domain: domain,
-                    url: urlString,
-                    thumbnail: thumbnail
-                ))
+                completion(metadata)
             }
         }
     }
     
     private func fetchBasicMetadata(from url: URL) async throws -> (title: String, description: String) {
-        let request = URLRequest(url: url, timeoutInterval: 10.0)
+        let request = URLRequest(url: url, timeoutInterval: 6.0)
         let (data, _) = try await URLSession.shared.data(for: request)
         
         guard let htmlString = String(data: data, encoding: .utf8) else {
@@ -78,14 +79,15 @@ class WebMetadataFetcher: ObservableObject {
     }
     
     private func fetchWebsiteScreenshot(from urlString: String) async -> NSImage? {
-        // Use a free screenshot service
+        // Use a free screenshot service with reduced timeout for faster loading
         guard let encodedURL = urlString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
               let screenshotURL = URL(string: "https://image.thum.io/get/width/400/crop/600/\(encodedURL)") else {
             return await fetchFavicon(from: urlString)
         }
         
         do {
-            let request = URLRequest(url: screenshotURL, timeoutInterval: 15.0)
+            // Reduced timeout for faster fallback
+            let request = URLRequest(url: screenshotURL, timeoutInterval: 8.0)
             let (data, response) = try await URLSession.shared.data(for: request)
             
             if let httpResponse = response as? HTTPURLResponse, 
@@ -102,12 +104,13 @@ class WebMetadataFetcher: ObservableObject {
     }
 
     // MARK: - WKWebView Snapshot (preferred when possible)
-    private func snapshotWithWebView(from url: URL, size: CGSize = CGSize(width: 800, height: 520), timeout: TimeInterval = 12) async -> NSImage? {
+    private func snapshotWithWebView(from url: URL, size: CGSize = CGSize(width: 800, height: 520), timeout: TimeInterval = 8) async -> NSImage? {
         await MainActor.run(body: {}) // ensure MainActor
         return await withCheckedContinuation { continuation in
             let config = WKWebViewConfiguration()
             config.suppressesIncrementalRendering = false
             config.defaultWebpagePreferences.preferredContentMode = .recommended
+            config.mediaTypesRequiringUserActionForPlayback = [.video, .audio]
             
             let webView = WKWebView(frame: CGRect(origin: .zero, size: size), configuration: config)
             webView.isHidden = true // off-screen
@@ -164,10 +167,11 @@ class WebMetadataFetcher: ObservableObject {
         init(completion: @escaping (NSImage?) -> Void) { self.completion = completion }
         
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            // 1) Remove common page gutters via CSS (no page zoom)
+            // 1) Remove common page gutters via CSS and prevent video autoplay
             let css = "document.documentElement.style.margin='0';document.documentElement.style.padding='0';document.body.style.margin='0';document.body.style.padding='0';document.documentElement.style.overflow='hidden';"
-            let style = "var s=document.createElement('style');s.innerHTML='html,body{max-width:100vw!important;}*{max-width:100vw!important;}::-webkit-scrollbar{display:none}';document.head.appendChild(s);"
-            let js = css + style
+            let style = "var s=document.createElement('style');s.innerHTML='html,body{max-width:100vw!important;}*{max-width:100vw!important;}::-webkit-scrollbar{display:none}video{display:none!important;}iframe[src*=\"youtube\"]{display:none!important;}';document.head.appendChild(s);"
+            let preventAutoplay = "var videos=document.querySelectorAll('video');videos.forEach(v=>{v.pause();v.muted=true;v.autoplay=false;});var iframes=document.querySelectorAll('iframe');iframes.forEach(i=>{if(i.src.includes('youtube')||i.src.includes('vimeo')){i.style.display='none';}});"
+            let js = css + style + preventAutoplay
             webView.evaluateJavaScript(js) { _, _ in
                 // 2) Measure inner content to crop side gutters using WKSnapshotConfiguration.rect
                 let measureJS = "(() => { const iw=window.innerWidth; const bw=document.body.clientWidth||document.documentElement.clientWidth||iw; const left=Math.max(0,(iw-bw)/2); return JSON.stringify({iw,bw,left,dpr:window.devicePixelRatio||1}); })();"
@@ -262,12 +266,14 @@ class WebMetadataFetcher: ObservableObject {
         // Extract title using regex
         let titleRegex = try! NSRegularExpression(pattern: "<title[^>]*>([^<]+)</title>", options: .caseInsensitive)
         let range = NSRange(html.startIndex..<html.endIndex, in: html)
-        
+
         if let match = titleRegex.firstMatch(in: html, options: [], range: range),
            let titleRange = Range(match.range(at: 1), in: html) {
-            return String(html[titleRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+            let title = String(html[titleRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+            // Limit title length to prevent overflow issues
+            return String(title.prefix(80))
         }
-        
+
         return ""
     }
     
@@ -275,20 +281,24 @@ class WebMetadataFetcher: ObservableObject {
         // Try meta description first
         let descRegex = try! NSRegularExpression(pattern: "<meta[^>]*name=[\"']description[\"'][^>]*content=[\"']([^\"']+)[\"']", options: .caseInsensitive)
         let range = NSRange(html.startIndex..<html.endIndex, in: html)
-        
+
         if let match = descRegex.firstMatch(in: html, options: [], range: range),
            let descRange = Range(match.range(at: 1), in: html) {
-            return String(html[descRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+            let description = String(html[descRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+            // Limit description length to prevent overflow issues
+            return String(description.prefix(150))
         }
-        
+
         // Try og:description
         let ogDescRegex = try! NSRegularExpression(pattern: "<meta[^>]*property=[\"']og:description[\"'][^>]*content=[\"']([^\"']+)[\"']", options: .caseInsensitive)
-        
+
         if let match = ogDescRegex.firstMatch(in: html, options: [], range: range),
            let descRange = Range(match.range(at: 1), in: html) {
-            return String(html[descRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+            let description = String(html[descRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+            // Limit description length to prevent overflow issues
+            return String(description.prefix(150))
         }
-        
+
         return ""
     }
 }

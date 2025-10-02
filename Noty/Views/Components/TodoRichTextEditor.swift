@@ -2,385 +2,2954 @@
 //  TodoRichTextEditor.swift
 //  Noty
 //
-//  Created by AI on 17.08.25.
+//  Rebuilt rich text editor that keeps todo checkboxes aligned,
+//  clickable, and in sync with serialized markup.
 //
-//  Rich text-like editor that parses [ ] / [x] todo lines
-//  and renders interactive checkboxes with editable text.
 
+import Combine
 import SwiftUI
 
-enum TextElement {
-    case text(String)
-    case checkbox(Bool, String)
-    case webclip(title: String, excerpt: String, domain: String, url: String? = nil)
+#if os(macOS)
+    import AppKit
+#else
+    import UIKit
+#endif
+
+extension NSAttributedString.Key {
+    fileprivate static let webClipTitle = NSAttributedString.Key("WebClipTitle")
+    fileprivate static let webClipDescription = NSAttributedString.Key("WebClipDescription")
+    fileprivate static let webClipDomain = NSAttributedString.Key("WebClipDomain")
 }
 
 struct TodoRichTextEditor: View {
     @Binding var text: String
-    @State private var parsedContent: [TextElement] = []
-    @FocusState private var isTextFocused: Bool
-    @FocusState private var focusedRowIndex: Int?
-    @State private var hoveredRowIndex: Int?
-    @Environment(\.colorScheme) private var colorScheme
-    
-    // Toolbar integration
     var onToolbarAction: ((EditTool) -> Void)?
-    
+    @Environment(\.colorScheme) private var colorScheme
+    private let baseBottomInset: CGFloat = 0
+
+    @State private var showAISummary = false
+    @State private var aiSummaryText = ""
+
+    // Command menu state (triggered by "/" character)
+    @State private var showCommandMenu = false
+    @State private var commandMenuPosition: CGPoint = .zero
+    @State private var commandMenuSelectedIndex = 0
+    @State private var commandSlashLocation: Int = -1
+
+    // Static accessor for command menu showing flag (used by keyboard handlers)
+    #if os(macOS)
+    static var isCommandMenuShowing: Bool {
+        get { InlineNSTextView.isCommandMenuShowing }
+        set { InlineNSTextView.isCommandMenuShowing = newValue }
+    }
+    #else
+    static var isCommandMenuShowing: Bool {
+        get { DynamicHeightTextView.isCommandMenuShowing }
+        set { DynamicHeightTextView.isCommandMenuShowing = newValue }
+    }
+    #endif
+
+    #if os(iOS)
+        @State private var keyboardInset: CGFloat = 0
+    #endif
+
     init(text: Binding<String>, onToolbarAction: ((EditTool) -> Void)? = nil) {
+        print(
+            "DEBUG: TodoRichTextEditor init called with text: '\(text.wrappedValue.prefix(100))...'"
+        )
         self._text = text
         self.onToolbarAction = onToolbarAction
     }
 
+    private var bottomInset: CGFloat {
+        #if os(iOS)
+            return baseBottomInset + keyboardInset
+        #else
+            return baseBottomInset
+        #endif
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            ForEach(parsedContent.indices, id: \.self) { index in
-                switch parsedContent[index] {
-                case .text(let content):
-                    if #available(iOS 26.0, macOS 26.0, *) {
-                        // Use rich text capabilities for iOS 26+
-                        TextEditor(text: Binding(
-                            get: { content },
-                            set: { newValue in updateTextElement(at: index, with: newValue) }
-                        ))
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(Color("PrimaryTextColor"))
-                        .scrollContentBackground(.hidden)
-                        .scrollIndicators(.never)
-                        .scrollDisabled(true)
-                        .frame(minHeight: max(80, CGFloat(max(1, content.count)) / 50 * 24 + 40))
-                        .background(Color.clear)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .focused($isTextFocused)
-                    } else {
-                        // Fallback for older OS versions
-                        TextEditor(text: Binding(
-                            get: { content },
-                            set: { newValue in updateTextElement(at: index, with: newValue) }
-                        ))
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(Color("PrimaryTextColor"))
-                        .scrollContentBackground(.hidden)
-                        .scrollIndicators(.never)
-                        .scrollDisabled(true)
-                        .frame(minHeight: max(80, CGFloat(max(1, content.count)) / 50 * 24 + 40))
-                        .background(Color.clear)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .focused($isTextFocused)
-                    }
-
-                case .checkbox(let isChecked, let content):
-                    HStack(alignment: .center, spacing: 10) {
-                        Button(action: { toggleCheckbox(at: index) }) {
-                            Image(checkboxImageName(isChecked: isChecked))
-                                .resizable()
-                                .renderingMode(.original)
-                                .frame(width: 16, height: 16)
-                        }
-                        .buttonStyle(CheckboxButtonStyle())
-                        .focusEffectDisabled()
-
-                        ZStack(alignment: .leading) {
-                            TextField("", text: Binding(
-                                get: { content },
-                                set: { newValue in updateCheckboxText(at: index, with: newValue) }
-                            ))
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundColor(Color("PrimaryTextColor"))
-                            .textFieldStyle(.plain)
-                            .opacity(isChecked ? 0.7 : 1.0)
-                            .focused($focusedRowIndex, equals: index)
-                            .onSubmit {
-                                // Add new checkbox on Enter
-                                parsedContent.insert(.checkbox(false, ""), at: index + 1)
-                                rebuildText()
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                    focusedRowIndex = index + 1
-                                }
-                            }
-                            .onKeyPress(.delete) {
-                                if content.isEmpty {
-                                    deleteRow(at: index)
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                        if index > 0 {
-                                            focusedRowIndex = index - 1
-                                        } else {
-                                            isTextFocused = true
-                                        }
-                                    }
-                                    return .handled
-                                }
-                                return .ignored
-                            }
-                            .onKeyPress(KeyEquivalent.delete, phases: .down) { keyPress in
-                                if keyPress.modifiers.contains(.command) {
-                                    deleteRow(at: index)
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                        if index > 0 {
-                                            focusedRowIndex = index - 1
-                                        } else {
-                                            isTextFocused = true
-                                        }
-                                    }
-                                    return .handled
-                                }
-                                return .ignored
-                            }
-                            
-                            // Strikethrough for checked items
-                            if isChecked && !content.isEmpty {
-                                Text(content)
-                                    .font(.system(size: 16, weight: .medium))
-                                    .foregroundColor(.clear)
-                                    .strikethrough(true, pattern: .solid, color: Color("PrimaryTextColor").opacity(0.6))
-                                    .allowsHitTesting(false)
-                            }
-                        }
-                    }
-                    .padding(.vertical, 2)
-                    .padding(.horizontal, 4)
-                    .onHover { hovering in
-                        hoveredRowIndex = hovering ? index : (hoveredRowIndex == index ? nil : hoveredRowIndex)
-                    }
-                    
-                case .webclip(let title, let excerpt, let domain, let url):
-                    WebClipThumbnail(
-                        imageNameLight: "note-card-thumbnail",
-                        imageNameDark: "note-card-thumbnail-DM",
-                        title: title,
-                        excerpt: excerpt,
-                        domain: domain,
-                        url: url,
-                        onDelete: { deleteRow(at: index) }
+        let _ = print(
+            "DEBUG: TodoRichTextEditor body computed - text value: '\(text.prefix(100))...'")
+        return Group {
+            #if os(macOS)
+                TodoEditorRepresentable(
+                    text: $text, colorScheme: colorScheme, bottomInset: bottomInset)
+            #else
+                TodoEditorRepresentable(
+                    text: $text, colorScheme: colorScheme, bottomInset: bottomInset)
+            #endif
+        }
+        .frame(maxWidth: .infinity)  // Natural height based on content
+        .background(Color.clear)
+        .overlay(alignment: .topLeading) {
+            // Command menu overlay (triggered by "/" character)
+            if showCommandMenu {
+                CommandMenu(
+                    tools: [.h1, .h2, .h3, .bold, .italic, .underline, .strikethrough, .bulletList, .todo, .divider, .link],
+                    selectedIndex: $commandMenuSelectedIndex,
+                    onSelect: { tool in handleCommandMenuSelection(tool) },
+                    maxHeight: 280
+                )
+                .offset(x: commandMenuPosition.x, y: commandMenuPosition.y)
+                .transition(
+                    .asymmetric(
+                        insertion: .scale(scale: 0.92, anchor: .top).combined(with: .opacity),
+                        removal: .scale(scale: 0.96, anchor: .top).combined(with: .opacity)
                     )
-                    .focusable()
-                    .focused($focusedRowIndex, equals: index)
-                    .focusEffectDisabled() // Disable the default focus ring
-                    .onHover { hovering in
-                        hoveredRowIndex = hovering ? index : (hoveredRowIndex == index ? nil : hoveredRowIndex)
-                    }
-                    .onKeyPress(.delete) {
-                        deleteRow(at: index)
-                        return .handled
-                    }
-                    .onKeyPress(.deleteForward) {
-                        deleteRow(at: index)
-                        return .handled
-                    }
-                    .padding(.vertical, 4)
-                }
+                )
+                .zIndex(1000)
             }
-
-            // Empty editor for quickly appending new content
-            TextEditor(text: Binding(
-                get: { "" },
-                set: { newValue in 
-                    if !newValue.isEmpty { 
-                        // Check if user is trying to type a checkbox
-                        if newValue.hasPrefix("[ ]") || newValue.hasPrefix("[x]") {
-                            let isChecked = newValue.hasPrefix("[x]")
-                            let content = String(newValue.dropFirst(3).trimmingCharacters(in: .whitespaces))
-                            parsedContent.append(.checkbox(isChecked, content))
-                            rebuildText()
-                        } else {
-                            appendNewContent(newValue)
+        }
+        .overlay(alignment: .topTrailing) {
+            if showAISummary {
+                AISummaryBox(
+                    summaryText: aiSummaryText,
+                    onDismiss: {
+                        withAnimation(.bouncy(duration: 0.3)) {
+                            showAISummary = false
                         }
                     }
-                }
-            ))
-            .font(.system(size: 16, weight: .medium))
-            .foregroundColor(Color("PrimaryTextColor"))
-            .scrollContentBackground(.hidden)
-            .scrollIndicators(.hidden)
-            .scrollDisabled(true)
-            .frame(minHeight: 60)
-            .background(Color.clear)
-            .fixedSize(horizontal: false, vertical: true)
-            .focused($isTextFocused)
-        }
-        .onAppear { parseText() }
-        .onChange(of: text) { _, _ in parseText() }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("TodoToolbarAction"))) { _ in
-            // Handle toolbar action if needed
-            insertTodo()
-        }
-    }
-
-    // MARK: - Parsing / Rebuild
-    private func parseText() {
-        let lines = text.components(separatedBy: "\n")
-        var elements: [TextElement] = []
-        var currentTextLines: [String] = []
-
-        for line in lines {
-            // Support both webclip formats:
-            // 1. Inline webclip: [[webclip|Title|Excerpt|domain.com]]
-            // 2. Link webclip: [webclip](url)
-            if line.hasPrefix("[[webclip") {
-                if !currentTextLines.isEmpty {
-                    elements.append(.text(currentTextLines.joined(separator: "\n")))
-                    currentTextLines = []
-                }
-                let content = line.trimmingCharacters(in: CharacterSet(charactersIn: "[] "))
-                // Expected format: webclip|title|excerpt|domain
-                let parts = content.components(separatedBy: "|")
-                if parts.count >= 4 {
-                    let title = parts[1]
-                    let excerpt = parts[2]
-                    let domain = parts[3]
-                    let url = parts.count > 4 ? parts[4] : nil
-                    elements.append(.webclip(title: title, excerpt: excerpt, domain: domain, url: url))
-                }
-            } else if line.hasPrefix("[webclip](") && line.hasSuffix(")") {
-                if !currentTextLines.isEmpty {
-                    elements.append(.text(currentTextLines.joined(separator: "\n")))
-                    currentTextLines = []
-                }
-                // Extract URL from [webclip](url)
-                let urlStart = line.firstIndex(of: "(")!
-                let urlEnd = line.lastIndex(of: ")")!
-                let url = String(line[line.index(after: urlStart)..<urlEnd])
-                
-                elements.append(.webclip(
-                    title: "Web Link",
-                    excerpt: "Click to open",
-                    domain: URL(string: url)?.host ?? url,
-                    url: url
-                ))
-            } else if line.hasPrefix("[ ]") {
-                if !currentTextLines.isEmpty {
-                    elements.append(.text(currentTextLines.joined(separator: "\n")))
-                    currentTextLines = []
-                }
-                let content = String(line.dropFirst(3).trimmingCharacters(in: .whitespaces))
-                elements.append(.checkbox(false, content))
-            } else if line.hasPrefix("[x]") {
-                if !currentTextLines.isEmpty {
-                    elements.append(.text(currentTextLines.joined(separator: "\n")))
-                    currentTextLines = []
-                }
-                let content = String(line.dropFirst(3).trimmingCharacters(in: .whitespaces))
-                elements.append(.checkbox(true, content))
-            } else {
-                currentTextLines.append(line)
+                )
+                .padding(.trailing, 16)
+                .padding(.top, 16)
+                .frame(maxWidth: 300)
+                .transition(
+                    .asymmetric(
+                        insertion: .opacity.combined(
+                            with: .scale(scale: 0.9, anchor: .topTrailing)),
+                        removal: .opacity.combined(with: .scale(scale: 0.95, anchor: .topTrailing))
+                    ))
             }
         }
-
-        if !currentTextLines.isEmpty {
-            elements.append(.text(currentTextLines.joined(separator: "\n")))
+        .onReceive(
+            NotificationCenter.default.publisher(for: Notification.Name("TodoToolbarAction"))
+        ) { _ in
+            NotificationCenter.default.post(name: .insertTodoInEditor, object: nil)
         }
-
-        parsedContent = elements
-    }
-
-    private func updateTextElement(at index: Int, with newValue: String) {
-        if index < parsedContent.count {
-            parsedContent[index] = .text(newValue)
-            rebuildText()
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("InsertWebLink"))) {
+            notification in
+            if let url = notification.object as? String {
+                NotificationCenter.default.post(name: .insertWebClipInEditor, object: url)
+            }
         }
-    }
-
-    private func updateCheckboxText(at index: Int, with newValue: String) {
-        if case .checkbox(let isChecked, _) = parsedContent[index] {
-            parsedContent[index] = .checkbox(isChecked, newValue)
-            rebuildText()
+        .onReceive(
+            NotificationCenter.default.publisher(for: Notification.Name("InsertVoiceTranscript"))
+        ) {
+            notification in
+            if let transcript = notification.object as? String {
+                NotificationCenter.default.post(
+                    name: .insertVoiceTranscriptInEditor, object: transcript)
+            }
         }
-    }
-
-    private func toggleCheckbox(at index: Int) {
-        if case .checkbox(let isChecked, let content) = parsedContent[index] {
-            parsedContent[index] = .checkbox(!isChecked, content)
-            rebuildText()
-        }
-    }
-
-    private func appendNewContent(_ newValue: String) {
-        parsedContent.append(.text(newValue))
-        rebuildText()
-    }
-    
-    private func deleteRow(at index: Int) {
-        guard index >= 0 && index < parsedContent.count else { return }
-        parsedContent.remove(at: index)
-        rebuildText()
-    }
-
-    private func rebuildText() {
-        var lines: [String] = []
-        for element in parsedContent {
-            switch element {
-            case .text(let content):
-                if !content.isEmpty { lines.append(content) }
-            case .checkbox(let isChecked, let content):
-                let symbol = isChecked ? "[x]" : "[ ]"
-                lines.append("\(symbol) \(content)")
-            case .webclip(let title, let excerpt, let domain, let url):
-                // Prefer the simpler [webclip](url) format for links inserted via toolbar
-                if title == "Web Link" && excerpt.contains("Click to open"), let url = url {
-                    lines.append("[webclip](\(url))")
-                } else {
-                    // Use full format for manually created webclips
-                    if let url = url {
-                        lines.append("[[webclip|\(title)|\(excerpt)|\(domain)|\(url)]]")
-                    } else {
-                        lines.append("[[webclip|\(title)|\(excerpt)|\(domain)]]")
-                    }
+        .onReceive(
+            NotificationCenter.default.publisher(for: Notification.Name("ShowAISummary"))
+        ) { notification in
+            if let summary = notification.object as? String {
+                aiSummaryText = summary
+                withAnimation(.bouncy(duration: 0.4)) {
+                    showAISummary = true
                 }
             }
         }
-        text = lines.joined(separator: "\n")
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("ShowCommandMenu")))
+        { notification in
+            if let info = notification.object as? [String: Any],
+                let position = info["position"] as? CGPoint,
+                let slashLocation = info["slashLocation"] as? Int
+            {
+                commandMenuPosition = position
+                commandSlashLocation = slashLocation
+                commandMenuSelectedIndex = 0
+
+                withAnimation(.smooth(duration: 0.2)) {
+                    showCommandMenu = true
+                }
+
+                #if os(macOS)
+                    InlineNSTextView.isCommandMenuShowing = true
+                #else
+                    DynamicHeightTextView.isCommandMenuShowing = true
+                #endif
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("HideCommandMenu")))
+        { _ in
+            withAnimation(.smooth(duration: 0.15)) {
+                showCommandMenu = false
+            }
+            commandSlashLocation = -1
+
+            #if os(macOS)
+                InlineNSTextView.isCommandMenuShowing = false
+            #else
+                DynamicHeightTextView.isCommandMenuShowing = false
+            #endif
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("CommandMenuNavigateUp")))
+        { _ in
+            if showCommandMenu && commandMenuSelectedIndex > 0 {
+                commandMenuSelectedIndex -= 1
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("CommandMenuNavigateDown")))
+        { _ in
+            if showCommandMenu && commandMenuSelectedIndex < 11 {
+                commandMenuSelectedIndex += 1
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("CommandMenuSelect")))
+        { _ in
+            if showCommandMenu {
+                let tools: [EditTool] = [.h1, .h2, .h3, .bold, .italic, .underline, .strikethrough, .bulletList, .todo, .divider, .link]
+                if commandMenuSelectedIndex < tools.count {
+                    handleCommandMenuSelection(tools[commandMenuSelectedIndex])
+                }
+            }
+        }
+        #if os(iOS)
+            .onReceive(
+                NotificationCenter.default.publisher(
+                    for: UIResponder.keyboardWillChangeFrameNotification)
+            ) { notification in
+                handleKeyboardChange(notification)
+            }
+            .onReceive(
+                NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)
+            ) { _ in
+                withAnimation(.easeOut(duration: 0.25)) {
+                    keyboardInset = 0
+                }
+            }
+        #endif
     }
 
-    private func checkboxImageName(isChecked: Bool) -> String {
-        if isChecked {
-            return "checkmark_checked"
-        } else {
-            return colorScheme == .dark ? "checkmark_unchecked_DM" : "checkmark_unchecked_LM"
+    // MARK: - Command Menu Handlers
+
+    private func handleCommandMenuSelection(_ tool: EditTool) {
+        withAnimation(.smooth(duration: 0.15)) {
+            showCommandMenu = false
         }
+
+        #if os(macOS)
+            InlineNSTextView.isCommandMenuShowing = false
+        #else
+            DynamicHeightTextView.isCommandMenuShowing = false
+        #endif
+
+        NotificationCenter.default.post(
+            name: .applyCommandMenuTool,
+            object: ["tool": tool, "slashLocation": commandSlashLocation]
+        )
+
+        commandSlashLocation = -1
     }
-    
-    // MARK: - Toolbar Integration
-    
-    func handleToolbarAction(_ tool: EditTool) {
-        switch tool {
-        case .todo:
-            insertTodo()
-        default:
-            break
+
+    #if os(iOS)
+        private func handleKeyboardChange(_ notification: Notification) {
+            guard
+                let endFrame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey]
+                    as? CGRect,
+                let window = keyWindow
+            else { return }
+
+            let keyboardHeight = max(0, window.frame.maxY - endFrame.minY)
+            let safeArea = window.safeAreaInsets.bottom
+            let effectiveInset = max(0, keyboardHeight - safeArea)
+
+            let duration =
+                notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double
+                ?? 0.25
+            let curveRaw =
+                notification.userInfo?[UIResponder.keyboardAnimationCurveUserInfoKey] as? UInt
+                ?? UIView.AnimationCurve.easeOut.rawValue
+            let curve = UIView.AnimationCurve(rawValue: Int(curveRaw)) ?? .easeOut
+
+            let animation: Animation
+            switch curve {
+            case .easeInOut:
+                animation = .easeInOut(duration: duration)
+            case .easeIn:
+                animation = .easeIn(duration: duration)
+            case .easeOut:
+                animation = .easeOut(duration: duration)
+            case .linear:
+                animation = .linear(duration: duration)
+            @unknown default:
+                animation = .easeOut(duration: duration)
+            }
+
+            withAnimation(animation) {
+                keyboardInset = effectiveInset
+            }
         }
-    }
-    
-    private func insertTodo() {
-        let insertIndex: Int
-        
-        // Determine where to insert based on current focus
-        if let focusedIndex = focusedRowIndex {
-            // Insert after the currently focused element
-            insertIndex = focusedIndex + 1
-        } else if isTextFocused {
-            // If main text area is focused, insert at the end
-            insertIndex = parsedContent.count
-        } else {
-            // Fallback: insert at the end
-            insertIndex = parsedContent.count
+
+        private var keyWindow: UIWindow? {
+            UIApplication.shared.connectedScenes
+                .compactMap { $0 as? UIWindowScene }
+                .flatMap { $0.windows }
+                .first(where: { $0.isKeyWindow })
         }
-        
-        // Insert the new checkbox at the determined position
-        parsedContent.insert(.checkbox(false, ""), at: insertIndex)
-        rebuildText()
-        
-        // Focus the newly created todo after a brief delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            focusedRowIndex = insertIndex
-        }
-    }
+    #endif
 }
 
-// MARK: - Custom Button Style
-struct CheckboxButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .background(Color.clear)
-            .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
-            .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
+// MARK: - Representable Implementations
+
+#if os(macOS)
+
+    struct TodoEditorRepresentable: NSViewRepresentable {
+        @Binding var text: String
+        let colorScheme: ColorScheme
+        let bottomInset: CGFloat
+        private let unlimitedDimension = CGFloat.greatestFiniteMagnitude
+
+        func makeNSView(context: Context) -> InlineNSTextView {
+            let textView = InlineNSTextView()
+            textView.delegate = context.coordinator
+            textView.actionDelegate = context.coordinator
+            textView.isEditable = true
+            textView.isSelectable = true
+            textView.isRichText = true
+            textView.importsGraphics = false
+            textView.allowsUndo = true
+            textView.backgroundColor = .clear
+            textView.drawsBackground = false
+            textView.font = NSFont.systemFont(ofSize: 16, weight: .medium)
+            textView.textColor = NSColor.labelColor
+            textView.textContainerInset = NSSize(width: 0, height: 8)
+            textView.linkTextAttributes = [
+                .underlineStyle: 0,
+                .underlineColor: NSColor.clear,
+            ]
+            textView.minSize = NSSize(width: 0, height: 0)
+            textView.maxSize = NSSize(width: unlimitedDimension, height: unlimitedDimension)
+            textView.isVerticallyResizable = true
+            textView.isHorizontallyResizable = false
+            textView.autoresizingMask = [.width]
+
+            // Ensure text view can receive focus and input
+            textView.isAutomaticQuoteSubstitutionEnabled = false
+            textView.isAutomaticDashSubstitutionEnabled = false
+            textView.isContinuousSpellCheckingEnabled = false
+            textView.isAutomaticSpellingCorrectionEnabled = false
+
+            // Critical: Ensure text view accepts text input
+            textView.insertionPointColor = NSColor.controlAccentColor
+
+            // Enable Writing Tools when text is selected (without standalone button)
+            if #available(macOS 15.0, *) {
+                textView.writingToolsBehavior = .complete
+            }
+            if let container = textView.textContainer {
+                container.widthTracksTextView = true
+                container.heightTracksTextView = false
+                container.lineFragmentPadding = 0
+                container.containerSize = NSSize(width: 600, height: unlimitedDimension)
+            }
+
+            // CRITICAL FIX: Use the passed colorScheme directly, not resolved from view
+            // The view's appearance might not be set correctly yet at init time
+            let initialScheme = colorScheme
+            print("DEBUG: makeNSView - using passed colorScheme: \(initialScheme)")
+
+            if let resolvedAppearance = appearance(for: initialScheme) {
+                textView.appearance = resolvedAppearance
+            }
+
+            let resolvedColor = resolvedTextColor(
+                for: initialScheme, appearance: textView.appearance)
+            print("DEBUG: makeNSView - resolved text color: \(resolvedColor)")
+            textView.textColor = resolvedColor
+            textView.typingAttributes = Coordinator.baseTypingAttributes(for: initialScheme)
+            textView.defaultParagraphStyle = Coordinator.baseParagraphStyle()
+
+            context.coordinator.updateColorScheme(initialScheme)
+            context.coordinator.configure(with: textView)
+
+            // Apply initial text synchronously to ensure proper sizing calculation
+            print("DEBUG: makeNSView - about to apply initial text: '\(text)'")
+            context.coordinator.applyInitialText(text)
+
+            // Ensure layout is complete before returning
+            if let container = textView.textContainer, let layoutManager = textView.layoutManager {
+                layoutManager.ensureLayout(for: container)
+            }
+
+            // Defer first responder setup to avoid focus issues
+            DispatchQueue.main.async {
+                textView.window?.makeFirstResponder(textView)
+            }
+
+            return textView
+        }
+
+        func updateNSView(_ nsView: InlineNSTextView, context: Context) {
+            let textView = nsView
+            // CRITICAL FIX: Use the passed colorScheme directly
+            let resolvedScheme = colorScheme
+
+            // Update appearance and colors
+            if let resolvedAppearance = appearance(for: resolvedScheme) {
+                textView.appearance = resolvedAppearance
+
+                // Update text color with proper color scheme
+                let resolvedColor = resolvedTextColor(
+                    for: resolvedScheme, appearance: textView.appearance)
+                textView.textColor = resolvedColor
+                textView.typingAttributes = Coordinator.baseTypingAttributes(for: resolvedScheme)
+                textView.linkTextAttributes = [
+                    .underlineStyle: 0,
+                    .underlineColor: NSColor.clear,
+                ]
+                context.coordinator.updateColorScheme(resolvedScheme)
+            }
+
+            // Update container size only if needed
+            if let container = textView.textContainer, let layoutManager = textView.layoutManager {
+                let width = textView.bounds.width
+                if width > 0 && abs(container.containerSize.width - width) > 0.5 {
+                    container.containerSize = NSSize(width: width, height: unlimitedDimension)
+                    layoutManager.ensureLayout(for: container)
+                }
+            }
+
+            // Only update text if it has actually changed
+            context.coordinator.updateIfNeeded(with: text)
+        }
+
+        // Report dynamic size to SwiftUI so the editor grows with its content naturally
+        func sizeThatFits(_ proposal: ProposedViewSize, nsView: InlineNSTextView, context: Context)
+            -> CGSize
+        {
+            guard let container = nsView.textContainer,
+                let layoutManager = nsView.layoutManager
+            else {
+                let fallbackWidth = proposal.width ?? 600
+                return CGSize(width: fallbackWidth, height: 24)
+            }
+
+            let proposedWidth = proposal.width ?? nsView.bounds.width
+            let targetWidth = max(proposedWidth, 100)
+
+            // Update container size for layout calculation
+            if abs(container.containerSize.width - targetWidth) > 0.5 {
+                container.containerSize = NSSize(width: targetWidth, height: unlimitedDimension)
+            }
+
+            // Ensure layout is up to date
+            layoutManager.ensureLayout(for: container)
+            let used = layoutManager.usedRect(for: container)
+
+            let lineHeight =
+                nsView.font?.boundingRectForFont.size.height
+                ?? nsView.defaultParagraphStyle?.minimumLineHeight
+                ?? 24
+            let minHeight = lineHeight + nsView.textContainerInset.height * 2
+            let contentHeight = used.height + nsView.textContainerInset.height * 2
+            let height = max(contentHeight, minHeight)
+            return CGSize(width: targetWidth, height: height)
+        }
+
+        func makeCoordinator() -> Coordinator {
+            return Coordinator(text: $text, colorScheme: colorScheme)
+        }
+
+        private func resolvedColorScheme(for view: NSView?) -> ColorScheme? {
+            if let appearance = view?.window?.effectiveAppearance ?? view?.effectiveAppearance,
+                let match = appearance.bestMatch(from: [.darkAqua, .aqua])
+            {
+                return match == .darkAqua ? .dark : .light
+            }
+            let appAppearance = NSApplication.shared.effectiveAppearance
+            if let match = appAppearance.bestMatch(from: [.darkAqua, .aqua]) {
+                return match == .darkAqua ? .dark : .light
+            }
+            return nil
+        }
+
+        private func appearance(for scheme: ColorScheme) -> NSAppearance? {
+            switch scheme {
+            case .dark:
+                return NSAppearance(named: .darkAqua)
+            case .light:
+                return NSAppearance(named: .aqua)
+            @unknown default:
+                return nil
+            }
+        }
+
+        private func resolvedTextColor(for scheme: ColorScheme, appearance: NSAppearance?)
+            -> NSColor
+        {
+            // Use the actual PrimaryTextColor values from the asset catalog
+            if scheme == .dark {
+                return NSColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0)  // White for dark mode
+            } else {
+                return NSColor(red: 0.102, green: 0.102, blue: 0.102, alpha: 1.0)  // Dark gray for light mode
+            }
+        }
+
+        final class Coordinator: NSObject, NSTextViewDelegate {
+            private weak var textView: NSTextView?
+            private var observers: [NSObjectProtocol] = []
+            private var lastSerialized = ""
+            private let formatter = TextFormattingManager()
+            private var isUpdating = false
+            private var textBinding: Binding<String>
+
+            // NSTextViewDelegate method to handle selection changes
+            func textViewDidChangeSelection(_ notification: Notification) {
+                // Ensure layout stability when selection changes to prevent attachment shifting
+                if let textView = self.textView, let textContainer = textView.textContainer {
+                    textView.layoutManager?.ensureLayout(for: textContainer)
+                }
+            }
+            private var textBeforeWritingTools = ""
+            private var currentColorScheme: ColorScheme
+
+            private static let textFont = NSFont.systemFont(ofSize: 16, weight: .medium)
+            private static let baseLineHeight: CGFloat = 24
+            private static let todoLineHeight: CGFloat = 24
+            private static let checkboxIconSize: CGFloat = 24  // 24x24 pixels for better visibility
+            private static let baseBaselineOffset: CGFloat = 0.0
+            private static let todoBaselineOffset: CGFloat = {
+                // Don't offset the text baseline
+                return 0.0
+            }()
+            private static let checkboxAttachmentYOffset: CGFloat = {
+                // With cellBaselineOffset override, we use 0 for bounds.origin.y
+                // The cell's baseline offset method handles all positioning
+                return 0.0
+            }()
+            private static let checkboxBaselineOffset: CGFloat = {
+                // No additional baseline adjustment needed
+                return 0.0
+            }()
+            private static let webClipMarkupPrefix = "[[webclip|"
+            private static let webClipPattern = #"\[\[webclip\|([^|]*)\|([^|]*)\|([^\]]*)\]\]"#
+            private static let webClipRegex: NSRegularExpression? = try? NSRegularExpression(
+                pattern: webClipPattern,
+                options: []
+            )
+
+            private static func cleanedWebClipComponent(_ value: Any?) -> String {
+                guard let raw = value as? String else { return "" }
+                let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return "" }
+                return
+                    trimmed
+                    .replacingOccurrences(of: "|", with: " ")
+                    .replacingOccurrences(of: "]]", with: " ]")
+            }
+
+            private static func sanitizedWebClipComponent(_ value: String) -> String {
+                let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return "" }
+                return
+                    trimmed
+                    .replacingOccurrences(of: "|", with: " ")
+                    .replacingOccurrences(of: "]]", with: " ")
+            }
+
+            private static func normalizedURL(from raw: String) -> String {
+                let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return "" }
+                if trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://") {
+                    return trimmed
+                }
+                return "https://\(trimmed)"
+            }
+
+            private static func resolvedDomain(from urlString: String) -> String {
+                let normalized = normalizedURL(from: urlString)
+                if let host = URL(string: normalized)?.host, !host.isEmpty {
+                    return host
+                }
+                return
+                    normalized
+                    .replacingOccurrences(of: "https://", with: "")
+                    .replacingOccurrences(of: "http://", with: "")
+            }
+
+            private static func string(
+                from match: NSTextCheckingResult, at index: Int, in text: String
+            ) -> String {
+                guard index < match.numberOfRanges else { return "" }
+                let range = match.range(at: index)
+                guard let swiftRange = Range(range, in: text) else { return "" }
+                return String(text[swiftRange])
+            }
+
+            private func makeWebClipAttachment(
+                url rawURL: String,
+                title: String?,
+                description: String?,
+                domain: String?
+            ) -> NSMutableAttributedString {
+                let normalizedURL = Self.normalizedURL(from: rawURL)
+                let linkValue = normalizedURL.isEmpty ? rawURL : normalizedURL
+                let resolvedDomain =
+                    (domain?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+                        ? domain!.trimmingCharacters(in: .whitespacesAndNewlines)
+                        : Self.resolvedDomain(from: linkValue))
+
+                let fallbackTitle =
+                    (title?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+                    ? resolvedDomain
+                    : title!.trimmingCharacters(in: .whitespacesAndNewlines)
+                let fallbackExcerpt =
+                    (description?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+                    ? "Open link to view the full preview."
+                    : description!.trimmingCharacters(in: .whitespacesAndNewlines)
+
+                #if os(macOS)
+                    // Create the view without artificial width constraints - let it size to content
+                    let cardView = WebClipView(
+                        title: fallbackTitle,
+                        domain: resolvedDomain,
+                        url: linkValue
+                    )
+                    .fixedSize()  // Size to fit content naturally
+                    .environment(\.colorScheme, currentColorScheme)
+
+                    let renderer = ImageRenderer(content: cardView)
+                    // Use display's native backing scale for pixel-perfect rendering
+                    let displayScale = NSScreen.main?.backingScaleFactor ?? 2.0
+                    renderer.scale = displayScale
+                    renderer.isOpaque = false
+
+                    let attachment = NSTextAttachment()
+
+                    guard let cgImage = renderer.cgImage else {
+                        let attributed = NSMutableAttributedString(
+                            string: "[WebClip: \(fallbackTitle)]")
+                        return attributed
+                    }
+
+                    // Create NSImage from CGImage with proper pixel dimensions
+                    let pixelWidth = CGFloat(cgImage.width)
+                    let pixelHeight = CGFloat(cgImage.height)
+
+                    // Calculate display size (points) from pixel size
+                    let displaySize = CGSize(
+                        width: pixelWidth / displayScale,
+                        height: pixelHeight / displayScale)
+
+                    // Create NSImage with correct size to prevent blurriness
+                    let nsImage = NSImage(size: displaySize)
+                    nsImage.addRepresentation(NSBitmapImageRep(cgImage: cgImage))
+
+                    attachment.image = nsImage
+
+                    // Position at baseline - no negative offset needed
+                    attachment.bounds = CGRect(origin: .zero, size: displaySize)
+                    let attributed = NSMutableAttributedString(attachment: attachment)
+                #else
+                    // Create the view without artificial width constraints - let it size to content
+                    let cardView = WebClipView(
+                        title: fallbackTitle,
+                        domain: resolvedDomain,
+                        url: linkValue
+                    )
+                    .fixedSize()  // Size to fit content naturally
+                    .environment(\.colorScheme, currentColorScheme)
+
+                    let renderer = ImageRenderer(content: cardView)
+                    // Use device scale for sharp rendering (2x or 3x depending on device)
+                    let displayScale = UIScreen.main.scale
+                    renderer.scale = displayScale
+                    renderer.isOpaque = false
+
+                    let attachment = NSTextAttachment()
+
+                    guard let uiImage = renderer.uiImage else {
+                        let attributed = NSMutableAttributedString(
+                            string: "[WebClip: \(fallbackTitle)]")
+                        return attributed
+                    }
+
+                    // CRITICAL: UIImage already handles scale internally via its scale property
+                    // We just need to ensure the attachment bounds match the visual size
+                    let displaySize = uiImage.size
+
+                    attachment.image = uiImage
+
+                    // Position at baseline - no negative offset needed
+                    attachment.bounds = CGRect(origin: .zero, size: displaySize)
+                    let attributed = NSMutableAttributedString(attachment: attachment)
+                #endif
+
+                let attachmentRange = NSRange(location: 0, length: attributed.length)
+                attributed.addAttribute(.link, value: linkValue, range: attachmentRange)
+                attributed.addAttribute(.underlineStyle, value: 0, range: attachmentRange)
+                attributed.addAttribute(.webClipTitle, value: fallbackTitle, range: attachmentRange)
+                attributed.addAttribute(
+                    .webClipDescription, value: fallbackExcerpt, range: attachmentRange)
+                attributed.addAttribute(
+                    .webClipDomain, value: resolvedDomain, range: attachmentRange)
+
+                // Apply special paragraph style for web clips to prevent overlap
+                attributed.addAttribute(
+                    .paragraphStyle, value: Self.webClipParagraphStyle(), range: attachmentRange)
+
+                return attributed
+            }
+
+            init(text: Binding<String>, colorScheme: ColorScheme) {
+                self.textBinding = text
+                self.currentColorScheme = colorScheme
+            }
+
+            deinit {
+                observers.forEach { NotificationCenter.default.removeObserver($0) }
+                observers.removeAll()
+            }
+
+            func configure(with textView: NSTextView) {
+                self.textView = textView
+
+                // Prevent layout shifts when gaining focus
+                NotificationCenter.default.addObserver(
+                    forName: NSWindow.didBecomeKeyNotification, object: textView.window,
+                    queue: .main
+                ) { [weak self] _ in
+                    // Ensure layout is stable when window becomes key
+                    if let textView = self?.textView, let textContainer = textView.textContainer {
+                        textView.layoutManager?.ensureLayout(for: textContainer)
+                    }
+                }
+
+                let insertTodo = NotificationCenter.default.addObserver(
+                    forName: .insertTodoInEditor, object: nil, queue: .main
+                ) { [weak self] _ in
+                    self?.insertTodo()
+                }
+
+                let insertLink = NotificationCenter.default.addObserver(
+                    forName: .insertWebClipInEditor, object: nil, queue: .main
+                ) { [weak self] notification in
+                    guard let url = notification.object as? String else { return }
+                    self?.insertWebClip(url: url)
+                }
+
+                let insertVoiceTranscript = NotificationCenter.default.addObserver(
+                    forName: .insertVoiceTranscriptInEditor, object: nil, queue: .main
+                ) { [weak self] notification in
+                    guard let transcript = notification.object as? String else { return }
+                    self?.insertVoiceTranscript(transcript: transcript)
+                }
+
+                let applyTool = NotificationCenter.default.addObserver(
+                    forName: .applyEditTool, object: nil, queue: .main
+                ) { [weak self] notification in
+                    print("📝 DEBUG: Received applyEditTool notification")
+                    print("📝 DEBUG: UserInfo: \(String(describing: notification.userInfo))")
+                    guard let raw = notification.userInfo?["tool"] as? String else {
+                        print("📝 DEBUG: Failed to get tool string from userInfo")
+                        return
+                    }
+                    print("📝 DEBUG: Tool string: \(raw)")
+                    guard let tool = EditTool(rawValue: raw) else {
+                        print("📝 DEBUG: Failed to convert '\(raw)' to EditTool")
+                        return
+                    }
+                    print("📝 DEBUG: Successfully converted to tool: \(tool)")
+                    guard let textView = self?.textView else {
+                        print("📝 DEBUG: textView is nil")
+                        return
+                    }
+                    print("📝 DEBUG: Applying formatting for tool: \(tool)")
+                    Task { @MainActor [weak self] in
+                        guard let self = self else { return }
+                        self.formatter.applyFormatting(to: textView, tool: tool)
+                        self.styleTodoParagraphs()
+                        self.syncText()
+                        print("📝 DEBUG: Formatting applied successfully")
+                    }
+                }
+
+                let applyCommandMenuTool = NotificationCenter.default.addObserver(
+                    forName: .applyCommandMenuTool, object: nil, queue: .main
+                ) { [weak self] notification in
+                    self?.handleCommandMenuToolApplication(notification)
+                }
+
+                observers = [
+                    insertTodo, insertLink, insertVoiceTranscript, applyTool, applyCommandMenuTool,
+                ]
+            }
+
+            func handleAttachmentClick(at point: CGPoint, in textView: NSTextView) -> Bool {
+                guard let layoutManager = textView.layoutManager,
+                    let textStorage = textView.textStorage,
+                    let textContainer = textView.textContainer
+                else { return false }
+
+                // Use text container coordinates directly to avoid textContainerOrigin issues
+                let pointInContainer = CGPoint(
+                    x: point.x - textView.textContainerOrigin.x,
+                    y: point.y - textView.textContainerOrigin.y)
+
+                let glyphIndex = layoutManager.glyphIndex(for: pointInContainer, in: textContainer)
+                if glyphIndex >= layoutManager.numberOfGlyphs { return false }
+
+                let charIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
+                guard charIndex < textStorage.length else { return false }
+
+                let attributes = textStorage.attributes(at: charIndex, effectiveRange: nil)
+                guard attributes[.webClipTitle] != nil,
+                    let attachment = attributes[.attachment] as? NSTextAttachment
+                else { return false }
+
+                // Get the actual glyph bounding rect for the attachment character
+                // This gives us the EXACT position where the attachment is drawn
+                let glyphRect = layoutManager.boundingRect(
+                    forGlyphRange: NSRange(location: glyphIndex, length: 1), in: textContainer)
+
+                // The attachment's actual visual rect is the glyph rect (which respects bounds.origin)
+                // plus the attachment's size
+                let attachmentRect = CGRect(
+                    origin: glyphRect.origin,
+                    size: attachment.bounds.size
+                ).integral
+
+                // Only handle clicks within the actual visible attachment area
+                guard attachmentRect.contains(pointInContainer) else { return false }
+
+                if let linkValue = attributes[.link] as? String,
+                    let url = URL(string: linkValue)
+                {
+                    NSWorkspace.shared.open(url)
+                    return true
+                }
+
+                return false
+            }
+
+            func updateColorScheme(_ scheme: ColorScheme) {
+                currentColorScheme = scheme
+            }
+
+            func applyInitialText(_ text: String) {
+                guard let textView = textView, let textStorage = textView.textStorage else {
+                    return
+                }
+
+                print("DEBUG: ApplyInitialText called with text: '\(text.prefix(100))...'")
+                print("DEBUG: Current color scheme: \(currentColorScheme)")
+
+                isUpdating = true
+
+                // Set the textView's base text color first
+                let targetTextColor: NSColor
+                if currentColorScheme == .dark {
+                    targetTextColor = NSColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0)
+                } else {
+                    targetTextColor = NSColor(red: 0.102, green: 0.102, blue: 0.102, alpha: 1.0)
+                }
+                textView.textColor = targetTextColor
+                print("DEBUG: Set textView.textColor to: \(targetTextColor)")
+
+                // Ensure we deserialize the text properly
+                let attributedText = deserialize(text)
+                print("DEBUG: Deserialized text length: \(attributedText.length)")
+
+                // Check what color the deserialized text has
+                if attributedText.length > 0 {
+                    let attrs = attributedText.attributes(at: 0, effectiveRange: nil)
+                    print(
+                        "DEBUG: First char attributes - foregroundColor: \(attrs[.foregroundColor] ?? "nil")"
+                    )
+                }
+
+                // Set the attributed string
+                textStorage.setAttributedString(attributedText)
+
+                // Ensure proper typing attributes are set
+                textView.typingAttributes = Self.baseTypingAttributes(for: currentColorScheme)
+
+                // Apply paragraph styling
+                styleTodoParagraphs()
+
+                // Ensure all text has proper color - critical for existing notes
+                ensureTextColor()
+
+                // Check color again after ensureTextColor
+                if textStorage.length > 0 {
+                    let attrs = textStorage.attributes(at: 0, effectiveRange: nil)
+                    print(
+                        "DEBUG: After ensureTextColor - foregroundColor: \(attrs[.foregroundColor] ?? "nil")"
+                    )
+                }
+
+                // Update serialized state
+                lastSerialized = serialize()
+
+                // Force layout and size recalculation
+                if let container = textView.textContainer,
+                    let layoutManager = textView.layoutManager
+                {
+                    layoutManager.ensureLayout(for: container)
+                }
+                textView.invalidateIntrinsicContentSize()
+                textView.needsDisplay = true
+                textView.needsLayout = true
+
+                print("DEBUG: Text view content after setup: '\(textView.string.prefix(100))...'")
+                print("DEBUG: Text view final textColor: \(textView.textColor ?? NSColor.clear)")
+
+                isUpdating = false
+            }
+
+            // Ensures all text has the correct foreground color attribute
+            private func ensureTextColor() {
+                guard let textView = textView, let textStorage = textView.textStorage else {
+                    return
+                }
+                let fullRange = NSRange(location: 0, length: textStorage.length)
+
+                // Get the correct text color for current scheme
+                let textColor: NSColor
+                if currentColorScheme == .dark {
+                    textColor = NSColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0)
+                } else {
+                    textColor = NSColor(red: 0.102, green: 0.102, blue: 0.102, alpha: 1.0)
+                }
+
+                print(
+                    "DEBUG: ensureTextColor - applying color: \(textColor) for scheme: \(currentColorScheme)"
+                )
+
+                // Batch the text storage edits
+                textStorage.beginEditing()
+
+                // Remove any existing foreground color first, then apply new one
+                textStorage.removeAttribute(.foregroundColor, range: fullRange)
+
+                // Now apply the correct color to all non-attachment text
+                textStorage.enumerateAttributes(in: fullRange, options: []) {
+                    attributes, range, _ in
+                    // Skip attachments - they don't need text color
+                    if attributes[.attachment] == nil {
+                        textStorage.addAttribute(.foregroundColor, value: textColor, range: range)
+                        print("DEBUG: Applied color to range: \(range)")
+                    }
+                }
+
+                textStorage.endEditing()
+
+                // Force the text view to redisplay with new colors
+                textView.needsDisplay = true
+                if let layoutManager = textView.layoutManager,
+                    let textContainer = textView.textContainer
+                {
+                    layoutManager.invalidateDisplay(forCharacterRange: fullRange)
+                    layoutManager.ensureLayout(for: textContainer)
+                }
+            }
+
+            func updateIfNeeded(with text: String) {
+                guard !isUpdating, let textView = textView, let textStorage = textView.textStorage
+                else {
+                    print(
+                        "DEBUG: UpdateIfNeeded - guard failed. isUpdating: \(isUpdating), textView: \(textView != nil), textStorage: \(textView?.textStorage != nil)"
+                    )
+                    return
+                }
+
+                guard text != lastSerialized else {
+                    print("DEBUG: UpdateIfNeeded - text hasn't changed")
+                    return
+                }
+
+                print("DEBUG: UpdateIfNeeded called with text: '\(text.prefix(100))...'")
+                print("DEBUG: Last serialized was: '\(lastSerialized.prefix(100))...'")
+
+                // Store current selection before updating
+                let selectedRange = textView.selectedRange()
+
+                isUpdating = true
+
+                // Set the textView's base text color
+                if currentColorScheme == .dark {
+                    textView.textColor = NSColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0)
+                } else {
+                    textView.textColor = NSColor(red: 0.102, green: 0.102, blue: 0.102, alpha: 1.0)
+                }
+
+                // Deserialize and set the new text
+                let attributedText = deserialize(text)
+                textStorage.setAttributedString(attributedText)
+
+                // Force typing attributes immediately and again after a brief delay
+                // to ensure Writing Tools respects our formatting
+                textView.typingAttributes = Self.baseTypingAttributes(for: currentColorScheme)
+                DispatchQueue.main.async {
+                    textView.typingAttributes = Self.baseTypingAttributes(
+                        for: self.currentColorScheme)
+                }
+
+                styleTodoParagraphs()
+
+                // Ensure text color is correct after updating
+                ensureTextColor()
+
+                lastSerialized = serialize()
+
+                // Restore selection after updating
+                textView.setSelectedRange(selectedRange)
+
+                print(
+                    "DEBUG: UpdateIfNeeded complete. Text view now shows: '\(textView.string.prefix(100))...'"
+                )
+
+                isUpdating = false
+            }
+
+            func textDidChange(_ notification: Notification) {
+                guard let textView = notification.object as? NSTextView, textView == self.textView,
+                    !isUpdating
+                else {
+                    print(
+                        "DEBUG: textDidChange - guard failed. Same textView: \(notification.object as? NSTextView == self.textView), isUpdating: \(isUpdating)"
+                    )
+                    return
+                }
+
+                print("DEBUG: textDidChange - text changed to: '\(textView.string.prefix(100))...'")
+
+                // Ensure typing attributes are preserved after Writing Tools operations
+                DispatchQueue.main.async {
+                    // Skip processing if we're in the middle of an update
+                    guard !self.isUpdating else { return }
+
+                    // Fix any inconsistent fonts first
+                    self.fixInconsistentFonts()
+                    textView.typingAttributes = Self.baseTypingAttributes(
+                        for: self.currentColorScheme)
+
+                    // Apply consistent formatting to any new text that might have been inserted
+                    // without proper attributes (e.g., from Writing Tools)
+                    let selectedRange = textView.selectedRange()
+                    if selectedRange.length == 0 && selectedRange.location > 0 {
+                        // Check if the character before cursor has proper font attributes
+                        let beforeRange = NSRange(location: selectedRange.location - 1, length: 1)
+                        if beforeRange.location >= 0,
+                            let textStorage = textView.textStorage,
+                            beforeRange.location + beforeRange.length <= textStorage.length
+                        {
+                            let attributes = textStorage.attributes(
+                                at: beforeRange.location, effectiveRange: nil)
+                            let currentFont = attributes[.font] as? NSFont
+                            let expectedFont =
+                                Self.baseTypingAttributes(for: self.currentColorScheme)[.font]
+                                as? NSFont
+
+                            // If font doesn't match, apply correct attributes to recent text
+                            if currentFont?.fontName != expectedFont?.fontName
+                                || currentFont?.pointSize != expectedFont?.pointSize
+                            {
+                                textStorage.addAttributes(
+                                    Self.baseTypingAttributes(for: self.currentColorScheme),
+                                    range: beforeRange
+                                )
+                            }
+                        }
+                    }
+                }
+
+                syncText()
+            }
+
+            func textView(
+                _ textView: NSTextView, shouldChangeTextIn affectedCharRange: NSRange,
+                replacementString: String?
+            ) -> Bool {
+                // Check for "/" to trigger command menu
+                if replacementString == "/" {
+                    // Show command menu at cursor position
+                    showCommandMenuAtCursor(
+                        textView: textView, insertLocation: affectedCharRange.location)
+                    return true  // Allow the "/" to be typed
+                }
+
+                // Check for Enter key in todo paragraph
+                if replacementString == "\n", isInTodoParagraph(range: affectedCharRange) {
+                    insertTodo()
+                    return false
+                }
+                return true
+            }
+
+            func handleReturn(in textView: NSTextView) -> Bool {
+                if isInTodoParagraph(range: textView.selectedRange()) {
+                    insertTodo()
+                    return true
+                }
+                return false
+            }
+
+            // MARK: - Command Menu Handling
+
+            /// Shows the command menu at the current cursor position
+            /// Positions menu close to cursor with viewport bounds awareness
+            private func showCommandMenuAtCursor(textView: NSTextView, insertLocation: Int) {
+                // Get the rect for the cursor position to place the menu
+                guard let layoutManager = textView.layoutManager,
+                    let textContainer = textView.textContainer
+                else {
+                    return
+                }
+
+                // Calculate the glyph range for the insertion point
+                let glyphIndex = layoutManager.glyphIndexForCharacter(at: insertLocation)
+                let glyphRect = layoutManager.boundingRect(
+                    forGlyphRange: NSRange(location: glyphIndex, length: 1), in: textContainer)
+
+                // Convert to text view's coordinate space
+                // This accounts for text container origin (insets/padding)
+                let cursorX = glyphRect.origin.x + textView.textContainerOrigin.x
+                let cursorY = glyphRect.origin.y + textView.textContainerOrigin.y
+                let cursorHeight = glyphRect.height
+
+                // Menu dimensions
+                let menuHeight: CGFloat = 280
+                let menuGap: CGFloat = 4
+                let safetyMargin: CGFloat = 20
+
+                // Get the visible rect to check against actual viewport, not total text view bounds
+                let visibleRect = textView.visibleRect
+
+                // Check if there's enough space below the cursor in the VISIBLE area
+                // This is the key: we check against visibleRect.maxY, not bounds.height
+                let cursorBottomY = cursorY + cursorHeight
+                let spaceBelow = visibleRect.maxY - cursorBottomY
+                let shouldShowAbove = spaceBelow < (menuHeight + menuGap + safetyMargin)
+
+                // Position menu above or below cursor depending on available space
+                let xPosition = cursorX
+                let yPosition: CGFloat
+                if shouldShowAbove {
+                    // Position above cursor
+                    yPosition = max(visibleRect.minY + menuGap, cursorY - menuHeight - menuGap)
+                } else {
+                    // Position below cursor (default)
+                    yPosition = cursorY + cursorHeight + menuGap
+                }
+
+                let menuPosition = CGPoint(x: xPosition, y: yPosition)
+
+                // Only need extra space when menu shows below cursor AND there's not enough space
+                let needsExtraSpace = !shouldShowAbove && spaceBelow < (menuHeight + menuGap + safetyMargin)
+
+                print("🔴 POSTING ShowCommandMenu notification - position: \(menuPosition), slashLocation: \(insertLocation), needsSpace: \(needsExtraSpace)")
+
+                // Post notification to show menu
+                NotificationCenter.default.post(
+                    name: .showCommandMenu,
+                    object: [
+                        "position": menuPosition,
+                        "slashLocation": insertLocation,
+                        "needsSpace": needsExtraSpace
+                    ]
+                )
+            }
+
+            /// Handles command menu tool application
+            private func handleCommandMenuToolApplication(_ notification: Notification) {
+                guard let info = notification.object as? [String: Any],
+                    let tool = info["tool"] as? EditTool,
+                    let slashLocation = info["slashLocation"] as? Int,
+                    let textView = textView,
+                    let textStorage = textView.textStorage
+                else { return }
+
+                // Remove the "/" character that triggered the menu
+                if slashLocation >= 0 && slashLocation < textStorage.length {
+                    let slashRange = NSRange(location: slashLocation, length: 1)
+                    if textView.shouldChangeText(in: slashRange, replacementString: "") {
+                        textStorage.replaceCharacters(in: slashRange, with: "")
+                        textView.didChangeText()
+                    }
+                }
+
+                // Apply the selected tool
+                formatter.applyFormatting(to: textView, tool: tool)
+
+                // Sync the text back
+                syncText()
+            }
+
+            // MARK: - Todo Handling
+
+            private func insertTodo() {
+                guard let textView = textView else { return }
+                let attachment = NSTextAttachment()
+                let cell = TodoCheckboxAttachmentCell(isChecked: false)
+                attachment.attachmentCell = cell
+                attachment.bounds = CGRect(
+                    x: 0, y: Self.checkboxAttachmentYOffset, width: Self.checkboxIconSize,
+                    height: Self.checkboxIconSize)
+
+                let todoAttachment = NSMutableAttributedString(attachment: attachment)
+                todoAttachment.addAttribute(
+                    .baselineOffset, value: Self.checkboxBaselineOffset,
+                    range: NSRange(location: 0, length: todoAttachment.length))
+                // Add comfortable spacing between checkbox and text (2 spaces)
+                let space = NSAttributedString(
+                    string: "  ", attributes: Self.baseTypingAttributes(for: currentColorScheme))
+                let paragraphBreak = NSAttributedString(
+                    string: "\n", attributes: Self.baseTypingAttributes(for: currentColorScheme))
+
+                let composed = NSMutableAttributedString()
+                if textView.selectedRange().location != 0 {
+                    composed.append(paragraphBreak)
+                }
+                composed.append(todoAttachment)
+                composed.append(space)
+
+                replaceSelection(with: composed)
+                styleTodoParagraphs()
+                syncText()
+            }
+
+            private func insertWebClip(url: String) {
+                guard let textView = textView else { return }
+                let cleanURL = url.trimmingCharacters(in: .whitespacesAndNewlines)
+                let normalizedURL = Self.normalizedURL(from: cleanURL)
+                let linkValue = normalizedURL.isEmpty ? cleanURL : normalizedURL
+                let attachment = makeWebClipAttachment(
+                    url: linkValue,
+                    title: nil,
+                    description: nil,
+                    domain: nil
+                )
+
+                let paragraphBreak = NSAttributedString(
+                    string: "\n",
+                    attributes: Self.baseTypingAttributes(for: currentColorScheme)
+                )
+                let composed = NSMutableAttributedString()
+
+                // Add spacing before the web clip if not at the beginning
+                if textView.selectedRange().location != 0 {
+                    composed.append(paragraphBreak)
+                }
+                composed.append(attachment)
+
+                // Add two line breaks after the web clip to prevent overlapping with content below
+                composed.append(paragraphBreak)
+                composed.append(paragraphBreak)
+
+                replaceSelection(with: composed)
+                syncText()
+            }
+
+            private func deleteWebClipAttachment(url: String) {
+                guard let textStorage = textView?.textStorage else { return }
+
+                textStorage.enumerateAttribute(
+                    .attachment, in: NSRange(location: 0, length: textStorage.length)
+                ) { value, range, stop in
+                    if value as? NSTextAttachment != nil,
+                        let linkValue = textStorage.attribute(
+                            .link, at: range.location, effectiveRange: nil) as? String,
+                        Self.normalizedURL(from: linkValue) == Self.normalizedURL(from: url)
+                    {
+                        textStorage.deleteCharacters(in: range)
+                        stop.pointee = true
+                    }
+                }
+                syncText()
+            }
+
+            private func insertVoiceTranscript(transcript: String) {
+                guard textView != nil else { return }
+                let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return }
+
+                // Add proper spacing and formatting
+                let formatted = trimmed + " "
+                replaceSelection(
+                    with: NSAttributedString(
+                        string: formatted,
+                        attributes: Self.baseTypingAttributes(for: currentColorScheme)))
+                syncText()
+            }
+
+            private func replaceSelection(with attributed: NSAttributedString) {
+                guard let textView = textView else { return }
+                let range = textView.selectedRange()
+                if textView.shouldChangeText(in: range, replacementString: attributed.string) {
+                    isUpdating = true
+                    textView.textStorage?.beginEditing()
+                    textView.textStorage?.replaceCharacters(in: range, with: attributed)
+                    textView.textStorage?.endEditing()
+                    textView.setSelectedRange(
+                        NSRange(location: range.location + attributed.length, length: 0))
+                    textView.didChangeText()
+                    isUpdating = false
+                }
+            }
+
+            private func syncText() {
+                guard let textView = textView else { return }
+                isUpdating = true
+                styleTodoParagraphs()
+                lastSerialized = serialize()
+                textBinding.wrappedValue = lastSerialized
+
+                // Always ensure typing attributes are correct after sync
+                textView.typingAttributes = Self.baseTypingAttributes(for: currentColorScheme)
+                isUpdating = false
+            }
+
+            /// Fixes any text that has inconsistent font formatting (e.g., from Writing Tools)
+            private func fixInconsistentFonts() {
+                guard let textView = textView,
+                    let textStorage = textView.textStorage
+                else { return }
+
+                let expectedAttributes = Self.baseTypingAttributes(for: currentColorScheme)
+                guard let expectedFont = expectedAttributes[.font] as? NSFont,
+                    let expectedColor = expectedAttributes[.foregroundColor] as? NSColor
+                else { return }
+
+                textStorage.enumerateAttributes(
+                    in: NSRange(location: 0, length: textStorage.length)
+                ) { attributes, range, _ in
+                    var needsFixing = false
+                    var fixedAttributes: [NSAttributedString.Key: Any] = attributes
+
+                    // Check font
+                    if let currentFont = attributes[.font] as? NSFont {
+                        if currentFont.fontName != expectedFont.fontName
+                            || currentFont.pointSize != expectedFont.pointSize
+                        {
+                            fixedAttributes[.font] = expectedFont
+                            needsFixing = true
+                        }
+                    } else {
+                        fixedAttributes[.font] = expectedFont
+                        needsFixing = true
+                    }
+
+                    // Check text color
+                    if let currentColor = attributes[.foregroundColor] as? NSColor {
+                        if !currentColor.isEqual(expectedColor) {
+                            fixedAttributes[.foregroundColor] = expectedColor
+                            needsFixing = true
+                        }
+                    } else {
+                        fixedAttributes[.foregroundColor] = expectedColor
+                        needsFixing = true
+                    }
+
+                    if needsFixing {
+                        textStorage.setAttributes(fixedAttributes, range: range)
+                    }
+                }
+            }
+
+            private func styleTodoParagraphs() {
+                guard let textStorage = textView?.textStorage else { return }
+                let fullRange = NSRange(location: 0, length: textStorage.length)
+                textStorage.enumerateAttribute(.paragraphStyle, in: fullRange, options: []) {
+                    _, range, _ in
+                    textStorage.removeAttribute(.paragraphStyle, range: range)
+                }
+                textStorage.enumerateAttribute(.baselineOffset, in: fullRange, options: []) {
+                    _, range, _ in
+                    textStorage.removeAttribute(.baselineOffset, range: range)
+                }
+
+                var paragraphRange = NSRange(location: 0, length: 0)
+                while paragraphRange.location < textStorage.length {
+                    let substringRange = (textStorage.string as NSString).paragraphRange(
+                        for: NSRange(location: paragraphRange.location, length: 0))
+                    if substringRange.length == 0 { break }
+                    defer { paragraphRange.location = NSMaxRange(substringRange) }
+
+                    var isTodoParagraph = false
+                    var isWebClipParagraph = false
+
+                    textStorage.enumerateAttribute(
+                        .attachment,
+                        in: NSRange(
+                            location: substringRange.location, length: min(1, substringRange.length)
+                        ), options: []
+                    ) { value, _, stop in
+                        if let attachment = value as? NSTextAttachment {
+                            // Check if it's a todo checkbox
+                            if let cell = attachment.attachmentCell as? TodoCheckboxAttachmentCell {
+                                isTodoParagraph = true
+                                cell.invalidateAppearance()
+                                stop.pointee = true
+                            }
+                            // Check if it's a web clip attachment (has webClipTitle attribute)
+                            else if textStorage.attribute(
+                                .webClipTitle, at: substringRange.location, effectiveRange: nil)
+                                != nil
+                            {
+                                isWebClipParagraph = true
+                                stop.pointee = true
+                            }
+                        }
+                    }
+
+                    // Apply appropriate paragraph style based on content type
+                    let paragraphStyle: NSParagraphStyle
+                    if isWebClipParagraph {
+                        paragraphStyle = Self.webClipParagraphStyle()
+                    } else if isTodoParagraph {
+                        paragraphStyle = Self.todoParagraphStyle()
+                    } else {
+                        paragraphStyle = Self.baseParagraphStyle()
+                    }
+
+                    textStorage.addAttribute(
+                        .paragraphStyle, value: paragraphStyle, range: substringRange)
+
+                    // Don't adjust baseline for todo or web clip paragraphs
+                    if !isTodoParagraph && !isWebClipParagraph {
+                        textStorage.addAttribute(
+                            .baselineOffset, value: Self.baseBaselineOffset, range: substringRange)
+                    }
+
+                    if isTodoParagraph {
+                        textStorage.enumerateAttribute(.attachment, in: substringRange, options: [])
+                        { value, attachmentRange, _ in
+                            guard let attachment = value as? NSTextAttachment,
+                                let cell = attachment.attachmentCell as? TodoCheckboxAttachmentCell
+                            else { return }
+                            attachment.bounds = CGRect(
+                                x: 0, y: Self.checkboxAttachmentYOffset,
+                                width: Self.checkboxIconSize, height: Self.checkboxIconSize)
+                            textStorage.addAttribute(
+                                .baselineOffset, value: Self.checkboxBaselineOffset,
+                                range: attachmentRange)
+                            cell.invalidateAppearance()
+                        }
+                    }
+                }
+            }
+
+            private func isInTodoParagraph(range: NSRange) -> Bool {
+                guard let storage = textView?.textStorage else { return false }
+                let location = max(0, min(storage.length, range.location))
+                let paragraphRange = (storage.string as NSString).paragraphRange(
+                    for: NSRange(location: location, length: 0))
+                var isTodo = false
+                storage.enumerateAttribute(
+                    .attachment,
+                    in: NSRange(
+                        location: paragraphRange.location, length: min(1, paragraphRange.length)),
+                    options: []
+                ) { value, _, _ in
+                    if (value as? NSTextAttachment)?.attachmentCell is TodoCheckboxAttachmentCell {
+                        isTodo = true
+                    }
+                }
+                return isTodo
+            }
+
+            private func serialize() -> String {
+                guard let storage = textView?.textStorage else { return "" }
+                let fullRange = NSRange(location: 0, length: storage.length)
+                var output = ""
+                storage.enumerateAttributes(in: fullRange, options: []) { attributes, range, _ in
+                    if let attachment = attributes[.attachment] as? NSTextAttachment,
+                        let cell = attachment.attachmentCell as? TodoCheckboxAttachmentCell
+                    {
+                        output.append(cell.isChecked ? "[x]" : "[ ]")
+                    } else if let attachment = attributes[.attachment] as? NSTextAttachment,
+                        !(attachment.attachmentCell is TodoCheckboxAttachmentCell),
+                        let urlString = attributes[.link] as? String
+                    {
+                        var title = Self.cleanedWebClipComponent(attributes[.webClipTitle])
+                        let description = Self.cleanedWebClipComponent(
+                            attributes[.webClipDescription])
+                        let domain = Self.cleanedWebClipComponent(attributes[.webClipDomain])
+                        if title.isEmpty {
+                            title = domain
+                        }
+                        let sanitizedURL = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
+                        output.append("[[webclip|\(title)|\(description)|\(sanitizedURL)]]")
+                    } else {
+                        output.append((storage.string as NSString).substring(with: range))
+                    }
+                }
+                return output
+            }
+
+            private func deserialize(_ text: String) -> NSAttributedString {
+                print("DEBUG: Deserializing text: '\(text)'")
+
+                // Handle empty text case
+                if text.isEmpty {
+                    return NSAttributedString(
+                        string: "", attributes: Self.baseTypingAttributes(for: currentColorScheme))
+                }
+
+                let result = NSMutableAttributedString()
+                var index = text.startIndex
+
+                while index < text.endIndex {
+                    if text[index...].hasPrefix("[x]") || text[index...].hasPrefix("[ ]") {
+                        let isChecked = text[index...].hasPrefix("[x]")
+                        let attachment = NSTextAttachment()
+                        attachment.attachmentCell = TodoCheckboxAttachmentCell(isChecked: isChecked)
+                        attachment.bounds = CGRect(
+                            x: 0, y: Self.checkboxAttachmentYOffset, width: Self.checkboxIconSize,
+                            height: Self.checkboxIconSize)
+                        let attString = NSMutableAttributedString(attachment: attachment)
+                        attString.addAttribute(
+                            .baselineOffset, value: Self.checkboxBaselineOffset,
+                            range: NSRange(location: 0, length: attString.length))
+                        result.append(attString)
+                        index = text.index(index, offsetBy: 3)
+                        continue
+                    } else if text[index...].hasPrefix(Self.webClipMarkupPrefix) {
+                        if let endIndex = text[index...].range(of: "]]")?.upperBound {
+                            let webclipText = String(text[index..<endIndex])
+                            if let regex = Self.webClipRegex,
+                                let match = regex.firstMatch(
+                                    in: webclipText,
+                                    options: [],
+                                    range: NSRange(location: 0, length: webclipText.utf16.count)
+                                )
+                            {
+                                let rawTitle = Self.string(from: match, at: 1, in: webclipText)
+                                let rawDescription = Self.string(
+                                    from: match, at: 2, in: webclipText)
+                                let rawURL = Self.string(from: match, at: 3, in: webclipText)
+
+                                let cleanedTitle = Self.sanitizedWebClipComponent(rawTitle)
+                                let cleanedDescription = Self.sanitizedWebClipComponent(
+                                    rawDescription)
+                                let normalizedURL = Self.normalizedURL(from: rawURL)
+                                let linkForAttachment =
+                                    normalizedURL.isEmpty ? rawURL : normalizedURL
+                                let domain = Self.sanitizedWebClipComponent(
+                                    Self.resolvedDomain(from: linkForAttachment)
+                                )
+
+                                let attachment = makeWebClipAttachment(
+                                    url: linkForAttachment,
+                                    title: cleanedTitle.isEmpty ? nil : cleanedTitle,
+                                    description: cleanedDescription.isEmpty
+                                        ? nil : cleanedDescription,
+                                    domain: domain.isEmpty ? nil : domain
+                                )
+                                result.append(attachment)
+
+                                index = endIndex
+                                continue
+                            }
+                        }
+                    }
+
+                    // Add single character with proper attributes
+                    let char = String(text[index])
+                    let attributedChar = NSAttributedString(
+                        string: char,
+                        attributes: Self.baseTypingAttributes(for: currentColorScheme))
+                    result.append(attributedChar)
+                    index = text.index(after: index)
+                }
+
+                print("DEBUG: Deserialized attributed string length: \(result.length)")
+                print("DEBUG: Deserialized plain text: '\(result.string)'")
+
+                return result
+            }
+
+            // MARK: - Helpers
+
+            static func baseParagraphStyle() -> NSParagraphStyle {
+                let style = NSMutableParagraphStyle()
+                style.lineHeightMultiple = 1.2
+                style.minimumLineHeight = baseLineHeight
+                style.maximumLineHeight = baseLineHeight + 4
+                style.paragraphSpacing = 8
+                return style
+            }
+
+            static func todoParagraphStyle() -> NSParagraphStyle {
+                let style = NSMutableParagraphStyle()
+                style.lineHeightMultiple = 1.2
+                style.minimumLineHeight = todoLineHeight
+                style.maximumLineHeight = todoLineHeight + 4
+                style.paragraphSpacing = 10
+                style.firstLineHeadIndent = 0
+                style.headIndent = 30
+                return style
+            }
+
+            // Paragraph style for web clip attachments with extra spacing to prevent overlap
+            static func webClipParagraphStyle() -> NSParagraphStyle {
+                let style = NSMutableParagraphStyle()
+                style.lineHeightMultiple = 1.0
+                // NO minimum/maximum line height - let attachment determine its own space
+                // This prevents empty clickable space above/below
+                style.minimumLineHeight = 0
+                style.maximumLineHeight = 0
+                // Add spacing after to separate from next content
+                style.paragraphSpacing = 16
+                style.paragraphSpacingBefore = 8
+                return style
+            }
+
+            static func baseTypingAttributes(for colorScheme: ColorScheme? = nil)
+                -> [NSAttributedString.Key: Any]
+            {
+                let textColor: NSColor
+                if let scheme = colorScheme {
+                    // Use the actual PrimaryTextColor values from the asset catalog
+                    if scheme == .dark {
+                        textColor = NSColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0)  // White for dark mode
+                    } else {
+                        textColor = NSColor(red: 0.102, green: 0.102, blue: 0.102, alpha: 1.0)  // Dark gray for light mode
+                    }
+                } else {
+                    textColor = NSColor.labelColor
+                }
+
+                return [
+                    .font: textFont,
+                    .foregroundColor: textColor,
+                    .paragraphStyle: baseParagraphStyle(),
+                    .underlineStyle: 0,
+                        // .baselineOffset: baseBaselineOffset,
+                ]
+            }
+
+            private static func baselineOffset(forLineHeight lineHeight: CGFloat, font: NSFont)
+                -> CGFloat
+            {
+                let metrics = font.ascender - font.descender + font.leading
+                let delta = max(0, lineHeight - metrics)
+                return delta / 2
+            }
+
+            // MARK: - Writing Tools Support (macOS 15+)
+            @available(macOS 15.0, *)
+            func textViewWritingToolsWillBegin(_ textView: NSTextView) {
+                // Store text before Writing Tools starts
+                textBeforeWritingTools = textView.string
+            }
+
+            @available(macOS 15.0, *)
+            func textViewWritingToolsDidEnd(_ textView: NSTextView) {
+                // Writing Tools finished - textDidChange will handle summary detection
+            }
+        }
     }
+
+    final class InlineNSTextView: NSTextView {
+        // Static flag to track command menu visibility for keyboard event handling
+        static var isCommandMenuShowing = false
+
+        weak var actionDelegate: TodoEditorRepresentable.Coordinator?
+
+        override var intrinsicContentSize: NSSize {
+            guard let layoutManager = layoutManager,
+                let textContainer = textContainer
+            else {
+                return NSSize(width: NSView.noIntrinsicMetric, height: NSView.noIntrinsicMetric)
+            }
+
+            layoutManager.ensureLayout(for: textContainer)
+            let usedRect = layoutManager.usedRect(for: textContainer)
+            let height = usedRect.height + textContainerInset.height * 2
+
+            return NSSize(width: NSView.noIntrinsicMetric, height: height)
+        }
+
+        override func didChangeText() {
+            super.didChangeText()
+            invalidateIntrinsicContentSize()
+        }
+
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+            true
+        }
+
+        override func becomeFirstResponder() -> Bool {
+            let result = super.becomeFirstResponder()
+            if result {
+                // Ensure the text view is properly focused and can receive input
+                // Fix timing issue by ensuring window focus happens on next run loop
+                DispatchQueue.main.async {
+                    self.window?.makeFirstResponder(self)
+                    // Additional check to ensure we can actually receive text input
+                    self.insertionPointColor = NSColor.controlAccentColor
+                    self.needsDisplay = true
+                }
+            }
+            return result
+        }
+
+        override func mouseDown(with event: NSEvent) {
+            let point = convert(event.locationInWindow, from: nil)
+            if actionDelegate?.handleAttachmentClick(at: point, in: self) == true {
+                return
+            }
+            // Ensure the text view becomes first responder on click
+            if window?.makeFirstResponder(self) == true {
+                // Additional verification that we're ready for text input
+                DispatchQueue.main.async {
+                    if self.window?.firstResponder == self {
+                        self.insertionPointColor = NSColor.controlAccentColor
+                        self.needsDisplay = true
+                    }
+                }
+            }
+            super.mouseDown(with: event)
+        }
+
+        override func insertNewline(_ sender: Any?) {
+            print("DEBUG: insertNewline called")
+            if actionDelegate?.handleReturn(in: self) == true { return }
+            super.insertNewline(sender)
+        }
+
+        override func keyDown(with event: NSEvent) {
+            print("DEBUG: keyDown called with key: \(event.characters ?? "nil")")
+
+            // Only intercept keys if command menu is showing
+            guard InlineNSTextView.isCommandMenuShowing else {
+                super.keyDown(with: event)
+                return
+            }
+
+            // Handle special keys for command menu navigation
+            // keyCode 126 = Up Arrow, 125 = Down Arrow, 36 = Return, 53 = Escape
+            switch event.keyCode {
+            case 126:  // Up Arrow
+                // Post notification to navigate up in command menu
+                NotificationCenter.default.post(name: .commandMenuNavigateUp, object: nil)
+                return  // Don't pass to super to prevent cursor movement
+
+            case 125:  // Down Arrow
+                // Post notification to navigate down in command menu
+                NotificationCenter.default.post(name: .commandMenuNavigateDown, object: nil)
+                return  // Don't pass to super to prevent cursor movement
+
+            case 36, 76:  // Return or Enter key
+                // Post notification to select current command menu item
+                NotificationCenter.default.post(name: .commandMenuSelect, object: nil)
+                // If command menu handles it, don't pass to super
+                // The notification handler will determine if it was consumed
+                return
+
+            case 53:  // Escape key
+                // Post notification to hide command menu
+                NotificationCenter.default.post(name: .hideCommandMenu, object: nil)
+                return
+
+            default:
+                // For all other keys, check if we should hide the command menu
+                // Any character input (other than arrow keys) should hide the menu
+                if event.characters != nil && event.characters != "" {
+                    NotificationCenter.default.post(name: .hideCommandMenu, object: nil)
+                }
+                super.keyDown(with: event)
+            }
+        }
+
+        @available(macOS 10.11, *)
+        override func insertText(_ string: Any, replacementRange: NSRange) {
+            // Check if we're inserting "/" to trigger command menu
+            if let str = string as? String, str == "/" {
+                // Get the cursor position before insertion
+                let location = selectedRange().location
+
+                // Allow the "/" to be inserted first
+                super.insertText(string, replacementRange: replacementRange)
+
+                // Then show the command menu at that position
+                if actionDelegate != nil {
+                    // Post notification to show command menu
+                    // We need to get the rect for the inserted "/" character
+                    if let layoutManager = self.layoutManager,
+                        let textContainer = self.textContainer
+                    {
+                        let glyphIndex = layoutManager.glyphIndexForCharacter(at: location)
+                        let glyphRect = layoutManager.boundingRect(
+                            forGlyphRange: NSRange(location: glyphIndex, length: 1),
+                            in: textContainer)
+
+                        let cursorX = glyphRect.origin.x + self.textContainerOrigin.x
+                        let cursorY = glyphRect.origin.y + self.textContainerOrigin.y
+                        let cursorHeight = glyphRect.height
+
+                        let xPosition = cursorX
+                        let yPosition = cursorY + cursorHeight + 4
+
+                        let menuPosition = CGPoint(x: xPosition, y: yPosition)
+
+                        NotificationCenter.default.post(
+                            name: .showCommandMenu,
+                            object: ["position": menuPosition, "slashLocation": location]
+                        )
+                    }
+                }
+                return
+            }
+
+            super.insertText(string, replacementRange: replacementRange)
+        }
+        
+        // MARK: - Context Menu Implementation
+        
+        override func menu(for event: NSEvent) -> NSMenu? {
+            // Create a custom context menu for the text editor
+            let menu = NSMenu()
+            
+            // Standard text editing actions
+            menu.addItem(NSMenuItem(title: "Cut", action: #selector(cut(_:)), keyEquivalent: "x"))
+            menu.addItem(NSMenuItem(title: "Copy", action: #selector(copy(_:)), keyEquivalent: "c"))
+            menu.addItem(NSMenuItem(title: "Paste", action: #selector(paste(_:)), keyEquivalent: "v"))
+            
+            menu.addItem(NSMenuItem.separator())
+            
+            // Text formatting actions
+            menu.addItem(NSMenuItem(title: "Bold", action: #selector(toggleBold(_:)), keyEquivalent: "b"))
+            menu.addItem(NSMenuItem(title: "Italic", action: #selector(toggleItalic(_:)), keyEquivalent: "i"))
+            menu.addItem(NSMenuItem(title: "Underline", action: #selector(toggleUnderline(_:)), keyEquivalent: "u"))
+            
+            menu.addItem(NSMenuItem.separator())
+            
+            // Special formatting actions
+            menu.addItem(NSMenuItem(title: "Insert Todo", action: #selector(insertTodo(_:)), keyEquivalent: ""))
+            menu.addItem(NSMenuItem(title: "Insert Bullet List", action: #selector(insertBulletList(_:)), keyEquivalent: ""))
+            
+            menu.addItem(NSMenuItem.separator())
+            
+            // Select all
+            menu.addItem(NSMenuItem(title: "Select All", action: #selector(selectAll(_:)), keyEquivalent: "a"))
+            
+            return menu
+        }
+        
+        // MARK: - Context Menu Actions
+        
+        @objc private func toggleBold(_ sender: Any?) {
+            NotificationCenter.default.post(name: .applyEditTool, object: nil, userInfo: ["tool": "bold"])
+        }
+        
+        @objc private func toggleItalic(_ sender: Any?) {
+            NotificationCenter.default.post(name: .applyEditTool, object: nil, userInfo: ["tool": "italic"])
+        }
+        
+        @objc private func toggleUnderline(_ sender: Any?) {
+            NotificationCenter.default.post(name: .applyEditTool, object: nil, userInfo: ["tool": "underline"])
+        }
+        
+        @objc private func insertTodo(_ sender: Any?) {
+            NotificationCenter.default.post(name: Notification.Name("TodoToolbarAction"), object: nil)
+        }
+        
+        @objc private func insertBulletList(_ sender: Any?) {
+            NotificationCenter.default.post(name: .applyEditTool, object: nil, userInfo: ["tool": "bulletList"])
+        }
+    }
+
+    private final class TodoCheckboxAttachmentCell: NSTextAttachmentCell {
+        var isChecked: Bool
+        private let size = NSSize(width: 24, height: 24)  // 24x24 pixels
+
+        init(isChecked: Bool = false) {
+            self.isChecked = isChecked
+            super.init(imageCell: nil)
+        }
+
+        required init(coder: NSCoder) {
+            self.isChecked = false
+            super.init(coder: coder)
+        }
+
+        override var cellSize: NSSize { size }
+
+        // CRITICAL: Override cellBaselineOffset to control vertical positioning
+        // This is what actually determines where the attachment sits relative to the baseline
+        override nonisolated func cellBaselineOffset() -> NSPoint {
+            // Use the actual font metrics for perfect alignment
+            let font = NSFont.systemFont(ofSize: 16, weight: .medium)
+
+            // Center the checkbox with the cap height (height of capital letters)
+            // This provides the best optical alignment with mixed-case text
+            // Formula from Apple docs: (capHeight - imageHeight) / 2
+            let offset = (font.capHeight - size.height) / 2
+
+            return NSPoint(x: 0, y: offset)
+        }
+
+        override func draw(withFrame cellFrame: NSRect, in controlView: NSView?) {
+            guard let image = image(for: controlView) else { return }
+            // Draw the image directly at the cellFrame position
+            // The attachment.bounds.origin.y already handles vertical positioning
+            // Don't add extra centering here - it causes misalignment
+            let target = NSRect(
+                x: cellFrame.minX,
+                y: cellFrame.minY,
+                width: size.width,
+                height: size.height)
+            image.draw(in: target)
+        }
+
+        override func wantsToTrackMouse() -> Bool {
+            true
+        }
+
+        override func trackMouse(
+            with event: NSEvent, in cellFrame: NSRect, of controlView: NSView?,
+            atCharacterIndex charIndex: Int, untilMouseUp flag: Bool
+        ) -> Bool {
+            isChecked.toggle()
+            if let textView = controlView as? NSTextView {
+                let range = NSRange(location: charIndex, length: 1)
+                textView.layoutManager?.invalidateDisplay(forGlyphRange: range)
+                textView.didChangeText()
+                NotificationCenter.default.post(
+                    name: NSText.didChangeNotification, object: textView)
+            }
+            return true
+        }
+
+        func invalidateAppearance() {
+            // no-op placeholder to keep API symmetrical with iOS implementation
+        }
+
+        private func image(for controlView: NSView?) -> NSImage? {
+            // Detect dark mode
+            let isDark: Bool
+            if let appearance = controlView?.effectiveAppearance {
+                isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            } else {
+                isDark = false
+            }
+
+            // Use SF Symbols for perfect alignment and consistency
+            let symbolName = isChecked ? "checkmark.circle.fill" : "circle"
+            let config = NSImage.SymbolConfiguration(pointSize: 24, weight: .regular)
+
+            // Create the image with proper configuration
+            guard
+                let baseImage = NSImage(
+                    systemSymbolName: symbolName, accessibilityDescription: nil)?
+                    .withSymbolConfiguration(config)
+            else { return nil }
+
+            // Create tinted version
+            let tinted = NSImage(size: baseImage.size)
+            tinted.lockFocus()
+
+            let rect = NSRect(origin: .zero, size: baseImage.size)
+
+            if isChecked {
+                // Checked state: black in light mode, white in dark mode
+                if isDark {
+                    NSColor.white.set()
+                } else {
+                    NSColor.black.set()
+                }
+            } else {
+                // Unchecked state: adapt to color scheme
+                if isDark {
+                    // White/light gray circle in dark mode for visibility
+                    NSColor(white: 0.85, alpha: 1.0).set()
+                } else {
+                    // Dark gray circle in light mode
+                    NSColor(white: 0.3, alpha: 1.0).set()
+                }
+            }
+
+            // Draw the symbol with the color
+            baseImage.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1.0)
+            rect.fill(using: .sourceAtop)
+
+            tinted.unlockFocus()
+            return tinted
+        }
+    }
+
+#else
+
+    struct TodoEditorRepresentable: UIViewRepresentable {
+        @Binding var text: String
+        let colorScheme: ColorScheme
+        let bottomInset: CGFloat
+
+        // A custom text view that correctly reports its intrinsic content size
+        // for proper dynamic height sizing in SwiftUI.
+        final class DynamicHeightTextView: UITextView {
+            // Static flag to track command menu visibility for keyboard event handling
+            static var isCommandMenuShowing = false
+
+            override var intrinsicContentSize: CGSize {
+                // Return a size that fits the content. fall back to a reasonable width if undefined.
+                let fixedWidth = frame.size.width > 0 ? frame.size.width : 600
+                let size = sizeThatFits(CGSize(width: fixedWidth, height: .greatestFiniteMagnitude))
+                let lineHeight = font?.lineHeight ?? 24
+                let minimumHeight = lineHeight + textContainerInset.top + textContainerInset.bottom
+                let result = CGSize(width: fixedWidth, height: max(size.height, minimumHeight))
+                return result
+            }
+            
+            // MARK: - Context Menu Implementation for iOS
+            
+            override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+                // Allow standard text editing actions
+                if action == #selector(cut(_:)) || action == #selector(copy(_:)) || action == #selector(paste(_:)) || action == #selector(selectAll(_:)) {
+                    return super.canPerformAction(action, withSender: sender)
+                }
+                
+                // Allow our custom actions
+                if action == #selector(toggleBold(_:)) || action == #selector(toggleItalic(_:)) || action == #selector(toggleUnderline(_:)) || action == #selector(insertTodo(_:)) || action == #selector(insertBulletList(_:)) {
+                    return true
+                }
+                
+                return false
+            }
+            
+            override func menuItems(for menu: UIMenu) -> [UIMenuElement] {
+                var items: [UIMenuElement] = []
+                
+                // Standard text editing actions
+                if canPerformAction(#selector(cut(_:)), withSender: nil) {
+                    items.append(UIAction(title: "Cut", image: UIImage(systemName: "scissors")) { _ in
+                        self.cut(self)
+                    })
+                }
+                
+                if canPerformAction(#selector(copy(_:)), withSender: nil) {
+                    items.append(UIAction(title: "Copy", image: UIImage(systemName: "doc.on.doc")) { _ in
+                        self.copy(self)
+                    })
+                }
+                
+                if canPerformAction(#selector(paste(_:)), withSender: nil) {
+                    items.append(UIAction(title: "Paste", image: UIImage(systemName: "doc.on.clipboard")) { _ in
+                        self.paste(self)
+                    })
+                }
+                
+                if !items.isEmpty {
+                    items.append(UIMenuElement.separator())
+                }
+                
+                // Text formatting actions
+                items.append(UIAction(title: "Bold", image: UIImage(systemName: "bold")) { _ in
+                    self.toggleBold(self)
+                })
+                
+                items.append(UIAction(title: "Italic", image: UIImage(systemName: "italic")) { _ in
+                    self.toggleItalic(self)
+                })
+                
+                items.append(UIAction(title: "Underline", image: UIImage(systemName: "underline")) { _ in
+                    self.toggleUnderline(self)
+                })
+                
+                items.append(UIMenuElement.separator())
+                
+                // Special formatting actions
+                items.append(UIAction(title: "Insert Todo", image: UIImage(systemName: "checkmark.circle")) { _ in
+                    self.insertTodo(self)
+                })
+                
+                items.append(UIAction(title: "Insert Bullet List", image: UIImage(systemName: "list.bullet")) { _ in
+                    self.insertBulletList(self)
+                })
+                
+                items.append(UIMenuElement.separator())
+                
+                // Select all
+                if canPerformAction(#selector(selectAll(_:)), withSender: nil) {
+                    items.append(UIAction(title: "Select All", image: UIImage(systemName: "textformat.abc")) { _ in
+                        self.selectAll(self)
+                    })
+                }
+                
+                return items
+            }
+            
+            // MARK: - Context Menu Actions
+            
+            @objc private func toggleBold(_ sender: Any?) {
+                NotificationCenter.default.post(name: .applyEditTool, object: nil, userInfo: ["tool": "bold"])
+            }
+            
+            @objc private func toggleItalic(_ sender: Any?) {
+                NotificationCenter.default.post(name: .applyEditTool, object: nil, userInfo: ["tool": "italic"])
+            }
+            
+            @objc private func toggleUnderline(_ sender: Any?) {
+                NotificationCenter.default.post(name: .applyEditTool, object: nil, userInfo: ["tool": "underline"])
+            }
+            
+            @objc private func insertTodo(_ sender: Any?) {
+                NotificationCenter.default.post(name: Notification.Name("TodoToolbarAction"), object: nil)
+            }
+            
+            @objc private func insertBulletList(_ sender: Any?) {
+                NotificationCenter.default.post(name: .applyEditTool, object: nil, userInfo: ["tool": "bulletList"])
+            }
+        }
+
+        func makeUIView(context: Context) -> UITextView {
+            let textView = DynamicHeightTextView()
+            textView.delegate = context.coordinator
+            textView.isEditable = true
+            textView.isSelectable = true
+            textView.isScrollEnabled = false  // Disable internal scrolling - let parent scroll view handle it
+            textView.alwaysBounceVertical = false
+            textView.backgroundColor = .clear
+            textView.font = UIFont.systemFont(ofSize: 16, weight: .medium)
+            // Don't set textColor here - it will be set properly based on color scheme below
+            textView.tintColor = UIColor(named: "AccentColor") ?? .systemBlue
+            textView.textContainerInset = UIEdgeInsets(top: 8, left: 0, bottom: 8, right: 0)
+            textView.textContainer.lineFragmentPadding = 0
+            // Remove all insets since text editor is now part of unified scroll view
+            textView.contentInset = UIEdgeInsets.zero
+            textView.scrollIndicatorInsets = UIEdgeInsets.zero
+            textView.linkTextAttributes = [
+                .underlineStyle: 0
+            ]
+            // Allow the text view to size naturally based on content - handled by DynamicHeightTextView now
+            //            textView.setContentHuggingPriority(.required, for: .vertical)
+            //            textView.setContentCompressionResistancePriority(.required, for: .vertical)
+            let initialScheme = resolvedColorScheme(for: textView)
+
+            // Set initial text color based on color scheme
+            let initialTextColor: UIColor
+            if initialScheme == .dark {
+                initialTextColor = UIColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0)  // White for dark mode
+            } else {
+                initialTextColor = UIColor(red: 0.102, green: 0.102, blue: 0.102, alpha: 1.0)  // Dark gray for light mode
+            }
+            textView.textColor = initialTextColor
+            textView.typingAttributes = Coordinator.baseTypingAttributes(for: initialScheme)
+
+            // Enable Writing Tools when text is selected (without standalone button)
+            if #available(iOS 18.0, *) {
+                textView.writingToolsBehavior = .complete
+            }
+
+            context.coordinator.updateColorScheme(initialScheme)
+            context.coordinator.configure(with: textView)
+            context.coordinator.applyInitialText(text)
+            return textView
+        }
+
+        func updateUIView(_ uiView: UITextView, context: Context) {
+            // Only update color scheme if it has changed to reduce glitching
+            let resolvedScheme = resolvedColorScheme(for: uiView)
+            // Note: We'll update colors every time for now to ensure consistency
+            let currentTextColor: UIColor
+            if resolvedScheme == .dark {
+                currentTextColor = UIColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0)  // White for dark mode
+            } else {
+                currentTextColor = UIColor(red: 0.102, green: 0.102, blue: 0.102, alpha: 1.0)  // Dark gray for light mode
+            }
+            uiView.textColor = currentTextColor
+            uiView.typingAttributes = Coordinator.baseTypingAttributes(for: resolvedScheme)
+            uiView.linkTextAttributes = [
+                .underlineStyle: 0
+            ]
+            context.coordinator.updateColorScheme(resolvedScheme)
+
+            // Only update text if it has actually changed
+            context.coordinator.updateIfNeeded(with: text)
+        }
+
+        // Report dynamic size to SwiftUI so the editor grows with its content (no minHeight)
+        func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context)
+            -> CGSize
+        {
+            let paddingAdjustment: CGFloat = 0  // outer SwiftUI padding handles margins
+            let targetWidth = (proposal.width ?? UIScreen.main.bounds.width) - paddingAdjustment
+            let fitting = uiView.sizeThatFits(
+                CGSize(width: max(0, targetWidth), height: .greatestFiniteMagnitude))
+            let lineHeight = uiView.font?.lineHeight ?? 24
+            let minHeight =
+                lineHeight + uiView.textContainerInset.top + uiView.textContainerInset.bottom
+            let result = CGSize(width: targetWidth, height: max(fitting.height, minHeight))
+            return result
+        }
+
+        func makeCoordinator() -> Coordinator {
+            Coordinator(text: $text, colorScheme: colorScheme)
+        }
+
+        private func resolvedColorScheme(for view: UIView) -> ColorScheme {
+            if view.traitCollection.userInterfaceStyle == .dark {
+                return .dark
+            }
+            if view.traitCollection.userInterfaceStyle == .light {
+                return .light
+            }
+            return colorScheme
+        }
+
+        final class Coordinator: NSObject, UITextViewDelegate {
+            private weak var textView: UITextView?
+            private var observers: [NSObjectProtocol] = []
+            private var lastSerialized = ""
+            private var isUpdating = false
+            private var textBinding: Binding<String>
+            private var currentColorScheme: ColorScheme
+
+            private static let textFont = UIFont.systemFont(ofSize: 16, weight: .medium)
+            private static let baseLineHeight: CGFloat = 24
+            private static let todoLineHeight: CGFloat = 24
+            private static let checkboxIconSize: CGFloat = 24  // 24x24 pixels for better visibility
+            private static let baseBaselineOffset: CGFloat = 0.0
+            private static let todoBaselineOffset: CGFloat = {
+                // Don't offset the text baseline
+                return 0.0
+            }()
+            private static let checkboxAttachmentYOffset: CGFloat = {
+                // Use font metrics for perfect alignment
+                // Center the checkbox with the cap height (height of capital letters)
+                // Formula from Apple docs: (capHeight - imageHeight) / 2
+                let font = UIFont.systemFont(ofSize: 16, weight: .medium)
+                let checkboxHeight: CGFloat = 24
+                let offset = (font.capHeight - checkboxHeight) / 2
+                return offset
+            }()
+            private static let checkboxBaselineOffset: CGFloat = {
+                // No additional baseline adjustment needed
+                return 0.0
+            }()
+
+            init(text: Binding<String>, colorScheme: ColorScheme) {
+                self.textBinding = text
+                self.currentColorScheme = colorScheme
+            }
+
+            deinit {
+                observers.forEach { NotificationCenter.default.removeObserver($0) }
+                observers.removeAll()
+            }
+
+            func configure(with textView: UITextView) {
+                self.textView = textView
+
+                let insertTodo = NotificationCenter.default.addObserver(
+                    forName: .insertTodoInEditor, object: nil, queue: .main
+                ) { [weak self] _ in
+                    self?.insertTodo()
+                }
+
+                let insertLink = NotificationCenter.default.addObserver(
+                    forName: .insertWebClipInEditor, object: nil, queue: .main
+                ) { [weak self] notification in
+                    guard let url = notification.object as? String else { return }
+                    self?.insertWebClip(url: url)
+                }
+
+                let insertVoiceTranscript = NotificationCenter.default.addObserver(
+                    forName: .insertVoiceTranscriptInEditor, object: nil, queue: .main
+                ) { [weak self] notification in
+                    guard let transcript = notification.object as? String else { return }
+                    self?.insertVoiceTranscript(transcript: transcript)
+                }
+
+                let applyCommandMenuTool = NotificationCenter.default.addObserver(
+                    forName: .applyCommandMenuTool, object: nil, queue: .main
+                ) { [weak self] notification in
+                    self?.handleCommandMenuToolApplication(notification)
+                }
+
+                observers = [insertTodo, insertLink, insertVoiceTranscript, applyCommandMenuTool]
+
+                let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
+                tap.cancelsTouchesInView = false
+                textView.addGestureRecognizer(tap)
+            }
+
+            func updateColorScheme(_ scheme: ColorScheme) {
+                currentColorScheme = scheme
+            }
+
+            func applyInitialText(_ text: String) {
+                guard let textView = textView else { return }
+                isUpdating = true
+                textView.attributedText = deserialize(text)
+                textView.typingAttributes = Self.baseTypingAttributes(for: currentColorScheme)
+
+                // Ensure all text has proper color - critical for existing notes
+                ensureTextColor()
+
+                lastSerialized = serialize()
+                isUpdating = false
+            }
+
+            // Ensures all text has the correct foreground color attribute
+            private func ensureTextColor() {
+                guard let textView = textView else { return }
+                let mutableText = NSMutableAttributedString(
+                    attributedString: textView.attributedText ?? NSAttributedString())
+                let fullRange = NSRange(location: 0, length: mutableText.length)
+
+                // Get the correct text color for current scheme
+                let textColor: UIColor
+                if currentColorScheme == .dark {
+                    textColor = UIColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0)
+                } else {
+                    textColor = UIColor(red: 0.102, green: 0.102, blue: 0.102, alpha: 1.0)
+                }
+
+                // Unconditionally apply text color to all text ranges
+                // This ensures existing content always has the correct color for the current scheme
+                mutableText.enumerateAttributes(in: fullRange, options: []) {
+                    attributes, range, _ in
+                    // Skip attachments - they don't need text color
+                    if attributes[.attachment] == nil {
+                        mutableText.addAttribute(.foregroundColor, value: textColor, range: range)
+                    }
+                }
+
+                textView.attributedText = mutableText
+            }
+
+            func updateIfNeeded(with text: String) {
+                guard !isUpdating, text != lastSerialized, let textView else { return }
+                isUpdating = true
+                textView.attributedText = deserialize(text)
+
+                // Force typing attributes immediately and again after a brief delay
+                // to ensure Writing Tools respects our formatting
+                textView.typingAttributes = Self.baseTypingAttributes(for: currentColorScheme)
+                DispatchQueue.main.async {
+                    textView.typingAttributes = Self.baseTypingAttributes(
+                        for: self.currentColorScheme)
+                }
+
+                lastSerialized = serialize()
+                isUpdating = false
+            }
+
+            func textViewDidChange(_ textView: UITextView) {
+                // Ensure typing attributes are preserved after Writing Tools operations
+                DispatchQueue.main.async {
+                    // Fix any inconsistent fonts first
+                    self.fixInconsistentFonts()
+                    textView.typingAttributes = Self.baseTypingAttributes(
+                        for: self.currentColorScheme)
+
+                    // Apply consistent formatting to any new text that might have been inserted
+                    // without proper attributes (e.g., from Writing Tools)
+                    let selectedRange = textView.selectedRange
+                    if selectedRange.length == 0 && selectedRange.location > 0 {
+                        // Check if the character before cursor has proper font attributes
+                        let beforeRange = NSRange(location: selectedRange.location - 1, length: 1)
+                        if beforeRange.location >= 0,
+                            beforeRange.location + beforeRange.length
+                                <= textView.attributedText.length
+                        {
+                            let attributes = textView.attributedText.attributes(
+                                at: beforeRange.location, effectiveRange: nil)
+                            let currentFont = attributes[.font] as? UIFont
+                            let expectedFont =
+                                Self.baseTypingAttributes(for: self.currentColorScheme)[.font]
+                                as? UIFont
+
+                            // If font doesn't match, apply correct attributes to recent text
+                            if currentFont?.fontName != expectedFont?.fontName
+                                || currentFont?.pointSize != expectedFont?.pointSize
+                            {
+                                let mutableText = NSMutableAttributedString(
+                                    attributedString: textView.attributedText)
+                                mutableText.addAttributes(
+                                    Self.baseTypingAttributes(for: self.currentColorScheme),
+                                    range: beforeRange
+                                )
+                                textView.attributedText = mutableText
+                            }
+                        }
+                    }
+                }
+
+                syncText()
+
+                // Tell the layout system that the size has changed
+                textView.invalidateIntrinsicContentSize()
+            }
+
+            // Selection change handling
+            func textViewDidChangeSelection(_ textView: UITextView) {
+                // Ensure layout stability when selection changes to prevent attachment shifting
+                if let textView = self.textView, let textContainer = textView.textContainer {
+                    textView.layoutManager?.ensureLayout(for: textContainer)
+                }
+            }
+
+            func textView(
+                _ textView: UITextView, shouldChangeTextIn range: NSRange,
+                replacementText text: String
+            ) -> Bool {
+                // Check for "/" to trigger command menu
+                if text == "/" {
+                    // Show command menu at cursor position
+                    showCommandMenuAtCursor(textView: textView, insertLocation: range.location)
+                    return true  // Allow the "/" to be typed
+                }
+
+                // Check for Enter key in todo paragraph
+                if text == "\n", isInTodoParagraph(range: range) {
+                    insertTodo()
+                    return false
+                }
+                return true
+            }
+
+            // MARK: - Command Menu Handling
+
+            /// Shows the command menu at the current cursor position
+            /// Positions menu close to cursor with viewport bounds awareness
+            private func showCommandMenuAtCursor(textView: UITextView, insertLocation: Int) {
+                // Get the rect for the cursor position to place the menu
+                guard let layoutManager = textView.layoutManager,
+                    let textContainer = textView.textContainer
+                else { return }
+
+                // Calculate the glyph range for the insertion point
+                let glyphIndex = layoutManager.glyphIndexForCharacter(at: insertLocation)
+                let glyphRect = layoutManager.boundingRect(
+                    forGlyphRange: NSRange(location: glyphIndex, length: 1), in: textContainer)
+
+                // Convert to text view's coordinate space
+                let cursorX = glyphRect.origin.x + textView.textContainerInset.left
+                let cursorY = glyphRect.origin.y + textView.textContainerInset.top
+                let cursorHeight = glyphRect.height
+
+                // Menu dimensions
+                let menuHeight: CGFloat = 280
+                let menuGap: CGFloat = 4
+                let safetyMargin: CGFloat = 20
+
+                // For UITextView, get the visible rect relative to content offset
+                // UITextView doesn't have visibleRect, so we use bounds
+                let visibleRect = textView.bounds
+
+                // Check if there's enough space below the cursor in the visible area
+                let cursorBottomY = cursorY + cursorHeight
+                let spaceBelow = visibleRect.maxY - cursorBottomY
+                let shouldShowAbove = spaceBelow < (menuHeight + menuGap + safetyMargin)
+
+                // Position menu above or below cursor depending on available space
+                let xPosition = cursorX
+                let yPosition: CGFloat
+                if shouldShowAbove {
+                    // Position above cursor
+                    yPosition = max(visibleRect.minY + menuGap, cursorY - menuHeight - menuGap)
+                } else {
+                    // Position below cursor (default)
+                    yPosition = cursorY + cursorHeight + menuGap
+                }
+
+                let menuPosition = CGPoint(x: xPosition, y: yPosition)
+
+                // Only need extra space when menu shows below cursor AND there's not enough space
+                let needsExtraSpace = !shouldShowAbove && spaceBelow < (menuHeight + menuGap + safetyMargin)
+
+                print("🔴 POSTING ShowCommandMenu notification - position: \(menuPosition), slashLocation: \(insertLocation), needsSpace: \(needsExtraSpace)")
+
+                // Post notification to show menu
+                NotificationCenter.default.post(
+                    name: .showCommandMenu,
+                    object: [
+                        "position": menuPosition,
+                        "slashLocation": insertLocation,
+                        "needsSpace": needsExtraSpace
+                    ]
+                )
+            }
+
+            /// Handles command menu tool application
+            private func handleCommandMenuToolApplication(_ notification: Notification) {
+                guard let info = notification.object as? [String: Any],
+                    let tool = info["tool"] as? EditTool,
+                    let slashLocation = info["slashLocation"] as? Int,
+                    let textView = textView,
+                    let textStorage = textView.textStorage
+                else { return }
+
+                // Remove the "/" character that triggered the menu
+                if slashLocation >= 0 && slashLocation < textStorage.length {
+                    let slashRange = NSRange(location: slashLocation, length: 1)
+                    textStorage.replaceCharacters(in: slashRange, with: "")
+                }
+
+                // Apply the selected tool
+                formatter.applyFormatting(to: textView, tool: tool)
+
+                // Sync the text back
+                syncText()
+            }
+
+            // MARK: - Todo Handling
+
+            private func insertTodo() {
+                guard let textView = textView else { return }
+                let attachment = TodoCheckboxAttachment(isChecked: false)
+                attachment.bounds = CGRect(
+                    x: 0, y: Self.checkboxAttachmentYOffset, width: Self.checkboxIconSize,
+                    height: Self.checkboxIconSize)
+                attachment.image = image(isChecked: false)
+
+                let attributed = NSMutableAttributedString(attachment: attachment)
+                attributed.addAttribute(
+                    .baselineOffset, value: Self.checkboxBaselineOffset,
+                    range: NSRange(location: 0, length: attributed.length))
+                // Add comfortable spacing between checkbox and text (2 spaces)
+                let space = NSAttributedString(
+                    string: "  ", attributes: Self.baseTypingAttributes(for: currentColorScheme))
+                let newline = NSAttributedString(
+                    string: "\n", attributes: Self.baseTypingAttributes(for: currentColorScheme))
+
+                let composed = NSMutableAttributedString()
+                if textView.selectedRange.location != 0 {
+                    composed.append(newline)
+                }
+                composed.append(attributed)
+                composed.append(space)
+
+                replaceSelection(with: composed)
+                syncText()
+            }
+
+            private func insertWebClip(url: String) {
+                guard let textView = textView else { return }
+                // Add extra line break after web clip to prevent overlapping with content below
+                let formatted = NSAttributedString(
+                    string:
+                        "\n[[webclip|||\(url.trimmingCharacters(in: .whitespacesAndNewlines))]]\n\n",
+                    attributes: Self.baseTypingAttributes(for: currentColorScheme))
+                replaceSelection(with: formatted)
+                syncText()
+            }
+
+            private func insertVoiceTranscript(transcript: String) {
+                guard let textView = textView else { return }
+                let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return }
+
+                // Add proper spacing and formatting
+                let formatted = NSAttributedString(
+                    string: trimmed + " ",
+                    attributes: Self.baseTypingAttributes(for: currentColorScheme))
+                replaceSelection(with: formatted)
+                syncText()
+            }
+
+            private func replaceSelection(with attributed: NSAttributedString) {
+                guard let textView = textView else { return }
+                let range = textView.selectedRange
+                isUpdating = true
+                let mutable = NSMutableAttributedString(
+                    attributedString: textView.attributedText ?? NSAttributedString())
+                mutable.replaceCharacters(in: range, with: attributed)
+                textView.attributedText = mutable
+                let cursor = NSRange(location: range.location + attributed.length, length: 0)
+                textView.selectedRange = cursor
+                isUpdating = false
+            }
+
+            private func syncText() {
+                guard let textView = textView else { return }
+                isUpdating = true
+                applyParagraphStyling()
+                lastSerialized = serialize()
+                textBinding.wrappedValue = lastSerialized
+
+                // Always ensure typing attributes are correct after sync
+                textView.typingAttributes = Self.baseTypingAttributes(for: currentColorScheme)
+                isUpdating = false
+            }
+
+            /// Fixes any text that has inconsistent font formatting (e.g., from Writing Tools)
+            private func fixInconsistentFonts() {
+                guard let textView = textView else { return }
+
+                let expectedAttributes = Self.baseTypingAttributes(for: currentColorScheme)
+                guard let expectedFont = expectedAttributes[.font] as? UIFont,
+                    let expectedColor = expectedAttributes[.foregroundColor] as? UIColor
+                else { return }
+
+                let mutableText = NSMutableAttributedString(
+                    attributedString: textView.attributedText)
+                mutableText.enumerateAttributes(
+                    in: NSRange(location: 0, length: mutableText.length)
+                ) { attributes, range, _ in
+                    var needsFixing = false
+                    var fixedAttributes: [NSAttributedString.Key: Any] = attributes
+
+                    // Check font
+                    if let currentFont = attributes[.font] as? UIFont {
+                        if currentFont.fontName != expectedFont.fontName
+                            || currentFont.pointSize != expectedFont.pointSize
+                        {
+                            fixedAttributes[.font] = expectedFont
+                            needsFixing = true
+                        }
+                    } else {
+                        fixedAttributes[.font] = expectedFont
+                        needsFixing = true
+                    }
+
+                    // Check text color
+                    if let currentColor = attributes[.foregroundColor] as? UIColor {
+                        if !currentColor.isEqual(expectedColor) {
+                            fixedAttributes[.foregroundColor] = expectedColor
+                            needsFixing = true
+                        }
+                    } else {
+                        fixedAttributes[.foregroundColor] = expectedColor
+                        needsFixing = true
+                    }
+
+                    if needsFixing {
+                        mutableText.setAttributes(fixedAttributes, range: range)
+                    }
+                }
+
+                textView.attributedText = mutableText
+            }
+
+            private func applyParagraphStyling() {
+                guard let textView = textView else { return }
+                let mutable = NSMutableAttributedString(
+                    attributedString: textView.attributedText ?? NSAttributedString())
+                let fullRange = NSRange(location: 0, length: mutable.length)
+                mutable.removeAttribute(.paragraphStyle, range: fullRange)
+                mutable.removeAttribute(.baselineOffset, range: fullRange)
+
+                (mutable.string as NSString).enumerateSubstrings(
+                    in: fullRange, options: .byParagraphs
+                ) { _, range, _, _ in
+                    let attributes = self.paragraphAttributes(for: mutable, at: range)
+                    mutable.addAttribute(.paragraphStyle, value: attributes.style, range: range)
+                    mutable.addAttribute(.baselineOffset, value: attributes.baseline, range: range)
+
+                    if attributes.isTodo {
+                        mutable.enumerateAttribute(.attachment, in: range, options: []) {
+                            value, attachmentRange, _ in
+                            guard let attachment = value as? TodoCheckboxAttachment else { return }
+                            attachment.bounds = CGRect(
+                                x: 0, y: Self.checkboxAttachmentYOffset,
+                                width: Self.checkboxIconSize, height: Self.checkboxIconSize)
+                            mutable.addAttribute(
+                                .baselineOffset, value: Self.checkboxBaselineOffset,
+                                range: attachmentRange)
+                        }
+                    }
+                }
+
+                let selection = textView.selectedRange
+                textView.attributedText = mutable
+                textView.selectedRange = selection
+            }
+
+            private func paragraphAttributes(for attributed: NSAttributedString, at range: NSRange)
+                -> (style: NSParagraphStyle, baseline: CGFloat, isTodo: Bool)
+            {
+                var isTodo = false
+                var isWebClip = false
+
+                attributed.enumerateAttribute(
+                    .attachment,
+                    in: NSRange(location: range.location, length: min(1, range.length)), options: []
+                ) { value, _, _ in
+                    if let attachment = value as? TodoCheckboxAttachment {
+                        isTodo = true
+                        attachment.image = image(isChecked: attachment.isChecked)
+                    }
+                    // Check if it's a web clip attachment
+                    else if value is NSTextAttachment {
+                        if attributed.attribute(
+                            .webClipTitle, at: range.location, effectiveRange: nil) != nil
+                        {
+                            isWebClip = true
+                        }
+                    }
+                }
+
+                // Apply appropriate style based on content type
+                let style: NSParagraphStyle
+                if isWebClip {
+                    style = Self.webClipParagraphStyle()
+                } else {
+                    style = Self.paragraphStyle(isTodo: isTodo)
+                }
+
+                let baseline =
+                    (isTodo || isWebClip) ? Self.todoBaselineOffset : Self.baseBaselineOffset
+                return (style, baseline, isTodo)
+            }
+
+            private func isInTodoParagraph(range: NSRange) -> Bool {
+                guard let textView = textView else { return false }
+                let location = max(0, min(range.location, textView.attributedText.length))
+                let paragraphRange = (textView.text as NSString).paragraphRange(
+                    for: NSRange(location: location, length: 0))
+                var result = false
+                textView.attributedText.enumerateAttribute(
+                    .attachment,
+                    in: NSRange(
+                        location: paragraphRange.location, length: min(1, paragraphRange.length)),
+                    options: []
+                ) { value, _, _ in
+                    if let attachment = value as? TodoCheckboxAttachment {
+                        result = true
+                        attachment.image = image(isChecked: attachment.isChecked)
+                    }
+                }
+                return result
+            }
+
+            private func serialize() -> String {
+                guard let textView = textView else { return "" }
+                let result = NSMutableString()
+                let fullRange = NSRange(location: 0, length: textView.attributedText.length)
+                textView.attributedText.enumerateAttributes(in: fullRange, options: []) {
+                    attributes, range, _ in
+                    if let attachment = attributes[.attachment] as? TodoCheckboxAttachment {
+                        result.append(attachment.isChecked ? "[x]" : "[ ]")
+                    } else {
+                        result.append(
+                            (textView.attributedText.string as NSString).substring(with: range))
+                    }
+                }
+                return result as String
+            }
+
+            private func deserialize(_ text: String) -> NSAttributedString {
+                let result = NSMutableAttributedString()
+                var index = text.startIndex
+                while index < text.endIndex {
+                    if text[index...].hasPrefix("[x]") || text[index...].hasPrefix("[ ]") {
+                        let isChecked = text[index...].hasPrefix("[x]")
+                        let attachment = TodoCheckboxAttachment(isChecked: isChecked)
+                        attachment.bounds = CGRect(
+                            x: 0, y: Self.checkboxAttachmentYOffset, width: Self.checkboxIconSize,
+                            height: Self.checkboxIconSize)
+                        attachment.image = image(isChecked: isChecked)
+                        let att = NSMutableAttributedString(attachment: attachment)
+                        att.addAttribute(
+                            .baselineOffset, value: Self.checkboxBaselineOffset,
+                            range: NSRange(location: 0, length: att.length))
+                        result.append(att)
+                        index = text.index(index, offsetBy: 3)
+                        continue
+                    }
+                    result.append(
+                        NSAttributedString(
+                            string: String(text[index]),
+                            attributes: Self.baseTypingAttributes(for: currentColorScheme)))
+                    index = text.index(after: index)
+                }
+                return result
+            }
+
+            private func image(isChecked: Bool) -> UIImage? {
+                // Detect dark mode
+                let isDark = textView?.traitCollection.userInterfaceStyle == .dark
+
+                // Use SF Symbols for perfect alignment and consistency
+                let symbolName = isChecked ? "checkmark.circle.fill" : "circle"
+                let config = UIImage.SymbolConfiguration(pointSize: 24, weight: .regular)
+                let image = UIImage(systemName: symbolName, withConfiguration: config)
+
+                // Apply appropriate color based on state and color scheme
+                if isChecked {
+                    // Checked state: vibrant blue background with white checkmark
+                    // Using bright saturated blue (0, 122, 255) - iOS system blue at 100% vibrance
+                    return image?.withTintColor(
+                        UIColor(red: 0 / 255, green: 122 / 255, blue: 255 / 255, alpha: 1.0),
+                        renderingMode: .alwaysOriginal
+                    )
+                } else {
+                    // Unchecked state: adapt to color scheme
+                    let uncheckedColor: UIColor
+                    if isDark {
+                        // White/light gray circle in dark mode for visibility
+                        uncheckedColor = UIColor(white: 0.85, alpha: 1.0)
+                    } else {
+                        // Dark gray circle in light mode
+                        uncheckedColor = UIColor(white: 0.3, alpha: 1.0)
+                    }
+                    return image?.withTintColor(uncheckedColor, renderingMode: .alwaysOriginal)
+                }
+            }
+
+            @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
+                guard let textView = textView else { return }
+                let location = gesture.location(in: textView)
+                let manager = textView.layoutManager
+                var point = location
+                point.x -= textView.textContainerInset.left
+                point.y -= textView.textContainerInset.top
+
+                let index = manager.characterIndex(
+                    for: point, in: textView.textContainer,
+                    fractionOfDistanceBetweenInsertionPoints: nil)
+                if index >= textView.attributedText.length { return }
+
+                let glyphRange = NSRange(location: index, length: 1)
+                let glyphRect = manager.boundingRect(
+                    forGlyphRange: glyphRange, in: textView.textContainer)
+                var tapRect = glyphRect
+                tapRect.origin.x += textView.textContainerInset.left
+                tapRect.origin.y += textView.textContainerInset.top
+                tapRect.size.width = max(24, tapRect.size.width)
+                tapRect.size.height = max(24, tapRect.size.height)
+
+                if !tapRect.contains(location) { return }
+
+                let attributes = textView.attributedText.attributes(at: index, effectiveRange: nil)
+                if attributes[.webClipTitle] != nil {
+                    // Fixed dimensions for web clip tap detection
+                    let attachmentRect = CGRect(
+                        x: tapRect.origin.x,
+                        y: tapRect.maxY - 60,
+                        width: 250,
+                        height: 60
+                    )
+                    let closeRect = CGRect(
+                        x: attachmentRect.maxX - 26,
+                        y: attachmentRect.maxY - 26,
+                        width: 20,
+                        height: 20
+                    )
+
+                    if closeRect.contains(location), let linkValue = attributes[.link] as? String {
+                        deleteWebClipAttachment(url: linkValue)
+                        return
+                    }
+
+                    if let linkValue = attributes[.link] as? String,
+                        let url = URL(string: linkValue)
+                    {
+                        UIApplication.shared.open(url)
+                        return
+                    }
+                }
+
+                if let attachment = attributes[.attachment] as? TodoCheckboxAttachment {
+                    attachment.isChecked.toggle()
+                    attachment.image = image(isChecked: attachment.isChecked)
+                    textView.setNeedsDisplay()
+                    syncText()
+                }
+            }
+
+            static func baseTypingAttributes(for colorScheme: ColorScheme? = nil)
+                -> [NSAttributedString.Key: Any]
+            {
+                let textColor: UIColor
+                if let scheme = colorScheme {
+                    // Use the actual PrimaryTextColor values from the asset catalog
+                    if scheme == .dark {
+                        textColor = UIColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0)  // White for dark mode
+                    } else {
+                        textColor = UIColor(red: 0.102, green: 0.102, blue: 0.102, alpha: 1.0)  // Dark gray for light mode
+                    }
+                } else {
+                    textColor = UIColor.label
+                }
+
+                return [
+                    .font: textFont,
+                    .foregroundColor: textColor,
+                    .paragraphStyle: paragraphStyle(isTodo: false),
+                    .underlineStyle: 0,
+                        // .baselineOffset: baseBaselineOffset,
+                ]
+            }
+
+            private static func paragraphStyle(isTodo: Bool) -> NSParagraphStyle {
+                let style = NSMutableParagraphStyle()
+                style.lineHeightMultiple = 1.2
+                let minimum = isTodo ? todoLineHeight : baseLineHeight
+                style.minimumLineHeight = minimum
+                style.maximumLineHeight = minimum + 4
+                style.paragraphSpacing = isTodo ? 10 : 8
+                style.firstLineHeadIndent = 0
+                style.headIndent = isTodo ? 28 : 0
+                return style
+            }
+
+            // Paragraph style for web clip attachments with extra spacing to prevent overlap
+            private static func webClipParagraphStyle() -> NSParagraphStyle {
+                let style = NSMutableParagraphStyle()
+                style.lineHeightMultiple = 1.0
+                // NO minimum/maximum line height - let attachment determine its own space
+                // This prevents empty clickable space above/below
+                style.minimumLineHeight = 0
+                style.maximumLineHeight = 0
+                // Add spacing after to separate from next content
+                style.paragraphSpacing = 16
+                style.paragraphSpacingBefore = 8
+                return style
+            }
+
+            private static func baselineOffset(forLineHeight lineHeight: CGFloat, font: UIFont)
+                -> CGFloat
+            {
+                let metrics = font.lineHeight
+                let delta = max(0, lineHeight - metrics)
+                return delta / 2
+            }
+
+            // MARK: - Writing Tools Support (iOS 18+)
+            @available(iOS 18.0, *)
+            func textViewWritingToolsWillBegin(_ textView: UITextView) {
+                // Store text before Writing Tools starts
+                textBeforeWritingTools = textView.text ?? ""
+            }
+
+            @available(iOS 18.0, *)
+            func textViewWritingToolsDidEnd(_ textView: UITextView) {
+                // Writing Tools finished - textViewDidChange will handle summary detection
+            }
+        }
+    }
+
+    private final class TodoCheckboxAttachment: NSTextAttachment {
+        var isChecked: Bool
+
+        init(isChecked: Bool) {
+            self.isChecked = isChecked
+            super.init(data: nil, ofType: nil)
+        }
+
+        required init?(coder: NSCoder) {
+            self.isChecked = false
+            super.init(coder: coder)
+        }
+    }
+#endif
+
+// MARK: - Notifications
+
+extension Notification.Name {
+    static let insertTodoInEditor = Notification.Name("insertTodoInEditor")
+    static let insertWebClipInEditor = Notification.Name("insertWebClipInEditor")
+    static let insertVoiceTranscriptInEditor = Notification.Name("insertVoiceTranscriptInEditor")
+    static let deleteWebClipAttachment = Notification.Name("deleteWebClipAttachment")
+    static let applyEditTool = Notification.Name("applyEditTool")
+
+    // Command menu notifications
+    static let showCommandMenu = Notification.Name("ShowCommandMenu")
+    static let hideCommandMenu = Notification.Name("HideCommandMenu")
+    static let commandMenuNavigateUp = Notification.Name("CommandMenuNavigateUp")
+    static let commandMenuNavigateDown = Notification.Name("CommandMenuNavigateDown")
+    static let commandMenuSelect = Notification.Name("CommandMenuSelect")
+    static let applyCommandMenuTool = Notification.Name("ApplyCommandMenuTool")
 }

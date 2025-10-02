@@ -22,24 +22,18 @@ struct BottomBar: View {
             Button {
                 onNewNote()
             } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "plus.circle.fill")
-                        .font(.system(size: 16))
-                        .foregroundColor(Color("ButtonPrimaryTextColor"))
-                    Text("New note")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(Color("ButtonPrimaryTextColor"))
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .background(Color("ButtonPrimaryBgColor"), in: Capsule())
-                .scaleEffect(isHoveringNewNote ? 1.05 : 1.0)
-                .shadow(
-                    color: Color.black.opacity(isHoveringNewNote ? 0.12 : 0.08),
-                    radius: isHoveringNewNote ? 8 : 4,
-                    x: 0,
-                    y: isHoveringNewNote ? 4 : 2
-                )
+                Image(systemName: "pencil.and.scribble")
+                    .font(.system(size: 16))
+                    .foregroundColor(Color("ButtonPrimaryTextColor"))
+                    .frame(width: 52, height: 40)
+                    .background(Color("ButtonPrimaryBgColor"), in: RoundedRectangle(cornerRadius: 20))
+                    .scaleEffect(isHoveringNewNote ? 1.05 : 1.0)
+                    .shadow(
+                        color: Color.black.opacity(isHoveringNewNote ? 0.12 : 0.08),
+                        radius: isHoveringNewNote ? 8 : 4,
+                        x: 0,
+                        y: isHoveringNewNote ? 4 : 2
+                    )
             }
             .buttonStyle(PlainButtonStyle())
             .onHover { hovering in

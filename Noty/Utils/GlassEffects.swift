@@ -35,7 +35,7 @@ extension View {
     ) -> some View {
         if #available(iOS 26.0, macOS 26.0, *) {
             self
-                .glassEffect(.regular.interactive(true), in: shape)
+                .glassEffect(in: shape)
                 .background(shape.fill(tint.opacity(tintOpacity)))
                 .overlay(shape.stroke(Color.primary.opacity(strokeOpacity), lineWidth: 0.5))
         } else {
@@ -50,7 +50,7 @@ extension View {
     /// - On modern OS versions uses default `glassEffect()` with a shape.
     /// - On older OS versions falls back to `.ultraThinMaterial`.
     @ViewBuilder
-    func thinLiquidGlass(in shape: some Shape = RoundedRectangle(cornerRadius: 12)) -> some View {
+    func thinLiquidGlass(in shape: some Shape = RoundedRectangle(cornerRadius: 16)) -> some View {
         if #available(iOS 26.0, macOS 26.0, *) {
             self.glassEffect(in: shape)
         } else {
@@ -77,15 +77,60 @@ extension View {
 struct LiquidGlassContainer<Content: View>: View {
     let content: Content
     let spacing: CGFloat
-    
+
     init(spacing: CGFloat = 20, @ViewBuilder content: () -> Content) {
         self.spacing = spacing
         self.content = content()
     }
-    
+
     var body: some View {
         GlassEffectContainer(spacing: spacing) {
             content
+        }
+    }
+}
+
+/// Applies a translucent glass background suitable for full-window backgrounds.
+/// Uses strong blur effects to prevent content clashing with elements behind the app.
+/// - On modern OS versions uses `.clear` glass effect with enhanced blur.
+/// - On older OS versions falls back to `.ultraThinMaterial` with reduced opacity.
+extension View {
+    @ViewBuilder
+    func translucent() -> some View {
+        if #available(iOS 26.0, macOS 26.0, *) {
+            self
+                .glassEffect(.clear)
+                .background(.black.opacity(0.1))
+                .blur(radius: 1.2, opaque: false)
+        } else {
+            self
+                .background(.ultraThinMaterial.opacity(0.7))
+                .blur(radius: 2.0, opaque: false)
+        }
+    }
+
+    /// Applies an intense translucent glass background for the entire app window.
+    /// Provides maximum blur to prevent content clashing with desktop elements.
+    @ViewBuilder
+    func appGlassBackground() -> some View {
+        if #available(iOS 26.0, macOS 26.0, *) {
+            self
+                .background {
+                    Rectangle()
+                        .fill(.clear)
+                        .glassEffect(.clear.interactive(false))
+                        .background(.black.opacity(0.05))
+                        .blur(radius: 8.0, opaque: false)
+                        .ignoresSafeArea(.all)
+                }
+        } else {
+            self
+                .background {
+                    Rectangle()
+                        .fill(.ultraThinMaterial.opacity(0.6))
+                        .blur(radius: 12.0, opaque: false)
+                        .ignoresSafeArea(.all)
+                }
         }
     }
 }

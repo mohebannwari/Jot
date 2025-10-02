@@ -63,12 +63,12 @@ Noty/
 - `ThemeManager`: Manages light/dark theme switching
 - Passed down through environment from `NotyApp.swift`
 
-**Data Flow**: 
+**Data Flow**:
 - `NotesManager` provides `@Published` properties that trigger UI updates
 - All note operations go through `NotesManager` methods
 - Persistence handled automatically via JSON file storage
 
-**Component Structure**: 
+**Component Structure**:
 - Follow established pattern: props → computed properties → body
 - Use private computed properties for complex view logic
 - Prefer composition over inheritance for reusable components
@@ -173,4 +173,7 @@ Noty/
 - **Color assets**: Semantic naming (BackgroundColor, PrimaryTextColor, etc.)
 - Export assets from Figma in appropriate formats (SVG for vectors, PNG for rasters)
 - Always make use of the Context7 mcp to retrieve relevant developer documentation about new SDK's and other new updates of an OS
-- Never search for ios 18 and macos 15 again, only versions 26 and higher 
+- Never search for ios 18 and macos 15 again, only versions 26 and higher
+
+## Looking for issues / fixing bugs
+- Always make a broad examination of the codebase if something doesn't work the way it is intended or if there is a bug.
