@@ -197,21 +197,12 @@ struct NotesSection: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             // Notes list
-            ForEach(Array(notes.enumerated()), id: \.element.id) { index, note in
-                VStack(spacing: 18) {
-                    NoteListCard(
-                        note: note,
-                        onTap: { onNoteTap(note) },
-                        onDelete: { onDeleteNote(note.id) }
-                    )
-
-                    // Divider between cards (except after last card)
-                    if index < notes.count - 1 {
-                        Rectangle()
-                            .fill(Color.primary.opacity(0.2))
-                            .frame(height: 0.5)
-                    }
-                }
+            ForEach(notes, id: \.id) { note in
+                NoteListCard(
+                    note: note,
+                    onTap: { onNoteTap(note) },
+                    onDelete: { onDeleteNote(note.id) }
+                )
             }
         }
     }
@@ -228,12 +219,6 @@ struct NoteListCard: View {
             HStack(spacing: 8) {
                 // Content
                 VStack(alignment: .leading, spacing: 8) {
-                    // Date
-                    Text(dateFormatter.string(from: note.date))
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(Color.primary.opacity(0.7))
-                        .kerning(0)
-
                     // Title
                     Text(note.title)
                         .font(.system(size: 16, weight: .medium))
@@ -243,6 +228,12 @@ struct NoteListCard: View {
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .frame(maxWidth: .infinity, alignment: .leading)
+
+                    // Date
+                    Text(dateFormatter.string(from: note.date))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(Color.primary.opacity(0.7))
+                        .kerning(0)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
