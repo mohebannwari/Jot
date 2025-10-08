@@ -2,6 +2,23 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Context Engineering Framework
+
+This project uses **context engineering** for systematic AI-assisted development. Before implementing features:
+
+1. **Read** `CONTEXT_ENGINEERING.md` for the complete guide
+2. **Write** an INITIAL.md describing your feature (see `INITIAL_EXAMPLE.md`)
+3. **Generate** a PRP with `/generate-prp INITIAL.md`
+4. **Execute** the PRP with `/execute-prp PRPs/feature-name.md`
+
+**Key Resources:**
+- `CONTEXT_ENGINEERING.md` - Complete guide to the framework
+- `examples/` - Code patterns to follow
+- `PRPs/templates/` - PRP templates
+- `PRPs/workflows/` - Development workflows
+
+This ensures implementations follow project conventions, apply the design system correctly, and include comprehensive tests.
+
 ## Project Overview
 
 Noty is a SwiftUI-based note-taking application for macOS that implements Apple's 2025 Liquid Glass design system. The app features a card-based interface with advanced search capabilities, rich text editing, and cross-platform glass effects. Built for iOS 26+ and macOS 26+ to leverage the latest SwiftUI enhancements and performance improvements.

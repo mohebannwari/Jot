@@ -1,5 +1,22 @@
 # Repository Guidelines
 
+## Context Engineering Workflow
+
+This repository uses a **context engineering framework** for systematic feature development with AI assistance.
+
+### Quick Start
+1. Create feature request: Copy `INITIAL.md` and describe your feature
+2. Generate PRP: `/generate-prp your-feature.md` 
+3. Execute implementation: `/execute-prp PRPs/your-feature-name.md`
+
+### Key Resources
+- `CONTEXT_ENGINEERING.md` - Complete framework guide
+- `INITIAL_EXAMPLE.md` - Example feature request
+- `examples/` - Code patterns to follow
+- `PRPs/workflows/` - Development workflows
+
+This ensures all implementations follow project conventions and design system requirements.
+
 ## Project Structure & Module Organization
 - Entry point lives in `Noty/App/NotyApp.swift` with the root view defined in `Noty/App/ContentView.swift`.
 - Screens reside under `Noty/Views/Screens`, while reusable UI components belong in `Noty/Views/Components`.
