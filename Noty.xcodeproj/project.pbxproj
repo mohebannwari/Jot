@@ -6,12 +6,29 @@
 	objectVersion = 90;
 	objects = {
 
+/* Begin PBXContainerItemProxy section */
+		33AA000B2E45AAAA0000000B /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 32921E002E424DC0006A7C11 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 32921E072E424DC0006A7C11;
+			remoteInfo = Noty;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		32921E082E424DC0006A7C11 /* Noty.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Noty.app; sourceTree = BUILT_PRODUCTS_DIR; };
- 		33AA00012E45AAAA00000001 /* NotyTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NotyTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		33AA00012E45AAAA00000001 /* NotyTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NotyTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		32158BBB2E92F3D600C62F24 /* Exceptions for "NotyTests" folder in "Noty" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Noty.icon,
+			);
+			target = 32921E072E424DC0006A7C11 /* Noty */;
+		};
 		32921E3D2E424F01006A7C11 /* Exceptions for "Noty" folder in "Noty" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -30,11 +47,14 @@
 			path = Noty;
 			sourceTree = "<group>";
 		};
- 		33AA00002E45AAAA00000000 /* NotyTests */ = {
- 			isa = PBXFileSystemSynchronizedRootGroup;
- 			path = NotyTests;
- 			sourceTree = "<group>";
- 		};
+		33AA00002E45AAAA00000000 /* NotyTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				32158BBB2E92F3D600C62F24 /* Exceptions for "NotyTests" folder in "Noty" target */,
+			);
+			path = NotyTests;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -43,11 +63,11 @@
 			files = (
 			);
 		};
- 		33AA00042E45AAAA00000004 /* Frameworks */ = {
- 			isa = PBXFrameworksBuildPhase;
- 			files = (
- 			);
- 		};
+		33AA00042E45AAAA00000004 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			files = (
+			);
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -55,7 +75,7 @@
 			isa = PBXGroup;
 			children = (
 				32921E0A2E424DC0006A7C11 /* Noty */,
- 				33AA00002E45AAAA00000000 /* NotyTests */,
+				33AA00002E45AAAA00000000 /* NotyTests */,
 				32921E092E424DC0006A7C11 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -64,7 +84,7 @@
 			isa = PBXGroup;
 			children = (
 				32921E082E424DC0006A7C11 /* Noty.app */,
- 				33AA00012E45AAAA00000001 /* NotyTests.xctest */,
+				33AA00012E45AAAA00000001 /* NotyTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -100,11 +120,11 @@
 			);
 			buildRules = (
 			);
-			fileSystemSynchronizedGroups = (
-				33AA00002E45AAAA00000000 /* NotyTests */,
-			);
 			dependencies = (
 				33AA000C2E45AAAA0000000C /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				33AA00002E45AAAA00000000 /* NotyTests */,
 			);
 			name = NotyTests;
 			productName = NotyTests;
@@ -152,11 +172,11 @@
 			files = (
 			);
 		};
- 		33AA00052E45AAAA00000005 /* Resources */ = {
- 			isa = PBXResourcesBuildPhase;
- 			files = (
- 			);
- 		};
+		33AA00052E45AAAA00000005 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			files = (
+			);
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -165,20 +185,20 @@
 			files = (
 			);
 		};
- 		33AA00022E45AAAA00000002 /* Sources */ = {
- 			isa = PBXSourcesBuildPhase;
- 			files = (
- 			);
- 		};
+		33AA00022E45AAAA00000002 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			files = (
+			);
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		33AA000C2E45AAAA0000000C /* PBXTargetDependency */ = {isa = PBXTargetDependency; target = 32921E072E424DC0006A7C11 /* Noty */; targetProxy = 33AA000B2E45AAAA0000000B /* PBXContainerItemProxy */; };
+		33AA000C2E45AAAA0000000C /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 32921E072E424DC0006A7C11 /* Noty */;
+			targetProxy = 33AA000B2E45AAAA0000000B /* PBXContainerItemProxy */;
+		};
 /* End PBXTargetDependency section */
-
-/* Begin PBXContainerItemProxy section */
-		33AA000B2E45AAAA0000000B /* PBXContainerItemProxy */ = {isa = PBXContainerItemProxy; containerPortal = 32921E002E424DC0006A7C11 /* Project object */; proxyType = 1; remoteGlobalIDString = 32921E072E424DC0006A7C11; remoteInfo = Noty; };
-/* End PBXContainerItemProxy section */
 
 /* Begin XCBuildConfiguration section */
 		32921E112E424DC1006A7C11 /* Debug configuration for PBXProject "Noty" */ = {
@@ -304,19 +324,20 @@
 		32921E142E424DC1006A7C11 /* Debug configuration for PBXNativeTarget "Noty" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = Noty;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
-				CODE_SIGN_STYLE = Automatic;
 				CODE_SIGN_ENTITLEMENTS = Noty/Noty.entitlements;
+				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				DEFINES_MODULE = YES;
 				DEVELOPMENT_TEAM = RS2ZG352RH;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
-				ENABLE_USER_SELECTED_FILES = readonly;
 				ENABLE_TESTING_SEARCH_PATHS = YES;
+				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Noty/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
@@ -325,7 +346,6 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				DEFINES_MODULE = YES;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.mohebanwari.Noty;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -342,19 +362,20 @@
 		32921E152E424DC1006A7C11 /* Release configuration for PBXNativeTarget "Noty" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = Noty;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
-				CODE_SIGN_STYLE = Automatic;
 				CODE_SIGN_ENTITLEMENTS = Noty/Noty.entitlements;
+				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
+				DEFINES_MODULE = YES;
 				DEVELOPMENT_TEAM = RS2ZG352RH;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
-				ENABLE_USER_SELECTED_FILES = readonly;
 				ENABLE_TESTING_SEARCH_PATHS = YES;
+				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Noty/Info.plist;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
@@ -363,7 +384,6 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				DEFINES_MODULE = YES;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.mohebanwari.Noty;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -380,6 +400,7 @@
 		33AA00062E45AAAA00000006 /* Debug configuration for PBXNativeTarget "NotyTests" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -395,13 +416,13 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Noty.app/Contents/MacOS/Noty";
-				BUNDLE_LOADER = "$(TEST_HOST)";
 			};
 			name = Debug;
 		};
 		33AA00072E45AAAA00000007 /* Release configuration for PBXNativeTarget "NotyTests" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -417,7 +438,6 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Noty.app/Contents/MacOS/Noty";
-				BUNDLE_LOADER = "$(TEST_HOST)";
 			};
 			name = Release;
 		};
@@ -440,14 +460,14 @@
 			);
 			defaultConfigurationName = Release;
 		};
- 		33AA000A2E45AAAA0000000A /* Build configuration list for PBXNativeTarget "NotyTests" */ = {
- 			isa = XCConfigurationList;
- 			buildConfigurations = (
- 				33AA00062E45AAAA00000006 /* Debug configuration for PBXNativeTarget "NotyTests" */,
- 				33AA00072E45AAAA00000007 /* Release configuration for PBXNativeTarget "NotyTests" */,
- 			);
- 			defaultConfigurationName = Release;
- 		};
+		33AA000A2E45AAAA0000000A /* Build configuration list for PBXNativeTarget "NotyTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				33AA00062E45AAAA00000006 /* Debug configuration for PBXNativeTarget "NotyTests" */,
+				33AA00072E45AAAA00000007 /* Release configuration for PBXNativeTarget "NotyTests" */,
+			);
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
 	};
 	rootObject = 32921E002E424DC0006A7C11 /* Project object */;

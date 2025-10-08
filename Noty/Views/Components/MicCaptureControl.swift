@@ -93,6 +93,7 @@ public struct MicCaptureControl: View {
 private extension MicCaptureControl {
     var idleView: some View {
         Button {
+            HapticManager.shared.buttonTap()
             Task { @MainActor in
                 await viewModel.startRecording()
             }
@@ -113,6 +114,7 @@ private extension MicCaptureControl {
     var recordingView: some View {
         HStack(spacing: 10) {
             Button {
+                HapticManager.shared.buttonTap()
                 Task { @MainActor in
                     await viewModel.pauseRecording()
                 }
@@ -120,9 +122,15 @@ private extension MicCaptureControl {
                 Image(systemName: "stop.circle.fill")
                     .font(.system(size: 20, weight: .medium))
                     .foregroundStyle(.white, Color.red)
+                    .frame(width: 20, height: 20)
             }
             .buttonStyle(.plain)
-            .frame(width: 20, height: 20)
+            .background(
+                Circle()
+                    .fill(Color.clear)
+                    .frame(width: 32, height: 32)
+            )
+            .contentShape(Circle().size(width: 32, height: 32))
             .accessibilityLabel(Text("Stop recording"))
 
             WaveformView(
@@ -145,6 +153,7 @@ private extension MicCaptureControl {
     var pausedView: some View {
         HStack(spacing: 3) {
             Button {
+                HapticManager.shared.buttonTap()
                 Task { @MainActor in
                     await viewModel.cancelCapture()
                 }
@@ -160,6 +169,7 @@ private extension MicCaptureControl {
             .accessibilityLabel(Text("Cancel recording"))
 
             Button {
+                HapticManager.shared.buttonTap()
                 Task { @MainActor in
                     await viewModel.resumeRecording()
                 }
@@ -175,6 +185,7 @@ private extension MicCaptureControl {
             .accessibilityLabel(Text("Resume recording"))
 
             Button {
+                HapticManager.shared.buttonTap()
                 Task { @MainActor in
                     await viewModel.sendRecording()
                 }
@@ -351,25 +362,63 @@ final class MicCaptureViewModel: ObservableObject {
     }
 
     func sendRecording() async {
-        guard !isProcessingSend else { return }
+        NSLog("🎙️ MicCaptureViewModel.sendRecording: START")
+        guard !isProcessingSend else {
+            NSLog("🎙️ MicCaptureViewModel.sendRecording: Already processing, returning")
+            return
+        }
+
         withAnimation(.bouncy(duration: 0.35)) {
             isProcessingSend = true
         }
-        let url = await recorder.stop()
-        var transcript: String? = nil
-        if let url, FileManager.default.fileExists(atPath: url.path) {
-            transcript = await transcriber.transcribe(url: url)
-            if transcript?.isEmpty == true {
-                transcript = nil
+        NSLog("🎙️ MicCaptureViewModel.sendRecording: Set isProcessingSend = true")
+
+        guard let url = await recorder.stop() else {
+            NSLog("🎙️ MicCaptureViewModel.sendRecording: recorder.stop() returned nil")
+            withAnimation(.bouncy(duration: 0.35)) {
+                isProcessingSend = false
+                state = recorder.state
+                levels = recorder.levels
             }
+            return
         }
+        NSLog("🎙️ MicCaptureViewModel.sendRecording: Got URL: %@", url.path)
+
+        // Verify file exists before attempting transcription
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            NSLog("🎙️ MicCaptureViewModel.sendRecording: Audio file does not exist at path: %@", url.path)
+            withAnimation(.bouncy(duration: 0.35)) {
+                isProcessingSend = false
+                state = recorder.state
+                levels = recorder.levels
+            }
+            return
+        }
+        NSLog("🎙️ MicCaptureViewModel.sendRecording: File exists, starting transcription")
+
+        // Transcribe the audio file
+        var transcript: String? = nil
+        transcript = await transcriber.transcribe(url: url)
+        NSLog("🎙️ MicCaptureViewModel.sendRecording: Transcription complete, result: %@", transcript ?? "nil")
+
+        if transcript?.isEmpty == true {
+            transcript = nil
+        }
+
         withAnimation(.bouncy(duration: 0.35)) {
             isProcessingSend = false
             state = recorder.state
             levels = recorder.levels
         }
-        guard let finalURL = url else { return }
-        onSend(.init(audioURL: finalURL, transcript: transcript))
+        NSLog("🎙️ MicCaptureViewModel.sendRecording: Updated state, calling onSend callback")
+
+        // Ensure callback is on main thread
+        await MainActor.run {
+            NSLog("🎙️ MicCaptureViewModel.sendRecording: Calling onSend on MainActor")
+            onSend(.init(audioURL: url, transcript: transcript))
+            NSLog("🎙️ MicCaptureViewModel.sendRecording: onSend completed")
+        }
+        NSLog("🎙️ MicCaptureViewModel.sendRecording: END")
     }
 
     func cancelCapture() async {

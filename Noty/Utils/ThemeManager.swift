@@ -44,14 +44,20 @@ class ThemeManager: ObservableObject {
     
     func toggleTheme() {
         switch currentTheme {
-        case .system, .light:
+        case .system:
+            currentTheme = .light
+        case .light:
             currentTheme = .dark
         case .dark:
-            currentTheme = .light
+            currentTheme = .system
         }
     }
     
     func setTheme(_ theme: AppTheme) {
         currentTheme = theme
+    }
+
+    func resetToSystemTheme() {
+        currentTheme = .system
     }
 }

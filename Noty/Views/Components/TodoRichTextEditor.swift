@@ -135,15 +135,6 @@ struct TodoRichTextEditor: View {
             }
         }
         .onReceive(
-            NotificationCenter.default.publisher(for: Notification.Name("InsertVoiceTranscript"))
-        ) {
-            notification in
-            if let transcript = notification.object as? String {
-                NotificationCenter.default.post(
-                    name: .insertVoiceTranscriptInEditor, object: transcript)
-            }
-        }
-        .onReceive(
             NotificationCenter.default.publisher(for: Notification.Name("ShowAISummary"))
         ) { notification in
             if let summary = notification.object as? String {
@@ -736,7 +727,12 @@ struct TodoRichTextEditor: View {
                 let insertVoiceTranscript = NotificationCenter.default.addObserver(
                     forName: .insertVoiceTranscriptInEditor, object: nil, queue: .main
                 ) { [weak self] notification in
-                    guard let transcript = notification.object as? String else { return }
+                    NSLog("📝 Coordinator: Received insertVoiceTranscriptInEditor notification")
+                    guard let transcript = notification.object as? String else {
+                        NSLog("📝 Coordinator: No transcript in notification object")
+                        return
+                    }
+                    NSLog("📝 Coordinator: Got transcript: %@", transcript)
                     self?.insertVoiceTranscript(transcript: transcript)
                 }
 
@@ -1226,21 +1222,35 @@ struct TodoRichTextEditor: View {
                     domain: nil
                 )
 
-                let paragraphBreak = NSAttributedString(
-                    string: "\n",
-                    attributes: Self.baseTypingAttributes(for: currentColorScheme)
-                )
                 let composed = NSMutableAttributedString()
+                let selectedRange = textView.selectedRange()
 
-                // Add spacing before the web clip if not at the beginning
-                if textView.selectedRange().location != 0 {
-                    composed.append(paragraphBreak)
+                // Check if we need a newline before (only if not at start and previous char is not whitespace)
+                if selectedRange.location > 0 {
+                    if let textStorage = textView.textStorage,
+                       selectedRange.location <= textStorage.length {
+                        let prevChar = (textStorage.string as NSString).substring(
+                            with: NSRange(location: selectedRange.location - 1, length: 1)
+                        )
+                        // Add newline only if previous character is not already whitespace or newline
+                        if prevChar != " " && prevChar != "\n" && prevChar != "\t" {
+                            let paragraphBreak = NSAttributedString(
+                                string: "\n",
+                                attributes: Self.baseTypingAttributes(for: currentColorScheme)
+                            )
+                            composed.append(paragraphBreak)
+                        }
+                    }
                 }
+
                 composed.append(attachment)
 
-                // Add two line breaks after the web clip to prevent overlapping with content below
-                composed.append(paragraphBreak)
-                composed.append(paragraphBreak)
+                // Always add a space after the web clip for horizontal spacing
+                let space = NSAttributedString(
+                    string: " ",
+                    attributes: Self.baseTypingAttributes(for: currentColorScheme)
+                )
+                composed.append(space)
 
                 replaceSelection(with: composed)
                 syncText()
@@ -1265,10 +1275,18 @@ struct TodoRichTextEditor: View {
             }
 
             private func insertVoiceTranscript(transcript: String) {
-                guard textView != nil else { return }
+                NSLog("📝 insertVoiceTranscript: Called with transcript: %@", transcript)
+                guard textView != nil else {
+                    NSLog("📝 insertVoiceTranscript: textView is nil")
+                    return
+                }
                 let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmed.isEmpty else { return }
+                guard !trimmed.isEmpty else {
+                    NSLog("📝 insertVoiceTranscript: trimmed transcript is empty")
+                    return
+                }
 
+                NSLog("📝 insertVoiceTranscript: Inserting trimmed text: %@", trimmed)
                 // Add proper spacing and formatting
                 let formatted = trimmed + " "
                 replaceSelection(
@@ -1276,11 +1294,28 @@ struct TodoRichTextEditor: View {
                         string: formatted,
                         attributes: Self.baseTypingAttributes(for: currentColorScheme)))
                 syncText()
+                NSLog("📝 insertVoiceTranscript: Completed")
             }
 
             private func replaceSelection(with attributed: NSAttributedString) {
                 guard let textView = textView else { return }
-                let range = textView.selectedRange()
+                var range = textView.selectedRange()
+                let storageLength = textView.textStorage?.length ?? 0
+
+                if range.location == NSNotFound {
+                    range = NSRange(location: storageLength, length: 0)
+                    textView.setSelectedRange(range)
+                } else {
+                    if range.location > storageLength {
+                        range.location = storageLength
+                        range.length = 0
+                        textView.setSelectedRange(range)
+                    } else if range.location + range.length > storageLength {
+                        range.length = max(0, storageLength - range.location)
+                        textView.setSelectedRange(range)
+                    }
+                }
+
                 if textView.shouldChangeText(in: range, replacementString: attributed.string) {
                     isUpdating = true
                     textView.textStorage?.beginEditing()
@@ -1494,6 +1529,7 @@ struct TodoRichTextEditor: View {
 
                 let result = NSMutableAttributedString()
                 var index = text.startIndex
+                var lastWasWebClip = false
 
                 while index < text.endIndex {
                     if text[index...].hasPrefix("[x]") || text[index...].hasPrefix("[ ]") {
@@ -1509,6 +1545,7 @@ struct TodoRichTextEditor: View {
                             range: NSRange(location: 0, length: attString.length))
                         result.append(attString)
                         index = text.index(index, offsetBy: 3)
+                        lastWasWebClip = false
                         continue
                     } else if text[index...].hasPrefix(Self.webClipMarkupPrefix) {
                         if let endIndex = text[index...].range(of: "]]")?.upperBound {
@@ -1544,7 +1581,14 @@ struct TodoRichTextEditor: View {
                                 )
                                 result.append(attachment)
 
+                                // Add space after webclip for horizontal spacing
+                                let space = NSAttributedString(
+                                    string: " ",
+                                    attributes: Self.baseTypingAttributes(for: currentColorScheme))
+                                result.append(space)
+
                                 index = endIndex
+                                lastWasWebClip = true
                                 continue
                             }
                         }
@@ -1552,11 +1596,30 @@ struct TodoRichTextEditor: View {
 
                     // Add single character with proper attributes
                     let char = String(text[index])
+
+                    // Convert newline to space if between webclips
+                    let finalChar: String
+                    if char == "\n" && lastWasWebClip {
+                        // Check if next non-whitespace char is a webclip
+                        var nextIndex = text.index(after: index)
+                        while nextIndex < text.endIndex && text[nextIndex].isWhitespace && text[nextIndex] != "\n" {
+                            nextIndex = text.index(after: nextIndex)
+                        }
+                        if nextIndex < text.endIndex && text[nextIndex...].hasPrefix(Self.webClipMarkupPrefix) {
+                            finalChar = " "  // Convert newline to space between webclips
+                        } else {
+                            finalChar = char
+                        }
+                    } else {
+                        finalChar = char
+                    }
+
                     let attributedChar = NSAttributedString(
-                        string: char,
+                        string: finalChar,
                         attributes: Self.baseTypingAttributes(for: currentColorScheme))
                     result.append(attributedChar)
                     index = text.index(after: index)
+                    lastWasWebClip = false
                 }
 
                 print("DEBUG: Deserialized attributed string length: \(result.length)")
@@ -1595,9 +1658,9 @@ struct TodoRichTextEditor: View {
                 // This prevents empty clickable space above/below
                 style.minimumLineHeight = 0
                 style.maximumLineHeight = 0
-                // Add spacing after to separate from next content
-                style.paragraphSpacing = 16
-                style.paragraphSpacingBefore = 8
+                // No paragraph spacing - web clips are now inline with horizontal spacing
+                style.paragraphSpacing = 0
+                style.paragraphSpacingBefore = 0
                 return style
             }
 
@@ -2255,7 +2318,12 @@ struct TodoRichTextEditor: View {
                 let insertVoiceTranscript = NotificationCenter.default.addObserver(
                     forName: .insertVoiceTranscriptInEditor, object: nil, queue: .main
                 ) { [weak self] notification in
-                    guard let transcript = notification.object as? String else { return }
+                    NSLog("📝 Coordinator: Received insertVoiceTranscriptInEditor notification")
+                    guard let transcript = notification.object as? String else {
+                        NSLog("📝 Coordinator: No transcript in notification object")
+                        return
+                    }
+                    NSLog("📝 Coordinator: Got transcript: %@", transcript)
                     self?.insertVoiceTranscript(transcript: transcript)
                 }
 
@@ -2550,7 +2618,23 @@ struct TodoRichTextEditor: View {
 
             private func replaceSelection(with attributed: NSAttributedString) {
                 guard let textView = textView else { return }
-                let range = textView.selectedRange
+                let storageLength = textView.textStorage?.length ?? textView.attributedText?.length ?? 0
+                var range = textView.selectedRange
+
+                if range.location == NSNotFound {
+                    range = NSRange(location: storageLength, length: 0)
+                    textView.selectedRange = range
+                } else {
+                    if range.location > storageLength {
+                        range.location = storageLength
+                        range.length = 0
+                        textView.selectedRange = range
+                    } else if range.location + range.length > storageLength {
+                        range.length = max(0, storageLength - range.location)
+                        textView.selectedRange = range
+                    }
+                }
+
                 isUpdating = true
                 let mutable = NSMutableAttributedString(
                     attributedString: textView.attributedText ?? NSAttributedString())
@@ -2893,9 +2977,9 @@ struct TodoRichTextEditor: View {
                 // This prevents empty clickable space above/below
                 style.minimumLineHeight = 0
                 style.maximumLineHeight = 0
-                // Add spacing after to separate from next content
-                style.paragraphSpacing = 16
-                style.paragraphSpacingBefore = 8
+                // No paragraph spacing - web clips are now inline with horizontal spacing
+                style.paragraphSpacing = 0
+                style.paragraphSpacingBefore = 0
                 return style
             }
 

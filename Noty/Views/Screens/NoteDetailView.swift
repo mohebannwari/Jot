@@ -61,7 +61,6 @@ struct NoteDetailView: View {
             ScrollViewReader { proxy in
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 16) {
-                        headerMeta
                         titleField
                             .background(
                                 GeometryReader { geo in
@@ -85,7 +84,6 @@ struct NoteDetailView: View {
                                 }
                             )
                         tagsRow
-
                         // Body text editor - unified with header, flows naturally
                         TodoRichTextEditor(
                             text: $editedContent,
@@ -124,25 +122,25 @@ struct NoteDetailView: View {
                     // Single blur layer with progressive gradient mask
                     Rectangle()
                         .fill(Color.clear)
-                        .frame(height: 150)
+                        .frame(height: 120)
                         .background(.ultraThickMaterial, ignoresSafeAreaEdges: .top)
                         .mask(
                             LinearGradient(
                                 gradient: Gradient(stops: [
                                     .init(color: .black, location: 0.0),
-                                    .init(color: .black.opacity(0.9), location: 0.25),
-                                    .init(color: .black.opacity(0.85), location: 0.35),
+                                    .init(color: .black.opacity(0.95), location: 0.25),
+                                    .init(color: .black.opacity(0.9), location: 0.35),
                                     .init(color: .black.opacity(0.7), location: 0.5),
-                                    .init(color: .black.opacity(0.5), location: 0.65),
-                                    .init(color: .black.opacity(0.2), location: 0.8),
-                                    .init(color: .black.opacity(0.03), location: 0.9),
+                                    .init(color: .black.opacity(0.4), location: 0.65),
+                                    .init(color: .black.opacity(0.15), location: 0.8),
+                                    .init(color: .black.opacity(0.0), location: 0.9),
                                     .init(color: .clear, location: 1.0),
                                 ]),
                                 startPoint: .top,
                                 endPoint: .bottom
                             )
                         )
-                        .blur(radius: 0.01)
+                        .blur(radius: 0.1)
 
                     // Title text on top
                     HStack {
@@ -174,37 +172,56 @@ struct NoteDetailView: View {
             bottomGlassControls
         }
         .opacity(isViewMaterialized ? 1 : 0)
-        .scaleEffect(isViewMaterialized ? 1 : 0.98)
-        .animation(.bouncy(duration: 0.6), value: isViewMaterialized)
+        .offset(x: isViewMaterialized ? 0 : 40)
+        .animation(.spring(response: 0.35, dampingFraction: 0.82), value: isViewMaterialized)
         .onAppear {
-            withAnimation(.bouncy(duration: 0.6).delay(0.05)) { isViewMaterialized = true }
-            withAnimation(.bouncy(duration: 0.6).delay(0.2)) { glassElementsVisible = true }
-            withAnimation(.bouncy(duration: 0.6).delay(0.35)) { bottomControlsExpanded = true }
+            // Safety check to prevent crashes on appear
+            DispatchQueue.main.async {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                    self.isViewMaterialized = true
+                }
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.82).delay(0.1)) {
+                    self.glassElementsVisible = true
+                }
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.82).delay(0.15)) {
+                    self.bottomControlsExpanded = true
+                }
+            }
         }
         .onDisappear {
-            withAnimation(.bouncy(duration: 0.4)) {
-                isViewMaterialized = false
-                glassElementsVisible = false
-                bottomControlsExpanded = false
+            // Safety check to prevent crashes on disappear
+            DispatchQueue.main.async {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                    self.isViewMaterialized = false
+                    self.glassElementsVisible = false
+                    self.bottomControlsExpanded = false
+                }
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("ShowCommandMenu")))
         { notification in
-            if let info = notification.object as? [String: Any],
-                let needsSpace = info["needsSpace"] as? Bool
-            {
-                withAnimation(.easeOut(duration: 0.2)) {
-                    commandMenuNeedsSpace = needsSpace
+            DispatchQueue.main.async {
+                if let info = notification.object as? [String: Any],
+                    let needsSpace = info["needsSpace"] as? Bool
+                {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        self.commandMenuNeedsSpace = needsSpace
+                    }
                 }
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("HideCommandMenu")))
         { _ in
-            withAnimation(.easeOut(duration: 0.15)) {
-                commandMenuNeedsSpace = false
+            DispatchQueue.main.async {
+                withAnimation(.easeOut(duration: 0.15)) {
+                    self.commandMenuNeedsSpace = false
+                }
             }
         }
-        .transition(.opacity)
+        .transition(.asymmetric(
+            insertion: .move(edge: .trailing).combined(with: .opacity),
+            removal: .move(edge: .trailing).combined(with: .opacity)
+        ))
     }
 
     private var available26: Bool {
@@ -229,17 +246,14 @@ struct NoteDetailView: View {
 
     // MARK: - Header Components
 
-    private var headerSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            headerMeta
-            titleField
-        }
-    }
 
     // Floating back button
     @ViewBuilder
     private var backButton: some View {
-        Button(action: closeNote) {
+        Button(action: {
+            HapticManager.shared.navigation()
+            closeNote()
+        }) {
             Image(systemName: "chevron.left")
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundColor(Color("PrimaryTextColor"))
@@ -251,8 +265,14 @@ struct NoteDetailView: View {
                 .glassID("back-button", in: glassNamespace)
         }
         .if(!available26) { view in
-            view.liquidGlass(in: Circle())
+            view.background(.ultraThinMaterial, in: Circle())
         }
+        .background(
+            Circle()
+                .fill(Color.clear)
+                .frame(width: 44, height: 44)
+        )
+        .contentShape(Circle().size(width: 44, height: 44))
         .scaleEffect(glassElementsVisible ? 1 : 0.9)
         .opacity(glassElementsVisible ? 1 : 0)
     }
@@ -299,24 +319,6 @@ struct NoteDetailView: View {
         .zIndex(15)
     }
 
-    // MARK: - Meta (Date + Last Edited)
-    private var headerMeta: some View {
-        HStack(spacing: 4) {
-            Text(dateFormatter.string(from: note.date))
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(Color("TertiaryTextColor"))
-
-            Text("·")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(Color("TertiaryTextColor"))
-
-            Text(editedDisplayString)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(Color("TertiaryTextColor"))
-
-            Spacer()
-        }
-    }
 
     // MARK: - Title
     private var titleField: some View {
@@ -374,9 +376,15 @@ struct NoteDetailView: View {
                 Capsule()
                     .fill(Color("SurfaceTranslucentColor"))
             )
+            .background(
+                Capsule()
+                    .fill(Color.clear)
+                    .frame(height: 44)
+            )
             .contentShape(Capsule())
             .onTapGesture {
                 if !isAddingTag {
+                    HapticManager.shared.tagInteraction()
                     withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
                         isAddingTag = true
                     }
@@ -405,6 +413,7 @@ struct NoteDetailView: View {
                                 }
                             }
                             .onTapGesture {
+                                HapticManager.shared.tagInteraction()
                                 withAnimation(.bouncy(duration: 0.3)) {
                                     if selectedTags.contains(tag) {
                                         selectedTags.remove(tag)
@@ -439,43 +448,6 @@ struct NoteDetailView: View {
     // MARK: - Bottom Controls
     @ViewBuilder
     private var bottomGlassControls: some View {
-        if #available(iOS 26.0, macOS 26.0, *) {
-            HStack(alignment: .bottom, spacing: 8) {
-                // Edit toolbar - positioned at bottom-left
-                LiquidGlassContainer(spacing: 12) {
-                    EditToolbar(
-                        isExpanded: $isEditToolbarExpanded,
-                        onToolAction: handleEditToolAction,
-                        onLinkInsert: handleLinkInsert
-                    )
-                    .glassID("edit-toolbar", in: glassNamespace)
-                    .scaleEffect(bottomControlsExpanded ? 1 : 0.7)
-                    .opacity(bottomControlsExpanded ? 1 : 0)
-                }
-
-                Spacer(minLength: 8)
-
-                // Mic button - positioned at bottom-right
-                MicCaptureControl(
-                    onSend: { result in
-                        handleVoiceRecording(result)
-                    },
-                    onCancel: {},
-                    autoStart: false
-                )
-                .scaleEffect(bottomControlsExpanded ? 1 : 0.7)
-                .opacity(bottomControlsExpanded ? 1 : 0)
-            }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 24)
-            .animation(.bouncy(duration: 0.6), value: bottomControlsExpanded)
-        } else {
-            // Fallback for older OS versions
-            legacyBottomControls
-        }
-    }
-
-    private var legacyBottomControls: some View {
         HStack(alignment: .bottom, spacing: 8) {
             // Edit toolbar - positioned at bottom-left
             EditToolbar(
@@ -501,8 +473,9 @@ struct NoteDetailView: View {
         }
         .padding(.horizontal, 24)
         .padding(.bottom, 24)
-        .animation(.bouncy(duration: 0.6), value: bottomControlsExpanded)
+        .animation(.spring(response: 0.35, dampingFraction: 0.82), value: bottomControlsExpanded)
     }
+
 
     // MARK: - Helpers
     private func closeNote() {
@@ -517,12 +490,14 @@ struct NoteDetailView: View {
         onSave(updatedNote)
 
         // Animate the exit
-        withAnimation(.bouncy(duration: 0.4)) { bottomControlsExpanded = false }
-        withAnimation(.bouncy(duration: 0.4).delay(0.05)) { glassElementsVisible = false }
-        withAnimation(.bouncy(duration: 0.5).delay(0.1)) { isViewMaterialized = false }
+        withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
+            bottomControlsExpanded = false
+            glassElementsVisible = false
+            isViewMaterialized = false
+        }
 
         // Close the view after animation completes with safety check
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
             // Ensure we're still on the main thread and the view is still valid
             guard Thread.isMainThread else { return }
             isPresented = false
@@ -563,18 +538,6 @@ struct NoteDetailView: View {
         return formatter
     }
 
-    private var editedDisplayString: String {
-        let cal = Calendar.current
-        let time = timeFormatter.string(from: note.date)
-        if cal.isDateInToday(note.date) {
-            return "Edited Today at \(time)"
-        } else if cal.isDateInYesterday(note.date) {
-            return "Edited Yesterday at \(time)"
-        } else {
-            let date = dateFormatter.string(from: note.date)
-            return "Edited \(date) at \(time)"
-        }
-    }
 
     private func handleEditToolAction(_ tool: EditTool) {
         print("🔧 DEBUG: handleEditToolAction called with tool: \(tool)")
@@ -587,7 +550,7 @@ struct NoteDetailView: View {
         default:
             print("🔧 DEBUG: Posting applyEditTool with userInfo: [\"tool\": \"\(tool.rawValue)\"]")
             NotificationCenter.default.post(
-                name: .applyEditTool, object: nil, userInfo: ["tool": tool.rawValue])
+                name: Notification.Name("ApplyEditTool"), object: nil, userInfo: ["tool": tool.rawValue])
         }
     }
 
@@ -597,15 +560,26 @@ struct NoteDetailView: View {
     }
 
     private func handleVoiceRecording(_ result: MicCaptureControl.Result) {
+        NSLog("🎤 NoteDetailView.handleVoiceRecording: START - audioURL: %@, transcript: %@", result.audioURL.path, result.transcript ?? "nil")
+
         // Insert transcript at cursor position in the editor
         if let transcript = result.transcript, !transcript.isEmpty {
-            // Send to editor to insert at cursor position
-            NotificationCenter.default.post(
-                name: Notification.Name("InsertVoiceTranscript"), object: transcript)
+            NSLog("🎤 NoteDetailView.handleVoiceRecording: Posting notification with transcript: %@", transcript)
+
+            // Ensure we're on main thread and add slight delay to ensure coordinator is ready
+            DispatchQueue.main.async {
+                NSLog("🎤 NoteDetailView.handleVoiceRecording: About to post notification on main thread")
+                NotificationCenter.default.post(
+                    name: .insertVoiceTranscriptInEditor, object: transcript)
+                NSLog("🎤 NoteDetailView.handleVoiceRecording: Notification posted successfully")
+            }
+        } else {
+            NSLog("🎤 NoteDetailView.handleVoiceRecording: No transcript to insert")
         }
 
         // TODO: Save audio file if needed
         // The audio file is available at result.audioURL
+        NSLog("🎤 NoteDetailView.handleVoiceRecording: END")
     }
 
     // MARK: - Scroll Helpers
@@ -659,7 +633,7 @@ private struct TagPill: View {
 
     @ViewBuilder
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 4) {
             Image(systemName: "tag.fill")
                 .font(.system(size: 10))
                 .foregroundColor(Color("TagTextColor"))
@@ -668,17 +642,30 @@ private struct TagPill: View {
                 .foregroundColor(Color("TagTextColor"))
                 .lineLimit(1)
                 .truncationMode(.tail)
-            Button(action: onRemove) {
+            Button(action: {
+                HapticManager.shared.tagInteraction()
+                onRemove()
+            }) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: 8, weight: .bold))
                     .foregroundColor(Color("TagTextColor"))
                     .opacity(0.7)
             }
             .buttonStyle(.plain)
+            .contentShape(Circle())
+            .frame(width: 20, height: 20)
         }
-        .padding(.horizontal, 12)
+        .padding(.leading, 8)
+        .padding(.trailing, 4)
         .padding(.vertical, 6)
+        .frame(height: 28)
         .background(Color("TagBackgroundColor"), in: Capsule())
+        .background(
+            Capsule()
+                .fill(Color.clear)
+                .frame(height: 36)
+        )
+        .contentShape(Capsule())
         .scaleEffect((visible ? 1 : 0.92) * (isPressed ? 0.96 : 1.0) * (isHovered ? 1.02 : 1.0))
         .opacity(visible ? 1 : 0)
         .animation(.bouncy(duration: 0.3), value: isHovered)

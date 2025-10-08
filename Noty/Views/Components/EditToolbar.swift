@@ -656,12 +656,14 @@ struct EditToolbar: View {
     // MARK: - Actions
 
     private func toggleExpansion() {
+        HapticManager.shared.toolbarAction()
         withAnimation(.bouncy(duration: 0.6)) {
             isExpanded.toggle()
         }
     }
 
     private func handleToolAction(_ tool: EditTool) {
+        HapticManager.shared.toolbarAction()
         selectedTool = tool
         onToolAction?(tool)
 
@@ -675,6 +677,8 @@ struct EditToolbar: View {
 
     private func insertLink() {
         guard !linkURL.isEmpty else { return }
+
+        HapticManager.shared.toolbarAction()
 
         // Add https:// if no protocol is specified
         var finalURL = linkURL

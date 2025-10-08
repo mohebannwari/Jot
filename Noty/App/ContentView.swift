@@ -22,14 +22,29 @@ struct ContentView: View {
             // Main content
             VStack(spacing: 0) {
                 ScrollView {
-                    VStack(spacing: 48) {
-                        // TODAY Section
+                    VStack(spacing: 36) {
+                        // PINNED NOTES Section
+                        if !pinnedNotes.isEmpty {
+                            PinnedNotesSection(
+                                notes: pinnedNotes,
+                                onNoteTap: { note in
+                                    HapticManager.shared.noteInteraction()
+                                    withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                                        selectedNote = note
+                                        isNoteDetailPresented = true
+                                    }
+                                }
+                            )
+                        }
+
+                        // Today Section
                         if !todayNotes.isEmpty {
                             NotesSection(
                                 title: "TODAY",
                                 notes: todayNotes,
                                 onNoteTap: { note in
-                                    withAnimation(.easeInOut(duration: 0.3)) {
+                                    HapticManager.shared.noteInteraction()
+                                    withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
                                         selectedNote = note
                                         isNoteDetailPresented = true
                                     }
@@ -40,13 +55,14 @@ struct ContentView: View {
                             )
                         }
 
-                        // LAST WEEK Section
-                        if !lastWeekNotes.isEmpty {
+                        // This Month Section
+                        if !thisMonthNotes.isEmpty {
                             NotesSection(
-                                title: "LAST WEEK",
-                                notes: lastWeekNotes,
+                                title: "THIS MONTH",
+                                notes: thisMonthNotes,
                                 onNoteTap: { note in
-                                    withAnimation(.easeInOut(duration: 0.3)) {
+                                    HapticManager.shared.noteInteraction()
+                                    withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
                                         selectedNote = note
                                         isNoteDetailPresented = true
                                     }
@@ -57,13 +73,32 @@ struct ContentView: View {
                             )
                         }
 
-                        // OLDER Section
+                        // This Year Section
+                        if !thisYearNotes.isEmpty {
+                            NotesSection(
+                                title: "THIS YEAR",
+                                notes: thisYearNotes,
+                                onNoteTap: { note in
+                                    HapticManager.shared.noteInteraction()
+                                    withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                                        selectedNote = note
+                                        isNoteDetailPresented = true
+                                    }
+                                },
+                                onDeleteNote: { noteId in
+                                    notesManager.deleteNote(id: noteId)
+                                }
+                            )
+                        }
+
+                        // Older Section
                         if !olderNotes.isEmpty {
                             NotesSection(
                                 title: "OLDER",
                                 notes: olderNotes,
                                 onNoteTap: { note in
-                                    withAnimation(.easeInOut(duration: 0.3)) {
+                                    HapticManager.shared.noteInteraction()
+                                    withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
                                         selectedNote = note
                                         isNoteDetailPresented = true
                                     }
@@ -75,14 +110,16 @@ struct ContentView: View {
                         }
                     }
                     .frame(width: 400)
-                    .padding(.top, 60)
+                    .padding(.top, pinnedNotes.isEmpty ? 60 : 18)
                     .padding(.leading, 30)
                     .padding(.trailing, 30)
+                    .padding(.bottom, 80)
                 }
                 .scrollIndicators(.never)
             }
             .opacity(isNoteDetailPresented ? 0 : 1)
-            .animation(.easeInOut(duration: 0.3), value: isNoteDetailPresented)
+            .offset(x: isNoteDetailPresented ? -20 : 0)
+            .animation(.spring(response: 0.35, dampingFraction: 0.82), value: isNoteDetailPresented)
             .contentShape(Rectangle())
             .onTapGesture {
                 // Close search when tapping outside
@@ -96,7 +133,8 @@ struct ContentView: View {
             BottomBar(onNewNote: createAndOpenNewNote)
                 .environmentObject(themeManager)
                 .opacity(isNoteDetailPresented ? 0 : 1)
-                .animation(.easeInOut(duration: 0.3), value: isNoteDetailPresented)
+                .offset(x: isNoteDetailPresented ? -20 : 0)
+                .animation(.spring(response: 0.35, dampingFraction: 0.82), value: isNoteDetailPresented)
                 .onTapGesture {
                     // Close search when tapping bottom bar
                     if isSearchActive {
@@ -107,7 +145,8 @@ struct ContentView: View {
 
             // Floating Search Overlay (does not affect other buttons)
             FloatingSearch(engine: searchEngine) { note in
-                withAnimation(.easeInOut(duration: 0.3)) {
+                HapticManager.shared.noteInteraction()
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
                     selectedNote = note
                     isNoteDetailPresented = true
                 }
@@ -116,7 +155,8 @@ struct ContentView: View {
             .padding(.leading, 18)
             .padding(.bottom, 18)
             .opacity(isNoteDetailPresented ? 0 : 1)
-            .animation(.easeInOut(duration: 0.3), value: isNoteDetailPresented)
+            .offset(x: isNoteDetailPresented ? -20 : 0)
+            .animation(.spring(response: 0.35, dampingFraction: 0.82), value: isNoteDetailPresented)
             .onChange(of: searchEngine.query) { _, newValue in
                 isSearchActive = !newValue.isEmpty
             }
@@ -127,11 +167,13 @@ struct ContentView: View {
                     notesManager.updateNote(updated)
                     selectedNote = updated
                 }
-                .transition(.opacity.combined(with: .scale))
+                .transition(.asymmetric(
+                    insertion: .move(edge: .trailing).combined(with: .opacity),
+                    removal: .move(edge: .trailing).combined(with: .opacity)
+                ))
                 .zIndex(100)
             }
         }
-        .preferredColorScheme(themeManager.currentTheme.colorScheme)
         .containerBackground(.thickMaterial, for: .window)
         // Search logic will be reintroduced with the redesigned manager
         .onAppear { searchEngine.setNotes(notesManager.notes) }
@@ -145,34 +187,64 @@ struct ContentView: View {
         return notesManager.notes
     }
 
+    private var pinnedNotes: [Note] {
+        return displayedNotes.filter { $0.isPinned }
+    }
+
     private var todayNotes: [Note] {
         let today = Calendar.current.startOfDay(for: Date())
         return displayedNotes.filter { note in
-            Calendar.current.isDate(note.date, inSameDayAs: today)
+            !note.isPinned && Calendar.current.isDate(note.date, inSameDayAs: today)
         }
     }
 
-    private var lastWeekNotes: [Note] {
+    private var thisMonthNotes: [Note] {
         let today = Calendar.current.startOfDay(for: Date())
-        let lastWeekStart = Calendar.current.date(byAdding: .day, value: -7, to: today)!
+        let calendar = Calendar.current
+        let currentMonth = calendar.component(.month, from: Date())
+        let currentYear = calendar.component(.year, from: Date())
+
         return displayedNotes.filter { note in
-            let noteDay = Calendar.current.startOfDay(for: note.date)
-            return noteDay < today && noteDay >= lastWeekStart
+            let noteMonth = calendar.component(.month, from: note.date)
+            let noteYear = calendar.component(.year, from: note.date)
+            let noteDay = calendar.startOfDay(for: note.date)
+
+            return !note.isPinned &&
+                   noteMonth == currentMonth &&
+                   noteYear == currentYear &&
+                   noteDay < today
+        }
+    }
+
+    private var thisYearNotes: [Note] {
+        let calendar = Calendar.current
+        let currentMonth = calendar.component(.month, from: Date())
+        let currentYear = calendar.component(.year, from: Date())
+
+        return displayedNotes.filter { note in
+            let noteMonth = calendar.component(.month, from: note.date)
+            let noteYear = calendar.component(.year, from: note.date)
+
+            return !note.isPinned &&
+                   noteYear == currentYear &&
+                   noteMonth < currentMonth
         }
     }
 
     private var olderNotes: [Note] {
-        let today = Calendar.current.startOfDay(for: Date())
-        let lastWeekStart = Calendar.current.date(byAdding: .day, value: -7, to: today)!
+        let calendar = Calendar.current
+        let currentYear = calendar.component(.year, from: Date())
+
         return displayedNotes.filter { note in
-            let noteDay = Calendar.current.startOfDay(for: note.date)
-            return noteDay < lastWeekStart
+            let noteYear = calendar.component(.year, from: note.date)
+            return !note.isPinned && noteYear < currentYear
         }
     }
 
     private func createAndOpenNewNote() {
+        HapticManager.shared.noteInteraction()
         let note = notesManager.addNote(title: "New Note", content: "")
-        withAnimation(.easeInOut(duration: 0.3)) {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
             selectedNote = note
             isNoteDetailPresented = true
         }
@@ -191,9 +263,15 @@ struct NotesSection: View {
         VStack(alignment: .leading, spacing: 18) {
             // Section header
             Text(title)
-                .font(.system(size: 10, weight: .medium))
+                .font(.system(size: 9, weight: .medium))
                 .foregroundColor(Color.primary.opacity(0.7))
                 .kerning(0)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(
+                    Capsule()
+                        .fill(Color.primary.opacity(0.1))
+                )
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             // Notes list
@@ -213,6 +291,7 @@ struct NoteListCard: View {
     let note: Note
     let onTap: () -> Void
     let onDelete: () -> Void
+    @EnvironmentObject private var notesManager: NotesManager
 
     var body: some View {
         Button(action: onTap) {
@@ -231,57 +310,32 @@ struct NoteListCard: View {
 
                     // Date
                     Text(dateFormatter.string(from: note.date))
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(Color.primary.opacity(0.7))
-                        .kerning(0)
+                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        .foregroundColor(Color.primary.opacity(0.55))
+                        .kerning(-0.25)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-
-                // Three-dot menu button
-                Menu {
-                    Button {
-                        // Pin functionality
-                    } label: {
-                        Label("Pin Note", systemImage: "pin")
-                    }
-
-                    Button {
-                        // Move to folder functionality
-                    } label: {
-                        Label("Move to Folder", systemImage: "folder")
-                    }
-
-                    Divider()
-
-                    Button("Delete", role: .destructive) {
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            onDelete()
-                        }
-                    }
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 12))
-                        .foregroundColor(Color.primary)
-                        .frame(width: 20, height: 20)
-                        .contentShape(Circle())
-                }
-                .buttonStyle(PlainButtonStyle())
-                .padding(4)
-                .background(
-                    Circle()
-                        .fill(Color.clear)
-                )
             }
+            .background(
+                Rectangle()
+                    .fill(Color.clear)
+                    .frame(height: 50)
+            )
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .contextMenu {
             Button {
-                // Pin functionality
+                HapticManager.shared.buttonTap()
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    notesManager.togglePin(id: note.id)
+                }
             } label: {
-                Label("Pin Note", systemImage: "pin")
+                Label(note.isPinned ? "Unpin Note" : "Pin Note", systemImage: note.isPinned ? "pin.slash" : "pin")
             }
 
             Button {
+                HapticManager.shared.buttonTap()
                 // Move to folder functionality
             } label: {
                 Label("Move to Folder", systemImage: "folder")
@@ -290,6 +344,7 @@ struct NoteListCard: View {
             Divider()
 
             Button("Delete", role: .destructive) {
+                HapticManager.shared.buttonTap()
                 withAnimation(.easeInOut(duration: 0.25)) {
                     onDelete()
                 }
@@ -299,7 +354,7 @@ struct NoteListCard: View {
 
     private var dateFormatter: DateFormatter {
         let formatter = DateFormatter()
-        formatter.dateFormat = "dd.MM.yyyy"
+        formatter.dateFormat = "MMMM d, yyyy 'at' h:mm a"
         return formatter
     }
 }
@@ -313,6 +368,131 @@ struct ListTagView: View {
             .font(.system(size: 13, weight: .medium))
             .foregroundColor(Color(red: 59 / 255, green: 130 / 255, blue: 246 / 255))  // blue-500
             .kerning(0)
+    }
+}
+
+// Pinned Notes Section with Liquid Glass Capsule
+struct PinnedNotesSection: View {
+    let notes: [Note]
+    let onNoteTap: (Note) -> Void
+    @EnvironmentObject private var notesManager: NotesManager
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            // Section header
+            Text("PINNED")
+                .font(.system(size: 9, weight: .medium))
+                .foregroundColor(Color.primary.opacity(0.7))
+                .kerning(0)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(
+                    Capsule()
+                        .fill(Color.primary.opacity(0.1))
+                )
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            // Pinned notes chips
+            FlowLayout(spacing: 8) {
+                ForEach(notes) { note in
+                    PinnedNoteChip(
+                        note: note,
+                        onTap: { onNoteTap(note) },
+                        onUnpin: {
+                            HapticManager.shared.buttonTap()
+                            withAnimation(.easeInOut(duration: 0.25)) {
+                                notesManager.togglePin(id: note.id)
+                            }
+                        }
+                    )
+                }
+            }
+        }
+        .frame(maxWidth: 400, alignment: .leading)
+    }
+}
+
+// Pinned Note Chip with Liquid Glass
+struct PinnedNoteChip: View {
+    let note: Note
+    let onTap: () -> Void
+    let onUnpin: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            Text(note.title)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(Color.primary)
+                .lineLimit(1)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        #if os(macOS)
+        .glassEffect(.regular.interactive(true), in: Capsule())
+        #else
+        .background(.ultraThinMaterial, in: Capsule())
+        #endif
+        .contextMenu {
+            Button {
+                onUnpin()
+            } label: {
+                Label("Unpin Note", systemImage: "pin.slash")
+            }
+        }
+    }
+}
+
+// FlowLayout for wrapping pinned notes
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let result = FlowResult(
+            in: proposal.replacingUnspecifiedDimensions().width,
+            subviews: subviews,
+            spacing: spacing
+        )
+        return result.size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let result = FlowResult(
+            in: bounds.width,
+            subviews: subviews,
+            spacing: spacing
+        )
+        for (index, subview) in subviews.enumerated() {
+            subview.place(at: CGPoint(x: bounds.minX + result.positions[index].x, y: bounds.minY + result.positions[index].y), proposal: .unspecified)
+        }
+    }
+
+    struct FlowResult {
+        var size: CGSize = .zero
+        var positions: [CGPoint] = []
+
+        init(in maxWidth: CGFloat, subviews: Subviews, spacing: CGFloat) {
+            var x: CGFloat = 0
+            var y: CGFloat = 0
+            var lineHeight: CGFloat = 0
+
+            for subview in subviews {
+                let size = subview.sizeThatFits(.unspecified)
+
+                if x + size.width > maxWidth && x > 0 {
+                    x = 0
+                    y += lineHeight + spacing
+                    lineHeight = 0
+                }
+
+                positions.append(CGPoint(x: x, y: y))
+                lineHeight = max(lineHeight, size.height)
+                x += size.width + spacing
+            }
+
+            self.size = CGSize(width: maxWidth, height: y + lineHeight)
+        }
     }
 }
 

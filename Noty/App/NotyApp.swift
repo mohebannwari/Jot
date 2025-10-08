@@ -16,6 +16,8 @@ struct NotyApp: App {
             ContentView()
                 .environmentObject(notesManager)
                 .environmentObject(themeManager)
+                .preferredColorScheme(themeManager.currentTheme.colorScheme)
+                .containerShape(.rect(cornerRadius: 28))
         }
         .windowStyle(.hiddenTitleBar)
     }

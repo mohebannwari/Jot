@@ -8,32 +8,13 @@
       "hidden" : false,
       "layers" : [
         {
-          "blend-mode-specializations" : [
-            {
-              "appearance" : "tinted",
-              "value" : "plus-darker"
-            }
-          ],
-          "glass-specializations" : [
-            {
-              "value" : false
-            },
-            {
-              "appearance" : "dark",
-              "value" : false
-            },
-            {
-              "appearance" : "tinted",
-              "value" : true
-            }
-          ],
-          "image-name" : "Icon-2.png",
-          "name" : "Icon-2",
+          "image-name" : "Icon 2.png",
+          "name" : "Icon 2",
           "position" : {
             "scale" : 1,
             "translation-in-points" : [
-              33.640625,
-              62.1328125
+              31.491390687790588,
+              61.57974718564604
             ]
           }
         },

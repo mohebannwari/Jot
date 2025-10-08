@@ -2,24 +2,24 @@
 # Noty Development TODO
 
 ## Liquid Glass Implementation
-- [ ] Convert remaining Figma components to liquid glass styling
-- [ ] Apply .glassEffect(.regular.interactive()) to all interactive elements
-- [ ] Ensure hover states with scaleEffect and dynamic shadows
-- [ ] Implement GlassEffectContainer for complex animations
-- [ ] Update app icons with unified glass layers using Icon Composer
+- [x] Convert remaining Figma components to liquid glass styling
+- [x] Apply .glassEffect(.regular.interactive()) to all interactive elements
+- [x] Ensure hover states with scaleEffect and dynamic shadows
+- [x] Implement GlassEffectContainer for complex animations
+- [x] Update app icons with unified glass layers using Icon Composer
 
 ## UI Components & Features
 - [x] Search button with liquid glass styling and hover effects
 - [x] Context menu for note cards (Pin, Move to Folder, Delete)
 - [x] Three dots menu button with proper glass effects
-- [ ] Search functionality implementation
-- [ ] Context menu actions implementation
-- [ ] Note editing interface with liquid glass modals
-- [ ] To-do list functionality with liquid glass styling
-- [ ] Memo/notes creation and editing interface
-- [ ] Tab system with liquid glass tab bars
-- [ ] Enhanced card layouts with advanced glass effects
-- [ ] Canvas view for visual note organization
+- [x] Search functionality implementation
+- [x] Context menu actions implementation
+- [x] Note editing interface with liquid glass modals
+- [x] To-do list functionality with liquid glass styling
+- [x] Memo/notes creation and editing interface
+- [x] Tab system with liquid glass tab bars
+- [x] Enhanced card layouts with advanced glass effects
+- [x] Canvas view for visual note organization
 - [ ] Image upload and management with glass modals
 - [ ] Folder management system with renaming/editing capabilities
 - [ ] Tag creation and editing interface
@@ -58,7 +58,7 @@
 - [ ] Integration tests for UI components
 
 ## Advanced Features (Future)
-- [ ] AI-powered features using Foundation Models Framework
+- [x] AI-powered features using Foundation Models Framework
 - [ ] Writing Tools integration for note enhancement
 - [ ] Image Playground integration
 - [ ] Advanced search with ML suggestions

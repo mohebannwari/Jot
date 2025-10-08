@@ -44,7 +44,14 @@ final class NotesManager: ObservableObject {
         notes.removeAll { $0.id == id }
         save()
     }
-    
+
+    func togglePin(id: UUID) {
+        if let idx = notes.firstIndex(where: { $0.id == id }) {
+            notes[idx].isPinned.toggle()
+            save()
+        }
+    }
+
     func replaceAll(_ newNotes: [Note]) {
         notes = newNotes
         save()

@@ -222,9 +222,13 @@ extension NoteEntity {
 
         // Simplified predicate to avoid complex subqueries that SwiftData doesn't support
         let firstTerm = searchTerms.first!
+        let sanitizedTagTerm = firstTerm.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
+
         return #Predicate<NoteEntity> { note in
             note.title.localizedStandardContains(firstTerm) ||
-            note.content.localizedStandardContains(firstTerm)
+            note.content.localizedStandardContains(firstTerm) ||
+            (!sanitizedTagTerm.isEmpty &&
+             note.tags.contains { $0.name.contains(sanitizedTagTerm) })
         }
     }
 

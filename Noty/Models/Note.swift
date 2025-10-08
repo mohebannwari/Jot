@@ -13,12 +13,14 @@ struct Note: Identifiable, Codable, Equatable {
     var content: String
     var date: Date
     var tags: [String]
-    
-    init(title: String, content: String, tags: [String] = []) {
+    var isPinned: Bool = false
+
+    init(title: String, content: String, tags: [String] = [], isPinned: Bool = false) {
         self.id = UUID()
         self.title = title
         self.content = content
         self.date = Date()
         self.tags = tags
+        self.isPinned = isPinned
     }
 }

@@ -150,17 +150,21 @@ final class SimpleSwiftDataManager: ObservableObject {
     func searchNotes(query: String, limit: Int = 100) async -> [Note] {
         performanceMonitor.trackFeatureUsage("search")
 
-        guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedQuery.isEmpty else {
             return notes
         }
+
+        let sanitizedTagQuery = normalizedQuery.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
+        let hasDistinctTagQuery = sanitizedTagQuery != normalizedQuery && !sanitizedTagQuery.isEmpty
 
         do {
             return try await performanceMonitor.trackSwiftDataOperation(
                 operation: .search,
                 recordCount: 0
             ) {
-                let predicate = NoteEntity.searchPredicate(for: query)
-                let sortDescriptors = NoteEntity.sortByRelevance(query: query)
+                let predicate = NoteEntity.searchPredicate(for: normalizedQuery)
+                let sortDescriptors = NoteEntity.sortByRelevance(query: normalizedQuery)
                 var descriptor = FetchDescriptor(predicate: predicate, sortBy: sortDescriptors)
 
                 // Limit search results for better performance
@@ -179,9 +183,15 @@ final class SimpleSwiftDataManager: ObservableObject {
             logger.error("Search failed: \(error)")
             // Fallback to in-memory search with limit
             let filtered = notes.filter { note in
-                note.title.localizedCaseInsensitiveContains(query) ||
-                note.content.localizedCaseInsensitiveContains(query) ||
-                note.tags.contains { $0.localizedCaseInsensitiveContains(query) }
+                let titleMatches = note.title.localizedCaseInsensitiveContains(normalizedQuery) ||
+                    (hasDistinctTagQuery && note.title.localizedCaseInsensitiveContains(sanitizedTagQuery))
+                let contentMatches = note.content.localizedCaseInsensitiveContains(normalizedQuery) ||
+                    (hasDistinctTagQuery && note.content.localizedCaseInsensitiveContains(sanitizedTagQuery))
+                let tagMatchesPrimary = note.tags.contains { $0.localizedCaseInsensitiveContains(normalizedQuery) }
+                let tagMatchesFallback = hasDistinctTagQuery &&
+                    note.tags.contains { $0.localizedCaseInsensitiveContains(sanitizedTagQuery) }
+
+                return titleMatches || contentMatches || tagMatchesPrimary || tagMatchesFallback
             }
             return Array(filtered.prefix(limit))
         }

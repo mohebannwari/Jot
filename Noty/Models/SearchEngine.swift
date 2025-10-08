@@ -45,15 +45,38 @@ final class SearchEngine: ObservableObject {
             return
         }
         let lower = trimmed.lowercased()
+        let tagQuery = lower.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
+        let hasDistinctTagQuery = tagQuery != lower && !tagQuery.isEmpty
         let hits = allNotes.compactMap { note -> SearchHit? in
             var score = 0
             var matchType: MatchType = .content
             var titleRange: Range<String.Index>?
             var contentRange: Range<String.Index>?
             
-            if let r = note.title.lowercased().range(of: lower) { score += 100; matchType = .title; titleRange = r }
-            if note.tags.contains(where: { $0.lowercased().contains(lower) }) { score += 50; if matchType == .content { matchType = .tag } }
-            if let r = note.content.lowercased().range(of: lower) { score += 10; if matchType == .content { contentRange = r } }
+            if let r = note.title.lowercased().range(of: lower) {
+                score += 100
+                matchType = .title
+                titleRange = r
+            } else if hasDistinctTagQuery, let r = note.title.lowercased().range(of: tagQuery) {
+                score += 100
+                matchType = .title
+                titleRange = r
+            }
+
+            let tagMatchesPrimary = note.tags.contains { $0.lowercased().contains(lower) }
+            let tagMatchesFallback = hasDistinctTagQuery && note.tags.contains { $0.lowercased().contains(tagQuery) }
+            if tagMatchesPrimary || tagMatchesFallback {
+                score += 50
+                if matchType == .content { matchType = .tag }
+            }
+
+            if let r = note.content.lowercased().range(of: lower) {
+                score += 10
+                if matchType == .content { contentRange = r }
+            } else if hasDistinctTagQuery, let r = note.content.lowercased().range(of: tagQuery) {
+                score += 10
+                if matchType == .content { contentRange = r }
+            }
             guard score > 0 else { return nil }
             return SearchHit(note: note, type: matchType, score: score, titleRange: titleRange, contentRange: contentRange, query: lower)
         }
@@ -91,5 +114,4 @@ struct SearchHit: Identifiable, Equatable {
 }
 
 enum MatchType { case title, content, tag }
-
 

@@ -18,18 +18,17 @@ struct WebClipView: View {
         HStack(spacing: 6) {
             Image(systemName: "link")
                 .font(.system(size: 11, weight: .medium))
-                .foregroundColor(.blue)
+                .foregroundColor(linkColor)
 
             Text(cleanedDomain)
                 .font(.system(size: 12, weight: .medium))
-                .foregroundColor(.blue)
+                .foregroundColor(linkColor)
                 .lineLimit(1)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .background(backgroundColor)
-        .cornerRadius(12)
-        .contentShape(RoundedRectangle(cornerRadius: 12))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(capsuleBackground, in: Capsule())
+        .contentShape(Capsule())
         .onTapGesture {
             if let urlString = url ?? URL(string: "https://\(domain)")?.absoluteString,
                 let url = URL(string: urlString)
@@ -43,12 +42,14 @@ struct WebClipView: View {
         }
     }
 
-    private var backgroundColor: Color {
-        colorScheme == .dark ? Color(hex: "18181b") : .white
+    private var linkColor: Color {
+        colorScheme == .dark ? .white : .black
     }
 
-    private var textColor: Color {
-        colorScheme == .dark ? .white : Color(hex: "1a1a1a")
+    private var capsuleBackground: Color {
+        colorScheme == .dark
+            ? Color.white.opacity(0.1)
+            : Color.black.opacity(0.06)
     }
 
     private var cleanedDomain: String {
