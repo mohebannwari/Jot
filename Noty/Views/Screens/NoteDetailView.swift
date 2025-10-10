@@ -460,6 +460,15 @@ struct NoteDetailView: View {
 
             Spacer(minLength: 8)
 
+            // Image picker button - positioned before mic button
+            ImagePickerControl(
+                onImageSelected: { url in
+                    handleImageSelection(url)
+                }
+            )
+            .scaleEffect(bottomControlsExpanded ? 1 : 0.7)
+            .opacity(bottomControlsExpanded ? 1 : 0)
+
             // Mic button - positioned at bottom-right
             MicCaptureControl(
                 onSend: { result in
@@ -580,6 +589,31 @@ struct NoteDetailView: View {
         // TODO: Save audio file if needed
         // The audio file is available at result.audioURL
         NSLog("🎤 NoteDetailView.handleVoiceRecording: END")
+    }
+    
+    private func handleImageSelection(_ imageURL: URL) {
+        NSLog("🖼️ NoteDetailView.handleImageSelection: START - imageURL: %@", imageURL.path)
+        
+        Task {
+            // Save the image to the storage directory
+            if let filename = await ImageStorageManager.shared.saveImage(from: imageURL) {
+                NSLog("🖼️ NoteDetailView.handleImageSelection: Image saved as %@", filename)
+                
+                // Post notification to insert image in editor
+                await MainActor.run {
+                    NSLog("🖼️ NoteDetailView.handleImageSelection: Posting notification with filename")
+                    NotificationCenter.default.post(
+                        name: .insertImageInEditor,
+                        object: filename
+                    )
+                    NSLog("🖼️ NoteDetailView.handleImageSelection: Notification posted successfully")
+                }
+            } else {
+                NSLog("🖼️ NoteDetailView.handleImageSelection: Failed to save image")
+            }
+        }
+        
+        NSLog("🖼️ NoteDetailView.handleImageSelection: END")
     }
 
     // MARK: - Scroll Helpers

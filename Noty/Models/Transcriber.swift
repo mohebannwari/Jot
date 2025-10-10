@@ -19,69 +19,69 @@ public final class Transcriber: Transcribing {
             NSLog("Transcriber.transcribe: File does not exist at path: %@", url.path)
             return nil
         }
-        #if os(macOS)
-            // Temporary safety: skip transcription on macOS to avoid TCC crash in environments
-            // where NSSpeechRecognitionUsageDescription is not propagated into the running bundle.
-            // The audio file is still returned; UI can insert transcript when available on iOS.
-            NSLog("Transcriber.transcribe: Skipping speech recognition on macOS (safety mode)")
-            return nil
-        #else
-            guard await ensureAuthorization() else {
-                NSLog("Transcriber.transcribe: Speech recognition not authorized")
-                return nil
-            }
-            guard let recognizer = SFSpeechRecognizer(), recognizer.isAvailable else {
-                NSLog("Transcriber.transcribe: Speech recognizer unavailable")
-                return nil
-            }
         
-            let request = SFSpeechURLRecognitionRequest(url: url)
-            request.shouldReportPartialResults = false
-            request.requiresOnDeviceRecognition = false
+        // Ensure authorization before attempting transcription
+        guard await ensureAuthorization() else {
+            NSLog("Transcriber.transcribe: Speech recognition not authorized")
+            return nil
+        }
+        
+        // Check if speech recognizer is available
+        guard let recognizer = SFSpeechRecognizer(), recognizer.isAvailable else {
+            NSLog("Transcriber.transcribe: Speech recognizer unavailable")
+            return nil
+        }
+        
+        NSLog("Transcriber.transcribe: Starting transcription for file: %@", url.path)
+        
+        let request = SFSpeechURLRecognitionRequest(url: url)
+        request.shouldReportPartialResults = false
+        request.requiresOnDeviceRecognition = false
 
-            // Use a simpler approach with explicit cancellation
-            return await withCheckedContinuation { continuation in
-                var task: SFSpeechRecognitionTask?
-                var didResume = false
-                let lock = NSLock()
+        // Use a simpler approach with explicit cancellation
+        return await withCheckedContinuation { continuation in
+            var task: SFSpeechRecognitionTask?
+            var didResume = false
+            let lock = NSLock()
 
-                task = recognizer.recognitionTask(with: request) { result, error in
-                    lock.lock()
-                    defer { lock.unlock() }
+            task = recognizer.recognitionTask(with: request) { result, error in
+                lock.lock()
+                defer { lock.unlock() }
 
-                    guard !didResume else { return }
+                guard !didResume else { return }
 
-                    if let error = error {
-                        NSLog("Transcriber.transcribe: Recognition error: %@", error.localizedDescription)
-                        didResume = true
-                        task?.cancel()
-                        continuation.resume(returning: nil)
-                        return
-                    }
-
-                    if let result = result, result.isFinal {
-                        didResume = true
-                        continuation.resume(returning: result.bestTranscription.formattedString)
-                    } else if result == nil {
-                        didResume = true
-                        continuation.resume(returning: nil)
-                    }
+                if let error = error {
+                    NSLog("Transcriber.transcribe: Recognition error: %@", error.localizedDescription)
+                    didResume = true
+                    task?.cancel()
+                    continuation.resume(returning: nil)
+                    return
                 }
 
-                // Timeout handler
-                Task {
-                    try? await Task.sleep(nanoseconds: 30 * 1_000_000_000)
-                    lock.lock()
-                    defer { lock.unlock() }
-
-                    guard !didResume else { return }
+                if let result = result, result.isFinal {
+                    NSLog("Transcriber.transcribe: Transcription complete: %@", result.bestTranscription.formattedString)
                     didResume = true
-                    NSLog("Transcriber.transcribe: Timeout after 30 seconds")
-                    task?.cancel()
+                    continuation.resume(returning: result.bestTranscription.formattedString)
+                } else if result == nil {
+                    NSLog("Transcriber.transcribe: No result returned")
+                    didResume = true
                     continuation.resume(returning: nil)
                 }
             }
-        #endif
+
+            // Timeout handler
+            Task {
+                try? await Task.sleep(nanoseconds: 30 * 1_000_000_000)
+                lock.lock()
+                defer { lock.unlock() }
+
+                guard !didResume else { return }
+                didResume = true
+                NSLog("Transcriber.transcribe: Timeout after 30 seconds")
+                task?.cancel()
+                continuation.resume(returning: nil)
+            }
+        }
     }
 }
 

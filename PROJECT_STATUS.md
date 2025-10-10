@@ -8,7 +8,8 @@ A macOS note-taking app built with SwiftUI and Apple's Liquid Glass design syste
 - Note cards with grid display
 - Real-time search with liquid glass styling
 - Rich text editor with formatting tools
-- Voice recording with waveform visualization
+- Voice recording with waveform visualization and transcription
+- Image upload with inline display
 - AI-powered note summaries
 - Web clip integration
 - Todo list functionality
@@ -25,18 +26,13 @@ A macOS note-taking app built with SwiftUI and Apple's Liquid Glass design syste
 ## Known Bugs
 
 ### Critical
-- **Voice Recording Transcription**: Transcript is NOT pasted into editor after recording completes
-  - Code flow: `MicCaptureControl` → `sendRecording()` → `onSend` callback → `handleVoiceRecording()` → posts `insertVoiceTranscriptInEditor` notification
-  - `TodoRichTextEditor` has notification observer for `insertVoiceTranscriptInEditor`
-  - Notification appears to post but text insertion fails silently
-  - Logs show notification posting but no insertion in editor
+- None
 
 ### Non-Critical
 - Test suite has async/MainActor compilation issues
 - Minor build warnings (4 non-critical)
 
 ## Incomplete Features
-- Image upload and management
 - Folder management system with renaming
 - Tag creation/editing interface
 - Multiple view modes

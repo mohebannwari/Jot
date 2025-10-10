@@ -21,6 +21,11 @@ final class NotesManager: ObservableObject {
             notes = NotesManager.seedNotes()
             save()
         }
+        
+        // Clean up orphaned images on app launch
+        Task {
+            await cleanupOrphanedImages()
+        }
     }
     
     // MARK: - CRUD
@@ -43,6 +48,11 @@ final class NotesManager: ObservableObject {
     func deleteNote(id: UUID) {
         notes.removeAll { $0.id == id }
         save()
+        
+        // Clean up orphaned images after deletion
+        Task {
+            await cleanupOrphanedImages()
+        }
     }
 
     func togglePin(id: UUID) {
@@ -115,5 +125,12 @@ final class NotesManager: ObservableObject {
                  content: "The sun was just peeking over the horizon as I laced up my sneakers for a morning run. I set a goal to increase my distance this month, pushing my limits while enjoying the crisp morning air. Each step felt liberating, the rhythm of my breath syncing with the heartbeat of the world around me.",
                  tags: ["Active", "Fitness"])
         ]
+    }
+    
+    // MARK: - Image Cleanup
+    
+    /// Clean up images that are no longer referenced in any notes
+    private func cleanupOrphanedImages() async {
+        await ImageStorageManager.shared.cleanupUnusedImages(referencedInNotes: notes)
     }
 }

@@ -19,6 +19,7 @@ extension NSAttributedString.Key {
     fileprivate static let webClipTitle = NSAttributedString.Key("WebClipTitle")
     fileprivate static let webClipDescription = NSAttributedString.Key("WebClipDescription")
     fileprivate static let webClipDomain = NSAttributedString.Key("WebClipDomain")
+    fileprivate static let imageFilename = NSAttributedString.Key("ImageFilename")
 }
 
 struct TodoRichTextEditor: View {
@@ -523,6 +524,14 @@ struct TodoRichTextEditor: View {
                 pattern: webClipPattern,
                 options: []
             )
+            
+            // Image attachment markup patterns
+            private static let imageMarkupPrefix = "[[image|"
+            private static let imagePattern = #"\[\[image\|\|\|([^\]]+)\]\]"#
+            private static let imageRegex: NSRegularExpression? = try? NSRegularExpression(
+                pattern: imagePattern,
+                options: []
+            )
 
             private static func cleanedWebClipComponent(_ value: Any?) -> String {
                 guard let raw = value as? String else { return "" }
@@ -686,6 +695,122 @@ struct TodoRichTextEditor: View {
 
                 return attributed
             }
+            
+            /// Create an image attachment from a filename
+            private func makeImageAttachment(filename: String) -> NSMutableAttributedString {
+                NSLog("🖼️ makeImageAttachment: START with filename: %@", filename)
+                
+                // Get the image URL from storage
+                guard let imageURL = ImageStorageManager.shared.getImageURL(for: filename) else {
+                    NSLog("🖼️ makeImageAttachment: FAILED to get URL for image: %@", filename)
+                    let attributed = NSMutableAttributedString(string: "[Image: \(filename)]")
+                    return attributed
+                }
+                
+                NSLog("🖼️ makeImageAttachment: Got imageURL: %@", imageURL.path)
+                
+                #if os(macOS)
+                    // Load the image directly
+                    guard let sourceImage = NSImage(contentsOf: imageURL) else {
+                        NSLog("makeImageAttachment: Failed to load NSImage from %@", imageURL.path)
+                        let attributed = NSMutableAttributedString(string: "[Image: \(filename)]")
+                        return attributed
+                    }
+                    
+                    // Fixed display size: 100x100 pixels
+                    let displaySize = CGSize(width: 100, height: 100)
+                    let imageSize = sourceImage.size
+                    let cornerRadius: CGFloat = 12
+                    
+                    // Create resized image with rounded corners
+                    let resizedImage = NSImage(size: displaySize)
+                    resizedImage.lockFocus()
+                    
+                    // Create a rounded rect path for clipping
+                    let bounds = NSRect(origin: .zero, size: displaySize)
+                    let path = NSBezierPath(roundedRect: bounds, xRadius: cornerRadius, yRadius: cornerRadius)
+                    path.addClip()
+                    
+                    // Draw the image within the clipped path
+                    sourceImage.draw(
+                        in: bounds,
+                        from: NSRect(origin: .zero, size: imageSize),
+                        operation: .copy,
+                        fraction: 1.0
+                    )
+                    resizedImage.unlockFocus()
+                    
+                    // Create attachment using the image data approach which works reliably on macOS
+                    let attachment = NSTextAttachment()
+                    // Store the image as file wrapper data
+                    if let tiffData = resizedImage.tiffRepresentation,
+                       let bitmap = NSBitmapImageRep(data: tiffData),
+                       let pngData = bitmap.representation(using: .png, properties: [:]) {
+                        let fileWrapper = FileWrapper(regularFileWithContents: pngData)
+                        fileWrapper.filename = filename
+                        fileWrapper.preferredFilename = filename
+                        attachment.fileWrapper = fileWrapper
+                    }
+                    
+                    // Also set the image property (for immediate display)
+                    attachment.image = resizedImage
+                    attachment.bounds = CGRect(origin: .zero, size: displaySize)
+                    
+                    let attributed = NSMutableAttributedString(attachment: attachment)
+                    
+                    NSLog("makeImageAttachment: Created attachment for %@ with display size %@", filename, NSStringFromSize(displaySize))
+                    NSLog("makeImageAttachment: Attachment has image: %@, fileWrapper: %@", attachment.image != nil ? "YES" : "NO", attachment.fileWrapper != nil ? "YES" : "NO")
+                    NSLog("makeImageAttachment: Attributed string length: %ld", attributed.length)
+                #else
+                    // Load the image directly
+                    guard let uiImage = UIImage(contentsOfFile: imageURL.path) else {
+                        NSLog("makeImageAttachment: Failed to load UIImage from %@", imageURL.path)
+                        let attributed = NSMutableAttributedString(string: "[Image: \(filename)]")
+                        return attributed
+                    }
+                    
+                    // Fixed display size: 100x100 pixels
+                    let displaySize = CGSize(width: 100, height: 100)
+                    let cornerRadius: CGFloat = 12
+                    
+                    // Create resized image with rounded corners
+                    UIGraphicsBeginImageContextWithOptions(displaySize, false, 1.0)
+                    
+                    // Create a rounded rect path for clipping
+                    let bounds = CGRect(origin: .zero, size: displaySize)
+                    let path = UIBezierPath(roundedRect: bounds, cornerRadius: cornerRadius)
+                    path.addClip()
+                    
+                    // Draw the image within the clipped path
+                    uiImage.draw(in: bounds)
+                    let resizedImage = UIGraphicsGetImageFromCurrentImageContext() ?? uiImage
+                    UIGraphicsEndImageContext()
+                    
+                    let attachment = NSTextAttachment()
+                    attachment.image = resizedImage
+                    attachment.bounds = CGRect(origin: .zero, size: displaySize)
+                    
+                    // Store filename in file wrapper for serialization
+                    let fileWrapper = FileWrapper(regularFileWithContents: Data())
+                    fileWrapper.preferredFilename = filename
+                    attachment.fileWrapper = fileWrapper
+                    
+                    let attributed = NSMutableAttributedString(attachment: attachment)
+                    
+                    NSLog("makeImageAttachment: Created attachment with size %@", NSStringFromCGSize(displaySize))
+                #endif
+                
+                // Store the filename as a custom attribute (like web clips do)
+                // This persists even when NSTextAttachment modifies the fileWrapper
+                let attachmentRange = NSRange(location: 0, length: attributed.length)
+                attributed.addAttribute(.imageFilename, value: filename, range: attachmentRange)
+                
+                // Apply special paragraph style for images with proper spacing
+                attributed.addAttribute(
+                    .paragraphStyle, value: Self.imageParagraphStyle(), range: attachmentRange)
+                
+                return attributed
+            }
 
             init(text: Binding<String>, colorScheme: ColorScheme) {
                 self.textBinding = text
@@ -735,6 +860,18 @@ struct TodoRichTextEditor: View {
                     NSLog("📝 Coordinator: Got transcript: %@", transcript)
                     self?.insertVoiceTranscript(transcript: transcript)
                 }
+                
+                let insertImage = NotificationCenter.default.addObserver(
+                    forName: .insertImageInEditor, object: nil, queue: .main
+                ) { [weak self] notification in
+                    NSLog("📝 Coordinator: Received insertImageInEditor notification")
+                    guard let filename = notification.object as? String else {
+                        NSLog("📝 Coordinator: No filename in notification object")
+                        return
+                    }
+                    NSLog("📝 Coordinator: Got image filename: %@", filename)
+                    self?.insertImage(filename: filename)
+                }
 
                 let applyTool = NotificationCenter.default.addObserver(
                     forName: .applyEditTool, object: nil, queue: .main
@@ -772,7 +909,7 @@ struct TodoRichTextEditor: View {
                 }
 
                 observers = [
-                    insertTodo, insertLink, insertVoiceTranscript, applyTool, applyCommandMenuTool,
+                    insertTodo, insertLink, insertVoiceTranscript, insertImage, applyTool, applyCommandMenuTool,
                 ]
             }
 
@@ -1296,6 +1433,76 @@ struct TodoRichTextEditor: View {
                 syncText()
                 NSLog("📝 insertVoiceTranscript: Completed")
             }
+            
+            private func insertImage(filename: String) {
+                NSLog("📝 insertImage: Called with filename: %@", filename)
+                guard let textView = textView else {
+                    NSLog("📝 insertImage: textView is nil")
+                    return
+                }
+                
+                // Log current state to debug replacement issue
+                let currentRange = textView.selectedRange()
+                let storageLength = textView.textStorage?.length ?? 0
+                NSLog("📝 insertImage: BEFORE - Selected range: %@, storage length: %ld", NSStringFromRange(currentRange), storageLength)
+                
+                // Ensure cursor is at the end of the document to append, not replace
+                if currentRange.location != storageLength || currentRange.length != 0 {
+                    NSLog("📝 insertImage: Moving cursor to end of document")
+                    let endRange = NSRange(location: storageLength, length: 0)
+                    textView.setSelectedRange(endRange)
+                }
+                
+                NSLog("📝 insertImage: Creating image attachment")
+                // Create the image attachment directly (like web clips)
+                let attachment = makeImageAttachment(filename: filename)
+                
+                // Add newlines around the attachment for proper spacing
+                let newlineBefore = NSAttributedString(
+                    string: "\n",
+                    attributes: Self.baseTypingAttributes(for: currentColorScheme))
+                let newlineAfter = NSAttributedString(
+                    string: "\n",
+                    attributes: Self.baseTypingAttributes(for: currentColorScheme))
+                
+                let composed = NSMutableAttributedString()
+                composed.append(newlineBefore)
+                composed.append(attachment)
+                composed.append(newlineAfter)
+                
+                replaceSelection(with: composed)
+                
+                // Log what's in the text storage after insertion
+                if let textStorage = textView.textStorage {
+                    NSLog("📝 insertImage: Text storage length after insert: %ld", textStorage.length)
+                    textStorage.enumerateAttribute(.attachment, in: NSRange(location: 0, length: textStorage.length), options: []) { value, range, _ in
+                        if let attachment = value as? NSTextAttachment {
+                            NSLog("📝 insertImage: Found attachment in storage at range %@, has image: %@", NSStringFromRange(range), attachment.image != nil ? "YES" : "NO")
+                        }
+                    }
+                }
+                
+                // Force layout update to ensure attachment displays
+                if let layoutManager = textView.layoutManager,
+                   let textContainer = textView.textContainer {
+                    layoutManager.invalidateLayout(forCharacterRange: NSRange(location: 0, length: textView.textStorage?.length ?? 0), actualCharacterRange: nil)
+                    layoutManager.ensureLayout(for: textContainer)
+                }
+                
+                syncText()
+                
+                // Log what's in the text storage after syncText
+                if let textStorage = textView.textStorage {
+                    NSLog("📝 insertImage: Text storage length after syncText: %ld", textStorage.length)
+                    textStorage.enumerateAttribute(.attachment, in: NSRange(location: 0, length: textStorage.length), options: []) { value, range, _ in
+                        if let attachment = value as? NSTextAttachment {
+                            NSLog("📝 insertImage: Found attachment after syncText at range %@, has image: %@", NSStringFromRange(range), attachment.image != nil ? "YES" : "NO")
+                        }
+                    }
+                }
+                
+                NSLog("📝 insertImage: Completed")
+            }
 
             private func replaceSelection(with attributed: NSAttributedString) {
                 guard let textView = textView else { return }
@@ -1318,6 +1525,14 @@ struct TodoRichTextEditor: View {
 
                 if textView.shouldChangeText(in: range, replacementString: attributed.string) {
                     isUpdating = true
+                    
+                    // Check if we're inserting an attachment
+                    attributed.enumerateAttribute(.attachment, in: NSRange(location: 0, length: attributed.length), options: []) { value, range, _ in
+                        if let attachment = value as? NSTextAttachment {
+                            NSLog("📝 replaceSelection: Inserting attachment at range %@, has image: %@", NSStringFromRange(range), attachment.image != nil ? "YES" : "NO")
+                        }
+                    }
+                    
                     textView.textStorage?.beginEditing()
                     textView.textStorage?.replaceCharacters(in: range, with: attributed)
                     textView.textStorage?.endEditing()
@@ -1493,6 +1708,7 @@ struct TodoRichTextEditor: View {
                 guard let storage = textView?.textStorage else { return "" }
                 let fullRange = NSRange(location: 0, length: storage.length)
                 var output = ""
+                NSLog("📝 serialize: START - storage length: %ld", storage.length)
                 storage.enumerateAttributes(in: fullRange, options: []) { attributes, range, _ in
                     if let attachment = attributes[.attachment] as? NSTextAttachment,
                         let cell = attachment.attachmentCell as? TodoCheckboxAttachmentCell
@@ -1511,15 +1727,44 @@ struct TodoRichTextEditor: View {
                         }
                         let sanitizedURL = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
                         output.append("[[webclip|\(title)|\(description)|\(sanitizedURL)]]")
+                    } else if let attachment = attributes[.attachment] as? NSTextAttachment,
+                        !(attachment.attachmentCell is TodoCheckboxAttachmentCell)
+                    {
+                        // Image attachment serialization with fallback
+                        NSLog("📝 serialize: Found image attachment at range %@", NSStringFromRange(range))
+                        // Primary: Use the robust custom attribute
+                        if let filename = attributes[.imageFilename] as? String {
+                            NSLog("📝 serialize: Using custom attribute filename: %@", filename)
+                            output.append("[[image|||\(filename)]]")
+                        }
+                        // Fallback: If attribute is lost, try to recover from fileWrapper
+                        else if let fileWrapper = attachment.fileWrapper,
+                                let filename = fileWrapper.preferredFilename ?? fileWrapper.filename,
+                                !filename.isEmpty,
+                                filename.hasSuffix(".jpg")
+                        {
+                            output.append("[[image|||\(filename)]]")
+                            NSLog("Serialization: Recovered filename %@ from fileWrapper", filename)
+                        }
+                        // If both fail, data is lost - log this critical error
+                        else {
+                            output.append((storage.string as NSString).substring(with: range))
+                            NSLog("⚠️ Serialization CRITICAL: Could not find filename for image attachment. Data may be lost.")
+                        }
                     } else {
                         output.append((storage.string as NSString).substring(with: range))
                     }
+                }
+                NSLog("📝 serialize: END - output length: %ld, contains image markup: %@", output.count, output.contains("[[image|||") ? "YES" : "NO")
+                if output.contains("[[image|||") {
+                    NSLog("📝 serialize: Output preview: %@", String(output.prefix(500)))
                 }
                 return output
             }
 
             private func deserialize(_ text: String) -> NSAttributedString {
                 print("DEBUG: Deserializing text: '\(text)'")
+                NSLog("📝 deserialize: START - text length: %ld, contains image markup: %@", text.count, text.contains("[[image|||") ? "YES" : "NO")
 
                 // Handle empty text case
                 if text.isEmpty {
@@ -1592,6 +1837,48 @@ struct TodoRichTextEditor: View {
                                 continue
                             }
                         }
+                    } else if text[index...].hasPrefix(Self.imageMarkupPrefix) {
+                        // Image attachment deserialization
+                        NSLog("📝 deserialize: Found image markup prefix")
+                        if let endIndex = text[index...].range(of: "]]")?.upperBound {
+                            let imageText = String(text[index..<endIndex])
+                            NSLog("📝 deserialize: Markup text: %@", imageText)
+                            if let regex = Self.imageRegex,
+                                let match = regex.firstMatch(
+                                    in: imageText,
+                                    options: [],
+                                    range: NSRange(location: 0, length: imageText.utf16.count)
+                                )
+                            {
+                                let filename = Self.string(from: match, at: 1, in: imageText)
+                                NSLog("📝 deserialize: Extracted filename: %@", filename)
+                                
+                                // Add newline before image if result is not empty and doesn't end with newline
+                                if result.length > 0 {
+                                    let lastChar = (result.string as NSString).substring(from: result.length - 1)
+                                    if lastChar != "\n" {
+                                        let newline = NSAttributedString(
+                                            string: "\n",
+                                            attributes: Self.baseTypingAttributes(for: currentColorScheme))
+                                        result.append(newline)
+                                    }
+                                }
+                                
+                                // Create image attachment
+                                let attachment = makeImageAttachment(filename: filename)
+                                result.append(attachment)
+                                
+                                // Add newline after image
+                                let newline = NSAttributedString(
+                                    string: "\n",
+                                    attributes: Self.baseTypingAttributes(for: currentColorScheme))
+                                result.append(newline)
+                                
+                                index = endIndex
+                                lastWasWebClip = false
+                                continue
+                            }
+                        }
                     }
 
                     // Add single character with proper attributes
@@ -1661,6 +1948,17 @@ struct TodoRichTextEditor: View {
                 // No paragraph spacing - web clips are now inline with horizontal spacing
                 style.paragraphSpacing = 0
                 style.paragraphSpacingBefore = 0
+                return style
+            }
+            
+            static func imageParagraphStyle() -> NSParagraphStyle {
+                let style = NSMutableParagraphStyle()
+                style.lineHeightMultiple = 1.0
+                style.minimumLineHeight = 0
+                style.maximumLineHeight = 0
+                // Add spacing between images (reduced since we also use newlines)
+                style.paragraphSpacing = 6
+                style.paragraphSpacingBefore = 6
                 return style
             }
 
@@ -2333,7 +2631,7 @@ struct TodoRichTextEditor: View {
                     self?.handleCommandMenuToolApplication(notification)
                 }
 
-                observers = [insertTodo, insertLink, insertVoiceTranscript, applyCommandMenuTool]
+                observers = [insertTodo, insertLink, insertVoiceTranscript, insertImage, applyCommandMenuTool]
 
                 let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
                 tap.cancelsTouchesInView = false
@@ -2615,6 +2913,47 @@ struct TodoRichTextEditor: View {
                 replaceSelection(with: formatted)
                 syncText()
             }
+            
+            private func insertImage(filename: String) {
+                NSLog("📝 insertImage: Called with filename: %@", filename)
+                guard let textView = textView else {
+                    NSLog("📝 insertImage: textView is nil")
+                    return
+                }
+                
+                // Log current state to debug replacement issue
+                let currentRange = textView.selectedRange()
+                let storageLength = textView.textStorage?.length ?? 0
+                NSLog("📝 insertImage: BEFORE - Selected range: %@, storage length: %ld", NSStringFromRange(currentRange), storageLength)
+                
+                // Ensure cursor is at the end of the document to append, not replace
+                if currentRange.location != storageLength || currentRange.length != 0 {
+                    NSLog("📝 insertImage: Moving cursor to end of document")
+                    let endRange = NSRange(location: storageLength, length: 0)
+                    textView.setSelectedRange(endRange)
+                }
+                
+                NSLog("📝 insertImage: Creating image attachment")
+                // Create the image attachment directly (like web clips)
+                let attachment = makeImageAttachment(filename: filename)
+                
+                // Add newlines around the attachment for proper spacing
+                let newlineBefore = NSAttributedString(
+                    string: "\n",
+                    attributes: Self.baseTypingAttributes(for: currentColorScheme))
+                let newlineAfter = NSAttributedString(
+                    string: "\n",
+                    attributes: Self.baseTypingAttributes(for: currentColorScheme))
+                
+                let composed = NSMutableAttributedString()
+                composed.append(newlineBefore)
+                composed.append(attachment)
+                composed.append(newlineAfter)
+                
+                replaceSelection(with: composed)
+                syncText()
+                NSLog("📝 insertImage: Completed")
+            }
 
             private func replaceSelection(with attributed: NSAttributedString) {
                 guard let textView = textView else { return }
@@ -2805,6 +3144,27 @@ struct TodoRichTextEditor: View {
                     attributes, range, _ in
                     if let attachment = attributes[.attachment] as? TodoCheckboxAttachment {
                         result.append(attachment.isChecked ? "[x]" : "[ ]")
+                    } else if let attachment = attributes[.attachment] as? NSTextAttachment {
+                        // Image attachment serialization with fallback
+                        // Primary: Use the robust custom attribute
+                        if let filename = attributes[.imageFilename] as? String {
+                            result.append("[[image|||\(filename)]]")
+                        }
+                        // Fallback: If attribute is lost, try to recover from fileWrapper
+                        else if let fileWrapper = attachment.fileWrapper,
+                                let filename = fileWrapper.preferredFilename ?? fileWrapper.filename,
+                                !filename.isEmpty,
+                                filename.hasSuffix(".jpg")
+                        {
+                            result.append("[[image|||\(filename)]]")
+                            NSLog("Serialization: Recovered filename %@ from fileWrapper", filename)
+                        }
+                        // If both fail, data is lost - log this critical error
+                        else {
+                            result.append(
+                                (textView.attributedText.string as NSString).substring(with: range))
+                            NSLog("⚠️ Serialization CRITICAL: Could not find filename for image attachment. Data may be lost.")
+                        }
                     } else {
                         result.append(
                             (textView.attributedText.string as NSString).substring(with: range))
@@ -2831,6 +3191,47 @@ struct TodoRichTextEditor: View {
                         result.append(att)
                         index = text.index(index, offsetBy: 3)
                         continue
+                    } else if text[index...].hasPrefix(Self.imageMarkupPrefix) {
+                        // Image attachment deserialization
+                        NSLog("📝 deserialize: Found image markup prefix")
+                        if let endIndex = text[index...].range(of: "]]")?.upperBound {
+                            let imageText = String(text[index..<endIndex])
+                            NSLog("📝 deserialize: Markup text: %@", imageText)
+                            if let regex = Self.imageRegex,
+                                let match = regex.firstMatch(
+                                    in: imageText,
+                                    options: [],
+                                    range: NSRange(location: 0, length: imageText.utf16.count)
+                                )
+                            {
+                                let filename = Self.string(from: match, at: 1, in: imageText)
+                                NSLog("📝 deserialize: Extracted filename: %@", filename)
+                                
+                                // Add newline before image if result is not empty and doesn't end with newline
+                                if result.length > 0 {
+                                    let lastChar = (result.string as NSString).substring(from: result.length - 1)
+                                    if lastChar != "\n" {
+                                        let newline = NSAttributedString(
+                                            string: "\n",
+                                            attributes: Self.baseTypingAttributes(for: currentColorScheme))
+                                        result.append(newline)
+                                    }
+                                }
+                                
+                                // Create image attachment
+                                let attachment = makeImageAttachment(filename: filename)
+                                result.append(attachment)
+                                
+                                // Add newline after image
+                                let newline = NSAttributedString(
+                                    string: "\n",
+                                    attributes: Self.baseTypingAttributes(for: currentColorScheme))
+                                result.append(newline)
+                                
+                                index = endIndex
+                                continue
+                            }
+                        }
                     }
                     result.append(
                         NSAttributedString(
@@ -2982,6 +3383,17 @@ struct TodoRichTextEditor: View {
                 style.paragraphSpacingBefore = 0
                 return style
             }
+            
+            private static func imageParagraphStyle() -> NSParagraphStyle {
+                let style = NSMutableParagraphStyle()
+                style.lineHeightMultiple = 1.0
+                style.minimumLineHeight = 0
+                style.maximumLineHeight = 0
+                // Add spacing between images (reduced since we also use newlines)
+                style.paragraphSpacing = 6
+                style.paragraphSpacingBefore = 6
+                return style
+            }
 
             private static func baselineOffset(forLineHeight lineHeight: CGFloat, font: UIFont)
                 -> CGFloat
@@ -3026,6 +3438,7 @@ extension Notification.Name {
     static let insertTodoInEditor = Notification.Name("insertTodoInEditor")
     static let insertWebClipInEditor = Notification.Name("insertWebClipInEditor")
     static let insertVoiceTranscriptInEditor = Notification.Name("insertVoiceTranscriptInEditor")
+    static let insertImageInEditor = Notification.Name("insertImageInEditor")
     static let deleteWebClipAttachment = Notification.Name("deleteWebClipAttachment")
     static let applyEditTool = Notification.Name("applyEditTool")
 
