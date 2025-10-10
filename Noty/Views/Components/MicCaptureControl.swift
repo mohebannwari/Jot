@@ -99,7 +99,7 @@ private extension MicCaptureControl {
             }
         } label: {
             Image(systemName: "mic")
-                .font(.system(size: 20, weight: .medium))
+                .font(FontManager.heading(size: 20, weight: .medium))
                 .foregroundStyle(Color("PrimaryTextColor"))
                 .frame(width: 20, height: 20)
         }
@@ -120,7 +120,7 @@ private extension MicCaptureControl {
                 }
             } label: {
                 Image(systemName: "stop.circle.fill")
-                    .font(.system(size: 20, weight: .medium))
+                    .font(FontManager.heading(size: 20, weight: .medium))
                     .foregroundStyle(.white, Color.red)
                     .frame(width: 20, height: 20)
             }
@@ -159,7 +159,7 @@ private extension MicCaptureControl {
                 }
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 20, weight: .medium))
+                    .font(FontManager.heading(size: 20, weight: .medium))
                     .foregroundStyle(.red)
                     .frame(width: 20, height: 20)
                     .padding(8)
@@ -175,7 +175,7 @@ private extension MicCaptureControl {
                 }
             } label: {
                 Image(systemName: "record.circle")
-                    .font(.system(size: 20, weight: .medium))
+                    .font(FontManager.heading(size: 20, weight: .medium))
                     .foregroundStyle(resumeIconColor)
                     .frame(width: 20, height: 20)
                     .padding(8)
@@ -198,7 +198,7 @@ private extension MicCaptureControl {
                         .padding(8)
                 } else {
                     Image(systemName: "arrow.up.circle.fill")
-                        .font(.system(size: 20, weight: .medium))
+                        .font(FontManager.heading(size: 20, weight: .medium))
                         .foregroundStyle(.white)
                         .frame(width: 20, height: 20)
                         .padding(8)
@@ -253,11 +253,11 @@ private extension MicCaptureControl {
     func errorBanner(message: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 14, weight: .semibold))
+                .font(FontManager.heading(size: 14, weight: .semibold))
                 .foregroundStyle(.orange)
 
             Text(message)
-                .font(.system(size: 14, weight: .medium))
+                .font(FontManager.heading(size: 14, weight: .medium))
                 .foregroundStyle(Color.primary)
 
             Spacer(minLength: 8)
@@ -265,7 +265,7 @@ private extension MicCaptureControl {
             Button("Open Settings") {
                 viewModel.openSettings()
             }
-            .font(.system(size: 13, weight: .medium))
+            .font(FontManager.heading(size: 13, weight: .medium))
             .buttonStyle(.plain)
             .foregroundStyle(Color.accentColor)
         }

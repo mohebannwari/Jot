@@ -30,7 +30,7 @@ public struct ImagePickerControl: View {
             showingPicker = true
         } label: {
             Image(systemName: "photo")
-                .font(.system(size: 20, weight: .medium))
+                .font(FontManager.heading(size: 20, weight: .medium))
                 .foregroundStyle(Color("PrimaryTextColor"))
                 .frame(width: 20, height: 20)
         }

@@ -67,11 +67,11 @@ struct ImageAttachmentView: View {
             
             VStack(spacing: 8) {
                 Image(systemName: "photo")
-                    .font(.system(size: 40))
+                    .font(FontManager.heading(size: 40, weight: .regular))
                     .foregroundColor(.gray)
                 
                 Text("Loading...")
-                    .font(.system(size: 12))
+                    .font(FontManager.heading(size: 12, weight: .regular))
                     .foregroundColor(.gray)
             }
         }

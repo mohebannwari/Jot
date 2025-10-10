@@ -125,8 +125,9 @@ import SwiftUI
             // Remove existing heading attributes
             textStorage.removeAttribute(.font, range: range)
 
-            // Apply new heading style
-            let font = NSFont.systemFont(ofSize: level.fontSize, weight: level.fontWeight)
+            // Apply new heading style - using SF Pro Compact for headings
+            let weight: FontManager.Weight = level.fontWeight == .semibold ? .semibold : .regular
+            let font = FontManager.headingNS(size: level.fontSize, weight: weight)
             textStorage.addAttribute(.font, value: font, range: range)
 
             // Update paragraph style for spacing

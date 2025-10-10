@@ -23,7 +23,7 @@ struct BottomBar: View {
                 onNewNote()
             } label: {
                 Image(systemName: "pencil.and.scribble")
-                    .font(.system(size: 16))
+                    .font(FontManager.heading(size: 16, weight: .regular))
                     .foregroundColor(Color("ButtonPrimaryTextColor"))
                     .frame(width: 52, height: 40)
                     .background(Color("ButtonPrimaryBgColor"), in: RoundedRectangle(cornerRadius: 20))
@@ -48,7 +48,7 @@ struct BottomBar: View {
                 themeManager.toggleTheme()
             } label: {
                 Image(systemName: "circle.lefthalf.filled")
-                    .font(.system(size: 16))
+                    .font(FontManager.heading(size: 16, weight: .regular))
                     .foregroundColor(Color("PrimaryTextColor"))
                     .frame(width: 40, height: 40)
                     .liquidGlass(in: Circle())

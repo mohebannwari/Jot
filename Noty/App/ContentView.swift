@@ -110,7 +110,7 @@ struct ContentView: View {
                         }
                     }
                     .frame(width: 400)
-                    .padding(.top, pinnedNotes.isEmpty ? 60 : 18)
+                    .padding(.top, pinnedNotes.isEmpty ? 24 : 18)
                     .padding(.leading, 30)
                     .padding(.trailing, 30)
                     .padding(.bottom, 80)
@@ -261,9 +261,9 @@ struct NotesSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            // Section header
+            // Section header - using SF Pro Compact for headings
             Text(title)
-                .font(.system(size: 9, weight: .medium))
+                .font(FontManager.heading(size: 9, weight: .medium))
                 .foregroundColor(Color.primary.opacity(0.7))
                 .kerning(0)
                 .padding(.horizontal, 8)
@@ -298,9 +298,9 @@ struct NoteListCard: View {
             HStack(spacing: 8) {
                 // Content
                 VStack(alignment: .leading, spacing: 8) {
-                    // Title
+                    // Title - using SF Pro Compact for note names
                     Text(note.title)
-                        .font(.system(size: 16, weight: .medium))
+                        .font(FontManager.heading(size: 16, weight: .medium))
                         .foregroundColor(Color.primary)
                         .kerning(0)
                         .lineSpacing(4)
@@ -308,9 +308,9 @@ struct NoteListCard: View {
                         .truncationMode(.tail)
                         .frame(maxWidth: .infinity, alignment: .leading)
 
-                    // Date
+                    // Date - using SF Mono for metadata
                     Text(dateFormatter.string(from: note.date))
-                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        .font(FontManager.metadata(size: 12, weight: .medium))
                         .foregroundColor(Color.primary.opacity(0.55))
                         .kerning(-0.25)
                 }
@@ -365,7 +365,7 @@ struct ListTagView: View {
 
     var body: some View {
         Text(tag)
-            .font(.system(size: 13, weight: .medium))
+            .font(FontManager.heading(size: 13, weight: .medium))
             .foregroundColor(Color(red: 59 / 255, green: 130 / 255, blue: 246 / 255))  // blue-500
             .kerning(0)
     }
@@ -379,9 +379,9 @@ struct PinnedNotesSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            // Section header
+            // Section header - using SF Pro Compact for headings
             Text("PINNED")
-                .font(.system(size: 9, weight: .medium))
+                .font(FontManager.heading(size: 9, weight: .medium))
                 .foregroundColor(Color.primary.opacity(0.7))
                 .kerning(0)
                 .padding(.horizontal, 8)
@@ -421,7 +421,7 @@ struct PinnedNoteChip: View {
     var body: some View {
         Button(action: onTap) {
             Text(note.title)
-                .font(.system(size: 14, weight: .medium))
+                .font(FontManager.heading(size: 14, weight: .medium))
                 .foregroundColor(Color.primary)
                 .lineLimit(1)
                 .padding(.horizontal, 12)

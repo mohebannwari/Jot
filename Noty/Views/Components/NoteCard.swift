@@ -19,14 +19,14 @@ struct NoteCard: View {
             VStack(alignment: .leading, spacing: 12) {
                 // Top Bar with Date and Menu
                 HStack {
-                    // Date Badge
+                    // Date Badge - using SF Mono for metadata
                     HStack(spacing: 4) {
                         Image(systemName: "calendar")
-                            .font(.system(size: 10))
+                            .font(FontManager.metadata(size: 10, weight: .regular))
                             .foregroundColor(Color("TertiaryTextColor"))
                         
                         Text(dateFormatter.string(from: note.date))
-                            .font(.system(size: 10, weight: .medium))
+                            .font(FontManager.metadata(size: 10, weight: .medium))
                             .foregroundColor(Color("TertiaryTextColor"))
                     }
                     .padding(.horizontal, 6) 
@@ -58,7 +58,7 @@ struct NoteCard: View {
                         }
                     } label: {
                         Image(systemName: "ellipsis")
-                            .font(.system(size: 12))
+                            .font(FontManager.heading(size: 12, weight: .regular))
                             .foregroundColor(Color("TertiaryTextColor"))
                             .frame(width: 24, height: 24)
                             .tintedLiquidGlass(in: Circle(), tint: Color("SurfaceTranslucentColor"))
@@ -68,25 +68,25 @@ struct NoteCard: View {
                 
                 // Content Section
                 VStack(alignment: .leading, spacing: 8) {
-                    // Title
+                    // Title - using SF Pro Compact for note names
                     Text(note.title)
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(FontManager.heading(size: 17, weight: .semibold))
                         .foregroundColor(Color("PrimaryTextColor"))
                         .lineLimit(1)
                         .truncationMode(.tail)
                     
-                    // Content with original gradient fade (stronger at bottom)
+                    // Content with original gradient fade (stronger at bottom) - using Charter for body text
                     ZStack(alignment: .topLeading) {
                         // Base text
                         Text(note.content)
-                            .font(.system(size: 14, weight: .regular))
+                            .font(FontManager.body(size: 14, weight: .regular))
                             .foregroundColor(Color("SecondaryTextColor"))
                             .multilineTextAlignment(.leading)
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                         
                         // Blurred overlay masked to intensify bottom fade
                         Text(note.content)
-                            .font(.system(size: 14, weight: .regular))
+                            .font(FontManager.body(size: 14, weight: .regular))
                             .foregroundColor(Color("SecondaryTextColor"))
                             .multilineTextAlignment(.leading)
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -182,11 +182,11 @@ struct TagView: View {
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: "tag.fill")
-                .font(.system(size: 10))
+                .font(FontManager.heading(size: 10, weight: .regular))
                 .foregroundColor(Color("TagTextColor"))
 
             Text(tag)
-                .font(.system(size: 12, weight: .medium))
+                .font(FontManager.heading(size: 12, weight: .medium))
                 .foregroundColor(Color("TagTextColor"))
                 .lineLimit(1)
                 .truncationMode(.tail)

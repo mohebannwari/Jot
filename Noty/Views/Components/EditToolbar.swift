@@ -35,7 +35,7 @@ struct EditToolbar: View {
                 // Main toggle button (always visible)
                 Button(action: toggleExpansion) {
                     Image(systemName: "textformat")
-                        .font(.system(size: 16))
+                        .font(FontManager.heading(size: 16, weight: .regular))
                         .foregroundColor(Color("PrimaryTextColor"))
                         .frame(width: 20, height: 20)
                 }
@@ -164,7 +164,7 @@ struct EditToolbar: View {
                     let yOffset = tooltipFrame.minY - toolbarFrame.minY - 26
 
                     Text(tool.name)
-                        .font(.system(size: 11, weight: .medium))
+                        .font(FontManager.heading(size: 11, weight: .medium))
                         .foregroundColor(Color("PrimaryTextColor"))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
@@ -618,12 +618,12 @@ struct EditToolbar: View {
         VStack(spacing: 4) {
             HStack(spacing: 4) {
                 Image(systemName: "link")
-                    .font(.system(size: 12))
+                    .font(FontManager.heading(size: 12, weight: .regular))
                     .foregroundColor(Color("SecondaryTextColor"))
 
                 TextField("Enter URL", text: $linkURL)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(FontManager.heading(size: 12, weight: .medium))
                     .foregroundColor(Color("PrimaryTextColor"))
                     .focused($isLinkInputFocused)
                     .onSubmit {
@@ -632,7 +632,7 @@ struct EditToolbar: View {
 
                 Button(action: insertLink) {
                     Image(systemName: "arrow.right.circle.fill")
-                        .font(.system(size: 16))
+                        .font(FontManager.heading(size: 16, weight: .regular))
                         .foregroundColor(
                             linkURL.isEmpty ? Color("TertiaryTextColor") : Color("AccentColor"))
                 }
@@ -724,7 +724,7 @@ private struct ToolButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: systemName)
-                .font(.system(size: 16, weight: .medium))
+                .font(FontManager.heading(size: 16, weight: .medium))
                 .foregroundColor(
                     isSelected
                         ? Color("AccentColor")

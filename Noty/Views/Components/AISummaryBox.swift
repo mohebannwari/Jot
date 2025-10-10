@@ -19,26 +19,26 @@ struct AISummaryBox: View {
             // Header with AI icon and title
             HStack(spacing: 8) {
                 Image(systemName: "sparkles")
-                    .font(.system(size: 14, weight: .medium))
+                    .font(FontManager.heading(size: 14, weight: .medium))
                     .foregroundColor(Color("AccentColor"))
 
                 Text("AI Summary")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(FontManager.heading(size: 13, weight: .semibold))
                     .foregroundColor(Color("PrimaryTextColor"))
 
                 Spacer()
 
                 Button(action: onDismiss) {
                     Image(systemName: "ellipsis")
-                        .font(.system(size: 14))
+                        .font(FontManager.heading(size: 14, weight: .regular))
                         .foregroundColor(Color("SecondaryTextColor"))
                 }
                 .buttonStyle(.plain)
             }
 
-            // Summary content
+            // Summary content - using Charter for body text
             Text(summaryText)
-                .font(.system(size: 14, weight: .regular))
+                .font(FontManager.body(size: 14, weight: .regular))
                 .foregroundColor(Color("PrimaryTextColor"))
                 .multilineTextAlignment(.leading)
                 .lineSpacing(2)

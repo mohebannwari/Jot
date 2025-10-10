@@ -22,6 +22,48 @@ extension NSAttributedString.Key {
     fileprivate static let imageFilename = NSAttributedString.Key("ImageFilename")
 }
 
+#if os(macOS)
+/// Dedicated attachment type so that we never lose the stored filename during round-trips.
+private final class NoteImageAttachment: NSTextAttachment {
+    let storedFilename: String
+
+    init(filename: String) {
+        self.storedFilename = filename
+        super.init(data: nil, ofType: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("NoteImageAttachment does not support init(coder:)")
+    }
+}
+#else
+/// Dedicated attachment type so that we never lose the stored filename during round-trips.
+private final class NoteImageAttachment: NSTextAttachment {
+    let storedFilename: String
+
+    init(filename: String) {
+        self.storedFilename = filename
+        super.init(data: nil, ofType: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("NoteImageAttachment does not support init(coder:)")
+    }
+
+    override func copy(with zone: NSZone? = nil) -> Any {
+        let copy = NoteImageAttachment(filename: storedFilename)
+        copy.image = self.image
+        copy.bounds = self.bounds
+        copy.fileWrapper = self.fileWrapper
+        copy.contents = self.contents
+        copy.attachmentCell = self.attachmentCell
+        return copy
+    }
+}
+#endif
+
 struct TodoRichTextEditor: View {
     @Binding var text: String
     var onToolbarAction: ((EditTool) -> Void)?
@@ -307,9 +349,10 @@ struct TodoRichTextEditor: View {
             textView.allowsUndo = true
             textView.backgroundColor = .clear
             textView.drawsBackground = false
-            textView.font = NSFont.systemFont(ofSize: 16, weight: .medium)
+            // Use Charter for body text as per design requirements
+            textView.font = FontManager.bodyNS(size: 16, weight: .regular)
             textView.textColor = NSColor.labelColor
-            textView.textContainerInset = NSSize(width: 0, height: 8)
+            textView.textContainerInset = NSSize(width: 0, height: 16)
             textView.linkTextAttributes = [
                 .underlineStyle: 0,
                 .underlineColor: NSColor.clear,
@@ -482,7 +525,7 @@ struct TodoRichTextEditor: View {
             }
         }
 
-        final class Coordinator: NSObject, NSTextViewDelegate {
+        @MainActor final class Coordinator: NSObject, NSTextViewDelegate {
             private weak var textView: NSTextView?
             private var observers: [NSObjectProtocol] = []
             private var lastSerialized = ""
@@ -500,7 +543,8 @@ struct TodoRichTextEditor: View {
             private var textBeforeWritingTools = ""
             private var currentColorScheme: ColorScheme
 
-            private static let textFont = NSFont.systemFont(ofSize: 16, weight: .medium)
+            // Use Charter for body text as per design requirements
+            private static let textFont = FontManager.bodyNS(size: 16, weight: .regular)
             private static let baseLineHeight: CGFloat = 24
             private static let todoLineHeight: CGFloat = 24
             private static let checkboxIconSize: CGFloat = 24  // 24x24 pixels for better visibility
@@ -709,7 +753,7 @@ struct TodoRichTextEditor: View {
                 
                 NSLog("🖼️ makeImageAttachment: Got imageURL: %@", imageURL.path)
                 
-                #if os(macOS)
+        #if os(macOS)
                     // Load the image directly
                     guard let sourceImage = NSImage(contentsOf: imageURL) else {
                         NSLog("makeImageAttachment: Failed to load NSImage from %@", imageURL.path)
@@ -741,7 +785,7 @@ struct TodoRichTextEditor: View {
                     resizedImage.unlockFocus()
                     
                     // Create attachment using the image data approach which works reliably on macOS
-                    let attachment = NSTextAttachment()
+                    let attachment = NoteImageAttachment(filename: filename)
                     // Store the image as file wrapper data
                     if let tiffData = resizedImage.tiffRepresentation,
                        let bitmap = NSBitmapImageRep(data: tiffData),
@@ -761,7 +805,7 @@ struct TodoRichTextEditor: View {
                     NSLog("makeImageAttachment: Created attachment for %@ with display size %@", filename, NSStringFromSize(displaySize))
                     NSLog("makeImageAttachment: Attachment has image: %@, fileWrapper: %@", attachment.image != nil ? "YES" : "NO", attachment.fileWrapper != nil ? "YES" : "NO")
                     NSLog("makeImageAttachment: Attributed string length: %ld", attributed.length)
-                #else
+        #else
                     // Load the image directly
                     guard let uiImage = UIImage(contentsOfFile: imageURL.path) else {
                         NSLog("makeImageAttachment: Failed to load UIImage from %@", imageURL.path)
@@ -786,7 +830,7 @@ struct TodoRichTextEditor: View {
                     let resizedImage = UIGraphicsGetImageFromCurrentImageContext() ?? uiImage
                     UIGraphicsEndImageContext()
                     
-                    let attachment = NSTextAttachment()
+                    let attachment = NoteImageAttachment(filename: filename)
                     attachment.image = resizedImage
                     attachment.bounds = CGRect(origin: .zero, size: displaySize)
                     
@@ -831,22 +875,28 @@ struct TodoRichTextEditor: View {
                     queue: .main
                 ) { [weak self] _ in
                     // Ensure layout is stable when window becomes key
-                    if let textView = self?.textView, let textContainer = textView.textContainer {
-                        textView.layoutManager?.ensureLayout(for: textContainer)
+                    Task { @MainActor [weak self] in
+                        if let textView = self?.textView, let textContainer = textView.textContainer {
+                            textView.layoutManager?.ensureLayout(for: textContainer)
+                        }
                     }
                 }
 
                 let insertTodo = NotificationCenter.default.addObserver(
                     forName: .insertTodoInEditor, object: nil, queue: .main
                 ) { [weak self] _ in
-                    self?.insertTodo()
+                    Task { @MainActor [weak self] in
+                        self?.insertTodo()
+                    }
                 }
 
                 let insertLink = NotificationCenter.default.addObserver(
                     forName: .insertWebClipInEditor, object: nil, queue: .main
                 ) { [weak self] notification in
                     guard let url = notification.object as? String else { return }
-                    self?.insertWebClip(url: url)
+                    Task { @MainActor [weak self] in
+                        self?.insertWebClip(url: url)
+                    }
                 }
 
                 let insertVoiceTranscript = NotificationCenter.default.addObserver(
@@ -858,7 +908,9 @@ struct TodoRichTextEditor: View {
                         return
                     }
                     NSLog("📝 Coordinator: Got transcript: %@", transcript)
-                    self?.insertVoiceTranscript(transcript: transcript)
+                    Task { @MainActor [weak self] in
+                        self?.insertVoiceTranscript(transcript: transcript)
+                    }
                 }
                 
                 let insertImage = NotificationCenter.default.addObserver(
@@ -870,7 +922,9 @@ struct TodoRichTextEditor: View {
                         return
                     }
                     NSLog("📝 Coordinator: Got image filename: %@", filename)
-                    self?.insertImage(filename: filename)
+                    Task { @MainActor [weak self] in
+                        self?.insertImage(filename: filename)
+                    }
                 }
 
                 let applyTool = NotificationCenter.default.addObserver(
@@ -888,13 +942,13 @@ struct TodoRichTextEditor: View {
                         return
                     }
                     print("📝 DEBUG: Successfully converted to tool: \(tool)")
-                    guard let textView = self?.textView else {
-                        print("📝 DEBUG: textView is nil")
-                        return
-                    }
-                    print("📝 DEBUG: Applying formatting for tool: \(tool)")
                     Task { @MainActor [weak self] in
                         guard let self = self else { return }
+                        guard let textView = self.textView else {
+                            print("📝 DEBUG: textView is nil")
+                            return
+                        }
+                        print("📝 DEBUG: Applying formatting for tool: \(tool)")
                         self.formatter.applyFormatting(to: textView, tool: tool)
                         self.styleTodoParagraphs()
                         self.syncText()
@@ -905,7 +959,34 @@ struct TodoRichTextEditor: View {
                 let applyCommandMenuTool = NotificationCenter.default.addObserver(
                     forName: .applyCommandMenuTool, object: nil, queue: .main
                 ) { [weak self] notification in
-                    self?.handleCommandMenuToolApplication(notification)
+                    // Extract notification data before passing to MainActor context
+                    guard let info = notification.object as? [String: Any],
+                          let tool = info["tool"] as? EditTool,
+                          let slashLocation = info["slashLocation"] as? Int else {
+                        return
+                    }
+                    Task { @MainActor [weak self] in
+                        guard let self = self,
+                              let textView = self.textView,
+                              let textStorage = textView.textStorage else {
+                            return
+                        }
+                        
+                        // Remove the "/" character that triggered the menu
+                        if slashLocation >= 0 && slashLocation < textStorage.length {
+                            let slashRange = NSRange(location: slashLocation, length: 1)
+                            if textView.shouldChangeText(in: slashRange, replacementString: "") {
+                                textStorage.replaceCharacters(in: slashRange, with: "")
+                                textView.didChangeText()
+                            }
+                        }
+                        
+                        // Apply the selected tool
+                        self.formatter.applyFormatting(to: textView, tool: tool)
+                        
+                        // Sync the text back
+                        self.syncText()
+                    }
                 }
 
                 observers = [
@@ -1459,10 +1540,10 @@ struct TodoRichTextEditor: View {
                 
                 // Add newlines around the attachment for proper spacing
                 let newlineBefore = NSAttributedString(
-                    string: "\n",
+                    string: "\n\u{200B}\n",
                     attributes: Self.baseTypingAttributes(for: currentColorScheme))
                 let newlineAfter = NSAttributedString(
-                    string: "\n",
+                    string: "\n\u{200B}\n",
                     attributes: Self.baseTypingAttributes(for: currentColorScheme))
                 
                 let composed = NSMutableAttributedString()
@@ -1737,7 +1818,12 @@ struct TodoRichTextEditor: View {
                             NSLog("📝 serialize: Using custom attribute filename: %@", filename)
                             output.append("[[image|||\(filename)]]")
                         }
-                        // Fallback: If attribute is lost, try to recover from fileWrapper
+                        // Secondary: Try NoteImageAttachment which stores filename directly
+                        else if let noteAttachment = attachment as? NoteImageAttachment {
+                            output.append("[[image|||\(noteAttachment.storedFilename)]]")
+                            NSLog("Serialization: Recovered filename %@ from NoteImageAttachment", noteAttachment.storedFilename)
+                        }
+                        // Tertiary: Fallback to fileWrapper
                         else if let fileWrapper = attachment.fileWrapper,
                                 let filename = fileWrapper.preferredFilename ?? fileWrapper.filename,
                                 !filename.isEmpty,
@@ -1746,7 +1832,7 @@ struct TodoRichTextEditor: View {
                             output.append("[[image|||\(filename)]]")
                             NSLog("Serialization: Recovered filename %@ from fileWrapper", filename)
                         }
-                        // If both fail, data is lost - log this critical error
+                        // If all fail, data is lost - log this critical error
                         else {
                             output.append((storage.string as NSString).substring(with: range))
                             NSLog("⚠️ Serialization CRITICAL: Could not find filename for image attachment. Data may be lost.")
@@ -1854,25 +1940,19 @@ struct TodoRichTextEditor: View {
                                 NSLog("📝 deserialize: Extracted filename: %@", filename)
                                 
                                 // Add newline before image if result is not empty and doesn't end with newline
-                                if result.length > 0 {
-                                    let lastChar = (result.string as NSString).substring(from: result.length - 1)
-                                    if lastChar != "\n" {
-                                        let newline = NSAttributedString(
-                                            string: "\n",
-                                            attributes: Self.baseTypingAttributes(for: currentColorScheme))
-                                        result.append(newline)
-                                    }
-                                }
-                                
-                                // Create image attachment
-                                let attachment = makeImageAttachment(filename: filename)
-                                result.append(attachment)
-                                
-                                // Add newline after image
-                                let newline = NSAttributedString(
-                                    string: "\n",
-                                    attributes: Self.baseTypingAttributes(for: currentColorScheme))
-                                result.append(newline)
+                // Create image attachment
+                let attachment = makeImageAttachment(filename: filename)
+                result.append(attachment)
+                
+                // Add newline after image and a spacer paragraph to guarantee separation
+                let newline = NSAttributedString(
+                    string: "\n",
+                    attributes: Self.baseTypingAttributes(for: currentColorScheme))
+                let spacer = NSAttributedString(
+                    string: "\u{200B}\n",
+                    attributes: Self.baseTypingAttributes(for: currentColorScheme))
+                result.append(newline)
+                result.append(spacer)
                                 
                                 index = endIndex
                                 lastWasWebClip = false
@@ -2238,7 +2318,9 @@ struct TodoRichTextEditor: View {
         // This is what actually determines where the attachment sits relative to the baseline
         override nonisolated func cellBaselineOffset() -> NSPoint {
             // Use the actual font metrics for perfect alignment
-            let font = NSFont.systemFont(ofSize: 16, weight: .medium)
+            // Use Charter for body text alignment calculations
+            // Using inline font creation to avoid actor isolation issues in nonisolated context
+            let font = NSFont(name: "Charter", size: 16) ?? NSFont.systemFont(ofSize: 16)
 
             // Center the checkbox with the cap height (height of capital letters)
             // This provides the best optical alignment with mixed-case text
@@ -2469,7 +2551,8 @@ struct TodoRichTextEditor: View {
             textView.isScrollEnabled = false  // Disable internal scrolling - let parent scroll view handle it
             textView.alwaysBounceVertical = false
             textView.backgroundColor = .clear
-            textView.font = UIFont.systemFont(ofSize: 16, weight: .medium)
+            // Use Charter for body text as per design requirements
+            textView.font = FontManager.bodyUI(size: 16, weight: .regular)
             // Don't set textColor here - it will be set properly based on color scheme below
             textView.tintColor = UIColor(named: "AccentColor") ?? .systemBlue
             textView.textContainerInset = UIEdgeInsets(top: 8, left: 0, bottom: 8, right: 0)
@@ -2556,7 +2639,7 @@ struct TodoRichTextEditor: View {
             return colorScheme
         }
 
-        final class Coordinator: NSObject, UITextViewDelegate {
+        @MainActor final class Coordinator: NSObject, UITextViewDelegate {
             private weak var textView: UITextView?
             private var observers: [NSObjectProtocol] = []
             private var lastSerialized = ""
@@ -2564,7 +2647,8 @@ struct TodoRichTextEditor: View {
             private var textBinding: Binding<String>
             private var currentColorScheme: ColorScheme
 
-            private static let textFont = UIFont.systemFont(ofSize: 16, weight: .medium)
+            // Use Charter for body text as per design requirements
+            private static let textFont = FontManager.bodyUI(size: 16, weight: .regular)
             private static let baseLineHeight: CGFloat = 24
             private static let todoLineHeight: CGFloat = 24
             private static let checkboxIconSize: CGFloat = 24  // 24x24 pixels for better visibility
@@ -2577,7 +2661,8 @@ struct TodoRichTextEditor: View {
                 // Use font metrics for perfect alignment
                 // Center the checkbox with the cap height (height of capital letters)
                 // Formula from Apple docs: (capHeight - imageHeight) / 2
-                let font = UIFont.systemFont(ofSize: 16, weight: .medium)
+                // Use Charter for body text alignment calculations
+                let font = FontManager.bodyUI(size: 16, weight: .regular)
                 let checkboxHeight: CGFloat = 24
                 let offset = (font.capHeight - checkboxHeight) / 2
                 return offset
@@ -2603,14 +2688,18 @@ struct TodoRichTextEditor: View {
                 let insertTodo = NotificationCenter.default.addObserver(
                     forName: .insertTodoInEditor, object: nil, queue: .main
                 ) { [weak self] _ in
-                    self?.insertTodo()
+                    Task { @MainActor [weak self] in
+                        self?.insertTodo()
+                    }
                 }
 
                 let insertLink = NotificationCenter.default.addObserver(
                     forName: .insertWebClipInEditor, object: nil, queue: .main
                 ) { [weak self] notification in
                     guard let url = notification.object as? String else { return }
-                    self?.insertWebClip(url: url)
+                    Task { @MainActor [weak self] in
+                        self?.insertWebClip(url: url)
+                    }
                 }
 
                 let insertVoiceTranscript = NotificationCenter.default.addObserver(
@@ -2622,13 +2711,17 @@ struct TodoRichTextEditor: View {
                         return
                     }
                     NSLog("📝 Coordinator: Got transcript: %@", transcript)
-                    self?.insertVoiceTranscript(transcript: transcript)
+                    Task { @MainActor [weak self] in
+                        self?.insertVoiceTranscript(transcript: transcript)
+                    }
                 }
 
                 let applyCommandMenuTool = NotificationCenter.default.addObserver(
                     forName: .applyCommandMenuTool, object: nil, queue: .main
                 ) { [weak self] notification in
-                    self?.handleCommandMenuToolApplication(notification)
+                    Task { @MainActor [weak self] in
+                        self?.handleCommandMenuToolApplication(notification)
+                    }
                 }
 
                 observers = [insertTodo, insertLink, insertVoiceTranscript, insertImage, applyCommandMenuTool]
@@ -3150,7 +3243,12 @@ struct TodoRichTextEditor: View {
                         if let filename = attributes[.imageFilename] as? String {
                             result.append("[[image|||\(filename)]]")
                         }
-                        // Fallback: If attribute is lost, try to recover from fileWrapper
+                        // Secondary: Try NoteImageAttachment which stores filename directly
+                        else if let noteAttachment = attachment as? NoteImageAttachment {
+                            result.append("[[image|||\(noteAttachment.storedFilename)]]")
+                            NSLog("Serialization: Recovered filename %@ from NoteImageAttachment", noteAttachment.storedFilename)
+                        }
+                        // Tertiary: Fallback to fileWrapper
                         else if let fileWrapper = attachment.fileWrapper,
                                 let filename = fileWrapper.preferredFilename ?? fileWrapper.filename,
                                 !filename.isEmpty,
@@ -3159,7 +3257,7 @@ struct TodoRichTextEditor: View {
                             result.append("[[image|||\(filename)]]")
                             NSLog("Serialization: Recovered filename %@ from fileWrapper", filename)
                         }
-                        // If both fail, data is lost - log this critical error
+                        // If all fail, data is lost - log this critical error
                         else {
                             result.append(
                                 (textView.attributedText.string as NSString).substring(with: range))

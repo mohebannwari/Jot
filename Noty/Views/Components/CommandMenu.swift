@@ -69,22 +69,22 @@ struct CommandMenuItem: View {
         HStack(spacing: 10) {
             // Tool icon - smaller size for proper scale
             Image(systemName: tool.iconName)
-                .font(.system(size: 13, weight: .medium))
+                .font(FontManager.heading(size: 13, weight: .medium))
                 .foregroundStyle(isSelected ? .white : .primary)
                 .frame(width: 16, height: 16)
                 .symbolRenderingMode(.monochrome)
 
             // Tool name
             Text(tool.name)
-                .font(.system(size: 13, weight: .regular))
+                .font(FontManager.heading(size: 13, weight: .regular))
                 .foregroundStyle(isSelected ? .white : .primary)
 
             Spacer(minLength: 0)
 
-            // Keyboard shortcut hint
+            // Keyboard shortcut hint - using SF Mono for metadata
             if let shortcut = tool.keyboardShortcut {
                 Text("⌘\(shortcut.character.uppercased())")
-                    .font(.system(size: 11, weight: .regular))
+                    .font(FontManager.metadata(size: 11, weight: .regular))
                     .foregroundStyle(isSelected ? .white.opacity(0.85) : .secondary)
             }
         }

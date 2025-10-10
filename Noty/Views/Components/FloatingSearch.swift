@@ -147,7 +147,7 @@ struct FloatingSearch: View {
             if searchState == .collapsed {
                 Button(action: expandSearch) {
                     Image(systemName: "magnifyingglass")
-                        .font(.system(size: 16))
+                        .font(FontManager.heading(size: 16, weight: .regular))
                         .foregroundColor(Color("PrimaryTextColor"))
                         .frame(width: 40, height: 40)
                         .contentShape(Circle())
@@ -156,11 +156,11 @@ struct FloatingSearch: View {
             } else {
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass")
-                        .font(.system(size: 16))
+                        .font(FontManager.heading(size: 16, weight: .regular))
                         .foregroundColor(Color("PrimaryTextColor"))
 
                     TextField("Search", text: $searchText)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(FontManager.heading(size: 13, weight: .medium))
                         .foregroundColor(Color("PrimaryTextColor"))
                         .focused($isSearchFocused)
                         .textFieldStyle(.plain)
@@ -184,7 +184,7 @@ struct FloatingSearch: View {
                     if searchState == .withResults {
                         Button(action: { searchText = "" }) {
                             Image(systemName: "delete.left.fill")
-                                .font(.system(size: 18))
+                                .font(FontManager.heading(size: 18, weight: .regular))
                                 .foregroundColor(Color("SecondaryTextColor"))
                         }
                         .buttonStyle(.plain)
@@ -293,7 +293,7 @@ struct FloatingSearch: View {
                     .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
 
                 Text(result.note.title)
-                    .font(.system(size: 15, weight: .medium))
+                    .font(FontManager.heading(size: 15, weight: .medium))
                     .foregroundColor(Color("PrimaryTextColor"))
                     .lineLimit(1)
 
@@ -301,7 +301,7 @@ struct FloatingSearch: View {
 
                 // Hover affordance to indicate navigation
                 Image(systemName: "arrow.right.circle.fill")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(FontManager.heading(size: 13, weight: .semibold))
                     .foregroundColor(Color("PrimaryTextColor"))
                     .opacity(isHovered || isSelected ? 1 : 0)
             }

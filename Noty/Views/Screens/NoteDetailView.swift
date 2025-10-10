@@ -142,11 +142,11 @@ struct NoteDetailView: View {
                         )
                         .blur(radius: 0.1)
 
-                    // Title text on top
+                    // Title text on top - using SF Pro Compact for headings
                     HStack {
                         Spacer()
                         Text(editedTitle.isEmpty ? "Untitled" : editedTitle)
-                            .font(.system(size: 12, weight: .medium))
+                            .font(FontManager.heading(size: 12, weight: .medium))
                             .foregroundColor(Color("PrimaryTextColor"))
                             .opacity(0.5)
                             .lineLimit(1)
@@ -255,7 +255,7 @@ struct NoteDetailView: View {
             closeNote()
         }) {
             Image(systemName: "chevron.left")
-                .font(.system(size: 16, weight: .semibold))
+                .font(FontManager.heading(size: 16, weight: .semibold))
                 .foregroundColor(Color("PrimaryTextColor"))
                 .frame(width: 32, height: 32)
         }
@@ -305,7 +305,7 @@ struct NoteDetailView: View {
             HStack {
                 Spacer()
                 Text(editedTitle.isEmpty ? "Untitled" : editedTitle)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(FontManager.heading(size: 12, weight: .medium))
                     .foregroundColor(Color("PrimaryTextColor"))
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -321,9 +321,10 @@ struct NoteDetailView: View {
 
 
     // MARK: - Title
+    // Using SF Pro Compact for note titles as per design requirements
     private var titleField: some View {
         TextField("Note Title", text: $editedTitle, axis: .vertical)
-            .font(.system(size: 32, weight: .medium))
+            .font(FontManager.heading(size: 32, weight: .medium))
             .foregroundColor(Color("PrimaryTextColor"))
             .textFieldStyle(.plain)
             .lineLimit(nil)
@@ -338,7 +339,7 @@ struct NoteDetailView: View {
             HStack(spacing: 6) {
                 // Plus icon - always visible at leading edge
                 Image(systemName: "plus")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(FontManager.heading(size: 12, weight: .semibold))
                     .foregroundColor(
                         isAddingTag ? Color("AccentColor") : Color("TertiaryTextColor"))
 
@@ -346,7 +347,7 @@ struct NoteDetailView: View {
                 if isAddingTag {
                     // Expanded state: show input field
                     TextField("New tag", text: $newTagText)
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(FontManager.heading(size: 12, weight: .semibold))
                         .foregroundColor(Color("PrimaryTextColor"))
                         .textFieldStyle(.plain)
                         .lineLimit(1)
@@ -362,7 +363,7 @@ struct NoteDetailView: View {
                 } else if isNewNote {
                     // Collapsed state for new notes: show "New tag" text
                     Text("New tag")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(FontManager.heading(size: 12, weight: .semibold))
                         .foregroundColor(Color("TertiaryTextColor"))
                         .transition(.opacity)
                 }
@@ -669,10 +670,10 @@ private struct TagPill: View {
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: "tag.fill")
-                .font(.system(size: 10))
+                .font(FontManager.heading(size: 10, weight: .regular))
                 .foregroundColor(Color("TagTextColor"))
             Text(text)
-                .font(.system(size: 12, weight: .medium))
+                .font(FontManager.heading(size: 12, weight: .medium))
                 .foregroundColor(Color("TagTextColor"))
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -681,7 +682,7 @@ private struct TagPill: View {
                 onRemove()
             }) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 8, weight: .bold))
+                    .font(FontManager.heading(size: 8, weight: .bold))
                     .foregroundColor(Color("TagTextColor"))
                     .opacity(0.7)
             }

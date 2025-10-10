@@ -17,11 +17,11 @@ struct WebClipView: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "link")
-                .font(.system(size: 11, weight: .medium))
+                .font(FontManager.heading(size: 11, weight: .medium))
                 .foregroundColor(linkColor)
 
             Text(cleanedDomain)
-                .font(.system(size: 12, weight: .medium))
+                .font(FontManager.heading(size: 12, weight: .medium))
                 .foregroundColor(linkColor)
                 .lineLimit(1)
         }
