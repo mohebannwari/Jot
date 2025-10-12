@@ -10,14 +10,18 @@ import SwiftUI
 
 enum CommandMenuLayout {
     static let itemHeight: CGFloat = 28
-    static let verticalPadding: CGFloat = 24
+    static let itemSpacing: CGFloat = 0  // Spacing between items
     static let defaultMaxHeight: CGFloat = 280
 
+    // Calculate the ideal height to fit content without extra space
+    // The outer padding is handled by the .padding(12) modifier on the menu itself
     static func idealHeight(for itemCount: Int, maxHeight: CGFloat = defaultMaxHeight) -> CGFloat {
         guard itemCount > 0 else {
-            return min(maxHeight, verticalPadding)
+            return 0  // Return 0 when no items, let the padding handle minimum size
         }
-        let contentHeight = CGFloat(itemCount) * itemHeight + verticalPadding
+        // Calculate exact height needed for items
+        // Each item is itemHeight tall, with itemSpacing between them
+        let contentHeight = CGFloat(itemCount) * itemHeight + CGFloat(max(0, itemCount - 1)) * itemSpacing
         return min(maxHeight, contentHeight)
     }
 }
