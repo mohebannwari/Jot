@@ -38,6 +38,11 @@ struct NoteDetailView: View {
     @State private var headerRevealProgress: CGFloat = 0
     @State private var titleOffset: CGFloat = 0
     @State private var commandMenuNeedsSpace = false
+    
+    // Floating toolbar state (for text selection)
+    @State private var showFloatingToolbar = false
+    @State private var floatingToolbarOffset = CGPoint.zero
+    @State private var floatingToolbarPlaceAbove = false
 
     init(note: Note, isPresented: Binding<Bool>, onSave: @escaping (Note) -> Void) {
         self.note = note
@@ -170,6 +175,22 @@ struct NoteDetailView: View {
         }
         .overlay(alignment: .bottom) {
             bottomGlassControls
+                .opacity(showFloatingToolbar ? 0.5 : 1.0)
+                .animation(.smooth(duration: 0.2), value: showFloatingToolbar)
+        }
+        .overlay(alignment: .topLeading) {
+            // Floating toolbar overlay - appears near selected text (like CommandMenu)
+            if showFloatingToolbar {
+                FloatingEditToolbar(
+                    position: floatingToolbarOffset,
+                    placeAbove: floatingToolbarPlaceAbove,
+                    onToolAction: handleEditToolAction,
+                    onLinkInsert: handleLinkInsert
+                )
+                .offset(x: floatingToolbarOffset.x, y: floatingToolbarOffset.y)
+                .transition(.scale(scale: 0.9).combined(with: .opacity))
+                .zIndex(100)
+            }
         }
         .opacity(isViewMaterialized ? 1 : 0)
         .offset(x: isViewMaterialized ? 0 : 40)
@@ -215,6 +236,54 @@ struct NoteDetailView: View {
             DispatchQueue.main.async {
                 withAnimation(.easeOut(duration: 0.15)) {
                     self.commandMenuNeedsSpace = false
+                }
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .textSelectionChanged))
+        { notification in
+            DispatchQueue.main.async {
+                guard let userInfo = notification.userInfo,
+                      let hasSelection = userInfo["hasSelection"] as? Bool else { return }
+                
+                if hasSelection,
+                   let selectionX = userInfo["selectionX"] as? CGFloat,
+                   let selectionY = userInfo["selectionY"] as? CGFloat,
+                   let selectionWidth = userInfo["selectionWidth"] as? CGFloat,
+                   let visibleWidth = userInfo["visibleWidth"] as? CGFloat,
+                   let placeAbove = userInfo["placeAbove"] as? Bool {
+                    
+                    // Y position is already calculated with gap in TodoRichTextEditor
+                    let toolbarY = selectionY
+                    
+                    // Calculate X position with horizontal constraints
+                    let estimatedToolbarWidth: CGFloat = 550  // Estimated max width of toolbar
+                    let edgePadding: CGFloat = 20  // Minimum distance from edges
+                    let halfToolbarWidth = estimatedToolbarWidth / 2
+                    
+                    // Center on selection by default
+                    var toolbarX = selectionX + (selectionWidth / 2) - halfToolbarWidth
+                    
+                    // Ensure toolbar doesn't go off the left edge
+                    if toolbarX < edgePadding {
+                        toolbarX = edgePadding
+                    }
+                    
+                    // Ensure toolbar doesn't go off the right edge
+                    let maxX = visibleWidth - estimatedToolbarWidth - edgePadding
+                    if toolbarX > maxX {
+                        toolbarX = max(edgePadding, maxX)
+                    }
+                    
+                    withAnimation(.smooth(duration: 0.2)) {
+                        self.floatingToolbarOffset = CGPoint(x: toolbarX, y: toolbarY)
+                        self.floatingToolbarPlaceAbove = placeAbove
+                        self.showFloatingToolbar = true
+                    }
+                } else {
+                    // Hide floating toolbar when no selection
+                    withAnimation(.smooth(duration: 0.15)) {
+                        self.showFloatingToolbar = false
+                    }
                 }
             }
         }

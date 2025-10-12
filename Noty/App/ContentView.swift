@@ -296,25 +296,24 @@ struct NoteListCard: View {
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 8) {
-                // Content
-                VStack(alignment: .leading, spacing: 8) {
-                    // Title - using SF Pro Compact for note names
-                    Text(note.title)
-                        .font(FontManager.heading(size: 16, weight: .medium))
-                        .foregroundColor(Color.primary)
-                        .kerning(0)
-                        .lineSpacing(4)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-
-                    // Date - using SF Mono for metadata
-                    Text(dateFormatter.string(from: note.date))
-                        .font(FontManager.metadata(size: 12, weight: .medium))
-                        .foregroundColor(Color.primary.opacity(0.55))
-                        .kerning(-0.25)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                // Title - using SF Pro Compact for note names
+                // Left-aligned title that takes available space
+                Text(note.title)
+                    .font(FontManager.heading(size: 16, weight: .medium))
+                    .foregroundColor(Color.primary)
+                    .kerning(0)
+                    .lineSpacing(4)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                
+                // Date - positioned on the right in numeric format (MM.DD.YY)
+                // Uses SF Mono for metadata with subdued color for visual hierarchy
+                Text(dateFormatter.string(from: note.date))
+                    .font(FontManager.metadata(size: 11, weight: .medium))
+                    .foregroundColor(Color.primary.opacity(0.55))
+                    .kerning(-0.25)
+                    .frame(alignment: .center)
             }
             .background(
                 Rectangle()
@@ -352,9 +351,10 @@ struct NoteListCard: View {
         }
     }
 
+    // Date formatter for numeric format: DD.MM.YY (e.g., 10.11.25)
     private var dateFormatter: DateFormatter {
         let formatter = DateFormatter()
-        formatter.dateFormat = "MMMM d, yyyy 'at' h:mm a"
+        formatter.dateFormat = "dd.MM.yy"
         return formatter
     }
 }

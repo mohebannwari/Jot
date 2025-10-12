@@ -22,6 +22,11 @@ extension NSAttributedString.Key {
     fileprivate static let imageFilename = NSAttributedString.Key("ImageFilename")
 }
 
+// Notification names for floating toolbar coordination
+extension Notification.Name {
+    static let textSelectionChanged = Notification.Name("TextSelectionChanged")
+}
+
 #if os(macOS)
 /// Dedicated attachment type so that we never lose the stored filename during round-trips.
 private final class NoteImageAttachment: NSTextAttachment {
@@ -539,6 +544,71 @@ struct TodoRichTextEditor: View {
                 if let textView = self.textView, let textContainer = textView.textContainer {
                     textView.layoutManager?.ensureLayout(for: textContainer)
                 }
+                
+                // Post notification about selection change for floating toolbar
+                guard let textView = self.textView else { return }
+                let selectedRange = textView.selectedRange()
+                
+                // Only show floating toolbar if there's actual text selected (not just cursor)
+                if selectedRange.length > 0 {
+                    // Calculate selection rectangle in text view's local coordinate space (same as CommandMenu)
+                    if let layoutManager = textView.layoutManager,
+                       let textContainer = textView.textContainer {
+                        
+                        // Get the glyph range for the selection
+                        let glyphRange = layoutManager.glyphRange(forCharacterRange: selectedRange, actualCharacterRange: nil)
+                        
+                        // Get the bounding rect for the selection in the text container
+                        let selectionRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+                        
+                        // Add text container origin offset (like CommandMenu does)
+                        let selectionX = selectionRect.origin.x + textView.textContainerOrigin.x
+                        let selectionY = selectionRect.origin.y + textView.textContainerOrigin.y
+                        let selectionWidth = selectionRect.width
+                        let selectionHeight = selectionRect.height
+                        
+                        // Calculate toolbar position
+                        let toolbarHeight: CGFloat = 36
+                        let gap: CGFloat = 2
+                        
+                        // Check if we should place above or below based on visible rect
+                        let visibleRect = textView.visibleRect
+                        let selectionBottom = selectionY + selectionHeight
+                        let spaceBelow = visibleRect.maxY - selectionBottom
+                        let placeAbove = spaceBelow < (toolbarHeight + gap + 20)
+                        
+                        // Calculate Y position
+                        let toolbarY: CGFloat
+                        if placeAbove {
+                            toolbarY = selectionY - gap - toolbarHeight
+                        } else {
+                            toolbarY = selectionBottom + gap
+                        }
+                        
+                        // Post notification with selection info in local coordinates
+                        let info: [String: Any] = [
+                            "hasSelection": true,
+                            "selectionX": selectionX,
+                            "selectionY": toolbarY,
+                            "selectionWidth": selectionWidth,
+                            "placeAbove": placeAbove,
+                            "visibleWidth": visibleRect.width
+                        ]
+                        NotificationCenter.default.post(
+                            name: .textSelectionChanged,
+                            object: nil,
+                            userInfo: info
+                        )
+                    }
+                } else {
+                    // No selection - hide floating toolbar
+                    let info: [String: Any] = ["hasSelection": false]
+                    NotificationCenter.default.post(
+                        name: .textSelectionChanged,
+                        object: nil,
+                        userInfo: info
+                    )
+                }
             }
             private var textBeforeWritingTools = ""
             private var currentColorScheme: ColorScheme
@@ -761,16 +831,34 @@ struct TodoRichTextEditor: View {
                         return attributed
                     }
                     
-                    // Fixed display size: 100x100 pixels
-                    let displaySize = CGSize(width: 100, height: 100)
+                    // Calculate aspect-ratio-aware display size with 8px continuous corner radius
                     let imageSize = sourceImage.size
-                    let cornerRadius: CGFloat = 12
+                    let maxDimension: CGFloat = 120
+                    let aspectRatio = imageSize.width / imageSize.height
+                    let cornerRadius: CGFloat = 8
+                    
+                    // Determine display size based on aspect ratio
+                    let displaySize: CGSize
+                    if aspectRatio > 1 {
+                        // Horizontal image: constrain height to 120, adjust width proportionally
+                        displaySize = CGSize(width: maxDimension * aspectRatio, height: maxDimension)
+                    } else if aspectRatio < 1 {
+                        // Vertical image: constrain width to 120, adjust height proportionally
+                        displaySize = CGSize(width: maxDimension, height: maxDimension / aspectRatio)
+                    } else {
+                        // Square image: 120x120
+                        displaySize = CGSize(width: maxDimension, height: maxDimension)
+                    }
                     
                     // Create resized image with rounded corners
                     let resizedImage = NSImage(size: displaySize)
                     resizedImage.lockFocus()
                     
-                    // Create a rounded rect path for clipping
+                    // Enable antialiasing for smooth continuous corners
+                    NSGraphicsContext.current?.shouldAntialias = true
+                    NSGraphicsContext.current?.imageInterpolation = .high
+                    
+                    // Create a rounded rect path for clipping with continuous curve
                     let bounds = NSRect(origin: .zero, size: displaySize)
                     let path = NSBezierPath(roundedRect: bounds, xRadius: cornerRadius, yRadius: cornerRadius)
                     path.addClip()
@@ -798,11 +886,13 @@ struct TodoRichTextEditor: View {
                     
                     // Also set the image property (for immediate display)
                     attachment.image = resizedImage
+                    // Set bounds at origin with full display size
+                    // The imageParagraphStyle will handle spacing and prevent clipping
                     attachment.bounds = CGRect(origin: .zero, size: displaySize)
                     
                     let attributed = NSMutableAttributedString(attachment: attachment)
                     
-                    NSLog("makeImageAttachment: Created attachment for %@ with display size %@", filename, NSStringFromSize(displaySize))
+                    NSLog("makeImageAttachment: Created attachment for %@ with aspect ratio %.2f, display size %@", filename, aspectRatio, NSStringFromSize(displaySize))
                     NSLog("makeImageAttachment: Attachment has image: %@, fileWrapper: %@", attachment.image != nil ? "YES" : "NO", attachment.fileWrapper != nil ? "YES" : "NO")
                     NSLog("makeImageAttachment: Attributed string length: %ld", attributed.length)
         #else
@@ -813,14 +903,29 @@ struct TodoRichTextEditor: View {
                         return attributed
                     }
                     
-                    // Fixed display size: 100x100 pixels
-                    let displaySize = CGSize(width: 100, height: 100)
-                    let cornerRadius: CGFloat = 12
+                    // Calculate aspect-ratio-aware display size with 8px continuous corner radius
+                    let imageSize = uiImage.size
+                    let maxDimension: CGFloat = 120
+                    let aspectRatio = imageSize.width / imageSize.height
+                    let cornerRadius: CGFloat = 8
                     
-                    // Create resized image with rounded corners
+                    // Determine display size based on aspect ratio
+                    let displaySize: CGSize
+                    if aspectRatio > 1 {
+                        // Horizontal image: constrain height to 120, adjust width proportionally
+                        displaySize = CGSize(width: maxDimension * aspectRatio, height: maxDimension)
+                    } else if aspectRatio < 1 {
+                        // Vertical image: constrain width to 120, adjust height proportionally
+                        displaySize = CGSize(width: maxDimension, height: maxDimension / aspectRatio)
+                    } else {
+                        // Square image: 120x120
+                        displaySize = CGSize(width: maxDimension, height: maxDimension)
+                    }
+                    
+                    // Create resized image with continuous rounded corners
                     UIGraphicsBeginImageContextWithOptions(displaySize, false, 1.0)
                     
-                    // Create a rounded rect path for clipping
+                    // Use continuous corner radius (iOS 13+) for smooth, squircle-like corners
                     let bounds = CGRect(origin: .zero, size: displaySize)
                     let path = UIBezierPath(roundedRect: bounds, cornerRadius: cornerRadius)
                     path.addClip()
@@ -832,6 +937,8 @@ struct TodoRichTextEditor: View {
                     
                     let attachment = NoteImageAttachment(filename: filename)
                     attachment.image = resizedImage
+                    // Set bounds at origin with full display size
+                    // The imageParagraphStyle will handle spacing and prevent clipping
                     attachment.bounds = CGRect(origin: .zero, size: displaySize)
                     
                     // Store filename in file wrapper for serialization
@@ -841,7 +948,7 @@ struct TodoRichTextEditor: View {
                     
                     let attributed = NSMutableAttributedString(attachment: attachment)
                     
-                    NSLog("makeImageAttachment: Created attachment with size %@", NSStringFromCGSize(displaySize))
+                    NSLog("makeImageAttachment: Created attachment for %@ with aspect ratio %.2f, display size %@", filename, aspectRatio, NSStringFromCGSize(displaySize))
                 #endif
                 
                 // Store the filename as a custom attribute (like web clips do)
@@ -1538,17 +1645,32 @@ struct TodoRichTextEditor: View {
                 // Create the image attachment directly (like web clips)
                 let attachment = makeImageAttachment(filename: filename)
                 
-                // Add newlines around the attachment for proper spacing
-                let newlineBefore = NSAttributedString(
-                    string: "\n\u{200B}\n",
-                    attributes: Self.baseTypingAttributes(for: currentColorScheme))
-                let newlineAfter = NSAttributedString(
-                    string: "\n\u{200B}\n",
-                    attributes: Self.baseTypingAttributes(for: currentColorScheme))
+                // Check if text storage is empty or contains only whitespace
+                // to determine if this is the first element being inserted
+                let isEmpty = storageLength == 0 || textView.textStorage?.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true
+                
+                // Create paragraph breaks BEFORE the image block
+                // Use base attributes for clean paragraph separation
+                let baseAttrs = Self.baseTypingAttributes(for: currentColorScheme)
                 
                 let composed = NSMutableAttributedString()
-                composed.append(newlineBefore)
+                
+                // Add paragraph break before image (double newline if first element)
+                if isEmpty {
+                    // Extra newline at start to prevent top clipping
+                    let spacer = NSAttributedString(string: "\n\n", attributes: baseAttrs)
+                    composed.append(spacer)
+                } else {
+                    // Single newline to create paragraph break
+                    let spacer = NSAttributedString(string: "\n", attributes: baseAttrs)
+                    composed.append(spacer)
+                }
+                
+                // Append the image attachment (which already has imageParagraphStyle)
                 composed.append(attachment)
+                
+                // Add newline after for paragraph separation
+                let newlineAfter = NSAttributedString(string: "\n", attributes: baseAttrs)
                 composed.append(newlineAfter)
                 
                 replaceSelection(with: composed)
@@ -1704,6 +1826,7 @@ struct TodoRichTextEditor: View {
 
                     var isTodoParagraph = false
                     var isWebClipParagraph = false
+                    var isImageParagraph = false
 
                     textStorage.enumerateAttribute(
                         .attachment,
@@ -1726,12 +1849,23 @@ struct TodoRichTextEditor: View {
                                 isWebClipParagraph = true
                                 stop.pointee = true
                             }
+                            // Check if it's an image attachment (has imageFilename attribute)
+                            else if textStorage.attribute(
+                                .imageFilename, at: substringRange.location, effectiveRange: nil)
+                                != nil
+                            {
+                                isImageParagraph = true
+                                stop.pointee = true
+                            }
                         }
                     }
 
                     // Apply appropriate paragraph style based on content type
                     let paragraphStyle: NSParagraphStyle
-                    if isWebClipParagraph {
+                    if isImageParagraph {
+                        // CRITICAL: Images need special paragraph style with no line height constraints
+                        paragraphStyle = Self.imageParagraphStyle()
+                    } else if isWebClipParagraph {
                         paragraphStyle = Self.webClipParagraphStyle()
                     } else if isTodoParagraph {
                         paragraphStyle = Self.todoParagraphStyle()
@@ -1742,8 +1876,8 @@ struct TodoRichTextEditor: View {
                     textStorage.addAttribute(
                         .paragraphStyle, value: paragraphStyle, range: substringRange)
 
-                    // Don't adjust baseline for todo or web clip paragraphs
-                    if !isTodoParagraph && !isWebClipParagraph {
+                    // Don't adjust baseline for todo, web clip, or image paragraphs
+                    if !isTodoParagraph && !isWebClipParagraph && !isImageParagraph {
                         textStorage.addAttribute(
                             .baselineOffset, value: Self.baseBaselineOffset, range: substringRange)
                     }
@@ -2033,12 +2167,18 @@ struct TodoRichTextEditor: View {
             
             static func imageParagraphStyle() -> NSParagraphStyle {
                 let style = NSMutableParagraphStyle()
+                style.alignment = .left
+                // CRITICAL: Set line height multiplier to 1.0 and NO constraints
+                // This allows the attachment to determine its own height
                 style.lineHeightMultiple = 1.0
+                // Set to 0 to remove line height constraints entirely
                 style.minimumLineHeight = 0
                 style.maximumLineHeight = 0
-                // Add spacing between images (reduced since we also use newlines)
-                style.paragraphSpacing = 6
-                style.paragraphSpacingBefore = 6
+                // Increase spacing significantly to prevent overlap between images
+                style.paragraphSpacing = 16
+                style.paragraphSpacingBefore = 16
+                // No line spacing - let each image be its own paragraph
+                style.lineSpacing = 0
                 return style
             }
 
@@ -2846,6 +2986,70 @@ struct TodoRichTextEditor: View {
                 if let textView = self.textView, let textContainer = textView.textContainer {
                     textView.layoutManager?.ensureLayout(for: textContainer)
                 }
+                
+                // Post notification about selection change for floating toolbar
+                let selectedRange = textView.selectedRange
+                
+                // Only show floating toolbar if there's actual text selected (not just cursor)
+                if selectedRange.length > 0 {
+                    // Calculate selection rectangle in text view's local coordinate space (same as CommandMenu)
+                    if let layoutManager = textView.layoutManager,
+                       let textContainer = textView.textContainer {
+                        
+                        // Get the glyph range for the selection
+                        let glyphRange = layoutManager.glyphRange(forCharacterRange: selectedRange, actualCharacterRange: nil)
+                        
+                        // Get the bounding rect for the selection in the text container
+                        let selectionRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+                        
+                        // Add text container inset (like CommandMenu does for iOS)
+                        let selectionX = selectionRect.origin.x + textView.textContainerInset.left
+                        let selectionY = selectionRect.origin.y + textView.textContainerInset.top
+                        let selectionWidth = selectionRect.width
+                        let selectionHeight = selectionRect.height
+                        
+                        // Calculate toolbar position
+                        let toolbarHeight: CGFloat = 36
+                        let gap: CGFloat = 2
+                        
+                        // Check if we should place above or below based on visible rect
+                        let visibleRect = textView.bounds
+                        let selectionBottom = selectionY + selectionHeight
+                        let spaceBelow = visibleRect.maxY - selectionBottom
+                        let placeAbove = spaceBelow < (toolbarHeight + gap + 20)
+                        
+                        // Calculate Y position
+                        let toolbarY: CGFloat
+                        if placeAbove {
+                            toolbarY = selectionY - gap - toolbarHeight
+                        } else {
+                            toolbarY = selectionBottom + gap
+                        }
+                        
+                        // Post notification with selection info in local coordinates
+                        let info: [String: Any] = [
+                            "hasSelection": true,
+                            "selectionX": selectionX,
+                            "selectionY": toolbarY,
+                            "selectionWidth": selectionWidth,
+                            "placeAbove": placeAbove,
+                            "visibleWidth": visibleRect.width
+                        ]
+                        NotificationCenter.default.post(
+                            name: .textSelectionChanged,
+                            object: nil,
+                            userInfo: info
+                        )
+                    }
+                } else {
+                    // No selection - hide floating toolbar
+                    let info: [String: Any] = ["hasSelection": false]
+                    NotificationCenter.default.post(
+                        name: .textSelectionChanged,
+                        object: nil,
+                        userInfo: info
+                    )
+                }
             }
 
             func textView(
@@ -3484,12 +3688,18 @@ struct TodoRichTextEditor: View {
             
             private static func imageParagraphStyle() -> NSParagraphStyle {
                 let style = NSMutableParagraphStyle()
+                style.alignment = .left
+                // CRITICAL: Set line height multiplier to 1.0 and NO constraints
+                // This allows the attachment to determine its own height
                 style.lineHeightMultiple = 1.0
+                // Set to 0 to remove line height constraints entirely
                 style.minimumLineHeight = 0
                 style.maximumLineHeight = 0
-                // Add spacing between images (reduced since we also use newlines)
-                style.paragraphSpacing = 6
-                style.paragraphSpacingBefore = 6
+                // Increase spacing significantly to prevent overlap between images
+                style.paragraphSpacing = 16
+                style.paragraphSpacingBefore = 16
+                // No line spacing - let each image be its own paragraph
+                style.lineSpacing = 0
                 return style
             }
 
