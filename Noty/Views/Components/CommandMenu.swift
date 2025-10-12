@@ -8,6 +8,20 @@
 
 import SwiftUI
 
+enum CommandMenuLayout {
+    static let itemHeight: CGFloat = 28
+    static let verticalPadding: CGFloat = 24
+    static let defaultMaxHeight: CGFloat = 280
+
+    static func idealHeight(for itemCount: Int, maxHeight: CGFloat = defaultMaxHeight) -> CGFloat {
+        guard itemCount > 0 else {
+            return min(maxHeight, verticalPadding)
+        }
+        let contentHeight = CGFloat(itemCount) * itemHeight + verticalPadding
+        return min(maxHeight, contentHeight)
+    }
+}
+
 /// Command menu displaying editing tools in a vertical list
 /// Appears when user types "/" and supports arrow key navigation
 /// Uses the same Liquid Glass effect as EditToolbar for consistency
@@ -22,7 +36,7 @@ struct CommandMenu: View {
     var onSelect: ((EditTool) -> Void)?
 
     // Maximum height for the menu
-    var maxHeight: CGFloat = 280
+    var maxHeight: CGFloat = CommandMenuLayout.defaultMaxHeight
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -43,7 +57,7 @@ struct CommandMenu: View {
                     }
                 }
             }
-            .frame(maxHeight: maxHeight)
+            .frame(height: CommandMenuLayout.idealHeight(for: tools.count, maxHeight: maxHeight))
             .onChange(of: selectedIndex) { _, newIndex in
                 withAnimation(.smooth(duration: 0.2)) {
                     proxy.scrollTo(newIndex, anchor: .center)
@@ -130,6 +144,8 @@ extension EditTool {
         case .textSelect: return "selection.pin.in.out"
         case .divider: return "minus"
         case .link: return "link"
+        case .imageUpload: return "photo.on.rectangle.angled"
+        case .voiceRecord: return "mic"
         }
     }
 }
@@ -148,12 +164,7 @@ struct CommandMenu_Previews: PreviewProvider {
             .ignoresSafeArea()
 
             CommandMenu(
-                tools: [
-                    .h1, .h2, .h3,
-                    .bold, .italic, .underline, .strikethrough,
-                    .bulletList, .todo,
-                    .divider, .link,
-                ],
+                tools: [.imageUpload, .voiceRecord, .link],
                 selectedIndex: .constant(0),
                 onSelect: { tool in
                     print("Selected: \(tool.name)")

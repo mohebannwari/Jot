@@ -49,7 +49,7 @@ import SwiftUI
 
             // Some tools don't require text selection
             let toolsNotRequiringSelection: [EditTool] = [
-                .textSelect, .divider, .lineBreak, .todo,
+                .textSelect, .divider, .lineBreak, .todo, .imageUpload, .voiceRecord,
             ]
 
             if selectedRange.length == 0 && !toolsNotRequiringSelection.contains(tool) {
@@ -57,6 +57,8 @@ import SwiftUI
             }
 
             switch tool {
+            case .imageUpload, .voiceRecord:
+                return
             case .titleCase:
                 applyTitleCase(to: textView, in: selectedRange)
             case .h1:
@@ -508,7 +510,7 @@ import SwiftUI
 
             // Some tools don't require text selection
             let toolsNotRequiringSelection: [EditTool] = [
-                .textSelect, .divider, .lineBreak, .todo,
+                .textSelect, .divider, .lineBreak, .todo, .imageUpload, .voiceRecord,
             ]
 
             if selectedRange.length == 0 && !toolsNotRequiringSelection.contains(tool) {
@@ -516,6 +518,8 @@ import SwiftUI
             }
 
             switch tool {
+            case .imageUpload, .voiceRecord:
+                return
             case .bold:
                 toggleBold(in: textStorage, range: selectedRange)
             case .italic:

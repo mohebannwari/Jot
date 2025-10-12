@@ -767,6 +767,8 @@ enum EditTool: String, CaseIterable {
     case lineBreak
     case textSelect, divider
     case link
+    case imageUpload
+    case voiceRecord
 
     var isToggleable: Bool {
         switch self {
@@ -799,6 +801,8 @@ enum EditTool: String, CaseIterable {
         case .textSelect: return "Select Text"
         case .divider: return "Insert Divider"
         case .link: return "Insert Link"
+        case .imageUpload: return "Image Upload"
+        case .voiceRecord: return "Voice Record"
         }
     }
 

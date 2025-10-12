@@ -23,15 +23,18 @@ struct NoteDetailView: View {
     // Liquid glass animation states
     @State private var isViewMaterialized = false
     @State private var glassElementsVisible = false
-    @State private var bottomControlsExpanded = false
     @State private var hoveredTag: String?
     @State private var pressedTag: String?
     @State private var selectedTags: Set<String> = []
     @Namespace private var glassNamespace
-
-    // Edit toolbar state
-    @State private var isEditToolbarExpanded = false
-    @StateObject private var textFormattingManager = TextFormattingManager()
+    
+    // Auxiliary overlays
+    @State private var showVoiceRecorderOverlay = false
+    @State private var micSessionID = UUID()
+    @State private var showImagePicker = false
+    @State private var showLinkInputOverlay = false
+    @State private var linkInputText = ""
+    @FocusState private var isLinkInputFocused: Bool
 
     // Scroll tracking state
     @State private var showStickyHeader = false
@@ -92,7 +95,8 @@ struct NoteDetailView: View {
                         // Body text editor - unified with header, flows naturally
                         TodoRichTextEditor(
                             text: $editedContent,
-                            onToolbarAction: handleEditToolAction
+                            onToolbarAction: handleEditToolAction,
+                            onCommandMenuSelection: handleCommandMenuSelection
                         )
                         .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -174,22 +178,43 @@ struct NoteDetailView: View {
                 .zIndex(20)
         }
         .overlay(alignment: .bottom) {
-            bottomGlassControls
+            bottomOverlay
                 .opacity(showFloatingToolbar ? 0.5 : 1.0)
                 .animation(.smooth(duration: 0.2), value: showFloatingToolbar)
         }
-        .overlay(alignment: .topLeading) {
+        .overlay {
             // Floating toolbar overlay - appears near selected text (like CommandMenu)
-            if showFloatingToolbar {
-                FloatingEditToolbar(
-                    position: floatingToolbarOffset,
-                    placeAbove: floatingToolbarPlaceAbove,
-                    onToolAction: handleEditToolAction,
-                    onLinkInsert: handleLinkInsert
-                )
-                .offset(x: floatingToolbarOffset.x, y: floatingToolbarOffset.y)
-                .transition(.scale(scale: 0.9).combined(with: .opacity))
-                .zIndex(100)
+            GeometryReader { geometry in
+                if showFloatingToolbar {
+                    let parentFrame = geometry.frame(in: .global)
+
+                    // Convert window coordinates to parent view coordinates
+                    let localX = floatingToolbarOffset.x - parentFrame.minX
+                    let localY = floatingToolbarOffset.y - parentFrame.minY
+
+                    // Calculate center position for .position() modifier
+                    // Toolbar dimensions: 250x36
+                    let toolbarWidth: CGFloat = 250
+                    let toolbarHeight: CGFloat = 36
+                    let centerX = localX + toolbarWidth / 2
+                    let centerY = localY + toolbarHeight / 2
+
+                    let _ = print("📍 [Overlay] Position calculation:")
+                    let _ = print("  - parentFrame: \(parentFrame)")
+                    let _ = print("  - Window toolbar origin: (\(floatingToolbarOffset.x), \(floatingToolbarOffset.y))")
+                    let _ = print("  - Local toolbar origin: (\(localX), \(localY))")
+                    let _ = print("  - Toolbar center position: (\(centerX), \(centerY))")
+
+                    FloatingEditToolbar(
+                        position: floatingToolbarOffset,
+                        placeAbove: floatingToolbarPlaceAbove,
+                        width: 250,
+                        onToolAction: handleEditToolAction
+                    )
+                    .position(x: centerX, y: centerY)
+                    .transition(.scale(scale: 0.9).combined(with: .opacity))
+                    .zIndex(100)
+                }
             }
         }
         .opacity(isViewMaterialized ? 1 : 0)
@@ -204,9 +229,6 @@ struct NoteDetailView: View {
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.82).delay(0.1)) {
                     self.glassElementsVisible = true
                 }
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.82).delay(0.15)) {
-                    self.bottomControlsExpanded = true
-                }
             }
         }
         .onDisappear {
@@ -215,7 +237,6 @@ struct NoteDetailView: View {
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
                     self.isViewMaterialized = false
                     self.glassElementsVisible = false
-                    self.bottomControlsExpanded = false
                 }
             }
         }
@@ -249,33 +270,108 @@ struct NoteDetailView: View {
                    let selectionX = userInfo["selectionX"] as? CGFloat,
                    let selectionY = userInfo["selectionY"] as? CGFloat,
                    let selectionWidth = userInfo["selectionWidth"] as? CGFloat,
+                   let selectionHeight = userInfo["selectionHeight"] as? CGFloat,
+                   let selectionWindowY = userInfo["selectionWindowY"] as? CGFloat,
+                   let selectionWindowX = userInfo["selectionWindowX"] as? CGFloat,
                    let visibleWidth = userInfo["visibleWidth"] as? CGFloat,
-                   let placeAbove = userInfo["placeAbove"] as? Bool {
-                    
-                    // Y position is already calculated with gap in TodoRichTextEditor
-                    let toolbarY = selectionY
-                    
-                    // Calculate X position with horizontal constraints
-                    let estimatedToolbarWidth: CGFloat = 550  // Estimated max width of toolbar
+                   let visibleHeight = userInfo["visibleHeight"] as? CGFloat {
+
+                    print("📍 [NoteDetailView] Received coordinates:")
+                    print("  - selectionX: \(selectionX), selectionY: \(selectionY)")
+                    print("  - selectionWindowX: \(selectionWindowX), selectionWindowY: \(selectionWindowY)")
+                    print("  - selectionWidth: \(selectionWidth), selectionHeight: \(selectionHeight)")
+                    print("  - titleOffset: \(titleOffset)")
+
+                    // Calculate toolbar positioning with 4px gap
+                    let toolbarHeight: CGFloat = 36
+                    let gap: CGFloat = 2
+
+                    let windowReference = NSApp.keyWindow ?? NSApp.mainWindow
+                    let windowHeight = windowReference?.contentView?.bounds.height
+                        ?? windowReference?.frame.height
+                        ?? visibleHeight
+                    let windowWidth = windowReference?.contentView?.bounds.width
+                        ?? windowReference?.frame.width
+                        ?? visibleWidth
+
+                    // Convert AppKit window coordinates (origin bottom-left) into SwiftUI's top-left space
+                    let selectionTopFromTop = max(
+                        0,
+                        windowHeight - (selectionWindowY + selectionHeight)
+                    )
+                    let selectionBottomFromTop = min(windowHeight, selectionTopFromTop + selectionHeight)
+
+                    let availableAbove = selectionTopFromTop
+                    let availableBelow = max(0, windowHeight - selectionBottomFromTop)
+
+                    let fitsAbove = availableAbove >= (toolbarHeight + gap)
+                    let fitsBelow = availableBelow >= (toolbarHeight + gap)
+
+                    let minTop = gap
+                    let maxTop = max(gap, windowHeight - toolbarHeight - gap)
+
+                    let targetAboveTop = selectionTopFromTop - gap - toolbarHeight
+                    let clampedAboveTop = min(max(targetAboveTop, minTop), maxTop)
+                    let aboveMaintainsGap = (clampedAboveTop + toolbarHeight)
+                        <= (selectionTopFromTop - gap + 0.5)
+
+                    let targetBelowTop = selectionBottomFromTop + gap
+                    let clampedBelowTop = min(max(targetBelowTop, minTop), maxTop)
+                    let belowMaintainsGap = clampedBelowTop
+                        >= (selectionBottomFromTop + gap - 0.5)
+
+                    var placeAbove = false
+                    var chosenToolbarTop: CGFloat
+
+                    if aboveMaintainsGap {
+                        placeAbove = true
+                        chosenToolbarTop = clampedAboveTop
+                    } else if belowMaintainsGap {
+                        placeAbove = false
+                        chosenToolbarTop = clampedBelowTop
+                    } else if fitsAbove && !fitsBelow {
+                        placeAbove = true
+                        chosenToolbarTop = clampedAboveTop
+                    } else if fitsBelow && !fitsAbove {
+                        placeAbove = false
+                        chosenToolbarTop = clampedBelowTop
+                    } else if availableAbove >= availableBelow {
+                        placeAbove = true
+                        chosenToolbarTop = clampedAboveTop
+                    } else {
+                        placeAbove = false
+                        chosenToolbarTop = clampedBelowTop
+                    }
+
+                    let estimatedToolbarWidth: CGFloat = 250  // Fixed toolbar width
                     let edgePadding: CGFloat = 20  // Minimum distance from edges
                     let halfToolbarWidth = estimatedToolbarWidth / 2
-                    
-                    // Center on selection by default
-                    var toolbarX = selectionX + (selectionWidth / 2) - halfToolbarWidth
-                    
+
+                    // Center on selection using window coordinates
+                    var toolbarX = selectionWindowX + (selectionWidth / 2) - halfToolbarWidth
+
                     // Ensure toolbar doesn't go off the left edge
                     if toolbarX < edgePadding {
                         toolbarX = edgePadding
                     }
-                    
-                    // Ensure toolbar doesn't go off the right edge
-                    let maxX = visibleWidth - estimatedToolbarWidth - edgePadding
-                    if toolbarX > maxX {
-                        toolbarX = max(edgePadding, maxX)
+
+                    // Clamp within window bounds when available
+                    let maxX = windowWidth - estimatedToolbarWidth - edgePadding
+                    if maxX > edgePadding {
+                        toolbarX = min(max(toolbarX, edgePadding), maxX)
+                    } else {
+                        // Fallback when the window is narrower than our ideal padding allows.
+                        let fallbackMax = max(0, windowWidth - estimatedToolbarWidth)
+                        toolbarX = min(max(toolbarX, 0), fallbackMax)
                     }
+
+                    print("  - availableAbove: \(availableAbove), availableBelow: \(availableBelow)")
+                    print("  - fitsAbove: \(fitsAbove), fitsBelow: \(fitsBelow)")
+                    print("  - aboveMaintainsGap: \(aboveMaintainsGap), belowMaintainsGap: \(belowMaintainsGap)")
+                    print("  - Final toolbar position (top): (\(toolbarX), \(chosenToolbarTop)), placeAbove: \(placeAbove)")
                     
                     withAnimation(.smooth(duration: 0.2)) {
-                        self.floatingToolbarOffset = CGPoint(x: toolbarX, y: toolbarY)
+                        self.floatingToolbarOffset = CGPoint(x: toolbarX, y: chosenToolbarTop)
                         self.floatingToolbarPlaceAbove = placeAbove
                         self.showFloatingToolbar = true
                     }
@@ -286,6 +382,24 @@ struct NoteDetailView: View {
                     }
                 }
             }
+        }
+        .sheet(isPresented: $showImagePicker) {
+            ImagePicker(
+                onImagesSelected: { urls in
+                    showImagePicker = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        urls.forEach { url in
+                            handleImageSelection(url)
+                        }
+                    }
+                },
+                onDismiss: {
+                    showImagePicker = false
+                }
+            )
+            #if os(macOS)
+                .frame(minWidth: 800, minHeight: 600)
+            #endif
         }
         .transition(.asymmetric(
             insertion: .move(edge: .trailing).combined(with: .opacity),
@@ -515,44 +629,85 @@ struct NoteDetailView: View {
         }
     }
 
-    // MARK: - Bottom Controls
+    // MARK: - Bottom Overlay
     @ViewBuilder
-    private var bottomGlassControls: some View {
-        HStack(alignment: .bottom, spacing: 8) {
-            // Edit toolbar - positioned at bottom-left
-            EditToolbar(
-                isExpanded: $isEditToolbarExpanded,
-                onToolAction: handleEditToolAction,
-                onLinkInsert: handleLinkInsert
-            )
-            .scaleEffect(bottomControlsExpanded ? 1 : 0.7)
-            .opacity(bottomControlsExpanded ? 1 : 0)
-
-            Spacer(minLength: 8)
-
-            // Image picker button - positioned before mic button
-            ImagePickerControl(
-                onImageSelected: { url in
-                    handleImageSelection(url)
+    private var bottomOverlay: some View {
+        if showVoiceRecorderOverlay || showLinkInputOverlay {
+            VStack(spacing: 12) {
+                if showLinkInputOverlay {
+                    HStack {
+                        Spacer()
+                        linkInputPrompt
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                        Spacer()
+                    }
                 }
-            )
-            .scaleEffect(bottomControlsExpanded ? 1 : 0.7)
-            .opacity(bottomControlsExpanded ? 1 : 0)
 
-            // Mic button - positioned at bottom-right
-            MicCaptureControl(
-                onSend: { result in
-                    handleVoiceRecording(result)
-                },
-                onCancel: {},
-                autoStart: false
+                if showVoiceRecorderOverlay {
+                    HStack {
+                        Spacer()
+                        voiceRecorderControl
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                        Spacer()
+                    }
+                }
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 18)
+            .animation(
+                .spring(response: 0.35, dampingFraction: 0.82),
+                value: showVoiceRecorderOverlay
             )
-            .scaleEffect(bottomControlsExpanded ? 1 : 0.7)
-            .opacity(bottomControlsExpanded ? 1 : 0)
+            .animation(
+                .spring(response: 0.35, dampingFraction: 0.82),
+                value: showLinkInputOverlay
+            )
         }
-        .padding(.horizontal, 24)
-        .padding(.bottom, 24)
-        .animation(.spring(response: 0.35, dampingFraction: 0.82), value: bottomControlsExpanded)
+    }
+
+    private var voiceRecorderControl: some View {
+        MicCaptureControl(
+            onSend: { result in
+                processVoiceRecorderResult(result)
+            },
+            onCancel: {
+                dismissVoiceRecorderOverlay()
+            },
+            autoStart: true
+        )
+        .id(micSessionID)
+    }
+
+    private var linkInputPrompt: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "link")
+                .font(FontManager.heading(size: 12, weight: .regular))
+                .foregroundColor(Color("SecondaryTextColor"))
+
+            TextField("Enter URL", text: $linkInputText)
+                .textFieldStyle(.plain)
+                .font(FontManager.heading(size: 12, weight: .medium))
+                .foregroundColor(Color("PrimaryTextColor"))
+                .focused($isLinkInputFocused)
+                .submitLabel(.done)
+                .onSubmit(submitLink)
+
+            Button(action: submitLink) {
+                Image(systemName: "arrow.right.circle.fill")
+                    .font(FontManager.heading(size: 16, weight: .regular))
+                    .foregroundColor(
+                        linkInputText.isEmpty ? Color("TertiaryTextColor") : Color("AccentColor"))
+            }
+            .buttonStyle(.plain)
+            .disabled(linkInputText.isEmpty)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .liquidGlass(in: Capsule())
+        .frame(maxWidth: 320)
+        .onExitCommand {
+            hideLinkInputOverlay()
+        }
     }
 
 
@@ -570,7 +725,6 @@ struct NoteDetailView: View {
 
         // Animate the exit
         withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
-            bottomControlsExpanded = false
             glassElementsVisible = false
             isViewMaterialized = false
         }
@@ -621,6 +775,9 @@ struct NoteDetailView: View {
     private func handleEditToolAction(_ tool: EditTool) {
         print("🔧 DEBUG: handleEditToolAction called with tool: \(tool)")
         print("🔧 DEBUG: Tool rawValue: \(tool.rawValue)")
+        if performAuxiliaryToolAction(tool) {
+            return
+        }
         switch tool {
         case .todo:
             print("🔧 DEBUG: Posting TodoToolbarAction")
@@ -629,8 +786,79 @@ struct NoteDetailView: View {
         default:
             print("🔧 DEBUG: Posting applyEditTool with userInfo: [\"tool\": \"\(tool.rawValue)\"]")
             NotificationCenter.default.post(
-                name: Notification.Name("ApplyEditTool"), object: nil, userInfo: ["tool": tool.rawValue])
+                name: Notification.Name("applyEditTool"), object: nil, userInfo: ["tool": tool.rawValue])
         }
+    }
+
+    private func handleCommandMenuSelection(_ tool: EditTool) {
+        _ = performAuxiliaryToolAction(tool)
+    }
+
+    @discardableResult
+    private func performAuxiliaryToolAction(_ tool: EditTool) -> Bool {
+        switch tool {
+        case .imageUpload:
+            hideLinkInputOverlay()
+            showImagePicker = true
+            return true
+        case .voiceRecord:
+            hideLinkInputOverlay()
+            micSessionID = UUID()
+            showVoiceRecorderOverlay = true
+            return true
+        case .link:
+            presentLinkInputOverlay()
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func processVoiceRecorderResult(_ result: MicCaptureControl.Result) {
+        handleVoiceRecording(result)
+        dismissVoiceRecorderOverlay()
+    }
+
+    private func dismissVoiceRecorderOverlay() {
+        DispatchQueue.main.async {
+            guard self.showVoiceRecorderOverlay else { return }
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                self.showVoiceRecorderOverlay = false
+            }
+            self.micSessionID = UUID()
+        }
+    }
+
+    private func presentLinkInputOverlay() {
+        linkInputText = ""
+        showLinkInputOverlay = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            isLinkInputFocused = true
+        }
+    }
+
+    private func hideLinkInputOverlay() {
+        showLinkInputOverlay = false
+        linkInputText = ""
+        isLinkInputFocused = false
+    }
+
+    private func submitLink() {
+        let trimmed = linkInputText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            hideLinkInputOverlay()
+            return
+        }
+
+        HapticManager.shared.toolbarAction()
+
+        var finalURL = trimmed
+        if !finalURL.hasPrefix("http://") && !finalURL.hasPrefix("https://") {
+            finalURL = "https://" + finalURL
+        }
+
+        handleLinkInsert(finalURL)
+        hideLinkInputOverlay()
     }
 
     private func handleLinkInsert(_ url: String) {

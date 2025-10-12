@@ -12,6 +12,7 @@ struct FloatingEditToolbar: View {
     // Position from parent view
     var position: CGPoint
     var placeAbove: Bool
+    var width: CGFloat = 250
     
     // State management
     @State private var selectedTool: EditTool? = nil
@@ -23,109 +24,63 @@ struct FloatingEditToolbar: View {
     // Animation states
     @State private var toolsVisible = false
     
-    // Link input states
-    @State private var showLinkInput = false
-    @State private var linkURL = ""
-    @State private var linkButtonFrame: CGRect = .zero
-    @FocusState private var isLinkInputFocused: Bool
-    
     // Tool actions
     var onToolAction: ((EditTool) -> Void)?
-    var onLinkInsert: ((String) -> Void)?
     
     var body: some View {
-        GeometryReader { geometry in
-            HStack(spacing: 0) {
-                // Scrollable tools container (always expanded, no toggle button)
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 2) {
-                        // Heading styles
-                        headingTools
-                            .opacity(toolsVisible ? 1 : 0)
-                            .scaleEffect(toolsVisible ? 1 : 0.8)
-                        
-                        // Divider
-                        Rectangle()
-                            .fill(Color("TertiaryTextColor").opacity(0.2))
-                            .frame(width: 1, height: 16)
-                            .opacity(toolsVisible ? 1 : 0)
-                            .scaleEffect(y: toolsVisible ? 1 : 0.5)
-                        
-                        // Text styles
-                        textStyleTools
-                            .opacity(toolsVisible ? 1 : 0)
-                            .scaleEffect(toolsVisible ? 1 : 0.8)
-                        
-                        // Divider
-                        Rectangle()
-                            .fill(Color("TertiaryTextColor").opacity(0.2))
-                            .frame(width: 1, height: 16)
-                            .opacity(toolsVisible ? 1 : 0)
-                            .scaleEffect(y: toolsVisible ? 1 : 0.5)
-                        
-                        // List tool
-                        listTool
-                            .opacity(toolsVisible ? 1 : 0)
-                            .scaleEffect(toolsVisible ? 1 : 0.8)
-                        
-                        // Divider
-                        Rectangle()
-                            .fill(Color("TertiaryTextColor").opacity(0.2))
-                            .frame(width: 1, height: 16)
-                            .opacity(toolsVisible ? 1 : 0)
-                            .scaleEffect(y: toolsVisible ? 1 : 0.5)
-                        
-                        // Indentation tools
-                        indentationTools
-                            .opacity(toolsVisible ? 1 : 0)
-                            .scaleEffect(toolsVisible ? 1 : 0.8)
-                        
-                        // Divider
-                        Rectangle()
-                            .fill(Color("TertiaryTextColor").opacity(0.2))
-                            .frame(width: 1, height: 16)
-                            .opacity(toolsVisible ? 1 : 0)
-                            .scaleEffect(y: toolsVisible ? 1 : 0.5)
-                        
-                        // Alignment tools
-                        alignmentTools
-                            .opacity(toolsVisible ? 1 : 0)
-                            .scaleEffect(toolsVisible ? 1 : 0.8)
-                        
-                        // Divider
-                        Rectangle()
-                            .fill(Color("TertiaryTextColor").opacity(0.2))
-                            .frame(width: 1, height: 16)
-                            .opacity(toolsVisible ? 1 : 0)
-                            .scaleEffect(y: toolsVisible ? 1 : 0.5)
-                        
-                        // Selection tools
-                        selectionTools
-                            .opacity(toolsVisible ? 1 : 0)
-                            .scaleEffect(toolsVisible ? 1 : 0.8)
-                        
-                        // Divider
-                        Rectangle()
-                            .fill(Color("TertiaryTextColor").opacity(0.2))
-                            .frame(width: 1, height: 16)
-                            .opacity(toolsVisible ? 1 : 0)
-                            .scaleEffect(y: toolsVisible ? 1 : 0.5)
-                        
-                        // Link tool
-                        linkTool
-                            .opacity(toolsVisible ? 1 : 0)
-                            .scaleEffect(toolsVisible ? 1 : 0.8)
-                    }
-                    .padding(.horizontal, 12)
-                }
-                .frame(maxWidth: min(geometry.size.width - 24, 600))
+        // Fixed-width toolbar with horizontal scrolling for all formatting tools
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 2) {
+                // Heading styles
+                headingTools
+                    .opacity(toolsVisible ? 1 : 0)
+                    .scaleEffect(toolsVisible ? 1 : 0.8)
+                
+                // Divider
+                toolDivider
+                
+                // Text styles
+                textStyleTools
+                    .opacity(toolsVisible ? 1 : 0)
+                    .scaleEffect(toolsVisible ? 1 : 0.8)
+                
+                // Divider
+                toolDivider
+                
+                // List tools
+                listTool
+                    .opacity(toolsVisible ? 1 : 0)
+                    .scaleEffect(toolsVisible ? 1 : 0.8)
+                
+                // Divider
+                toolDivider
+                
+                // Indentation tools
+                indentationTools
+                    .opacity(toolsVisible ? 1 : 0)
+                    .scaleEffect(toolsVisible ? 1 : 0.8)
+                
+                // Divider
+                toolDivider
+                
+                // Alignment tools
+                alignmentTools
+                    .opacity(toolsVisible ? 1 : 0)
+                    .scaleEffect(toolsVisible ? 1 : 0.8)
+                
+                // Divider
+                toolDivider
+                
+                // Selection tools
+                selectionTools
+                    .opacity(toolsVisible ? 1 : 0)
+                    .scaleEffect(toolsVisible ? 1 : 0.8)
             }
+            .padding(.horizontal, 12)
             .padding(.vertical, 6)
-            .frame(height: 36)
-            .fixedSize(horizontal: true, vertical: false)
-            .liquidGlass(in: Capsule())
         }
-        .frame(height: 36)
+        .frame(width: width, height: 36)
+        .liquidGlass(in: Capsule())
         .animation(.bouncy(duration: 0.4), value: toolsVisible)
         .onAppear {
             // Show tools immediately on appear since we're always expanded
@@ -161,27 +116,18 @@ struct FloatingEditToolbar: View {
                 }
             }
         }
-        .overlay {
-            // Link input field overlay
-            if showLinkInput && linkButtonFrame != .zero {
-                GeometryReader { geometry in
-                    let toolbarFrame = geometry.frame(in: .global)
-                    let buttonCenterX = linkButtonFrame.midX - toolbarFrame.minX
-                    let yOffset = linkButtonFrame.minY - toolbarFrame.minY - 30
-                    
-                    linkInputField
-                        .position(x: buttonCenterX, y: yOffset)
-                        .transition(
-                            .asymmetric(
-                                insertion: .scale(scale: 0.8, anchor: .bottom).combined(with: .opacity),
-                                removal: .scale(scale: 0.9, anchor: .bottom).combined(with: .opacity)
-                            ))
-                }
-            }
-        }
     }
     
     // MARK: - Tool Groups
+    
+    // Helper for consistent dividers
+    private var toolDivider: some View {
+        Rectangle()
+            .fill(Color("TertiaryTextColor").opacity(0.2))
+            .frame(width: 1, height: 16)
+            .opacity(toolsVisible ? 1 : 0)
+            .scaleEffect(y: toolsVisible ? 1 : 0.5)
+    }
     
     private var headingTools: some View {
         HStack(spacing: 2) {
@@ -549,86 +495,6 @@ struct FloatingEditToolbar: View {
         }
     }
     
-    private var linkTool: some View {
-        FloatingToolButton(
-            tool: .link,
-            systemName: "link",
-            isSelected: selectedTool == .link || showLinkInput,
-            isHovered: hoveredTool == .link,
-            action: {
-                withAnimation(.bouncy(duration: 0.4)) {
-                    showLinkInput.toggle()
-                    if !showLinkInput {
-                        linkURL = ""
-                    }
-                }
-            },
-            onHoverChange: { hovering, frame in
-                hoveredTool = hovering ? .link : nil
-                tooltipFrame = frame
-                linkButtonFrame = frame
-                if hovering {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                        if hoveredTool == .link { showTooltip = true }
-                    }
-                } else {
-                    showTooltip = false
-                }
-            }
-        )
-        .background(
-            GeometryReader { geometry in
-                Color.clear
-                    .onAppear {
-                        linkButtonFrame = geometry.frame(in: .global)
-                    }
-                    .onChange(of: geometry.frame(in: .global)) { _, newFrame in
-                        linkButtonFrame = newFrame
-                    }
-            }
-        )
-    }
-    
-    // MARK: - Link Input Field
-    
-    private var linkInputField: some View {
-        VStack(spacing: 4) {
-            HStack(spacing: 4) {
-                Image(systemName: "link")
-                    .font(FontManager.heading(size: 12, weight: .regular))
-                    .foregroundColor(Color("SecondaryTextColor"))
-                
-                TextField("Enter URL", text: $linkURL)
-                    .textFieldStyle(.plain)
-                    .font(FontManager.heading(size: 12, weight: .medium))
-                    .foregroundColor(Color("PrimaryTextColor"))
-                    .focused($isLinkInputFocused)
-                    .onSubmit {
-                        insertLink()
-                    }
-                
-                Button(action: insertLink) {
-                    Image(systemName: "arrow.right.circle.fill")
-                        .font(FontManager.heading(size: 16, weight: .regular))
-                        .foregroundColor(linkURL.isEmpty ? Color("TertiaryTextColor") : Color("AccentColor"))
-                }
-                .buttonStyle(.plain)
-                .disabled(linkURL.isEmpty)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .liquidGlass(in: Capsule())
-            .frame(width: 240)
-            
-            // Small arrow pointing to the link button
-            Triangle()
-                .fill(Color("SurfaceTranslucentColor"))
-                .frame(width: 8, height: 4)
-                .offset(y: -2)
-        }
-        .zIndex(10000)
-    }
-    
     // MARK: - Actions
     
     private func handleToolAction(_ tool: EditTool) {
@@ -644,38 +510,6 @@ struct FloatingEditToolbar: View {
         }
     }
     
-    private func insertLink() {
-        guard !linkURL.isEmpty else { return }
-        
-        HapticManager.shared.toolbarAction()
-        
-        // Add https:// if no protocol is specified
-        var finalURL = linkURL
-        if !linkURL.hasPrefix("http://") && !linkURL.hasPrefix("https://") {
-            finalURL = "https://" + linkURL
-        }
-        
-        onLinkInsert?(finalURL)
-        
-        // Hide the input field
-        withAnimation(.bouncy(duration: 0.4)) {
-            showLinkInput = false
-            linkURL = ""
-        }
-    }
-}
-
-// MARK: - Triangle Shape for Pointer
-
-private struct Triangle: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        path.move(to: CGPoint(x: rect.midX, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-        path.addLine(to: CGPoint(x: rect.midX, y: rect.minY))
-        return path
-    }
 }
 
 // MARK: - Floating Tool Button Component
@@ -723,4 +557,3 @@ private struct FloatingToolButton: View {
         }
     }
 }
-

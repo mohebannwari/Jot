@@ -72,6 +72,7 @@ private final class NoteImageAttachment: NSTextAttachment {
 struct TodoRichTextEditor: View {
     @Binding var text: String
     var onToolbarAction: ((EditTool) -> Void)?
+    var onCommandMenuSelection: ((EditTool) -> Void)?
     @Environment(\.colorScheme) private var colorScheme
     private let baseBottomInset: CGFloat = 0
 
@@ -83,6 +84,8 @@ struct TodoRichTextEditor: View {
     @State private var commandMenuPosition: CGPoint = .zero
     @State private var commandMenuSelectedIndex = 0
     @State private var commandSlashLocation: Int = -1
+    fileprivate static let commandMenuActions: [EditTool] = [.imageUpload, .voiceRecord, .link]
+    private let commandMenuTools = TodoRichTextEditor.commandMenuActions
 
     // Static accessor for command menu showing flag (used by keyboard handlers)
     #if os(macOS)
@@ -101,12 +104,17 @@ struct TodoRichTextEditor: View {
         @State private var keyboardInset: CGFloat = 0
     #endif
 
-    init(text: Binding<String>, onToolbarAction: ((EditTool) -> Void)? = nil) {
+    init(
+        text: Binding<String>,
+        onToolbarAction: ((EditTool) -> Void)? = nil,
+        onCommandMenuSelection: ((EditTool) -> Void)? = nil
+    ) {
         print(
             "DEBUG: TodoRichTextEditor init called with text: '\(text.wrappedValue.prefix(100))...'"
         )
         self._text = text
         self.onToolbarAction = onToolbarAction
+        self.onCommandMenuSelection = onCommandMenuSelection
     }
 
     private var bottomInset: CGFloat {
@@ -135,7 +143,7 @@ struct TodoRichTextEditor: View {
             // Command menu overlay (triggered by "/" character)
             if showCommandMenu {
                 CommandMenu(
-                    tools: [.h1, .h2, .h3, .bold, .italic, .underline, .strikethrough, .bulletList, .todo, .divider, .link],
+                    tools: commandMenuTools,
                     selectedIndex: $commandMenuSelectedIndex,
                     onSelect: { tool in handleCommandMenuSelection(tool) },
                     maxHeight: 280
@@ -234,16 +242,16 @@ struct TodoRichTextEditor: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("CommandMenuNavigateDown")))
         { _ in
-            if showCommandMenu && commandMenuSelectedIndex < 11 {
+            let maxIndex = max(0, commandMenuTools.count - 1)
+            if showCommandMenu && commandMenuSelectedIndex < maxIndex {
                 commandMenuSelectedIndex += 1
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("CommandMenuSelect")))
         { _ in
             if showCommandMenu {
-                let tools: [EditTool] = [.h1, .h2, .h3, .bold, .italic, .underline, .strikethrough, .bulletList, .todo, .divider, .link]
-                if commandMenuSelectedIndex < tools.count {
-                    handleCommandMenuSelection(tools[commandMenuSelectedIndex])
+                if commandMenuSelectedIndex < commandMenuTools.count {
+                    handleCommandMenuSelection(commandMenuTools[commandMenuSelectedIndex])
                 }
             }
         }
@@ -281,6 +289,10 @@ struct TodoRichTextEditor: View {
             name: .applyCommandMenuTool,
             object: ["tool": tool, "slashLocation": commandSlashLocation]
         )
+
+        if let onCommandMenuSelection {
+            onCommandMenuSelection(tool)
+        }
 
         commandSlashLocation = -1
     }
@@ -561,38 +573,43 @@ struct TodoRichTextEditor: View {
                         // Get the bounding rect for the selection in the text container
                         let selectionRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
                         
-                        // Add text container origin offset (like CommandMenu does)
+                        // Get visible rect to understand scroll position
+                        let visibleRect = textView.visibleRect
+                        
+                        // Convert selection rect to visible coordinates
+                        // selectionRect is in text container space, we need to adjust for scroll
                         let selectionX = selectionRect.origin.x + textView.textContainerOrigin.x
-                        let selectionY = selectionRect.origin.y + textView.textContainerOrigin.y
+                        let selectionYInContainer = selectionRect.origin.y + textView.textContainerOrigin.y
+                        
+                        // Adjust Y position relative to visible rect (accounts for scroll)
+                        let selectionY = selectionYInContainer - visibleRect.origin.y
                         let selectionWidth = selectionRect.width
                         let selectionHeight = selectionRect.height
-                        
-                        // Calculate toolbar position
-                        let toolbarHeight: CGFloat = 36
-                        let gap: CGFloat = 2
-                        
-                        // Check if we should place above or below based on visible rect
-                        let visibleRect = textView.visibleRect
-                        let selectionBottom = selectionY + selectionHeight
-                        let spaceBelow = visibleRect.maxY - selectionBottom
-                        let placeAbove = spaceBelow < (toolbarHeight + gap + 20)
-                        
-                        // Calculate Y position
-                        let toolbarY: CGFloat
-                        if placeAbove {
-                            toolbarY = selectionY - gap - toolbarHeight
-                        } else {
-                            toolbarY = selectionBottom + gap
-                        }
-                        
-                        // Post notification with selection info in local coordinates
+
+                        // DEBUG LOGGING
+                        print("📍 [macOS] Selection Debug:")
+                        print("  - selectionRect: \(selectionRect)")
+                        print("  - textContainerOrigin: \(textView.textContainerOrigin)")
+                        print("  - visibleRect: \(visibleRect)")
+                        print("  - selectionYInContainer: \(selectionYInContainer)")
+                        print("  - selectionY (relative to visible): \(selectionY)")
+                        print("  - selectionHeight: \(selectionHeight)")
+
+                        // Convert to window coordinates for proper positioning
+                        let selectionRectInWindow = textView.convert(selectionRect, to: nil)
+                        print("  - selectionRectInWindow: \(selectionRectInWindow)")
+
+                        // Post notification with selection info - let the view calculate toolbar position
                         let info: [String: Any] = [
                             "hasSelection": true,
                             "selectionX": selectionX,
-                            "selectionY": toolbarY,
+                            "selectionY": selectionY,
                             "selectionWidth": selectionWidth,
-                            "placeAbove": placeAbove,
-                            "visibleWidth": visibleRect.width
+                            "selectionHeight": selectionHeight,
+                            "selectionWindowY": selectionRectInWindow.origin.y,
+                            "selectionWindowX": selectionRectInWindow.origin.x,
+                            "visibleWidth": visibleRect.width,
+                            "visibleHeight": visibleRect.height
                         ]
                         NotificationCenter.default.post(
                             name: .textSelectionChanged,
@@ -1435,7 +1452,7 @@ struct TodoRichTextEditor: View {
                 let cursorHeight = glyphRect.height
 
                 // Menu dimensions
-                let menuHeight: CGFloat = 280
+                let menuHeight: CGFloat = CommandMenuLayout.idealHeight(for: TodoRichTextEditor.commandMenuActions.count)
                 let menuGap: CGFloat = 4
                 let safetyMargin: CGFloat = 20
 
@@ -3002,38 +3019,28 @@ struct TodoRichTextEditor: View {
                         // Get the bounding rect for the selection in the text container
                         let selectionRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
                         
-                        // Add text container inset (like CommandMenu does for iOS)
+                        // Get scroll view's content offset to adjust for scroll position
+                        let contentOffset = textView.contentOffset
+                        
+                        // Convert selection rect to visible coordinates
+                        // selectionRect is in text container space, adjust for inset and scroll
                         let selectionX = selectionRect.origin.x + textView.textContainerInset.left
-                        let selectionY = selectionRect.origin.y + textView.textContainerInset.top
+                        let selectionYInContainer = selectionRect.origin.y + textView.textContainerInset.top
+                        
+                        // Adjust Y position relative to content offset (accounts for scroll)
+                        let selectionY = selectionYInContainer - contentOffset.y
                         let selectionWidth = selectionRect.width
                         let selectionHeight = selectionRect.height
-                        
-                        // Calculate toolbar position
-                        let toolbarHeight: CGFloat = 36
-                        let gap: CGFloat = 2
-                        
-                        // Check if we should place above or below based on visible rect
-                        let visibleRect = textView.bounds
-                        let selectionBottom = selectionY + selectionHeight
-                        let spaceBelow = visibleRect.maxY - selectionBottom
-                        let placeAbove = spaceBelow < (toolbarHeight + gap + 20)
-                        
-                        // Calculate Y position
-                        let toolbarY: CGFloat
-                        if placeAbove {
-                            toolbarY = selectionY - gap - toolbarHeight
-                        } else {
-                            toolbarY = selectionBottom + gap
-                        }
-                        
-                        // Post notification with selection info in local coordinates
+
+                        // Post notification with selection info - let the view calculate toolbar position
                         let info: [String: Any] = [
                             "hasSelection": true,
                             "selectionX": selectionX,
-                            "selectionY": toolbarY,
+                            "selectionY": selectionY,
                             "selectionWidth": selectionWidth,
-                            "placeAbove": placeAbove,
-                            "visibleWidth": visibleRect.width
+                            "selectionHeight": selectionHeight,
+                            "visibleWidth": visibleRect.width,
+                            "visibleHeight": visibleRect.height
                         ]
                         NotificationCenter.default.post(
                             name: .textSelectionChanged,
@@ -3092,7 +3099,7 @@ struct TodoRichTextEditor: View {
                 let cursorHeight = glyphRect.height
 
                 // Menu dimensions
-                let menuHeight: CGFloat = 280
+                let menuHeight: CGFloat = CommandMenuLayout.idealHeight(for: TodoRichTextEditor.commandMenuActions.count)
                 let menuGap: CGFloat = 4
                 let safetyMargin: CGFloat = 20
 
