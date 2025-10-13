@@ -9,7 +9,7 @@
 import SwiftUI
 
 enum CommandMenuLayout {
-    static let itemHeight: CGFloat = 28
+    static let itemHeight: CGFloat = 36  // Updated to match padding(.vertical, 10) + content height
     static let itemSpacing: CGFloat = 0  // Spacing between items
     static let defaultMaxHeight: CGFloat = 280
 
@@ -68,9 +68,9 @@ struct CommandMenu: View {
                 }
             }
         }
-        .frame(width: 240)
+        .frame(width: 140)
         .padding(12)  // Proper padding for concentricity
-        .liquidGlass(in: RoundedRectangle(cornerRadius: 16, style: .continuous))  // Corner radius adapts to padding (12 + 4 = 16)
+        .liquidGlass(in: RoundedRectangle(cornerRadius: 28, style: .continuous))  // Corner radius adapts to padding (12 + 4 = 16)
         .shadow(color: .black.opacity(0.3), radius: 30, x: 0, y: 15)
         .shadow(color: .black.opacity(0.18), radius: 12, x: 0, y: 6)
     }
@@ -107,12 +107,12 @@ struct CommandMenuItem: View {
             }
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .padding(.vertical, 10)
         .background(
             Group {
                 if isSelected {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(Color.accentColor)
+                    RoundedRectangle(cornerRadius: 999, style: .continuous)
+                        .fill(Color.black.opacity(0.2))
                 } else {
                     Color.clear
                 }

@@ -11,6 +11,7 @@ import SwiftUI
 
 #if os(macOS)
     import AppKit
+    import CoreImage
 #else
     import UIKit
 #endif
@@ -42,6 +43,66 @@ private final class NoteImageAttachment: NSTextAttachment {
         fatalError("NoteImageAttachment does not support init(coder:)")
     }
 }
+
+/// Preview image view that renders the attachment thumbnail with rounded corners and stroke.
+private final class ImagePreviewView: NSImageView {
+    var colorScheme: ColorScheme = .dark {
+        didSet { updateAppearance() }
+    }
+
+    override var isFlipped: Bool { true }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.masksToBounds = false
+        layer?.shadowOpacity = 0.28
+        layer?.shadowRadius = 8
+        layer?.shadowOffset = CGSize(width: 0, height: 4)
+        imageScaling = .scaleProportionallyUpOrDown
+        imageView.wantsLayer = true
+        imageView.layer?.masksToBounds = true
+        imageView.layer?.cornerRadius = 8
+        // Enable smoother corner radius rendering
+        imageView.layer?.cornerCurve = .continuous
+        imageView.layer?.allowsEdgeAntialiasing = true
+        imageView.imageScaling = .scaleProportionallyUpOrDown
+        addSubview(imageView)
+        updateAppearance()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("ImagePreviewView does not support init(coder:)")
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    func configure(image: NSImage, displaySize: CGSize) {
+        let scale = NSScreen.main?.backingScaleFactor ?? 2.0
+        layer?.contentsScale = scale
+        imageView.layer?.contentsScale = scale
+        frame.size = displaySize
+        imageView.frame = bounds
+        imageView.image = image
+        let path = CGPath(
+            roundedRect: CGRect(origin: .zero, size: displaySize),
+            cornerWidth: 8,
+            cornerHeight: 8,
+            transform: nil)
+        layer?.shadowPath = path
+    }
+
+    private func updateAppearance() {
+        layer?.shadowColor = (colorScheme == .dark
+            ? NSColor.black.withAlphaComponent(0.6)
+            : NSColor.black.withAlphaComponent(0.3)).cgColor
+        layer?.backgroundColor = NSColor.clear.cgColor
+    }
+
+    private let imageView = NSImageView()
+}
+
 #else
 /// Dedicated attachment type so that we never lose the stored filename during round-trips.
 private final class NoteImageAttachment: NSTextAttachment {
@@ -549,6 +610,23 @@ struct TodoRichTextEditor: View {
             private let formatter = TextFormattingManager()
             private var isUpdating = false
             private var textBinding: Binding<String>
+#if os(macOS)
+            private weak var previewHostView: NSView?
+            private var imagePreviewView: ImagePreviewView?
+            private var currentPreviewFilename: String?
+            // Cache the attachment rect to prevent jitter during horizontal cursor movement
+            private var cachedAttachmentRect: CGRect?
+            private var hoverTagOverlayView: NSImageView?
+            private var originalTextViewFilters: [Any]?
+            private var isHoverEffectApplied = false
+            // Allow slight tolerance so hover stays active when the cursor is near the tag edges
+            private let hoverHitTolerance: CGFloat = 4
+            private static let previewImageCache: NSCache<NSString, NSImage> = {
+                let cache = NSCache<NSString, NSImage>()
+                cache.countLimit = 32
+                return cache
+            }()
+#endif
 
             // NSTextViewDelegate method to handle selection changes
             func textViewDidChangeSelection(_ notification: Notification) {
@@ -827,158 +905,472 @@ struct TodoRichTextEditor: View {
                 return attributed
             }
             
-            /// Create an image attachment from a filename
+            /// Create an inline image attachment tag from a filename
             private func makeImageAttachment(filename: String) -> NSMutableAttributedString {
                 NSLog("🖼️ makeImageAttachment: START with filename: %@", filename)
-                
-                // Get the image URL from storage
-                guard let imageURL = ImageStorageManager.shared.getImageURL(for: filename) else {
-                    NSLog("🖼️ makeImageAttachment: FAILED to get URL for image: %@", filename)
-                    let attributed = NSMutableAttributedString(string: "[Image: \(filename)]")
-                    return attributed
+
+                func fallbackAttributedString() -> NSMutableAttributedString {
+                    NSLog("🖼️ makeImageAttachment: Falling back to text placeholder for %@", filename)
+                    return NSMutableAttributedString(string: "[Image: \(filename)]")
                 }
-                
-                NSLog("🖼️ makeImageAttachment: Got imageURL: %@", imageURL.path)
-                
-        #if os(macOS)
-                    // Load the image directly
-                    guard let sourceImage = NSImage(contentsOf: imageURL) else {
-                        NSLog("makeImageAttachment: Failed to load NSImage from %@", imageURL.path)
-                        let attributed = NSMutableAttributedString(string: "[Image: \(filename)]")
-                        return attributed
-                    }
-                    
-                    // Calculate aspect-ratio-aware display size with 8px continuous corner radius
-                    let imageSize = sourceImage.size
-                    let maxDimension: CGFloat = 120
-                    let aspectRatio = imageSize.width / imageSize.height
-                    let cornerRadius: CGFloat = 8
-                    
-                    // Determine display size based on aspect ratio
-                    let displaySize: CGSize
-                    if aspectRatio > 1 {
-                        // Horizontal image: constrain height to 120, adjust width proportionally
-                        displaySize = CGSize(width: maxDimension * aspectRatio, height: maxDimension)
-                    } else if aspectRatio < 1 {
-                        // Vertical image: constrain width to 120, adjust height proportionally
-                        displaySize = CGSize(width: maxDimension, height: maxDimension / aspectRatio)
-                    } else {
-                        // Square image: 120x120
-                        displaySize = CGSize(width: maxDimension, height: maxDimension)
-                    }
-                    
-                    // Create resized image with rounded corners
-                    let resizedImage = NSImage(size: displaySize)
-                    resizedImage.lockFocus()
-                    
-                    // Enable antialiasing for smooth continuous corners
-                    NSGraphicsContext.current?.shouldAntialias = true
-                    NSGraphicsContext.current?.imageInterpolation = .high
-                    
-                    // Create a rounded rect path for clipping with continuous curve
-                    let bounds = NSRect(origin: .zero, size: displaySize)
-                    let path = NSBezierPath(roundedRect: bounds, xRadius: cornerRadius, yRadius: cornerRadius)
-                    path.addClip()
-                    
-                    // Draw the image within the clipped path
-                    sourceImage.draw(
-                        in: bounds,
-                        from: NSRect(origin: .zero, size: imageSize),
-                        operation: .copy,
-                        fraction: 1.0
-                    )
-                    resizedImage.unlockFocus()
-                    
-                    // Create attachment using the image data approach which works reliably on macOS
-                    let attachment = NoteImageAttachment(filename: filename)
-                    // Store the image as file wrapper data
-                    if let tiffData = resizedImage.tiffRepresentation,
-                       let bitmap = NSBitmapImageRep(data: tiffData),
-                       let pngData = bitmap.representation(using: .png, properties: [:]) {
-                        let fileWrapper = FileWrapper(regularFileWithContents: pngData)
-                        fileWrapper.filename = filename
-                        fileWrapper.preferredFilename = filename
-                        attachment.fileWrapper = fileWrapper
-                    }
-                    
-                    // Also set the image property (for immediate display)
-                    attachment.image = resizedImage
-                    // Set bounds at origin with full display size
-                    // The imageParagraphStyle will handle spacing and prevent clipping
-                    attachment.bounds = CGRect(origin: .zero, size: displaySize)
-                    
-                    let attributed = NSMutableAttributedString(attachment: attachment)
-                    
-                    NSLog("makeImageAttachment: Created attachment for %@ with aspect ratio %.2f, display size %@", filename, aspectRatio, NSStringFromSize(displaySize))
-                    NSLog("makeImageAttachment: Attachment has image: %@, fileWrapper: %@", attachment.image != nil ? "YES" : "NO", attachment.fileWrapper != nil ? "YES" : "NO")
-                    NSLog("makeImageAttachment: Attributed string length: %ld", attributed.length)
-        #else
-                    // Load the image directly
-                    guard let uiImage = UIImage(contentsOfFile: imageURL.path) else {
-                        NSLog("makeImageAttachment: Failed to load UIImage from %@", imageURL.path)
-                        let attributed = NSMutableAttributedString(string: "[Image: \(filename)]")
-                        return attributed
-                    }
-                    
-                    // Calculate aspect-ratio-aware display size with 8px continuous corner radius
-                    let imageSize = uiImage.size
-                    let maxDimension: CGFloat = 120
-                    let aspectRatio = imageSize.width / imageSize.height
-                    let cornerRadius: CGFloat = 8
-                    
-                    // Determine display size based on aspect ratio
-                    let displaySize: CGSize
-                    if aspectRatio > 1 {
-                        // Horizontal image: constrain height to 120, adjust width proportionally
-                        displaySize = CGSize(width: maxDimension * aspectRatio, height: maxDimension)
-                    } else if aspectRatio < 1 {
-                        // Vertical image: constrain width to 120, adjust height proportionally
-                        displaySize = CGSize(width: maxDimension, height: maxDimension / aspectRatio)
-                    } else {
-                        // Square image: 120x120
-                        displaySize = CGSize(width: maxDimension, height: maxDimension)
-                    }
-                    
-                    // Create resized image with continuous rounded corners
-                    UIGraphicsBeginImageContextWithOptions(displaySize, false, 1.0)
-                    
-                    // Use continuous corner radius (iOS 13+) for smooth, squircle-like corners
-                    let bounds = CGRect(origin: .zero, size: displaySize)
-                    let path = UIBezierPath(roundedRect: bounds, cornerRadius: cornerRadius)
-                    path.addClip()
-                    
-                    // Draw the image within the clipped path
-                    uiImage.draw(in: bounds)
-                    let resizedImage = UIGraphicsGetImageFromCurrentImageContext() ?? uiImage
-                    UIGraphicsEndImageContext()
-                    
-                    let attachment = NoteImageAttachment(filename: filename)
-                    attachment.image = resizedImage
-                    // Set bounds at origin with full display size
-                    // The imageParagraphStyle will handle spacing and prevent clipping
-                    attachment.bounds = CGRect(origin: .zero, size: displaySize)
-                    
-                    // Store filename in file wrapper for serialization
-                    let fileWrapper = FileWrapper(regularFileWithContents: Data())
-                    fileWrapper.preferredFilename = filename
-                    attachment.fileWrapper = fileWrapper
-                    
-                    let attributed = NSMutableAttributedString(attachment: attachment)
-                    
-                    NSLog("makeImageAttachment: Created attachment for %@ with aspect ratio %.2f, display size %@", filename, aspectRatio, NSStringFromCGSize(displaySize))
-                #endif
-                
-                // Store the filename as a custom attribute (like web clips do)
-                // This persists even when NSTextAttachment modifies the fileWrapper
+
+                if ImageStorageManager.shared.getImageURL(for: filename) == nil {
+                    NSLog("🖼️ makeImageAttachment: WARNING - no stored file found for %@", filename)
+                }
+
+                let attachment: NoteImageAttachment
+                let displaySize: CGSize
+
+#if os(macOS)
+                let tagView = ImageAttachmentTagView()
+                    .environment(\.colorScheme, currentColorScheme)
+                let renderer = ImageRenderer(content: tagView)
+                let scale = NSScreen.main?.backingScaleFactor ?? 2.0
+                renderer.scale = scale
+                renderer.isOpaque = false
+
+                guard let cgImage = renderer.cgImage else {
+                    NSLog("🖼️ makeImageAttachment: FAILED to render tag CGImage")
+                    return fallbackAttributedString()
+                }
+
+                displaySize = CGSize(
+                    width: CGFloat(cgImage.width) / scale,
+                    height: CGFloat(cgImage.height) / scale
+                )
+
+                let renderedImage = NSImage(size: displaySize)
+                renderedImage.addRepresentation(NSBitmapImageRep(cgImage: cgImage))
+
+                attachment = NoteImageAttachment(filename: filename)
+                attachment.image = renderedImage
+                attachment.attachmentCell = NSTextAttachmentCell(imageCell: renderedImage)
+
+#else
+                let tagView = ImageAttachmentTagView()
+                    .environment(\.colorScheme, currentColorScheme)
+                let renderer = ImageRenderer(content: tagView)
+                let scale = UIScreen.main.scale
+                renderer.scale = scale
+                renderer.isOpaque = false
+
+                guard let uiImage = renderer.uiImage else {
+                    NSLog("🖼️ makeImageAttachment: FAILED to render tag UIImage")
+                    return fallbackAttributedString()
+                }
+
+                displaySize = uiImage.size
+                attachment = NoteImageAttachment(filename: filename)
+                attachment.image = uiImage
+
+#endif
+
+                attachment.bounds = CGRect(
+                    x: 0,
+                    y: Self.imageTagVerticalOffset(for: displaySize.height),
+                    width: displaySize.width,
+                    height: displaySize.height
+                )
+
+                let attributed = NSMutableAttributedString(attachment: attachment)
                 let attachmentRange = NSRange(location: 0, length: attributed.length)
                 attributed.addAttribute(.imageFilename, value: filename, range: attachmentRange)
-                
-                // Apply special paragraph style for images with proper spacing
-                attributed.addAttribute(
-                    .paragraphStyle, value: Self.imageParagraphStyle(), range: attachmentRange)
-                
+
+                let sizeDescription: String
+#if os(macOS)
+                sizeDescription = NSStringFromSize(
+                    NSSize(width: displaySize.width, height: displaySize.height))
+#else
+                sizeDescription = NSStringFromCGSize(displaySize)
+#endif
+
+                NSLog(
+                    "🖼️ makeImageAttachment: Created inline tag for %@ with size %@",
+                    filename,
+                    sizeDescription
+                )
+
                 return attributed
             }
+
+#if os(macOS)
+            private func ensurePreviewInfrastructure(for textView: NSTextView) {
+                if previewHostView == nil {
+                    previewHostView = textView.enclosingScrollView?.contentView
+                }
+
+                guard let host = previewHostView else { return }
+
+                if imagePreviewView == nil {
+                    let preview = ImagePreviewView(frame: .zero)
+                    preview.isHidden = true
+                    preview.colorScheme = currentColorScheme
+                    host.addSubview(preview)
+                    imagePreviewView = preview
+                }
+            }
+
+            private func previewDisplaySize(for image: NSImage) -> CGSize {
+                let maxDimension: CGFloat = 62
+                let imageSize = image.size
+                guard imageSize.width > 0, imageSize.height > 0 else {
+                    return CGSize(width: maxDimension, height: maxDimension)
+                }
+
+                if imageSize.width >= imageSize.height {
+                    let height = maxDimension
+                    let width = maxDimension * (imageSize.width / imageSize.height)
+                    return CGSize(width: width, height: height)
+                } else {
+                    let width = maxDimension
+                    let height = maxDimension * (imageSize.height / imageSize.width)
+                    return CGSize(width: width, height: height)
+                }
+            }
+
+            private func showImagePreview(
+                for filename: String,
+                attachment: NSTextAttachment,
+                characterIndex: Int,
+                at rectInView: CGRect,
+                in textView: NSTextView
+            ) {
+                ensurePreviewInfrastructure(for: textView)
+
+                guard let preview = imagePreviewView else { return }
+
+                preview.colorScheme = currentColorScheme
+
+                // Track whether this is a new attachment or same one as before
+                let isNewAttachment = currentPreviewFilename != filename
+
+                if isNewAttachment {
+                    let cacheKey = filename as NSString
+                    var image = Self.previewImageCache.object(forKey: cacheKey)
+                    if image == nil, let imageURL = ImageStorageManager.shared.getImageURL(for: filename),
+                        let loaded = NSImage(contentsOf: imageURL)
+                    {
+                        image = loaded
+                        if let image = image {
+                            Self.previewImageCache.setObject(image, forKey: cacheKey)
+                        }
+                    }
+
+                    guard let resolvedImage = image else {
+                        hideImagePreview()
+                        return
+                    }
+
+                    let displaySize = previewDisplaySize(for: resolvedImage)
+                    preview.configure(image: resolvedImage, displaySize: displaySize)
+                    currentPreviewFilename = filename
+                    // Cache the attachment rect for the new attachment to prevent jitter
+                    cachedAttachmentRect = rectInView
+                } else if cachedAttachmentRect == nil {
+                    // If we're showing the same attachment but lost the cached rect, store it
+                    cachedAttachmentRect = rectInView
+                }
+
+                if let cached = cachedAttachmentRect {
+                    let deltaX = abs(cached.midX - rectInView.midX)
+                    let deltaY = abs(cached.midY - rectInView.midY)
+                    if deltaX > 0.75 || deltaY > 0.75 {
+                        cachedAttachmentRect = rectInView
+                    }
+                }
+
+                // Use the cached rect for positioning to prevent jitter during horizontal movement
+                let positioningRect = cachedAttachmentRect ?? rectInView
+
+                let previewSize = preview.frame.size
+                let verticalSpacing: CGFloat = 8  // Consistent gap between tag and preview
+                let minPadding: CGFloat = 12
+                
+                func clampedFrame(anchorRect: CGRect, containerBounds: CGRect, containerIsFlipped: Bool) -> CGRect {
+                    var frame = CGRect(origin: .zero, size: previewSize)
+                    let minX = containerBounds.minX + minPadding
+                    let maxX = containerBounds.maxX - frame.width - minPadding
+                    let desiredCenterX = anchorRect.midX
+                    frame.origin.x = desiredCenterX - frame.width / 2
+                    frame.origin.x = min(maxX, max(minX, frame.origin.x))
+
+                    let boundsMinY = containerBounds.minY + minPadding
+                    let boundsMaxY = containerBounds.maxY - minPadding
+
+                    if containerIsFlipped {
+                        let aboveOrigin = anchorRect.minY - verticalSpacing - frame.height
+                        let aboveFits = aboveOrigin >= boundsMinY
+                        let belowOrigin = anchorRect.maxY + verticalSpacing
+                        let belowFits = belowOrigin + frame.height <= boundsMaxY
+
+                        if aboveFits {
+                            frame.origin.y = min(aboveOrigin, boundsMaxY - frame.height)
+                        } else if belowFits {
+                            frame.origin.y = max(belowOrigin, boundsMinY)
+                        } else {
+                            let clamped = max(boundsMinY, min(aboveOrigin, boundsMaxY - frame.height))
+                            frame.origin.y = clamped
+                        }
+                    } else {
+                        let aboveOrigin = anchorRect.maxY + verticalSpacing
+                        let aboveFits = aboveOrigin + frame.height <= boundsMaxY
+                        let belowOrigin = anchorRect.minY - verticalSpacing - frame.height
+                        let belowFits = belowOrigin >= boundsMinY
+
+                        if aboveFits {
+                            frame.origin.y = aboveOrigin
+                        } else if belowFits {
+                            frame.origin.y = belowOrigin
+                        } else {
+                            let clamped = max(boundsMinY, min(aboveOrigin, boundsMaxY - frame.height))
+                            frame.origin.y = clamped
+                        }
+                    }
+
+                    frame.origin.x = round(frame.origin.x)
+                    frame.origin.y = round(frame.origin.y)
+                    return frame
+                }
+
+                applyHoverEffectIfNeeded(to: textView)
+
+                let overlayImage = attachmentImage(attachment, in: textView, characterIndex: characterIndex)
+
+                if let host = previewHostView ?? textView.superview {
+                    var anchorInHost = textView.convert(positioningRect, to: host)
+                    anchorInHost.origin.x = round(anchorInHost.origin.x)
+                    anchorInHost.origin.y = round(anchorInHost.origin.y)
+
+                    if let image = overlayImage {
+                        let overlay = ensureHoverTagOverlay(in: host, relativeTo: textView)
+                        overlay.image = image
+                        overlay.frame = anchorInHost.integral
+                        overlay.layer?.cornerRadius = overlay.frame.height / 2
+                        overlay.layer?.cornerCurve = .continuous
+                        overlay.layer?.masksToBounds = true
+                    } else {
+                        clearHoverTagOverlay()
+                    }
+
+                    let referenceView = hoverTagOverlayView ?? textView
+
+                    if preview.superview !== host {
+                        host.addSubview(preview, positioned: .above, relativeTo: referenceView)
+                    } else {
+                        host.addSubview(preview, positioned: .above, relativeTo: referenceView)
+                    }
+
+                    let framed = clampedFrame(
+                        anchorRect: anchorInHost,
+                        containerBounds: host.bounds,
+                        containerIsFlipped: host.isFlipped
+                    )
+                    preview.frame = framed
+                } else {
+                    clearHoverTagOverlay()
+
+                    var anchorInTextView = positioningRect
+                    anchorInTextView.origin.x = round(anchorInTextView.origin.x)
+                    anchorInTextView.origin.y = round(anchorInTextView.origin.y)
+
+                    let framed = clampedFrame(
+                        anchorRect: anchorInTextView,
+                        containerBounds: textView.bounds,
+                        containerIsFlipped: textView.isFlipped
+                    )
+                    preview.frame = framed
+                }
+
+                preview.isHidden = false
+            }
+
+            private func hideImagePreview() {
+                currentPreviewFilename = nil
+                // Clear cached rect when hiding preview to start fresh on next hover
+                cachedAttachmentRect = nil
+                imagePreviewView?.isHidden = true
+                clearHoverTagOverlay()
+                if let textView {
+                    removeHoverEffect(from: textView)
+                }
+            }
+
+            private func ensureHoverTagOverlay(in container: NSView, relativeTo referenceView: NSView) -> NSImageView {
+                if let existing = hoverTagOverlayView, existing.superview === container {
+                    container.addSubview(existing, positioned: .above, relativeTo: referenceView)
+                    return existing
+                }
+
+                hoverTagOverlayView?.removeFromSuperview()
+
+                let overlay = NSImageView(frame: .zero)
+                overlay.imageScaling = .scaleProportionallyUpOrDown
+                overlay.wantsLayer = true
+                overlay.layer?.masksToBounds = true
+                overlay.layer?.cornerCurve = .continuous
+                container.addSubview(overlay, positioned: .above, relativeTo: referenceView)
+                hoverTagOverlayView = overlay
+                return overlay
+            }
+
+            private func clearHoverTagOverlay() {
+                hoverTagOverlayView?.removeFromSuperview()
+                hoverTagOverlayView = nil
+            }
+
+            private func applyHoverEffectIfNeeded(to textView: NSTextView) {
+                guard !isHoverEffectApplied else { return }
+
+                textView.wantsLayer = true
+                textView.layerUsesCoreImageFilters = true
+                originalTextViewFilters = textView.layer?.filters
+
+                if let blur = CIFilter(name: "CIGaussianBlur") {
+                    blur.setDefaults()
+                    blur.setValue(2.0, forKey: kCIInputRadiusKey as String)
+                    textView.layer?.filters = [blur]
+                } else {
+                    textView.layer?.filters = nil
+                }
+
+                textView.alphaValue = 0.5
+                isHoverEffectApplied = true
+            }
+
+            private func removeHoverEffect(from textView: NSTextView) {
+                guard isHoverEffectApplied else { return }
+                textView.alphaValue = 1.0
+                textView.layer?.filters = originalTextViewFilters
+                textView.layerUsesCoreImageFilters = false
+                originalTextViewFilters = nil
+                isHoverEffectApplied = false
+            }
+
+            private func attachmentImage(
+                _ attachment: NSTextAttachment,
+                in textView: NSTextView,
+                characterIndex: Int
+            ) -> NSImage? {
+                if let cell = attachment.attachmentCell as? NSTextAttachmentCell {
+                    return cell.image
+                }
+                return attachment.image(
+                    forBounds: attachment.bounds,
+                    textContainer: textView.textContainer,
+                    characterIndex: characterIndex
+                )
+            }
+
+            func endAttachmentHover() {
+                hideImagePreview()
+            }
+
+            func handleAttachmentHover(at point: CGPoint, in textView: NSTextView) -> Bool {
+                // Fast path: if we're already showing a preview and the cursor is still within
+                // the cached rect (with tolerance), keep the preview stable without recalculating
+                if currentPreviewFilename != nil,
+                    let cachedRect = cachedAttachmentRect
+                {
+                    let toleranceRect = cachedRect.insetBy(dx: -hoverHitTolerance, dy: -hoverHitTolerance)
+                    if toleranceRect.contains(point) {
+                        // Still hovering over the same attachment - preview is already shown, no need to update
+                        return true
+                    }
+                }
+
+                guard let layoutManager = textView.layoutManager,
+                    let textStorage = textView.textStorage,
+                    let textContainer = textView.textContainer
+                else {
+                    hideImagePreview()
+                    return false
+                }
+
+                let containerPoint = CGPoint(
+                    x: point.x - textView.textContainerOrigin.x,
+                    y: point.y - textView.textContainerOrigin.y)
+
+                let glyphIndex = layoutManager.glyphIndex(for: containerPoint, in: textContainer)
+                if glyphIndex >= layoutManager.numberOfGlyphs {
+                    hideImagePreview()
+                    return false
+                }
+
+                let characterIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
+                guard characterIndex < textStorage.length else {
+                    hideImagePreview()
+                    return false
+                }
+
+                let attributes = textStorage.attributes(at: characterIndex, effectiveRange: nil)
+                guard let filename = attributes[.imageFilename] as? String else {
+                    hideImagePreview()
+                    return false
+                }
+
+                guard let attachment = attributes[.attachment] as? NSTextAttachment else {
+                    hideImagePreview()
+                    return false
+                }
+
+                let characterRange = NSRange(location: characterIndex, length: 1)
+                let glyphRange = layoutManager.glyphRange(
+                    forCharacterRange: characterRange,
+                    actualCharacterRange: nil)
+
+                guard glyphRange.length > 0 else {
+                    hideImagePreview()
+                    return false
+                }
+
+                // Get the bounding rect for the glyph - this is where it's visually rendered
+                let glyphRect = layoutManager.boundingRect(
+                    forGlyphRange: glyphRange,
+                    in: textContainer)
+                
+                // For attachments, glyphRect.origin.y is at the BASELINE
+                // The attachment's visual TOP is at baseline + attachment.bounds.origin.y
+                // (origin.y is negative for images taller than the line height)
+                let visualTop = glyphRect.origin.y + attachment.bounds.origin.y
+                
+                // Build the visual rect for the attachment
+                let drawingRect = CGRect(
+                    x: glyphRect.origin.x,
+                    y: visualTop,
+                    width: attachment.bounds.size.width,
+                    height: attachment.bounds.size.height
+                )
+
+                let rectInTextView = drawingRect.offsetBy(
+                    dx: textView.textContainerOrigin.x,
+                    dy: textView.textContainerOrigin.y)
+                
+                // Debug logging
+                NSLog("🔍 glyphRect: \(glyphRect)")
+                NSLog("🔍 attachment.bounds: \(attachment.bounds)")
+                NSLog("🔍 visualTop (baseline + offset): \(visualTop)")
+                NSLog("🔍 drawingRect (final attachment rect): \(drawingRect)")
+                NSLog("🔍 rectInTextView (after container origin): \(rectInTextView)")
+
+                let detectionRect = rectInTextView.insetBy(
+                    dx: -hoverHitTolerance,
+                    dy: -hoverHitTolerance)
+
+                guard detectionRect.contains(point) else {
+                    hideImagePreview()
+                    return false
+                }
+
+                showImagePreview(
+                    for: filename,
+                    attachment: attachment,
+                    characterIndex: characterIndex,
+                    at: rectInTextView,
+                    in: textView
+                )
+                return true
+            }
+#endif
 
             init(text: Binding<String>, colorScheme: ColorScheme) {
                 self.textBinding = text
@@ -992,6 +1384,30 @@ struct TodoRichTextEditor: View {
 
             func configure(with textView: NSTextView) {
                 self.textView = textView
+#if os(macOS)
+                let newHost = textView.enclosingScrollView?.contentView
+                if previewHostView !== newHost {
+                    imagePreviewView?.removeFromSuperview()
+                    imagePreviewView = nil
+                    clearHoverTagOverlay()
+                    removeHoverEffect(from: textView)
+                    previewHostView = newHost
+                }
+                ensurePreviewInfrastructure(for: textView)
+                if let clipView = newHost {
+                    clipView.postsBoundsChangedNotifications = true
+                    let observer = NotificationCenter.default.addObserver(
+                        forName: NSView.boundsDidChangeNotification,
+                        object: clipView,
+                        queue: .main
+                    ) { [weak self] _ in
+                        Task { @MainActor [weak self] in
+                            self?.hideImagePreview()
+                        }
+                    }
+                    observers.append(observer)
+                }
+#endif
 
                 // Prevent layout shifts when gaining focus
                 NotificationCenter.default.addObserver(
@@ -1645,87 +2061,57 @@ struct TodoRichTextEditor: View {
                     NSLog("📝 insertImage: textView is nil")
                     return
                 }
-                
-                // Log current state to debug replacement issue
-                let currentRange = textView.selectedRange()
-                let storageLength = textView.textStorage?.length ?? 0
-                NSLog("📝 insertImage: BEFORE - Selected range: %@, storage length: %ld", NSStringFromRange(currentRange), storageLength)
-                
-                // Ensure cursor is at the end of the document to append, not replace
-                if currentRange.location != storageLength || currentRange.length != 0 {
-                    NSLog("📝 insertImage: Moving cursor to end of document")
-                    let endRange = NSRange(location: storageLength, length: 0)
-                    textView.setSelectedRange(endRange)
-                }
-                
-                NSLog("📝 insertImage: Creating image attachment")
-                // Create the image attachment directly (like web clips)
-                let attachment = makeImageAttachment(filename: filename)
-                
-                // Check if text storage is empty or contains only whitespace
-                // to determine if this is the first element being inserted
-                let isEmpty = storageLength == 0 || textView.textStorage?.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == true
-                
-                // Create paragraph breaks BEFORE the image block
-                // Use base attributes for clean paragraph separation
-                let baseAttrs = Self.baseTypingAttributes(for: currentColorScheme)
-                
+
+                let selectionRange = textView.selectedRange()
+                let storageString = textView.textStorage?.string ?? ""
+                let nsString = storageString as NSString
+                let baseAttributes = Self.baseTypingAttributes(for: currentColorScheme)
+
                 let composed = NSMutableAttributedString()
-                
-                // Add paragraph break before image (double newline if first element)
-                if isEmpty {
-                    // Extra newline at start to prevent top clipping
-                    let spacer = NSAttributedString(string: "\n\n", attributes: baseAttrs)
-                    composed.append(spacer)
-                } else {
-                    // Single newline to create paragraph break
-                    let spacer = NSAttributedString(string: "\n", attributes: baseAttrs)
-                    composed.append(spacer)
+
+                if needsLeadingSpace(before: selectionRange, in: nsString) {
+                    let leadingSpace = NSAttributedString(string: " ", attributes: baseAttributes)
+                    composed.append(leadingSpace)
                 }
-                
-                // Append the image attachment (which already has imageParagraphStyle)
+
+                NSLog("📝 insertImage: Creating inline image tag attachment")
+                let attachment = makeImageAttachment(filename: filename)
                 composed.append(attachment)
-                
-                // Add newline after for paragraph separation
-                let newlineAfter = NSAttributedString(string: "\n", attributes: baseAttrs)
-                composed.append(newlineAfter)
-                
+
+                if needsTrailingSpace(after: selectionRange, in: nsString) {
+                    let trailingSpace = NSAttributedString(string: " ", attributes: baseAttributes)
+                    composed.append(trailingSpace)
+                }
+
                 replaceSelection(with: composed)
-                
-                // Log what's in the text storage after insertion
-                if let textStorage = textView.textStorage {
-                    NSLog("📝 insertImage: Text storage length after insert: %ld", textStorage.length)
-                    textStorage.enumerateAttribute(.attachment, in: NSRange(location: 0, length: textStorage.length), options: []) { value, range, _ in
-                        if let attachment = value as? NSTextAttachment {
-                            NSLog("📝 insertImage: Found attachment in storage at range %@, has image: %@", NSStringFromRange(range), attachment.image != nil ? "YES" : "NO")
-                        }
-                    }
-                }
-                
-                // Force layout update to ensure attachment displays
-                if let layoutManager = textView.layoutManager,
-                   let textContainer = textView.textContainer {
-                    layoutManager.invalidateLayout(forCharacterRange: NSRange(location: 0, length: textView.textStorage?.length ?? 0), actualCharacterRange: nil)
-                    layoutManager.ensureLayout(for: textContainer)
-                }
-                
+
                 syncText()
-                
-                // Log what's in the text storage after syncText
-                if let textStorage = textView.textStorage {
-                    NSLog("📝 insertImage: Text storage length after syncText: %ld", textStorage.length)
-                    textStorage.enumerateAttribute(.attachment, in: NSRange(location: 0, length: textStorage.length), options: []) { value, range, _ in
-                        if let attachment = value as? NSTextAttachment {
-                            NSLog("📝 insertImage: Found attachment after syncText at range %@, has image: %@", NSStringFromRange(range), attachment.image != nil ? "YES" : "NO")
-                        }
-                    }
-                }
-                
                 NSLog("📝 insertImage: Completed")
+            }
+
+            private func needsLeadingSpace(before range: NSRange, in text: NSString) -> Bool {
+                guard range.location > 0 else { return false }
+                let previousIndex = range.location - 1
+                let previousCharacter = text.character(at: previousIndex)
+                guard let scalar = UnicodeScalar(previousCharacter) else { return false }
+                return !CharacterSet.whitespacesAndNewlines.contains(scalar)
+            }
+
+            private func needsTrailingSpace(after range: NSRange, in text: NSString) -> Bool {
+                let endIndex = range.location + range.length
+                if endIndex >= text.length {
+                    return true
+                }
+                let nextCharacter = text.character(at: endIndex)
+                guard let scalar = UnicodeScalar(nextCharacter) else { return false }
+                return !CharacterSet.whitespacesAndNewlines.contains(scalar)
             }
 
             private func replaceSelection(with attributed: NSAttributedString) {
                 guard let textView = textView else { return }
+#if os(macOS)
+                hideImagePreview()
+#endif
                 var range = textView.selectedRange()
                 let storageLength = textView.textStorage?.length ?? 0
 
@@ -1843,7 +2229,6 @@ struct TodoRichTextEditor: View {
 
                     var isTodoParagraph = false
                     var isWebClipParagraph = false
-                    var isImageParagraph = false
 
                     textStorage.enumerateAttribute(
                         .attachment,
@@ -1866,23 +2251,12 @@ struct TodoRichTextEditor: View {
                                 isWebClipParagraph = true
                                 stop.pointee = true
                             }
-                            // Check if it's an image attachment (has imageFilename attribute)
-                            else if textStorage.attribute(
-                                .imageFilename, at: substringRange.location, effectiveRange: nil)
-                                != nil
-                            {
-                                isImageParagraph = true
-                                stop.pointee = true
-                            }
                         }
                     }
 
                     // Apply appropriate paragraph style based on content type
                     let paragraphStyle: NSParagraphStyle
-                    if isImageParagraph {
-                        // CRITICAL: Images need special paragraph style with no line height constraints
-                        paragraphStyle = Self.imageParagraphStyle()
-                    } else if isWebClipParagraph {
+                    if isWebClipParagraph {
                         paragraphStyle = Self.webClipParagraphStyle()
                     } else if isTodoParagraph {
                         paragraphStyle = Self.todoParagraphStyle()
@@ -1893,8 +2267,8 @@ struct TodoRichTextEditor: View {
                     textStorage.addAttribute(
                         .paragraphStyle, value: paragraphStyle, range: substringRange)
 
-                    // Don't adjust baseline for todo, web clip, or image paragraphs
-                    if !isTodoParagraph && !isWebClipParagraph && !isImageParagraph {
+                    // Don't adjust baseline for todo or web clip paragraphs
+                    if !isTodoParagraph && !isWebClipParagraph {
                         textStorage.addAttribute(
                             .baselineOffset, value: Self.baseBaselineOffset, range: substringRange)
                     }
@@ -2090,20 +2464,34 @@ struct TodoRichTextEditor: View {
                                 let filename = Self.string(from: match, at: 1, in: imageText)
                                 NSLog("📝 deserialize: Extracted filename: %@", filename)
                                 
-                                // Add newline before image if result is not empty and doesn't end with newline
-                // Create image attachment
-                let attachment = makeImageAttachment(filename: filename)
-                result.append(attachment)
-                
-                // Add newline after image and a spacer paragraph to guarantee separation
-                let newline = NSAttributedString(
-                    string: "\n",
-                    attributes: Self.baseTypingAttributes(for: currentColorScheme))
-                let spacer = NSAttributedString(
-                    string: "\u{200B}\n",
-                    attributes: Self.baseTypingAttributes(for: currentColorScheme))
-                result.append(newline)
-                result.append(spacer)
+                                // Ensure spacing around inline attachment
+                                let baseAttributes = Self.baseTypingAttributes(
+                                    for: currentColorScheme)
+                                if result.length > 0,
+                                    let lastScalar = result.string.unicodeScalars.last,
+                                    !CharacterSet.whitespacesAndNewlines.contains(lastScalar)
+                                {
+                                    let leadingSpace = NSAttributedString(
+                                        string: " ", attributes: baseAttributes)
+                                    result.append(leadingSpace)
+                                }
+
+                                let attachment = makeImageAttachment(filename: filename)
+                                result.append(attachment)
+
+                                let shouldAddTrailingSpace: Bool
+                                if endIndex < text.endIndex {
+                                    let nextCharacter = text[endIndex]
+                                    shouldAddTrailingSpace = !nextCharacter.isWhitespace
+                                } else {
+                                    shouldAddTrailingSpace = true
+                                }
+
+                                if shouldAddTrailingSpace {
+                                    let trailingSpace = NSAttributedString(
+                                        string: " ", attributes: baseAttributes)
+                                    result.append(trailingSpace)
+                                }
                                 
                                 index = endIndex
                                 lastWasWebClip = false
@@ -2182,21 +2570,9 @@ struct TodoRichTextEditor: View {
                 return style
             }
             
-            static func imageParagraphStyle() -> NSParagraphStyle {
-                let style = NSMutableParagraphStyle()
-                style.alignment = .left
-                // CRITICAL: Set line height multiplier to 1.0 and NO constraints
-                // This allows the attachment to determine its own height
-                style.lineHeightMultiple = 1.0
-                // Set to 0 to remove line height constraints entirely
-                style.minimumLineHeight = 0
-                style.maximumLineHeight = 0
-                // Increase spacing significantly to prevent overlap between images
-                style.paragraphSpacing = 16
-                style.paragraphSpacingBefore = 16
-                // No line spacing - let each image be its own paragraph
-                style.lineSpacing = 0
-                return style
+            static func imageTagVerticalOffset(for height: CGFloat) -> CGFloat {
+                let offset = (textFont.capHeight - height) / 2
+                return offset
             }
 
             static func baseTypingAttributes(for colorScheme: ColorScheme? = nil)
@@ -2250,6 +2626,7 @@ struct TodoRichTextEditor: View {
         static var isCommandMenuShowing = false
 
         weak var actionDelegate: TodoEditorRepresentable.Coordinator?
+        private var hoverTrackingArea: NSTrackingArea?
 
         override var intrinsicContentSize: NSSize {
             guard let layoutManager = layoutManager,
@@ -2268,6 +2645,37 @@ struct TodoRichTextEditor: View {
         override func didChangeText() {
             super.didChangeText()
             invalidateIntrinsicContentSize()
+        }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            window?.acceptsMouseMovedEvents = true
+        }
+
+        override func updateTrackingAreas() {
+            super.updateTrackingAreas()
+            if let area = hoverTrackingArea {
+                removeTrackingArea(area)
+            }
+            let options: NSTrackingArea.Options = [
+                .mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect
+            ]
+            let area = NSTrackingArea(rect: bounds, options: options, owner: self, userInfo: nil)
+            addTrackingArea(area)
+            hoverTrackingArea = area
+        }
+
+        override func mouseMoved(with event: NSEvent) {
+            super.mouseMoved(with: event)
+            let point = convert(event.locationInWindow, from: nil)
+            if actionDelegate?.handleAttachmentHover(at: point, in: self) != true {
+                actionDelegate?.endAttachmentHover()
+            }
+        }
+
+        override func mouseExited(with event: NSEvent) {
+            super.mouseExited(with: event)
+            actionDelegate?.endAttachmentHover()
         }
 
         override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
@@ -2294,6 +2702,7 @@ struct TodoRichTextEditor: View {
             if actionDelegate?.handleAttachmentClick(at: point, in: self) == true {
                 return
             }
+            actionDelegate?.endAttachmentHover()
             // Ensure the text view becomes first responder on click
             if window?.makeFirstResponder(self) == true {
                 // Additional verification that we're ready for text input
@@ -3224,39 +3633,48 @@ struct TodoRichTextEditor: View {
                     NSLog("📝 insertImage: textView is nil")
                     return
                 }
-                
-                // Log current state to debug replacement issue
-                let currentRange = textView.selectedRange()
-                let storageLength = textView.textStorage?.length ?? 0
-                NSLog("📝 insertImage: BEFORE - Selected range: %@, storage length: %ld", NSStringFromRange(currentRange), storageLength)
-                
-                // Ensure cursor is at the end of the document to append, not replace
-                if currentRange.location != storageLength || currentRange.length != 0 {
-                    NSLog("📝 insertImage: Moving cursor to end of document")
-                    let endRange = NSRange(location: storageLength, length: 0)
-                    textView.setSelectedRange(endRange)
-                }
-                
-                NSLog("📝 insertImage: Creating image attachment")
-                // Create the image attachment directly (like web clips)
-                let attachment = makeImageAttachment(filename: filename)
-                
-                // Add newlines around the attachment for proper spacing
-                let newlineBefore = NSAttributedString(
-                    string: "\n",
-                    attributes: Self.baseTypingAttributes(for: currentColorScheme))
-                let newlineAfter = NSAttributedString(
-                    string: "\n",
-                    attributes: Self.baseTypingAttributes(for: currentColorScheme))
-                
+
+                let currentRange = textView.selectedRange
+                let storageString = textView.attributedText?.string ?? ""
+                let nsString = storageString as NSString
+                let baseAttributes = Self.baseTypingAttributes(for: currentColorScheme)
+
                 let composed = NSMutableAttributedString()
-                composed.append(newlineBefore)
+
+                if needsLeadingSpace(before: currentRange, in: nsString) {
+                    let leadingSpace = NSAttributedString(string: " ", attributes: baseAttributes)
+                    composed.append(leadingSpace)
+                }
+
+                NSLog("📝 insertImage: Creating inline image tag attachment")
+                let attachment = makeImageAttachment(filename: filename)
                 composed.append(attachment)
-                composed.append(newlineAfter)
-                
+
+                if needsTrailingSpace(after: currentRange, in: nsString) {
+                    let trailingSpace = NSAttributedString(string: " ", attributes: baseAttributes)
+                    composed.append(trailingSpace)
+                }
+
                 replaceSelection(with: composed)
                 syncText()
                 NSLog("📝 insertImage: Completed")
+            }
+
+            private func needsLeadingSpace(before range: NSRange, in text: NSString) -> Bool {
+                guard range.location > 0 else { return false }
+                let previousCharacter = text.character(at: range.location - 1)
+                guard let scalar = UnicodeScalar(previousCharacter) else { return false }
+                return !CharacterSet.whitespacesAndNewlines.contains(scalar)
+            }
+
+            private func needsTrailingSpace(after range: NSRange, in text: NSString) -> Bool {
+                let endIndex = range.location + range.length
+                if endIndex >= text.length {
+                    return true
+                }
+                let nextCharacter = text.character(at: endIndex)
+                guard let scalar = UnicodeScalar(nextCharacter) else { return false }
+                return !CharacterSet.whitespacesAndNewlines.contains(scalar)
             }
 
             private func replaceSelection(with attributed: NSAttributedString) {
@@ -3516,27 +3934,34 @@ struct TodoRichTextEditor: View {
                                 let filename = Self.string(from: match, at: 1, in: imageText)
                                 NSLog("📝 deserialize: Extracted filename: %@", filename)
                                 
-                                // Add newline before image if result is not empty and doesn't end with newline
-                                if result.length > 0 {
-                                    let lastChar = (result.string as NSString).substring(from: result.length - 1)
-                                    if lastChar != "\n" {
-                                        let newline = NSAttributedString(
-                                            string: "\n",
-                                            attributes: Self.baseTypingAttributes(for: currentColorScheme))
-                                        result.append(newline)
-                                    }
+                                let baseAttributes = Self.baseTypingAttributes(
+                                    for: currentColorScheme)
+                                if result.length > 0,
+                                    let lastScalar = result.string.unicodeScalars.last,
+                                    !CharacterSet.whitespacesAndNewlines.contains(lastScalar)
+                                {
+                                    let leadingSpace = NSAttributedString(
+                                        string: " ", attributes: baseAttributes)
+                                    result.append(leadingSpace)
                                 }
-                                
-                                // Create image attachment
+
                                 let attachment = makeImageAttachment(filename: filename)
                                 result.append(attachment)
-                                
-                                // Add newline after image
-                                let newline = NSAttributedString(
-                                    string: "\n",
-                                    attributes: Self.baseTypingAttributes(for: currentColorScheme))
-                                result.append(newline)
-                                
+
+                                let shouldAddTrailingSpace: Bool
+                                if endIndex < text.endIndex {
+                                    let nextCharacter = text[endIndex]
+                                    shouldAddTrailingSpace = !nextCharacter.isWhitespace
+                                } else {
+                                    shouldAddTrailingSpace = true
+                                }
+
+                                if shouldAddTrailingSpace {
+                                    let trailingSpace = NSAttributedString(
+                                        string: " ", attributes: baseAttributes)
+                                    result.append(trailingSpace)
+                                }
+
                                 index = endIndex
                                 continue
                             }
@@ -3693,21 +4118,9 @@ struct TodoRichTextEditor: View {
                 return style
             }
             
-            private static func imageParagraphStyle() -> NSParagraphStyle {
-                let style = NSMutableParagraphStyle()
-                style.alignment = .left
-                // CRITICAL: Set line height multiplier to 1.0 and NO constraints
-                // This allows the attachment to determine its own height
-                style.lineHeightMultiple = 1.0
-                // Set to 0 to remove line height constraints entirely
-                style.minimumLineHeight = 0
-                style.maximumLineHeight = 0
-                // Increase spacing significantly to prevent overlap between images
-                style.paragraphSpacing = 16
-                style.paragraphSpacingBefore = 16
-                // No line spacing - let each image be its own paragraph
-                style.lineSpacing = 0
-                return style
+            private static func imageTagVerticalOffset(for height: CGFloat) -> CGFloat {
+                let offset = (textFont.capHeight - height) / 2
+                return offset
             }
 
             private static func baselineOffset(forLineHeight lineHeight: CGFloat, font: UIFont)

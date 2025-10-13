@@ -704,7 +704,7 @@ struct NoteDetailView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .liquidGlass(in: Capsule())
-        .frame(maxWidth: 320)
+        .frame(maxWidth: 200)
         .onExitCommand {
             hideLinkInputOverlay()
         }
