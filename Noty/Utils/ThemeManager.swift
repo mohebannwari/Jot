@@ -8,6 +8,12 @@
 import SwiftUI
 import Combine
 
+#if os(macOS)
+import AppKit
+#else
+import UIKit
+#endif
+
 enum AppTheme: String, CaseIterable {
     case system = "system"
     case light = "light"
@@ -43,14 +49,10 @@ class ThemeManager: ObservableObject {
     }
     
     func toggleTheme() {
-        switch currentTheme {
-        case .system:
-            currentTheme = .light
-        case .light:
-            currentTheme = .dark
-        case .dark:
-            currentTheme = .system
-        }
+        let sequence = orderedThemes()
+        guard let currentIndex = sequence.firstIndex(of: currentTheme) else { return }
+        let nextIndex = (currentIndex + 1) % sequence.count
+        currentTheme = sequence[nextIndex]
     }
     
     func setTheme(_ theme: AppTheme) {
@@ -59,5 +61,32 @@ class ThemeManager: ObservableObject {
 
     func resetToSystemTheme() {
         currentTheme = .system
+    }
+
+    private func orderedThemes() -> [AppTheme] {
+        let systemTheme = resolvedSystemTheme()
+        if systemTheme == .light {
+            return [.system, .dark, .light]
+        } else {
+            return [.system, .light, .dark]
+        }
+    }
+
+    private func resolvedSystemTheme() -> AppTheme {
+        #if os(macOS)
+        let appearance = NSApp?.effectiveAppearance ?? NSApplication.shared.effectiveAppearance
+        let bestMatch = appearance.bestMatch(from: [.darkAqua, .aqua])
+        return bestMatch == .darkAqua ? .dark : .light
+        #else
+        let style = UIScreen.main.traitCollection.userInterfaceStyle
+        switch style {
+        case .dark:
+            return .dark
+        case .light:
+            return .light
+        default:
+            return .light
+        }
+        #endif
     }
 }

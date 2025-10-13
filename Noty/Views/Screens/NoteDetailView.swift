@@ -8,6 +8,12 @@
 
 import SwiftUI
 
+#if os(macOS)
+import AppKit
+#else
+import UIKit
+#endif
+
 struct NoteDetailView: View {
     let note: Note
     @Binding var isPresented: Bool
@@ -15,6 +21,9 @@ struct NoteDetailView: View {
     @State private var editedTitle: String
     @State private var editedContent: String
     @State private var editedTags: [String]
+
+    private static let imageTagPattern = #"\[\[image\|\|\|([^\]]+)\]\]"#
+    private static let imageTagRegex = try? NSRegularExpression(pattern: imageTagPattern, options: [])
 
     @State private var isAddingTag = false
     @State private var newTagText = ""
@@ -27,6 +36,8 @@ struct NoteDetailView: View {
     @State private var pressedTag: String?
     @State private var selectedTags: Set<String> = []
     @Namespace private var glassNamespace
+    @State private var galleryPreviewImage: PlatformImage?
+    @State private var lastGalleryFilename: String?
     
     // Auxiliary overlays
     @State private var showVoiceRecorderOverlay = false
@@ -55,8 +66,8 @@ struct NoteDetailView: View {
         self._editedContent = State(initialValue: note.content)
         self._editedTags = State(initialValue: note.tags)
 
-        print("DEBUG: NoteDetailView init - note.content: '\(note.content.prefix(100))...'")
-        print(
+        debugLog("DEBUG: NoteDetailView init - note.content: '\(note.content.prefix(100))...'")
+        debugLog(
             "DEBUG: NoteDetailView init - editedContent will be initialized with: '\(note.content.prefix(100))...'"
         )
     }
@@ -78,12 +89,12 @@ struct NoteDetailView: View {
                                             titleOffset = newValue
                                             let shouldShow = newValue < 0
 
-                                            print(
+                                            debugLog(
                                                 "🔵 SCROLL: titleOffset=\(newValue), shouldShow=\(shouldShow)"
                                             )
 
                                             if shouldShow != showStickyHeader {
-                                                print("🟢 TOGGLING HEADER TO: \(shouldShow)")
+                                                debugLog("🟢 TOGGLING HEADER TO: \(shouldShow)")
                                                 withAnimation(.smooth(duration: 0.3)) {
                                                     showStickyHeader = shouldShow
                                                 }
@@ -177,6 +188,15 @@ struct NoteDetailView: View {
                 .padding(.top, 16)
                 .zIndex(20)
         }
+        .overlay(alignment: .bottomLeading) {
+            if let previewImage = galleryPreviewImage {
+                GalleryPreviewOverlay(image: previewImage)
+                    .padding(.leading, 22)
+                    .padding(.bottom, 22)
+                    .transition(.opacity.combined(with: .scale(scale: 0.94)))
+                    .zIndex(40)
+            }
+        }
         .overlay(alignment: .bottom) {
             bottomOverlay
                 .opacity(showFloatingToolbar ? 0.5 : 1.0)
@@ -199,11 +219,11 @@ struct NoteDetailView: View {
                     let centerX = localX + toolbarWidth / 2
                     let centerY = localY + toolbarHeight / 2
 
-                    let _ = print("📍 [Overlay] Position calculation:")
-                    let _ = print("  - parentFrame: \(parentFrame)")
-                    let _ = print("  - Window toolbar origin: (\(floatingToolbarOffset.x), \(floatingToolbarOffset.y))")
-                    let _ = print("  - Local toolbar origin: (\(localX), \(localY))")
-                    let _ = print("  - Toolbar center position: (\(centerX), \(centerY))")
+                    let _ = debugLog("📍 [Overlay] Position calculation:")
+                    let _ = debugLog("  - parentFrame: \(parentFrame)")
+                    let _ = debugLog("  - Window toolbar origin: (\(floatingToolbarOffset.x), \(floatingToolbarOffset.y))")
+                    let _ = debugLog("  - Local toolbar origin: (\(localX), \(localY))")
+                    let _ = debugLog("  - Toolbar center position: (\(centerX), \(centerY))")
 
                     FloatingEditToolbar(
                         position: floatingToolbarOffset,
@@ -221,6 +241,7 @@ struct NoteDetailView: View {
         .offset(x: isViewMaterialized ? 0 : 40)
         .animation(.spring(response: 0.35, dampingFraction: 0.82), value: isViewMaterialized)
         .onAppear {
+            updateGalleryPreview(for: editedContent)
             // Safety check to prevent crashes on appear
             DispatchQueue.main.async {
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
@@ -239,6 +260,9 @@ struct NoteDetailView: View {
                     self.glassElementsVisible = false
                 }
             }
+        }
+        .onChange(of: editedContent) { newValue in
+            updateGalleryPreview(for: newValue)
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("ShowCommandMenu")))
         { notification in
@@ -276,11 +300,11 @@ struct NoteDetailView: View {
                    let visibleWidth = userInfo["visibleWidth"] as? CGFloat,
                    let visibleHeight = userInfo["visibleHeight"] as? CGFloat {
 
-                    print("📍 [NoteDetailView] Received coordinates:")
-                    print("  - selectionX: \(selectionX), selectionY: \(selectionY)")
-                    print("  - selectionWindowX: \(selectionWindowX), selectionWindowY: \(selectionWindowY)")
-                    print("  - selectionWidth: \(selectionWidth), selectionHeight: \(selectionHeight)")
-                    print("  - titleOffset: \(titleOffset)")
+                    let _ = debugLog("📍 [NoteDetailView] Received coordinates:")
+                    let _ = debugLog("  - selectionX: \(selectionX), selectionY: \(selectionY)")
+                    let _ = debugLog("  - selectionWindowX: \(selectionWindowX), selectionWindowY: \(selectionWindowY)")
+                    let _ = debugLog("  - selectionWidth: \(selectionWidth), selectionHeight: \(selectionHeight)")
+                    let _ = debugLog("  - titleOffset: \(titleOffset)")
 
                     // Calculate toolbar positioning with 4px gap
                     let toolbarHeight: CGFloat = 36
@@ -365,10 +389,10 @@ struct NoteDetailView: View {
                         toolbarX = min(max(toolbarX, 0), fallbackMax)
                     }
 
-                    print("  - availableAbove: \(availableAbove), availableBelow: \(availableBelow)")
-                    print("  - fitsAbove: \(fitsAbove), fitsBelow: \(fitsBelow)")
-                    print("  - aboveMaintainsGap: \(aboveMaintainsGap), belowMaintainsGap: \(belowMaintainsGap)")
-                    print("  - Final toolbar position (top): (\(toolbarX), \(chosenToolbarTop)), placeAbove: \(placeAbove)")
+                    let _ = debugLog("  - availableAbove: \(availableAbove), availableBelow: \(availableBelow)")
+                    let _ = debugLog("  - fitsAbove: \(fitsAbove), fitsBelow: \(fitsBelow)")
+                    let _ = debugLog("  - aboveMaintainsGap: \(aboveMaintainsGap), belowMaintainsGap: \(belowMaintainsGap)")
+                    let _ = debugLog("  - Final toolbar position (top): (\(toolbarX), \(chosenToolbarTop)), placeAbove: \(placeAbove)")
                     
                     withAnimation(.smooth(duration: 0.2)) {
                         self.floatingToolbarOffset = CGPoint(x: toolbarX, y: chosenToolbarTop)
@@ -773,18 +797,18 @@ struct NoteDetailView: View {
 
 
     private func handleEditToolAction(_ tool: EditTool) {
-        print("🔧 DEBUG: handleEditToolAction called with tool: \(tool)")
-        print("🔧 DEBUG: Tool rawValue: \(tool.rawValue)")
+        debugLog("🔧 DEBUG: handleEditToolAction called with tool: \(tool)")
+        debugLog("🔧 DEBUG: Tool rawValue: \(tool.rawValue)")
         if performAuxiliaryToolAction(tool) {
             return
         }
         switch tool {
         case .todo:
-            print("🔧 DEBUG: Posting TodoToolbarAction")
+            debugLog("🔧 DEBUG: Posting TodoToolbarAction")
             NotificationCenter.default.post(
                 name: Notification.Name("TodoToolbarAction"), object: nil)
         default:
-            print("🔧 DEBUG: Posting applyEditTool with userInfo: [\"tool\": \"\(tool.rawValue)\"]")
+            debugLog("🔧 DEBUG: Posting applyEditTool with userInfo: [\"tool\": \"\(tool.rawValue)\"]")
             NotificationCenter.default.post(
                 name: Notification.Name("applyEditTool"), object: nil, userInfo: ["tool": tool.rawValue])
         }
@@ -864,6 +888,47 @@ struct NoteDetailView: View {
     private func handleLinkInsert(_ url: String) {
         // Ask the editor to insert a web link at the current cursor location
         NotificationCenter.default.post(name: Notification.Name("InsertWebLink"), object: url)
+    }
+
+    // MARK: - Gallery Preview
+
+    private func updateGalleryPreview(for text: String) {
+        let filenames = extractGalleryFilenames(from: text)
+        let newFilename = filenames.last
+
+        guard newFilename != lastGalleryFilename || (newFilename == nil && galleryPreviewImage != nil)
+        else { return }
+
+        lastGalleryFilename = newFilename
+        let loadedImage = newFilename.flatMap { loadGalleryImage(named: $0) }
+
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+            galleryPreviewImage = loadedImage
+        }
+    }
+
+    private func extractGalleryFilenames(from text: String) -> [String] {
+        guard let regex = Self.imageTagRegex else { return [] }
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+
+        return regex.matches(in: text, options: [], range: range).compactMap { match in
+            guard match.numberOfRanges >= 2,
+                  let range = Range(match.range(at: 1), in: text)
+            else { return nil }
+            return String(text[range])
+        }
+    }
+
+    private func loadGalleryImage(named filename: String) -> PlatformImage? {
+        guard let imageURL = ImageStorageManager.shared.getImageURL(for: filename) else {
+            return nil
+        }
+
+        #if os(macOS)
+        return NSImage(contentsOf: imageURL)
+        #else
+        return UIImage(contentsOfFile: imageURL.path)
+        #endif
     }
 
     private func handleVoiceRecording(_ result: MicCaptureControl.Result) {
@@ -1011,3 +1076,11 @@ private struct TagPill: View {
         return false
     }
 }
+
+#if DEBUG
+private func debugLog(_ message: @autoclosure () -> String) {
+    print(message())
+}
+#else
+private func debugLog(_ message: @autoclosure () -> String) {}
+#endif

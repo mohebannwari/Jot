@@ -11,6 +11,7 @@ import SwiftUI
 
 #if os(macOS)
     import AppKit
+    import QuartzCore
     import CoreImage
 #else
     import UIKit
@@ -91,6 +92,36 @@ private final class ImagePreviewView: NSImageView {
             cornerHeight: 8,
             transform: nil)
         layer?.shadowPath = path
+    }
+
+    func animateEntrance() {
+        guard let layer = layer else { return }
+        layer.removeAnimation(forKey: "entranceTransform")
+        layer.removeAnimation(forKey: "entranceOpacity")
+
+        let initialTransform = CATransform3DMakeTranslation(0, 14, 0)
+        layer.transform = initialTransform
+        layer.opacity = 0
+
+        let timing = CAMediaTimingFunction(controlPoints: 0.18, 0.82, 0.24, 0.98)
+        let duration: CFTimeInterval = 0.26
+
+        let transformAnimation = CABasicAnimation(keyPath: "transform")
+        transformAnimation.fromValue = initialTransform
+        transformAnimation.toValue = CATransform3DIdentity
+        transformAnimation.duration = duration
+        transformAnimation.timingFunction = timing
+
+        let opacityAnimation = CABasicAnimation(keyPath: "opacity")
+        opacityAnimation.fromValue = 0
+        opacityAnimation.toValue = 1
+        opacityAnimation.duration = duration
+        opacityAnimation.timingFunction = timing
+
+        layer.add(transformAnimation, forKey: "entranceTransform")
+        layer.add(opacityAnimation, forKey: "entranceOpacity")
+        layer.transform = CATransform3DIdentity
+        layer.opacity = 1
     }
 
     private func updateAppearance() {
@@ -611,6 +642,14 @@ struct TodoRichTextEditor: View {
             private var isUpdating = false
             private var textBinding: Binding<String>
 #if os(macOS)
+            private struct HiddenAttachmentState {
+                let attachment: NSTextAttachment
+                weak var textView: NSTextView?
+                let originalImage: NSImage?
+                let originalCell: (any NSTextAttachmentCellProtocol)?
+                let characterIndex: Int
+            }
+
             private weak var previewHostView: NSView?
             private var imagePreviewView: ImagePreviewView?
             private var currentPreviewFilename: String?
@@ -619,6 +658,7 @@ struct TodoRichTextEditor: View {
             private var hoverTagOverlayView: NSImageView?
             private var originalTextViewFilters: [Any]?
             private var isHoverEffectApplied = false
+            private var hiddenAttachmentState: HiddenAttachmentState?
             // Allow slight tolerance so hover stays active when the cursor is near the tag edges
             private let hoverHitTolerance: CGFloat = 4
             private static let previewImageCache: NSCache<NSString, NSImage> = {
@@ -1136,6 +1176,8 @@ struct TodoRichTextEditor: View {
 
                 let overlayImage = attachmentImage(attachment, in: textView, characterIndex: characterIndex)
 
+                hideUnderlyingAttachment(attachment, characterIndex: characterIndex, in: textView)
+
                 if let host = previewHostView ?? textView.superview {
                     var anchorInHost = textView.convert(positioningRect, to: host)
                     anchorInHost.origin.x = round(anchorInHost.origin.x)
@@ -1181,6 +1223,10 @@ struct TodoRichTextEditor: View {
                     preview.frame = framed
                 }
 
+                if isNewAttachment || preview.isHidden {
+                    preview.animateEntrance()
+                }
+
                 preview.isHidden = false
             }
 
@@ -1188,11 +1234,13 @@ struct TodoRichTextEditor: View {
                 currentPreviewFilename = nil
                 // Clear cached rect when hiding preview to start fresh on next hover
                 cachedAttachmentRect = nil
+                imagePreviewView?.layer?.removeAllAnimations()
                 imagePreviewView?.isHidden = true
                 clearHoverTagOverlay()
                 if let textView {
                     removeHoverEffect(from: textView)
                 }
+                restoreHiddenAttachment()
             }
 
             private func ensureHoverTagOverlay(in container: NSView, relativeTo referenceView: NSView) -> NSImageView {
@@ -1259,6 +1307,71 @@ struct TodoRichTextEditor: View {
                     textContainer: textView.textContainer,
                     characterIndex: characterIndex
                 )
+            }
+
+            private func hideUnderlyingAttachment(
+                _ attachment: NSTextAttachment,
+                characterIndex: Int,
+                in textView: NSTextView
+            ) {
+                restoreHiddenAttachment(except: attachment)
+
+                guard hiddenAttachmentState?.attachment !== attachment else { return }
+
+                let originalImage = attachment.image
+                let originalCell = attachment.attachmentCell
+
+                guard attachment.bounds.width > 0, attachment.bounds.height > 0 else { return }
+
+                if let transparent = makeTransparentImage(of: attachment.bounds.size) {
+                    attachment.image = transparent
+                    attachment.attachmentCell = NSTextAttachmentCell(imageCell: transparent)
+                } else {
+                    attachment.image = nil
+                    attachment.attachmentCell = nil
+                }
+
+                textView.layoutManager?.invalidateDisplay(
+                    forCharacterRange: NSRange(location: characterIndex, length: 1))
+
+                hiddenAttachmentState = HiddenAttachmentState(
+                    attachment: attachment,
+                    textView: textView,
+                    originalImage: originalImage,
+                    originalCell: originalCell,
+                    characterIndex: characterIndex
+                )
+            }
+
+            private func restoreHiddenAttachment(except attachmentToKeepHidden: NSTextAttachment? = nil) {
+                guard let state = hiddenAttachmentState else { return }
+                if let keepHidden = attachmentToKeepHidden, state.attachment === keepHidden {
+                    return
+                }
+
+                let attachment = state.attachment
+
+                attachment.image = state.originalImage
+                if let originalCell = state.originalCell {
+                    attachment.attachmentCell = originalCell
+                } else {
+                    attachment.attachmentCell = nil
+                }
+
+                state.textView?.layoutManager?.invalidateDisplay(
+                    forCharacterRange: NSRange(location: state.characterIndex, length: 1))
+
+                hiddenAttachmentState = nil
+            }
+
+            private func makeTransparentImage(of size: CGSize) -> NSImage? {
+                guard size.width > 0, size.height > 0 else { return nil }
+                let image = NSImage(size: size)
+                image.lockFocus()
+                NSColor.clear.setFill()
+                NSRect(origin: .zero, size: size).fill()
+                image.unlockFocus()
+                return image
             }
 
             func endAttachmentHover() {
@@ -1391,6 +1504,7 @@ struct TodoRichTextEditor: View {
                     imagePreviewView = nil
                     clearHoverTagOverlay()
                     removeHoverEffect(from: textView)
+                    restoreHiddenAttachment()
                     previewHostView = newHost
                 }
                 ensurePreviewInfrastructure(for: textView)

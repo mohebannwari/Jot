@@ -11,9 +11,12 @@ import Combine
 @MainActor
 final class NotesManager: ObservableObject {
     @Published var notes: [Note] = []
-    
+
     private let storageURL: URL
-    
+    private let saveQueue = DispatchQueue(label: "com.noty.notes.save", qos: .utility)
+    private var pendingSaveWorkItem: DispatchWorkItem?
+    private let saveCoalescingInterval: DispatchTimeInterval = .milliseconds(60)
+
     init(storageURL: URL? = nil, seedIfEmpty: Bool = true) {
         self.storageURL = storageURL ?? NotesManager.defaultStorageURL()
         load()
@@ -85,15 +88,25 @@ final class NotesManager: ObservableObject {
     }
     
     private func save() {
-        do {
-            let fm = FileManager.default
-            let dir = storageURL.deletingLastPathComponent()
-            try fm.createDirectory(at: dir, withIntermediateDirectories: true)
-            let data = try JSONEncoder().encode(notes)
-            try data.write(to: storageURL, options: [.atomic])
-        } catch {
-            // Silently ignore for now; in production surface this to the UI/logs
+        let snapshot = notes
+        let destinationURL = storageURL
+
+        pendingSaveWorkItem?.cancel()
+
+        let workItem = DispatchWorkItem { [snapshot, destinationURL] in
+            do {
+                let fm = FileManager.default
+                let dir = destinationURL.deletingLastPathComponent()
+                try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+                let data = try JSONEncoder().encode(snapshot)
+                try data.write(to: destinationURL, options: [.atomic])
+            } catch {
+                // Silently ignore for now; in production surface this to the UI/logs
+            }
         }
+
+        pendingSaveWorkItem = workItem
+        saveQueue.asyncAfter(deadline: .now() + saveCoalescingInterval, execute: workItem)
     }
     
     // MARK: - Helpers
