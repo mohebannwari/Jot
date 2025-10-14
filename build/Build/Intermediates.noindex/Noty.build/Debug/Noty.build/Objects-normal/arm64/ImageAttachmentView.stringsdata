@@ -1,0 +1,16 @@
+{
+  "source": "/Users/mohebanwari/development/Noty/Noty/Views/Components/ImageAttachmentView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Loading...",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 73
+        }
+      }
+    ]
+  },
+  "version": 1
+}

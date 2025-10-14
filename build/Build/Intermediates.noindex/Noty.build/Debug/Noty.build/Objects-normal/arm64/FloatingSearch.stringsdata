@@ -1,0 +1,16 @@
+{
+  "source": "/Users/mohebanwari/development/Noty/Noty/Views/Components/FloatingSearch.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Search",
+        "location": {
+          "startingColumn": 31,
+          "startingLine": 162
+        }
+      }
+    ]
+  },
+  "version": 1
+}

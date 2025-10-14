@@ -1,0 +1,104 @@
+{
+  "source": "/Users/mohebanwari/development/Noty/Noty/Views/Components/PerformanceDashboard.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Performance Monitor",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 20
+        }
+      },
+      {
+        "comment": "",
+        "key": "Collapse",
+        "location": {
+          "startingColumn": 37,
+          "startingLine": 25
+        }
+      },
+      {
+        "comment": "",
+        "key": "Expand",
+        "location": {
+          "startingColumn": 50,
+          "startingLine": 25
+        }
+      },
+      {
+        "comment": "",
+        "key": "Loading...",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 75
+        }
+      },
+      {
+        "comment": "",
+        "key": "System Health",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 106
+        }
+      },
+      {
+        "comment": "",
+        "key": "Analytics",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 145
+        }
+      },
+      {
+        "comment": "",
+        "key": "Feature Usage",
+        "location": {
+          "startingColumn": 22,
+          "startingLine": 167
+        }
+      },
+      {
+        "comment": "",
+        "key": "%lld",
+        "location": {
+          "startingColumn": 34,
+          "startingLine": 178
+        }
+      },
+      {
+        "comment": "",
+        "key": "Last updated: %@",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 213
+        }
+      },
+      {
+        "comment": "",
+        "key": "Refresh",
+        "location": {
+          "startingColumn": 20,
+          "startingLine": 195
+        }
+      },
+      {
+        "comment": "",
+        "key": "Export Metrics",
+        "location": {
+          "startingColumn": 20,
+          "startingLine": 200
+        }
+      },
+      {
+        "comment": "",
+        "key": "Reset",
+        "location": {
+          "startingColumn": 20,
+          "startingLine": 205
+        }
+      }
+    ]
+  },
+  "version": 1
+}

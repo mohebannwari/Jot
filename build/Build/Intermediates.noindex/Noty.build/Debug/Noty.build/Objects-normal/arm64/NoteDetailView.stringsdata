@@ -1,0 +1,40 @@
+{
+  "source": "/Users/mohebanwari/development/Noty/Noty/Views/Screens/NoteDetailView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Note Title",
+        "location": {
+          "startingColumn": 19,
+          "startingLine": 533
+        }
+      },
+      {
+        "comment": "",
+        "key": "New tag",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 572
+        }
+      },
+      {
+        "comment": "",
+        "key": "New tag",
+        "location": {
+          "startingColumn": 31,
+          "startingLine": 556
+        }
+      },
+      {
+        "comment": "",
+        "key": "Enter URL",
+        "location": {
+          "startingColumn": 23,
+          "startingLine": 711
+        }
+      }
+    ]
+  },
+  "version": 1
+}

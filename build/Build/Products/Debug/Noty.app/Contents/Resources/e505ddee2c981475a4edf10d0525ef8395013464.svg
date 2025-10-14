@@ -1,0 +1,5 @@
+<svg preserveAspectRatio="none" width="100%" height="100%" overflow="visible" style="display: block;" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="calendar-2">
+<path id="Vector" fill-rule="evenodd" clip-rule="evenodd" d="M4 1C4.27614 1 4.5 1.22386 4.5 1.5V2H7.5V1.5C7.5 1.22386 7.72385 1 8 1C8.27615 1 8.5 1.22386 8.5 1.5V2C9.60455 2 10.5 2.89543 10.5 4V8.5C10.5 9.60455 9.60455 10.5 8.5 10.5H3.5C2.39543 10.5 1.5 9.60455 1.5 8.5V4C1.5 2.89543 2.39543 2 3.5 2V1.5C3.5 1.22386 3.72386 1 4 1ZM2.5 5.5V8.5C2.5 9.0523 2.94771 9.5 3.5 9.5H8.5C9.0523 9.5 9.5 9.0523 9.5 8.5V5.5H2.5Z" fill="var(--fill-0, white)"/>
+</g>
+</svg>

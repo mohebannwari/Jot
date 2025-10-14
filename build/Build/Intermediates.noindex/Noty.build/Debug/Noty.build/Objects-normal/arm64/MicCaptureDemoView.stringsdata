@@ -1,0 +1,40 @@
+{
+  "source": "/Users/mohebanwari/development/Noty/Noty/Views/Screens/MicCaptureDemoView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Last capture",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 15
+        }
+      },
+      {
+        "comment": "",
+        "key": "File: %@",
+        "location": {
+          "startingColumn": 26,
+          "startingLine": 17
+        }
+      },
+      {
+        "comment": "",
+        "key": "No transcript available.",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 24
+        }
+      },
+      {
+        "comment": "",
+        "key": "Transcript: %@",
+        "location": {
+          "startingColumn": 30,
+          "startingLine": 21
+        }
+      }
+    ]
+  },
+  "version": 1
+}

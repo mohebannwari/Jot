@@ -1,0 +1,23 @@
+{
+  "/Users/mohebanwari/development/Noty/Noty/Models/Note.swift" : {
+    "const-values" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/Note.swiftconstvalues",
+    "dependencies" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/Note.d",
+    "diagnostics" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/Note.dia",
+    "object" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/Note.o",
+    "swift-dependencies" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/Note.swiftdeps"
+  },
+  "/Users/mohebanwari/development/Noty/Noty/Models/NotesManager.swift" : {
+    "const-values" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/NotesManager.swiftconstvalues",
+    "dependencies" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/NotesManager.d",
+    "diagnostics" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/NotesManager.dia",
+    "object" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/NotesManager.o",
+    "swift-dependencies" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/NotesManager.swiftdeps"
+  },
+  "/Users/mohebanwari/development/Noty/Noty/Models/SearchEngine.swift" : {
+    "const-values" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/SearchEngine.swiftconstvalues",
+    "dependencies" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/SearchEngine.d",
+    "diagnostics" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/SearchEngine.dia",
+    "object" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/SearchEngine.o",
+    "swift-dependencies" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/SearchEngine.swiftdeps"
+  }
+}

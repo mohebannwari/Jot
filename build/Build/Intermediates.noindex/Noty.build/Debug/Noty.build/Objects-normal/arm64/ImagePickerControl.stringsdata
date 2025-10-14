@@ -1,0 +1,16 @@
+{
+  "source": "/Users/mohebanwari/development/Noty/Noty/Views/Components/ImagePickerControl.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Add image",
+        "location": {
+          "startingColumn": 34,
+          "startingLine": 41
+        }
+      }
+    ]
+  },
+  "version": 1
+}

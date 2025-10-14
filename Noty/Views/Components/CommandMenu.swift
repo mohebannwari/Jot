@@ -12,9 +12,11 @@ enum CommandMenuLayout {
     static let itemHeight: CGFloat = 36  // Updated to match padding(.vertical, 10) + content height
     static let itemSpacing: CGFloat = 0  // Spacing between items
     static let defaultMaxHeight: CGFloat = 280
+    static let width: CGFloat = 140
+    static let outerPadding: CGFloat = 12
 
     // Calculate the ideal height to fit content without extra space
-    // The outer padding is handled by the .padding(12) modifier on the menu itself
+    // The outer padding is handled by the .padding(CommandMenuLayout.outerPadding) modifier on the menu itself
     static func idealHeight(for itemCount: Int, maxHeight: CGFloat = defaultMaxHeight) -> CGFloat {
         guard itemCount > 0 else {
             return 0  // Return 0 when no items, let the padding handle minimum size
@@ -68,8 +70,8 @@ struct CommandMenu: View {
                 }
             }
         }
-        .frame(width: 140)
-        .padding(12)  // Proper padding for concentricity
+        .frame(width: CommandMenuLayout.width)
+        .padding(CommandMenuLayout.outerPadding)  // Proper padding for concentricity
         .liquidGlass(in: RoundedRectangle(cornerRadius: 28, style: .continuous))  // Corner radius adapts to padding (12 + 4 = 16)
         .shadow(color: .black.opacity(0.3), radius: 30, x: 0, y: 15)
         .shadow(color: .black.opacity(0.18), radius: 12, x: 0, y: 6)

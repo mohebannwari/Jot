@@ -13,8 +13,11 @@ import SwiftUI
     import AppKit
     import QuartzCore
     import CoreImage
+    import UniformTypeIdentifiers
+    import QuickLook
 #else
     import UIKit
+    import UniformTypeIdentifiers
 #endif
 
 extension NSAttributedString.Key {
@@ -22,6 +25,53 @@ extension NSAttributedString.Key {
     fileprivate static let webClipDescription = NSAttributedString.Key("WebClipDescription")
     fileprivate static let webClipDomain = NSAttributedString.Key("WebClipDomain")
     fileprivate static let imageFilename = NSAttributedString.Key("ImageFilename")
+    fileprivate static let fileStoredFilename = NSAttributedString.Key("FileStoredFilename")
+    fileprivate static let fileOriginalFilename = NSAttributedString.Key("FileOriginalFilename")
+    fileprivate static let fileTypeIdentifier = NSAttributedString.Key("FileTypeIdentifier")
+    fileprivate static let fileDisplayLabel = NSAttributedString.Key("FileDisplayLabel")
+}
+
+private enum AttachmentMarkup {
+    static let imageMarkupPrefix = "[[image|"
+    static let imagePattern = #"\[\[image\|\|\|([^\]]+)\]\]"#
+    static let imageRegex: NSRegularExpression? = try? NSRegularExpression(
+        pattern: imagePattern,
+        options: []
+    )
+    static let fileMarkupPrefix = "[[file|"
+    static let filePattern = #"\[\[file\|([^|]+)\|([^|]+)\|([^\]]*)\]\]"#
+    static let fileRegex: NSRegularExpression? = try? NSRegularExpression(
+        pattern: filePattern,
+        options: []
+    )
+
+    static func displayLabel(for storedFile: FileAttachmentStorageManager.StoredFile) -> String {
+        #if canImport(UniformTypeIdentifiers)
+        if #available(macOS 11.0, iOS 14.0, *) {
+            if let type = UTType(storedFile.typeIdentifier) {
+                if type.conforms(to: .pdf) { return "PDF" }
+                if type.conforms(to: .image) { return "Image" }
+                if type.conforms(to: .audio) { return "Audio" }
+                if type.conforms(to: .movie) { return "Video" }
+            }
+        }
+        #endif
+
+        let ext = (storedFile.originalFilename as NSString).pathExtension
+        if !ext.isEmpty {
+            return ext.uppercased()
+        }
+
+        return "File"
+    }
+
+    static func sanitizedComponent(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+        return trimmed
+            .replacingOccurrences(of: "|", with: " ")
+            .replacingOccurrences(of: "]]", with: " ")
+    }
 }
 
 // Notification names for floating toolbar coordination
@@ -42,6 +92,27 @@ private final class NoteImageAttachment: NSTextAttachment {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("NoteImageAttachment does not support init(coder:)")
+    }
+}
+
+/// Attachment type that captures metadata for non-image files.
+private final class NoteFileAttachment: NSTextAttachment {
+    let storedFilename: String
+    let originalFilename: String
+    let typeIdentifier: String
+    let displayLabel: String
+
+    init(storedFilename: String, originalFilename: String, typeIdentifier: String, displayLabel: String) {
+        self.storedFilename = storedFilename
+        self.originalFilename = originalFilename
+        self.typeIdentifier = typeIdentifier
+        self.displayLabel = displayLabel
+        super.init(data: nil, ofType: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("NoteFileAttachment does not support init(coder:)")
     }
 }
 
@@ -159,6 +230,42 @@ private final class NoteImageAttachment: NSTextAttachment {
         return copy
     }
 }
+
+/// Attachment type that captures metadata for non-image files.
+private final class NoteFileAttachment: NSTextAttachment {
+    let storedFilename: String
+    let originalFilename: String
+    let typeIdentifier: String
+    let displayLabel: String
+
+    init(storedFilename: String, originalFilename: String, typeIdentifier: String, displayLabel: String) {
+        self.storedFilename = storedFilename
+        self.originalFilename = originalFilename
+        self.typeIdentifier = typeIdentifier
+        self.displayLabel = displayLabel
+        super.init(data: nil, ofType: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("NoteFileAttachment does not support init(coder:)")
+    }
+
+    override func copy(with zone: NSZone? = nil) -> Any {
+        let copy = NoteFileAttachment(
+            storedFilename: storedFilename,
+            originalFilename: originalFilename,
+            typeIdentifier: typeIdentifier,
+            displayLabel: displayLabel
+        )
+        copy.image = self.image
+        copy.bounds = self.bounds
+        copy.fileWrapper = self.fileWrapper
+        copy.contents = self.contents
+        copy.attachmentCell = self.attachmentCell
+        return copy
+    }
+}
 #endif
 
 struct TodoRichTextEditor: View {
@@ -177,6 +284,16 @@ struct TodoRichTextEditor: View {
     @State private var commandMenuSelectedIndex = 0
     @State private var commandSlashLocation: Int = -1
     fileprivate static let commandMenuActions: [EditTool] = [.imageUpload, .voiceRecord, .link]
+    fileprivate static let commandMenuBaseWidth: CGFloat = CommandMenuLayout.width
+    fileprivate static let commandMenuOuterPadding: CGFloat = CommandMenuLayout.outerPadding
+    fileprivate static let commandMenuHorizontalPadding = commandMenuOuterPadding * 2
+    fileprivate static let commandMenuVerticalPadding = commandMenuOuterPadding * 2
+    fileprivate static let commandMenuContentHeight: CGFloat = CommandMenuLayout.idealHeight(
+        for: TodoRichTextEditor.commandMenuActions.count)
+    fileprivate static let commandMenuTotalWidth: CGFloat =
+        commandMenuBaseWidth + commandMenuHorizontalPadding
+    fileprivate static let commandMenuTotalHeight: CGFloat =
+        commandMenuContentHeight + commandMenuVerticalPadding
     private let commandMenuTools = TodoRichTextEditor.commandMenuActions
 
     // Static accessor for command menu showing flag (used by keyboard handlers)
@@ -232,22 +349,26 @@ struct TodoRichTextEditor: View {
         .frame(maxWidth: .infinity)  // Natural height based on content
         .background(Color.clear)
         .overlay(alignment: .topLeading) {
-            // Command menu overlay (triggered by "/" character)
-            if showCommandMenu {
-                CommandMenu(
-                    tools: commandMenuTools,
-                    selectedIndex: $commandMenuSelectedIndex,
-                    onSelect: { tool in handleCommandMenuSelection(tool) },
-                    maxHeight: 280
-                )
-                .offset(x: commandMenuPosition.x, y: commandMenuPosition.y)
-                .transition(
-                    .asymmetric(
-                        insertion: .scale(scale: 0.92, anchor: .top).combined(with: .opacity),
-                        removal: .scale(scale: 0.96, anchor: .top).combined(with: .opacity)
+            GeometryReader { geometry in
+                if showCommandMenu {
+                    CommandMenu(
+                        tools: commandMenuTools,
+                        selectedIndex: $commandMenuSelectedIndex,
+                        onSelect: { tool in handleCommandMenuSelection(tool) },
+                        maxHeight: 280
                     )
-                )
-                .zIndex(1000)
+                    .offset(
+                        x: clampedCommandMenuPosition(for: geometry.size).x,
+                        y: clampedCommandMenuPosition(for: geometry.size).y
+                    )
+                    .transition(
+                        .asymmetric(
+                            insertion: .scale(scale: 0.92, anchor: .top).combined(with: .opacity),
+                            removal: .scale(scale: 0.96, anchor: .top).combined(with: .opacity)
+                        )
+                    )
+                    .zIndex(1000)
+                }
             }
         }
         .overlay(alignment: .topTrailing) {
@@ -387,6 +508,14 @@ struct TodoRichTextEditor: View {
         }
 
         commandSlashLocation = -1
+    }
+
+    private func clampedCommandMenuPosition(for containerSize: CGSize) -> CGPoint {
+        let maxX = max(0, containerSize.width - TodoRichTextEditor.commandMenuTotalWidth)
+        let maxY = max(0, containerSize.height - TodoRichTextEditor.commandMenuTotalHeight)
+        let clampedX = min(max(commandMenuPosition.x, 0), maxX)
+        let clampedY = min(max(commandMenuPosition.y, 0), maxY)
+        return CGPoint(x: clampedX, y: clampedY)
     }
 
     #if os(iOS)
@@ -650,9 +779,21 @@ struct TodoRichTextEditor: View {
                 let characterIndex: Int
             }
 
+            private struct FileAttachmentMetadata {
+                let storedFilename: String
+                let originalFilename: String
+                let typeIdentifier: String
+                let displayLabel: String
+            }
+
+            private enum AttachmentPreviewTarget {
+                case image(filename: String)
+                case file(metadata: FileAttachmentMetadata)
+            }
+
             private weak var previewHostView: NSView?
             private var imagePreviewView: ImagePreviewView?
-            private var currentPreviewFilename: String?
+            private var currentPreviewIdentifier: String?
             // Cache the attachment rect to prevent jitter during horizontal cursor movement
             private var cachedAttachmentRect: CGRect?
             private var hoverTagOverlayView: NSImageView?
@@ -773,15 +914,6 @@ struct TodoRichTextEditor: View {
                 pattern: webClipPattern,
                 options: []
             )
-            
-            // Image attachment markup patterns
-            private static let imageMarkupPrefix = "[[image|"
-            private static let imagePattern = #"\[\[image\|\|\|([^\]]+)\]\]"#
-            private static let imageRegex: NSRegularExpression? = try? NSRegularExpression(
-                pattern: imagePattern,
-                options: []
-            )
-
             private static func cleanedWebClipComponent(_ value: Any?) -> String {
                 guard let raw = value as? String else { return "" }
                 let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1041,6 +1173,77 @@ struct TodoRichTextEditor: View {
                 return attributed
             }
 
+            /// Create an inline file attachment tag with metadata
+            private func makeFileAttachment(metadata: FileAttachmentMetadata)
+                -> NSMutableAttributedString
+            {
+                func fallbackAttributedString() -> NSMutableAttributedString {
+                    return NSMutableAttributedString(
+                        string: "[File: \(metadata.displayLabel)]"
+                    )
+                }
+
+                let tagView = FileAttachmentTagView(label: metadata.displayLabel)
+                    .environment(\.colorScheme, currentColorScheme)
+                let renderer = ImageRenderer(content: tagView)
+                let scale = NSScreen.main?.backingScaleFactor ?? 2.0
+                renderer.scale = scale
+                renderer.isOpaque = false
+
+                guard let cgImage = renderer.cgImage else {
+                    NSLog("📄 makeFileAttachment: FAILED to render tag image")
+                    return fallbackAttributedString()
+                }
+
+                let displaySize = CGSize(
+                    width: CGFloat(cgImage.width) / scale,
+                    height: CGFloat(cgImage.height) / scale
+                )
+
+                let renderedImage = NSImage(size: displaySize)
+                renderedImage.addRepresentation(NSBitmapImageRep(cgImage: cgImage))
+
+                let attachment = NoteFileAttachment(
+                    storedFilename: metadata.storedFilename,
+                    originalFilename: metadata.originalFilename,
+                    typeIdentifier: metadata.typeIdentifier,
+                    displayLabel: metadata.displayLabel
+                )
+                attachment.image = renderedImage
+                attachment.attachmentCell = NSTextAttachmentCell(imageCell: renderedImage)
+                attachment.bounds = CGRect(
+                    x: 0,
+                    y: Self.imageTagVerticalOffset(for: displaySize.height),
+                    width: displaySize.width,
+                    height: displaySize.height
+                )
+
+                let attributed = NSMutableAttributedString(attachment: attachment)
+                let attachmentRange = NSRange(location: 0, length: attributed.length)
+                attributed.addAttribute(
+                    .fileStoredFilename,
+                    value: metadata.storedFilename,
+                    range: attachmentRange
+                )
+                attributed.addAttribute(
+                    .fileOriginalFilename,
+                    value: metadata.originalFilename,
+                    range: attachmentRange
+                )
+                attributed.addAttribute(
+                    .fileTypeIdentifier,
+                    value: metadata.typeIdentifier,
+                    range: attachmentRange
+                )
+                attributed.addAttribute(
+                    .fileDisplayLabel,
+                    value: metadata.displayLabel,
+                    range: attachmentRange
+                )
+
+                return attributed
+            }
+
 #if os(macOS)
             private func ensurePreviewInfrastructure(for textView: NSTextView) {
                 if previewHostView == nil {
@@ -1083,39 +1286,79 @@ struct TodoRichTextEditor: View {
                 at rectInView: CGRect,
                 in textView: NSTextView
             ) {
+                showAttachmentPreview(
+                    identifier: filename,
+                    attachment: attachment,
+                    characterIndex: characterIndex,
+                    at: rectInView,
+                    in: textView
+                ) {
+                    guard let imageURL = ImageStorageManager.shared.getImageURL(for: filename) else {
+                        return nil
+                    }
+                    return NSImage(contentsOf: imageURL)
+                }
+            }
+
+            private func showFilePreview(
+                metadata: FileAttachmentMetadata,
+                attachment: NSTextAttachment,
+                characterIndex: Int,
+                at rectInView: CGRect,
+                in textView: NSTextView
+            ) {
+                showAttachmentPreview(
+                    identifier: metadata.storedFilename,
+                    attachment: attachment,
+                    characterIndex: characterIndex,
+                    at: rectInView,
+                    in: textView
+                ) {
+                    guard let fileURL = FileAttachmentStorageManager.shared.fileURL(
+                        for: metadata.storedFilename
+                    ) else {
+                        return nil
+                    }
+                    return generateFilePreviewImage(for: fileURL, displayLabel: metadata.displayLabel)
+                }
+            }
+
+            private func showAttachmentPreview(
+                identifier: String,
+                attachment: NSTextAttachment,
+                characterIndex: Int,
+                at rectInView: CGRect,
+                in textView: NSTextView,
+                imageProvider: () -> NSImage?
+            ) {
                 ensurePreviewInfrastructure(for: textView)
 
                 guard let preview = imagePreviewView else { return }
 
                 preview.colorScheme = currentColorScheme
 
-                // Track whether this is a new attachment or same one as before
-                let isNewAttachment = currentPreviewFilename != filename
+                let cacheKey = identifier as NSString
+                var resolvedImage = Self.previewImageCache.object(forKey: cacheKey)
+                if resolvedImage == nil {
+                    resolvedImage = imageProvider()
+                    if let resolvedImage {
+                        Self.previewImageCache.setObject(resolvedImage, forKey: cacheKey)
+                    }
+                }
+
+                guard let image = resolvedImage else {
+                    hideImagePreview()
+                    return
+                }
+
+                let isNewAttachment = currentPreviewIdentifier != identifier
 
                 if isNewAttachment {
-                    let cacheKey = filename as NSString
-                    var image = Self.previewImageCache.object(forKey: cacheKey)
-                    if image == nil, let imageURL = ImageStorageManager.shared.getImageURL(for: filename),
-                        let loaded = NSImage(contentsOf: imageURL)
-                    {
-                        image = loaded
-                        if let image = image {
-                            Self.previewImageCache.setObject(image, forKey: cacheKey)
-                        }
-                    }
-
-                    guard let resolvedImage = image else {
-                        hideImagePreview()
-                        return
-                    }
-
-                    let displaySize = previewDisplaySize(for: resolvedImage)
-                    preview.configure(image: resolvedImage, displaySize: displaySize)
-                    currentPreviewFilename = filename
-                    // Cache the attachment rect for the new attachment to prevent jitter
+                    let displaySize = previewDisplaySize(for: image)
+                    preview.configure(image: image, displaySize: displaySize)
+                    currentPreviewIdentifier = identifier
                     cachedAttachmentRect = rectInView
                 } else if cachedAttachmentRect == nil {
-                    // If we're showing the same attachment but lost the cached rect, store it
                     cachedAttachmentRect = rectInView
                 }
 
@@ -1127,14 +1370,17 @@ struct TodoRichTextEditor: View {
                     }
                 }
 
-                // Use the cached rect for positioning to prevent jitter during horizontal movement
                 let positioningRect = cachedAttachmentRect ?? rectInView
 
                 let previewSize = preview.frame.size
-                let verticalSpacing: CGFloat = 8  // Consistent gap between tag and preview
+                let verticalSpacing: CGFloat = 8
                 let minPadding: CGFloat = 12
-                
-                func clampedFrame(anchorRect: CGRect, containerBounds: CGRect, containerIsFlipped: Bool) -> CGRect {
+
+                func clampedFrame(
+                    anchorRect: CGRect,
+                    containerBounds: CGRect,
+                    containerIsFlipped: Bool
+                ) -> CGRect {
                     var frame = CGRect(origin: .zero, size: previewSize)
                     let minX = containerBounds.minX + minPadding
                     let maxX = containerBounds.maxX - frame.width - minPadding
@@ -1182,7 +1428,11 @@ struct TodoRichTextEditor: View {
 
                 applyHoverEffectIfNeeded(to: textView)
 
-                let overlayImage = attachmentImage(attachment, in: textView, characterIndex: characterIndex)
+                let overlayImage = attachmentImage(
+                    attachment,
+                    in: textView,
+                    characterIndex: characterIndex
+                )
 
                 hideUnderlyingAttachment(attachment, characterIndex: characterIndex, in: textView)
 
@@ -1238,8 +1488,33 @@ struct TodoRichTextEditor: View {
                 preview.isHidden = false
             }
 
+            private func generateFilePreviewImage(for url: URL, displayLabel: String) -> NSImage? {
+                let maxDimension: CGFloat = 62
+                let scale = NSScreen.main?.backingScaleFactor ?? 2.0
+                let targetSize = CGSize(width: maxDimension * scale, height: maxDimension * scale)
+
+                if let cgImage = QLThumbnailImageCreate(
+                    kCFAllocatorDefault,
+                    url as CFURL,
+                    targetSize,
+                    nil
+                )?.takeRetainedValue() {
+                    let displaySize = CGSize(
+                        width: CGFloat(cgImage.width) / scale,
+                        height: CGFloat(cgImage.height) / scale
+                    )
+                    let image = NSImage(size: NSSize(width: displaySize.width, height: displaySize.height))
+                    image.addRepresentation(NSBitmapImageRep(cgImage: cgImage))
+                    return image
+                }
+
+                let icon = NSWorkspace.shared.icon(forFile: url.path)
+                icon.size = NSSize(width: maxDimension, height: maxDimension)
+                return icon
+            }
+
             private func hideImagePreview() {
-                currentPreviewFilename = nil
+                currentPreviewIdentifier = nil
                 // Clear cached rect when hiding preview to start fresh on next hover
                 cachedAttachmentRect = nil
                 imagePreviewView?.layer?.removeAllAnimations()
@@ -1389,7 +1664,7 @@ struct TodoRichTextEditor: View {
             func handleAttachmentHover(at point: CGPoint, in textView: NSTextView) -> Bool {
                 // Fast path: if we're already showing a preview and the cursor is still within
                 // the cached rect (with tolerance), keep the preview stable without recalculating
-                if currentPreviewFilename != nil,
+                if currentPreviewIdentifier != nil,
                     let cachedRect = cachedAttachmentRect
                 {
                     let toleranceRect = cachedRect.insetBy(dx: -hoverHitTolerance, dy: -hoverHitTolerance)
@@ -1424,12 +1699,27 @@ struct TodoRichTextEditor: View {
                 }
 
                 let attributes = textStorage.attributes(at: characterIndex, effectiveRange: nil)
-                guard let filename = attributes[.imageFilename] as? String else {
+                guard let attachment = attributes[.attachment] as? NSTextAttachment else {
                     hideImagePreview()
                     return false
                 }
 
-                guard let attachment = attributes[.attachment] as? NSTextAttachment else {
+                let previewTarget: AttachmentPreviewTarget
+                if let filename = attributes[.imageFilename] as? String {
+                    previewTarget = .image(filename: filename)
+                } else if let storedFilename = attributes[.fileStoredFilename] as? String,
+                          let originalFilename = attributes[.fileOriginalFilename] as? String,
+                          let typeIdentifier = attributes[.fileTypeIdentifier] as? String
+                {
+                    let displayLabel = (attributes[.fileDisplayLabel] as? String) ?? "File"
+                    let metadata = FileAttachmentMetadata(
+                        storedFilename: storedFilename,
+                        originalFilename: originalFilename,
+                        typeIdentifier: typeIdentifier,
+                        displayLabel: displayLabel
+                    )
+                    previewTarget = .file(metadata: metadata)
+                } else {
                     hideImagePreview()
                     return false
                 }
@@ -1482,13 +1772,24 @@ struct TodoRichTextEditor: View {
                     return false
                 }
 
-                showImagePreview(
-                    for: filename,
-                    attachment: attachment,
-                    characterIndex: characterIndex,
-                    at: rectInTextView,
-                    in: textView
-                )
+                switch previewTarget {
+                case let .image(filename):
+                    showImagePreview(
+                        for: filename,
+                        attachment: attachment,
+                        characterIndex: characterIndex,
+                        at: rectInTextView,
+                        in: textView
+                    )
+                case let .file(metadata):
+                    showFilePreview(
+                        metadata: metadata,
+                        attachment: attachment,
+                        characterIndex: characterIndex,
+                        at: rectInTextView,
+                        in: textView
+                    )
+                }
                 return true
             }
 #endif
@@ -1656,6 +1957,87 @@ struct TodoRichTextEditor: View {
                 ]
             }
 
+#if os(macOS)
+            func canHandleFileDrop(_ info: NSDraggingInfo, in textView: NSTextView) -> Bool {
+                guard let urls = fileURLs(from: info) else {
+                    return false
+                }
+                return !urls.isEmpty
+            }
+
+            func handleFileDrop(_ info: NSDraggingInfo, in textView: NSTextView) -> Bool {
+                guard let urls = fileURLs(from: info), !urls.isEmpty else {
+                    return false
+                }
+                processDroppedURLs(urls)
+                return true
+            }
+
+            private func fileURLs(from info: NSDraggingInfo) -> [URL]? {
+                let classes: [AnyClass] = [NSURL.self]
+                let options: [NSPasteboard.ReadingOptionKey: Any] = [
+                    .urlReadingFileURLsOnly: true
+                ]
+                guard let objects = info.draggingPasteboard.readObjects(
+                    forClasses: classes,
+                    options: options
+                ) as? [URL] else {
+                    return nil
+                }
+                return objects
+            }
+
+            private func processDroppedURLs(_ urls: [URL]) {
+                Task { @MainActor [weak self] in
+                    guard let self = self else { return }
+                    for url in urls {
+                        await self.ingestDroppedURL(url)
+                    }
+                }
+            }
+
+            private func ingestDroppedURL(_ url: URL) async {
+                let didAccess = url.startAccessingSecurityScopedResource()
+                defer {
+                    if didAccess {
+                        url.stopAccessingSecurityScopedResource()
+                    }
+                }
+
+                if isImageURL(url) {
+                    if let filename = await ImageStorageManager.shared.saveImage(from: url) {
+                        insertImage(filename: filename)
+                        return
+                    } else {
+                        NSLog("📄 ingestDroppedURL: Failed to persist image at %@", url.path)
+                    }
+                }
+
+                if let storedFile = await FileAttachmentStorageManager.shared.saveFile(from: url) {
+                    insertFileAttachment(using: storedFile)
+                    return
+                }
+
+                NSLog("📄 ingestDroppedURL: Unhandled file type for %@", url.path)
+            }
+
+            private func isImageURL(_ url: URL) -> Bool {
+                if let values = try? url.resourceValues(forKeys: [.typeIdentifierKey]),
+                   let identifier = values.typeIdentifier {
+                    if #available(macOS 11.0, *) {
+                        if let type = UTType(identifier) {
+                            return type.conforms(to: .image)
+                        }
+                    }
+                }
+
+                let ext = url.pathExtension.lowercased()
+                return ["png", "jpg", "jpeg", "heic", "heif", "tif", "tiff", "bmp", "gif"].contains(
+                    ext
+                )
+            }
+#endif
+
             func handleAttachmentClick(at point: CGPoint, in textView: NSTextView) -> Bool {
                 guard let layoutManager = textView.layoutManager,
                     let textStorage = textView.textStorage,
@@ -1674,9 +2056,28 @@ struct TodoRichTextEditor: View {
                 guard charIndex < textStorage.length else { return false }
 
                 let attributes = textStorage.attributes(at: charIndex, effectiveRange: nil)
-                guard attributes[.webClipTitle] != nil,
-                    let attachment = attributes[.attachment] as? NSTextAttachment
-                else { return false }
+                guard let attachment = attributes[.attachment] as? NSTextAttachment else {
+                    return false
+                }
+
+                enum AttachmentAction {
+                    case webClip(url: URL)
+                    case file(url: URL)
+                }
+
+                let action: AttachmentAction?
+                if let storedFilename = attributes[.fileStoredFilename] as? String,
+                   let fileURL = FileAttachmentStorageManager.shared.fileURL(for: storedFilename) {
+                    action = .file(url: fileURL)
+                } else if attributes[.webClipTitle] != nil,
+                          let linkValue = attributes[.link] as? String,
+                          let url = URL(string: linkValue) {
+                    action = .webClip(url: url)
+                } else {
+                    action = nil
+                }
+
+                guard let action else { return false }
 
                 // Get the actual glyph bounding rect for the attachment character
                 // This gives us the EXACT position where the attachment is drawn
@@ -1693,14 +2094,15 @@ struct TodoRichTextEditor: View {
                 // Only handle clicks within the actual visible attachment area
                 guard attachmentRect.contains(pointInContainer) else { return false }
 
-                if let linkValue = attributes[.link] as? String,
-                    let url = URL(string: linkValue)
-                {
+                switch action {
+                case let .webClip(url):
+                    NSWorkspace.shared.open(url)
+                    return true
+                case let .file(url):
                     NSWorkspace.shared.open(url)
                     return true
                 }
 
-                return false
             }
 
             func updateColorScheme(_ scheme: ColorScheme) {
@@ -1990,9 +2392,10 @@ struct TodoRichTextEditor: View {
                 let cursorHeight = glyphRect.height
 
                 // Menu dimensions
-                let menuHeight: CGFloat = CommandMenuLayout.idealHeight(for: TodoRichTextEditor.commandMenuActions.count)
                 let menuGap: CGFloat = 4
                 let safetyMargin: CGFloat = 20
+                let menuHeight = TodoRichTextEditor.commandMenuTotalHeight
+                let menuWidth = TodoRichTextEditor.commandMenuTotalWidth
 
                 // Get the visible rect to check against actual viewport, not total text view bounds
                 let visibleRect = textView.visibleRect
@@ -2004,14 +2407,38 @@ struct TodoRichTextEditor: View {
                 let shouldShowAbove = spaceBelow < (menuHeight + menuGap + safetyMargin)
 
                 // Position menu above or below cursor depending on available space
-                let xPosition = cursorX
-                let yPosition: CGFloat
+                var xPosition = cursorX
+                var yPosition: CGFloat
                 if shouldShowAbove {
                     // Position above cursor
-                    yPosition = max(visibleRect.minY + menuGap, cursorY - menuHeight - menuGap)
+                    yPosition = cursorY - menuHeight - menuGap
                 } else {
                     // Position below cursor (default)
                     yPosition = cursorY + cursorHeight + menuGap
+                }
+
+                // Clamp X within visible bounds to avoid clipping
+                let minX = visibleRect.minX + safetyMargin
+                let maxX = visibleRect.maxX - menuWidth - safetyMargin
+                if minX <= maxX {
+                    xPosition = min(max(xPosition, minX), maxX)
+                } else {
+                    xPosition = max(
+                        visibleRect.minX + menuGap,
+                        visibleRect.maxX - menuWidth - menuGap
+                    )
+                }
+
+                // Clamp Y to keep menu fully visible
+                let minY = visibleRect.minY + safetyMargin
+                let maxY = visibleRect.maxY - menuHeight - safetyMargin
+                if minY <= maxY {
+                    yPosition = min(max(yPosition, minY), maxY)
+                } else {
+                    yPosition = max(
+                        visibleRect.minY + menuGap,
+                        visibleRect.maxY - menuHeight - menuGap
+                    )
                 }
 
                 let menuPosition = CGPoint(x: xPosition, y: yPosition)
@@ -2209,6 +2636,49 @@ struct TodoRichTextEditor: View {
 
                 syncText()
                 NSLog("📝 insertImage: Completed")
+            }
+
+            private func insertFileAttachment(
+                using storedFile: FileAttachmentStorageManager.StoredFile
+            ) {
+                NSLog("📄 insertFileAttachment: Called with stored filename: %@",
+                      storedFile.storedFilename)
+                guard let textView = textView else {
+                    NSLog("📄 insertFileAttachment: textView is nil")
+                    return
+                }
+
+                let selectionRange = textView.selectedRange()
+                let storageString = textView.textStorage?.string ?? ""
+                let nsString = storageString as NSString
+                let baseAttributes = Self.baseTypingAttributes(for: currentColorScheme)
+
+                let displayLabel = AttachmentMarkup.displayLabel(for: storedFile)
+                let metadata = FileAttachmentMetadata(
+                    storedFilename: storedFile.storedFilename,
+                    originalFilename: storedFile.originalFilename,
+                    typeIdentifier: storedFile.typeIdentifier,
+                    displayLabel: displayLabel
+                )
+
+                let composed = NSMutableAttributedString()
+
+                if needsLeadingSpace(before: selectionRange, in: nsString) {
+                    let leadingSpace = NSAttributedString(string: " ", attributes: baseAttributes)
+                    composed.append(leadingSpace)
+                }
+
+                let attachment = makeFileAttachment(metadata: metadata)
+                composed.append(attachment)
+
+                if needsTrailingSpace(after: selectionRange, in: nsString) {
+                    let trailingSpace = NSAttributedString(string: " ", attributes: baseAttributes)
+                    composed.append(trailingSpace)
+                }
+
+                replaceSelection(with: composed)
+                syncText()
+                NSLog("📄 insertFileAttachment: Completed")
             }
 
             private func needsLeadingSpace(before range: NSRange, in text: NSString) -> Bool {
@@ -2455,6 +2925,12 @@ struct TodoRichTextEditor: View {
                         }
                         let sanitizedURL = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
                         output.append("[[webclip|\(title)|\(description)|\(sanitizedURL)]]")
+                    } else if let storedFilename = attributes[.fileStoredFilename] as? String {
+                        let typeIdentifierRaw = (attributes[.fileTypeIdentifier] as? String) ?? "public.data"
+                        let originalNameRaw = (attributes[.fileOriginalFilename] as? String) ?? storedFilename
+                        let typeIdentifier = Self.sanitizedWebClipComponent(typeIdentifierRaw)
+                        let originalName = Self.sanitizedWebClipComponent(originalNameRaw)
+                        output.append("[[file|\(typeIdentifier)|\(storedFilename)|\(originalName)]]")
                     } else if let attachment = attributes[.attachment] as? NSTextAttachment,
                         !(attachment.attachmentCell is TodoCheckboxAttachmentCell)
                     {
@@ -2570,13 +3046,76 @@ struct TodoRichTextEditor: View {
                                 continue
                             }
                         }
-                    } else if text[index...].hasPrefix(Self.imageMarkupPrefix) {
+                    } else if text[index...].hasPrefix(AttachmentMarkup.fileMarkupPrefix) {
+                        if let endIndex = text[index...].range(of: "]]")?.upperBound {
+                            let fileText = String(text[index..<endIndex])
+                            if let regex = AttachmentMarkup.fileRegex,
+                               let match = regex.firstMatch(
+                                   in: fileText,
+                                   options: [],
+                                   range: NSRange(location: 0, length: fileText.utf16.count)
+                               )
+                            {
+                                let rawType = Self.string(from: match, at: 1, in: fileText)
+                                let storedFilename = Self.string(from: match, at: 2, in: fileText)
+                                let rawOriginal = Self.string(from: match, at: 3, in: fileText)
+
+                                let typeIdentifier = rawType.isEmpty ? "public.data" : rawType
+                                let originalName = rawOriginal.isEmpty ? storedFilename : rawOriginal
+
+                                let storedFile = FileAttachmentStorageManager.StoredFile(
+                                    storedFilename: storedFilename,
+                                    originalFilename: originalName,
+                                    typeIdentifier: typeIdentifier
+                                )
+
+                                let metadata = FileAttachmentMetadata(
+                                    storedFilename: storedFile.storedFilename,
+                                    originalFilename: storedFile.originalFilename,
+                                    typeIdentifier: storedFile.typeIdentifier,
+                                    displayLabel: AttachmentMarkup.displayLabel(for: storedFile)
+                                )
+
+                                let baseAttributes = Self.baseTypingAttributes(
+                                    for: currentColorScheme)
+                                if result.length > 0,
+                                   let lastScalar = result.string.unicodeScalars.last,
+                                   !CharacterSet.whitespacesAndNewlines.contains(lastScalar)
+                                {
+                                    let leadingSpace = NSAttributedString(
+                                        string: " ", attributes: baseAttributes)
+                                    result.append(leadingSpace)
+                                }
+
+                                let attachment = makeFileAttachment(metadata: metadata)
+                                result.append(attachment)
+
+                                let shouldAddTrailingSpace: Bool
+                                if endIndex < text.endIndex {
+                                    let nextCharacter = text[endIndex]
+                                    shouldAddTrailingSpace = !nextCharacter.isWhitespace
+                                } else {
+                                    shouldAddTrailingSpace = true
+                                }
+
+                                if shouldAddTrailingSpace {
+                                    let trailingSpace = NSAttributedString(
+                                        string: " ", attributes: baseAttributes)
+                                    result.append(trailingSpace)
+                                }
+
+                                index = endIndex
+                                lastWasWebClip = false
+                                continue
+                            }
+                        }
+                    } else if text[index...].hasPrefix(AttachmentMarkup.imageMarkupPrefix) {
                         // Image attachment deserialization
                         NSLog("📝 deserialize: Found image markup prefix")
                         if let endIndex = text[index...].range(of: "]]")?.upperBound {
                             let imageText = String(text[index..<endIndex])
                             NSLog("📝 deserialize: Markup text: %@", imageText)
-                            if let regex = Self.imageRegex,
+                            if let regex = AttachmentMarkup.imageRegex,
                                 let match = regex.firstMatch(
                                     in: imageText,
                                     options: [],
@@ -2772,6 +3311,7 @@ struct TodoRichTextEditor: View {
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             window?.acceptsMouseMovedEvents = true
+            registerForDraggedTypes([.fileURL])
         }
 
         override func updateTrackingAreas() {
@@ -2836,6 +3376,27 @@ struct TodoRichTextEditor: View {
                 }
             }
             super.mouseDown(with: event)
+        }
+
+        override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+            if actionDelegate?.canHandleFileDrop(sender, in: self) == true {
+                return .copy
+            }
+            return super.draggingEntered(sender)
+        }
+
+        override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
+            if actionDelegate?.canHandleFileDrop(sender, in: self) == true {
+                return true
+            }
+            return super.prepareForDragOperation(sender)
+        }
+
+        override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+            if actionDelegate?.handleFileDrop(sender, in: self) == true {
+                return true
+            }
+            return super.performDragOperation(sender)
         }
 
         override func insertNewline(_ sender: Any?) {
@@ -3334,6 +3895,12 @@ struct TodoRichTextEditor: View {
             private var isUpdating = false
             private var textBinding: Binding<String>
             private var currentColorScheme: ColorScheme
+            private struct FileAttachmentMetadata {
+                let storedFilename: String
+                let originalFilename: String
+                let typeIdentifier: String
+                let displayLabel: String
+            }
 
             // Use Charter for body text as per design requirements
             private static let textFont = FontManager.bodyUI(size: 16, weight: .regular)
@@ -3630,9 +4197,10 @@ struct TodoRichTextEditor: View {
                 let cursorHeight = glyphRect.height
 
                 // Menu dimensions
-                let menuHeight: CGFloat = CommandMenuLayout.idealHeight(for: TodoRichTextEditor.commandMenuActions.count)
                 let menuGap: CGFloat = 4
                 let safetyMargin: CGFloat = 20
+                let menuHeight = TodoRichTextEditor.commandMenuTotalHeight
+                let menuWidth = TodoRichTextEditor.commandMenuTotalWidth
 
                 // For UITextView, get the visible rect relative to content offset
                 // UITextView doesn't have visibleRect, so we use bounds
@@ -3644,14 +4212,38 @@ struct TodoRichTextEditor: View {
                 let shouldShowAbove = spaceBelow < (menuHeight + menuGap + safetyMargin)
 
                 // Position menu above or below cursor depending on available space
-                let xPosition = cursorX
-                let yPosition: CGFloat
+                var xPosition = cursorX
+                var yPosition: CGFloat
                 if shouldShowAbove {
                     // Position above cursor
-                    yPosition = max(visibleRect.minY + menuGap, cursorY - menuHeight - menuGap)
+                    yPosition = cursorY - menuHeight - menuGap
                 } else {
                     // Position below cursor (default)
                     yPosition = cursorY + cursorHeight + menuGap
+                }
+
+                // Clamp X within visible bounds to avoid clipping
+                let minX = visibleRect.minX + safetyMargin
+                let maxX = visibleRect.maxX - menuWidth - safetyMargin
+                if minX <= maxX {
+                    xPosition = min(max(xPosition, minX), maxX)
+                } else {
+                    xPosition = max(
+                        visibleRect.minX + menuGap,
+                        visibleRect.maxX - menuWidth - menuGap
+                    )
+                }
+
+                // Clamp Y to keep menu fully visible
+                let minY = visibleRect.minY + safetyMargin
+                let maxY = visibleRect.maxY - menuHeight - safetyMargin
+                if minY <= maxY {
+                    yPosition = min(max(yPosition, minY), maxY)
+                } else {
+                    yPosition = max(
+                        visibleRect.minY + menuGap,
+                        visibleRect.maxY - menuHeight - menuGap
+                    )
                 }
 
                 let menuPosition = CGPoint(x: xPosition, y: yPosition)
@@ -3780,6 +4372,66 @@ struct TodoRichTextEditor: View {
                 replaceSelection(with: composed)
                 syncText()
                 NSLog("📝 insertImage: Completed")
+            }
+
+            private func makeFileAttachment(metadata: FileAttachmentMetadata)
+                -> NSMutableAttributedString
+            {
+                func fallbackAttributedString() -> NSMutableAttributedString {
+                    return NSMutableAttributedString(
+                        string: "[File: \(metadata.displayLabel)]"
+                    )
+                }
+
+                let tagView = FileAttachmentTagView(label: metadata.displayLabel)
+                    .environment(\.colorScheme, currentColorScheme)
+                let renderer = ImageRenderer(content: tagView)
+                renderer.scale = UIScreen.main.scale
+                renderer.isOpaque = false
+
+                guard let uiImage = renderer.uiImage else {
+                    NSLog("📄 makeFileAttachment: FAILED to render tag UIImage")
+                    return fallbackAttributedString()
+                }
+
+                let attachment = NoteFileAttachment(
+                    storedFilename: metadata.storedFilename,
+                    originalFilename: metadata.originalFilename,
+                    typeIdentifier: metadata.typeIdentifier,
+                    displayLabel: metadata.displayLabel
+                )
+                attachment.image = uiImage
+                attachment.bounds = CGRect(
+                    x: 0,
+                    y: Self.imageTagVerticalOffset(for: uiImage.size.height),
+                    width: uiImage.size.width,
+                    height: uiImage.size.height
+                )
+
+                let attributed = NSMutableAttributedString(attachment: attachment)
+                let attachmentRange = NSRange(location: 0, length: attributed.length)
+                attributed.addAttribute(
+                    .fileStoredFilename,
+                    value: metadata.storedFilename,
+                    range: attachmentRange
+                )
+                attributed.addAttribute(
+                    .fileOriginalFilename,
+                    value: metadata.originalFilename,
+                    range: attachmentRange
+                )
+                attributed.addAttribute(
+                    .fileTypeIdentifier,
+                    value: metadata.typeIdentifier,
+                    range: attachmentRange
+                )
+                attributed.addAttribute(
+                    .fileDisplayLabel,
+                    value: metadata.displayLabel,
+                    range: attachmentRange
+                )
+
+                return attributed
             }
 
             private func needsLeadingSpace(before range: NSRange, in text: NSString) -> Bool {
@@ -3988,6 +4640,12 @@ struct TodoRichTextEditor: View {
                     attributes, range, _ in
                     if let attachment = attributes[.attachment] as? TodoCheckboxAttachment {
                         result.append(attachment.isChecked ? "[x]" : "[ ]")
+                    } else if let storedFilename = attributes[.fileStoredFilename] as? String {
+                        let typeIdentifierRaw = (attributes[.fileTypeIdentifier] as? String) ?? "public.data"
+                        let originalNameRaw = (attributes[.fileOriginalFilename] as? String) ?? storedFilename
+                        let typeIdentifier = AttachmentMarkup.sanitizedComponent(typeIdentifierRaw)
+                        let originalName = AttachmentMarkup.sanitizedComponent(originalNameRaw)
+                        result.append("[[file|\(typeIdentifier)|\(storedFilename)|\(originalName)]]")
                     } else if let attachment = attributes[.attachment] as? NSTextAttachment {
                         // Image attachment serialization with fallback
                         // Primary: Use the robust custom attribute
@@ -4040,13 +4698,74 @@ struct TodoRichTextEditor: View {
                         result.append(att)
                         index = text.index(index, offsetBy: 3)
                         continue
-                    } else if text[index...].hasPrefix(Self.imageMarkupPrefix) {
+                    } else if text[index...].hasPrefix(AttachmentMarkup.fileMarkupPrefix) {
+                        if let endIndex = text[index...].range(of: "]]" )?.upperBound {
+                            let fileText = String(text[index..<endIndex])
+                            if let regex = AttachmentMarkup.fileRegex,
+                               let match = regex.firstMatch(
+                                   in: fileText,
+                                   options: [],
+                                   range: NSRange(location: 0, length: fileText.utf16.count)
+                               )
+                            {
+                                let rawType = Self.string(from: match, at: 1, in: fileText)
+                                let storedFilename = Self.string(from: match, at: 2, in: fileText)
+                                let rawOriginal = Self.string(from: match, at: 3, in: fileText)
+
+                                let typeIdentifier = rawType.isEmpty ? "public.data" : rawType
+                                let originalName = rawOriginal.isEmpty ? storedFilename : rawOriginal
+
+                                let storedFile = FileAttachmentStorageManager.StoredFile(
+                                    storedFilename: storedFilename,
+                                    originalFilename: originalName,
+                                    typeIdentifier: typeIdentifier
+                                )
+
+                                let metadata = FileAttachmentMetadata(
+                                    storedFilename: storedFile.storedFilename,
+                                    originalFilename: storedFile.originalFilename,
+                                    typeIdentifier: storedFile.typeIdentifier,
+                                    displayLabel: AttachmentMarkup.displayLabel(for: storedFile)
+                                )
+
+                                let baseAttributes = Self.baseTypingAttributes(for: currentColorScheme)
+                                if result.length > 0,
+                                   let lastScalar = result.string.unicodeScalars.last,
+                                   !CharacterSet.whitespacesAndNewlines.contains(lastScalar)
+                                {
+                                    let leadingSpace = NSAttributedString(
+                                        string: " ", attributes: baseAttributes)
+                                    result.append(leadingSpace)
+                                }
+
+                                let attachment = makeFileAttachment(metadata: metadata)
+                                result.append(attachment)
+
+                                let shouldAddTrailingSpace: Bool
+                                if endIndex < text.endIndex {
+                                    let nextCharacter = text[endIndex]
+                                    shouldAddTrailingSpace = !nextCharacter.isWhitespace
+                                } else {
+                                    shouldAddTrailingSpace = true
+                                }
+
+                                if shouldAddTrailingSpace {
+                                    let trailingSpace = NSAttributedString(
+                                        string: " ", attributes: baseAttributes)
+                                    result.append(trailingSpace)
+                                }
+
+                                index = endIndex
+                                continue
+                            }
+                        }
+                    } else if text[index...].hasPrefix(AttachmentMarkup.imageMarkupPrefix) {
                         // Image attachment deserialization
                         NSLog("📝 deserialize: Found image markup prefix")
                         if let endIndex = text[index...].range(of: "]]")?.upperBound {
                             let imageText = String(text[index..<endIndex])
                             NSLog("📝 deserialize: Markup text: %@", imageText)
-                            if let regex = Self.imageRegex,
+                            if let regex = AttachmentMarkup.imageRegex,
                                 let match = regex.firstMatch(
                                     in: imageText,
                                     options: [],

@@ -1,0 +1,16 @@
+{
+  "source": "/Users/mohebanwari/development/Noty/Noty/Views/Components/EditToolbar.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Enter URL",
+        "location": {
+          "startingColumn": 27,
+          "startingLine": 624
+        }
+      }
+    ]
+  },
+  "version": 1
+}

@@ -1,0 +1,23 @@
+{
+  "/Users/mohebanwari/development/Noty/Noty/Models/Transcriber.swift" : {
+    "const-values" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/Transcriber.swiftconstvalues",
+    "dependencies" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/Transcriber.d",
+    "diagnostics" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/Transcriber.dia",
+    "object" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/Transcriber.o",
+    "swift-dependencies" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/Transcriber.swiftdeps"
+  },
+  "/Users/mohebanwari/development/Noty/Noty/Utils/DataBackupManager.swift" : {
+    "const-values" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/DataBackupManager.swiftconstvalues",
+    "dependencies" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/DataBackupManager.d",
+    "diagnostics" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/DataBackupManager.dia",
+    "object" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/DataBackupManager.o",
+    "swift-dependencies" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/DataBackupManager.swiftdeps"
+  },
+  "/Users/mohebanwari/development/Noty/Noty/Utils/DataIntegrityManager.swift" : {
+    "const-values" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/DataIntegrityManager.swiftconstvalues",
+    "dependencies" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/DataIntegrityManager.d",
+    "diagnostics" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/DataIntegrityManager.dia",
+    "object" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/DataIntegrityManager.o",
+    "swift-dependencies" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/DataIntegrityManager.swiftdeps"
+  }
+}

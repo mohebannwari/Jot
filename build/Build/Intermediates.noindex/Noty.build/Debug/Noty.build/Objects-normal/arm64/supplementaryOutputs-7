@@ -1,0 +1,23 @@
+{
+  "/Users/mohebanwari/development/Noty/Noty/Utils/ThumbnailCache.swift" : {
+    "const-values" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/ThumbnailCache.swiftconstvalues",
+    "dependencies" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/ThumbnailCache.d",
+    "diagnostics" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/ThumbnailCache.dia",
+    "object" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/ThumbnailCache.o",
+    "swift-dependencies" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/ThumbnailCache.swiftdeps"
+  },
+  "/Users/mohebanwari/development/Noty/Noty/Utils/WebMetadataFetcher.swift" : {
+    "const-values" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/WebMetadataFetcher.swiftconstvalues",
+    "dependencies" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/WebMetadataFetcher.d",
+    "diagnostics" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/WebMetadataFetcher.dia",
+    "object" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/WebMetadataFetcher.o",
+    "swift-dependencies" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/WebMetadataFetcher.swiftdeps"
+  },
+  "/Users/mohebanwari/development/Noty/Noty/Views/Components/AISummaryBox.swift" : {
+    "const-values" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/AISummaryBox.swiftconstvalues",
+    "dependencies" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/AISummaryBox.d",
+    "diagnostics" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/AISummaryBox.dia",
+    "object" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/AISummaryBox.o",
+    "swift-dependencies" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/AISummaryBox.swiftdeps"
+  }
+}

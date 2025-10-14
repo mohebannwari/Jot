@@ -291,6 +291,7 @@ struct NoteListCard: View {
     let note: Note
     let onTap: () -> Void
     let onDelete: () -> Void
+    @State private var showExportSheet = false
     @EnvironmentObject private var notesManager: NotesManager
 
     var body: some View {
@@ -340,12 +341,39 @@ struct NoteListCard: View {
                 Label("Move to Folder", systemImage: "folder")
             }
 
+            Button {
+                HapticManager.shared.buttonTap()
+                showExportSheet = true
+            } label: {
+                Label("Export Note...", systemImage: "square.and.arrow.down")
+            }
+
             Divider()
 
             Button("Delete", role: .destructive) {
                 HapticManager.shared.buttonTap()
                 withAnimation(.easeInOut(duration: 0.25)) {
                     onDelete()
+                }
+            }
+        }
+        .sheet(isPresented: $showExportSheet) {
+            ExportFormatSheet(isPresented: $showExportSheet, notes: [note]) { exportNotes, format in
+                Task { @MainActor in
+                    let success: Bool
+
+                    if exportNotes.count == 1, let singleNote = exportNotes.first {
+                        success = await NoteExportService.shared.exportNote(singleNote, format: format)
+                    } else {
+                        let filename = "Noty Export \(Date().formatted(date: .numeric, time: .omitted))"
+                        success = await NoteExportService.shared.exportNotes(exportNotes, format: format, filename: filename)
+                    }
+
+                    if success {
+                        HapticManager.shared.strong()
+                    } else {
+                        HapticManager.shared.medium()
+                    }
                 }
             }
         }

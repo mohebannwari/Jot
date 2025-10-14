@@ -1,0 +1,64 @@
+{
+  "source": "/Users/mohebanwari/development/Noty/Noty/Views/Components/MicCaptureControl.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Start recording",
+        "location": {
+          "startingColumn": 34,
+          "startingLine": 110
+        }
+      },
+      {
+        "comment": "",
+        "key": "Stop recording",
+        "location": {
+          "startingColumn": 38,
+          "startingLine": 134
+        }
+      },
+      {
+        "comment": "",
+        "key": "Cancel recording",
+        "location": {
+          "startingColumn": 38,
+          "startingLine": 169
+        }
+      },
+      {
+        "comment": "",
+        "key": "Resume recording",
+        "location": {
+          "startingColumn": 38,
+          "startingLine": 185
+        }
+      },
+      {
+        "comment": "",
+        "key": "Sending voice note",
+        "location": {
+          "startingColumn": 67,
+          "startingLine": 210
+        }
+      },
+      {
+        "comment": "",
+        "key": "Send voice note",
+        "location": {
+          "startingColumn": 90,
+          "startingLine": 210
+        }
+      },
+      {
+        "comment": "",
+        "key": "Open Settings",
+        "location": {
+          "startingColumn": 20,
+          "startingLine": 265
+        }
+      }
+    ]
+  },
+  "version": 1
+}

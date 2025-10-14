@@ -1,0 +1,56 @@
+{
+  "source": "/Users/mohebanwari/development/Noty/Noty/App/ContentView.swift",
+  "tables": {
+    "Localizable": [
+      {
+        "comment": "",
+        "key": "Delete",
+        "location": {
+          "startingColumn": 20,
+          "startingLine": 345
+        }
+      },
+      {
+        "comment": "",
+        "key": "Unpin Note",
+        "location": {
+          "startingColumn": 39,
+          "startingLine": 333
+        }
+      },
+      {
+        "comment": "",
+        "key": "Pin Note",
+        "location": {
+          "startingColumn": 54,
+          "startingLine": 333
+        }
+      },
+      {
+        "comment": "",
+        "key": "Move to Folder",
+        "location": {
+          "startingColumn": 23,
+          "startingLine": 340
+        }
+      },
+      {
+        "comment": "",
+        "key": "PINNED",
+        "location": {
+          "startingColumn": 18,
+          "startingLine": 383
+        }
+      },
+      {
+        "comment": "",
+        "key": "Unpin Note",
+        "location": {
+          "startingColumn": 23,
+          "startingLine": 441
+        }
+      }
+    ]
+  },
+  "version": 1
+}

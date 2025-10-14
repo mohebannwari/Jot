@@ -1,0 +1,23 @@
+{
+  "/Users/mohebanwari/development/Noty/Noty/Utils/DeploymentManager.swift" : {
+    "const-values" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/DeploymentManager.swiftconstvalues",
+    "dependencies" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/DeploymentManager.d",
+    "diagnostics" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/DeploymentManager.dia",
+    "object" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/DeploymentManager.o",
+    "swift-dependencies" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/DeploymentManager.swiftdeps"
+  },
+  "/Users/mohebanwari/development/Noty/Noty/Utils/Extensions.swift" : {
+    "const-values" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/Extensions.swiftconstvalues",
+    "dependencies" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/Extensions.d",
+    "diagnostics" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/Extensions.dia",
+    "object" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/Extensions.o",
+    "swift-dependencies" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/Extensions.swiftdeps"
+  },
+  "/Users/mohebanwari/development/Noty/Noty/Utils/GlassEffects.swift" : {
+    "const-values" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/GlassEffects.swiftconstvalues",
+    "dependencies" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/GlassEffects.d",
+    "diagnostics" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/GlassEffects.dia",
+    "object" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/GlassEffects.o",
+    "swift-dependencies" : "/Users/mohebanwari/development/Noty/build/Build/Intermediates.noindex/Noty.build/Debug/Noty.build/Objects-normal/arm64/GlassEffects.swiftdeps"
+  }
+}

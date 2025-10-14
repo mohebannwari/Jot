@@ -11,6 +11,7 @@ struct NoteCard: View {
     let note: Note
     let onTap: () -> Void
     @State private var isHovering = false
+    @State private var showExportSheet = false
     @EnvironmentObject private var notesManager: NotesManager
     
     var body: some View {
@@ -42,15 +43,21 @@ struct NoteCard: View {
                         } label: {
                             Label("Pin Note", systemImage: "pin")
                         }
-                        
+
                         Button {
                             // Move to folder functionality
                         } label: {
                             Label("Move to Folder", systemImage: "folder")
                         }
-                        
+
+                        Button {
+                            showExportSheet = true
+                        } label: {
+                            Label("Export Note...", systemImage: "square.and.arrow.down")
+                        }
+
                         Divider()
-                        
+
                         Button("Delete", role: .destructive) {
                             withAnimation(.easeInOut(duration: 0.25)) {
                                 notesManager.deleteNote(id: note.id)
@@ -164,6 +171,26 @@ struct NoteCard: View {
         .onHover { hovering in
             withAnimation(.bouncy(duration: 0.3)) {
                 isHovering = hovering
+            }
+        }
+        .sheet(isPresented: $showExportSheet) {
+            ExportFormatSheet(isPresented: $showExportSheet, notes: [note]) { exportNotes, format in
+                Task { @MainActor in
+                    let success: Bool
+
+                    if exportNotes.count == 1, let singleNote = exportNotes.first {
+                        success = await NoteExportService.shared.exportNote(singleNote, format: format)
+                    } else {
+                        let filename = "Noty Export \(Date().formatted(date: .numeric, time: .omitted))"
+                        success = await NoteExportService.shared.exportNotes(exportNotes, format: format, filename: filename)
+                    }
+
+                    if success {
+                        HapticManager.shared.strong()
+                    } else {
+                        HapticManager.shared.medium()
+                    }
+                }
             }
         }
     }
