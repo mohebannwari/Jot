@@ -40,6 +40,11 @@ final class SimpleSwiftDataManager: ObservableObject {
 
         // Load initial data with limit
         loadNotes()
+
+        // Auto-migrate from JSON if exists and SwiftData is empty
+        Task {
+            await autoMigrateFromJSONIfNeeded()
+        }
     }
 
     // MARK: - Basic Operations
@@ -145,6 +150,57 @@ final class SimpleSwiftDataManager: ObservableObject {
         }
     }
 
+    func togglePin(id: UUID) {
+        do {
+            let predicate = #Predicate<NoteEntity> { $0.id == id }
+            let descriptor = FetchDescriptor(predicate: predicate)
+            let entities = try modelContext.fetch(descriptor)
+
+            guard let noteEntity = entities.first else {
+                logger.warning("Note with ID \(id) not found for toggle pin")
+                return
+            }
+
+            noteEntity.isPinned.toggle()
+            try modelContext.save()
+
+            // Update local array
+            if let index = notes.firstIndex(where: { $0.id == id }) {
+                notes[index].isPinned.toggle()
+            }
+
+            logger.info("Toggled pin for note with ID: \(id)")
+
+        } catch {
+            logger.error("Failed to toggle pin: \(error)")
+        }
+    }
+
+    func replaceAll(_ newNotes: [Note]) {
+        do {
+            // Delete all existing notes
+            let descriptor = FetchDescriptor<NoteEntity>()
+            let entities = try modelContext.fetch(descriptor)
+            for entity in entities {
+                modelContext.delete(entity)
+            }
+
+            // Add new notes
+            for note in newNotes {
+                let noteEntity = NoteEntity(from: note)
+                noteEntity.setTags(note.tags, in: modelContext)
+                modelContext.insert(noteEntity)
+            }
+
+            try modelContext.save()
+            notes = newNotes
+            logger.info("Replaced all notes with \(newNotes.count) new notes")
+
+        } catch {
+            logger.error("Failed to replace all notes: \(error)")
+        }
+    }
+
     // MARK: - Search
 
     func searchNotes(query: String, limit: Int = 100) async -> [Note] {
@@ -199,8 +255,69 @@ final class SimpleSwiftDataManager: ObservableObject {
 
     // MARK: - Migration Helper
 
+    private func autoMigrateFromJSONIfNeeded() async {
+        // Check if SwiftData is empty
+        do {
+            let descriptor = FetchDescriptor<NoteEntity>()
+            let existingNotes = try modelContext.fetch(descriptor)
+
+            // If SwiftData already has notes, skip migration
+            guard existingNotes.isEmpty else {
+                logger.info("SwiftData already has notes, skipping migration")
+                return
+            }
+
+            // Check if JSON file exists
+            let jsonURL = NotesManager.getStorageURL()
+            guard FileManager.default.fileExists(atPath: jsonURL.path) else {
+                logger.info("No JSON file found, starting with empty database")
+                return
+            }
+
+            // Load JSON notes
+            let data = try Data(contentsOf: jsonURL)
+            let jsonNotes = try JSONDecoder().decode([Note].self, from: data)
+
+            guard !jsonNotes.isEmpty else {
+                logger.info("JSON file is empty, nothing to migrate")
+                return
+            }
+
+            logger.info("Found \(jsonNotes.count) notes in JSON, starting migration...")
+
+            // Perform migration
+            try await migrateFromJSON(jsonNotes)
+
+            logger.info("Migration completed successfully")
+
+        } catch {
+            logger.error("Auto-migration failed: \(error)")
+        }
+    }
+
+    private func backupJSONFile() {
+        let jsonURL = NotesManager.getStorageURL()
+        guard FileManager.default.fileExists(atPath: jsonURL.path) else {
+            logger.info("No JSON file to backup")
+            return
+        }
+
+        let backupURL = jsonURL.deletingLastPathComponent()
+            .appendingPathComponent("notes.json.backup.\(Date().timeIntervalSince1970)")
+
+        do {
+            try FileManager.default.copyItem(at: jsonURL, to: backupURL)
+            logger.info("Created backup at: \(backupURL.path)")
+        } catch {
+            logger.error("Failed to create backup: \(error)")
+        }
+    }
+
     func migrateFromJSON(_ jsonNotes: [Note]) async throws {
         logger.info("Starting migration of \(jsonNotes.count) notes from JSON")
+
+        // Create backup before migration
+        backupJSONFile()
 
         // Use background context for large operations
         await withCheckedContinuation { continuation in

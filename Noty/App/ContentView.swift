@@ -11,7 +11,7 @@ struct ContentView: View {
     // Search is powered by SearchEngine
     @StateObject private var searchEngine = SearchEngine()
     @EnvironmentObject private var themeManager: ThemeManager
-    @EnvironmentObject private var notesManager: NotesManager
+    @EnvironmentObject private var notesManager: SimpleSwiftDataManager
     @State private var selectedNote: Note?
     @State private var isNoteDetailPresented = false
     @State private var isSearchActive = false
@@ -257,7 +257,7 @@ struct NotesSection: View {
     let notes: [Note]
     let onNoteTap: (Note) -> Void
     let onDeleteNote: (UUID) -> Void
-    @EnvironmentObject private var notesManager: NotesManager
+    @EnvironmentObject private var notesManager: SimpleSwiftDataManager
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -292,7 +292,7 @@ struct NoteListCard: View {
     let onTap: () -> Void
     let onDelete: () -> Void
     @State private var showExportSheet = false
-    @EnvironmentObject private var notesManager: NotesManager
+    @EnvironmentObject private var notesManager: SimpleSwiftDataManager
 
     var body: some View {
         Button(action: onTap) {
@@ -403,7 +403,7 @@ struct ListTagView: View {
 struct PinnedNotesSection: View {
     let notes: [Note]
     let onNoteTap: (Note) -> Void
-    @EnvironmentObject private var notesManager: NotesManager
+    @EnvironmentObject private var notesManager: SimpleSwiftDataManager
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -526,6 +526,6 @@ struct FlowLayout: Layout {
 
 #Preview {
     ContentView()
-        .environmentObject(NotesManager())
+        .environmentObject(try! SimpleSwiftDataManager())
         .environmentObject(ThemeManager())
 }

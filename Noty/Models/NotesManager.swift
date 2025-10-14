@@ -114,6 +114,10 @@ final class NotesManager: ObservableObject {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         return base.appendingPathComponent("Noty", isDirectory: true).appendingPathComponent("notes.json")
     }
+
+    static func getStorageURL() -> URL {
+        return defaultStorageURL()
+    }
     
     private static func seedNotes() -> [Note] {
         return [

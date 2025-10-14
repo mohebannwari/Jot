@@ -9,6 +9,7 @@ final class NoteEntity {
     var content: String
     var createdAt: Date
     var modifiedAt: Date
+    var isPinned: Bool = false
 
     // MARK: - Relationships
     @Relationship(deleteRule: .nullify, inverse: \TagEntity.notes)
@@ -66,12 +67,13 @@ final class NoteEntity {
     // Note: Index macros should be applied at class level, moving to init
 
     // MARK: - Initialization
-    init(title: String, content: String, createdAt: Date, modifiedAt: Date) {
+    init(title: String, content: String, createdAt: Date, modifiedAt: Date, isPinned: Bool = false) {
         self.id = UUID()
         self.title = title
         self.content = content
         self.createdAt = createdAt
         self.modifiedAt = modifiedAt
+        self.isPinned = isPinned
         self.webClipURL = nil
         self.webClipTitle = nil
         self.webClipDescription = nil
@@ -88,7 +90,8 @@ final class NoteEntity {
             title: note.title,
             content: note.content,
             createdAt: note.date,
-            modifiedAt: note.date
+            modifiedAt: note.date,
+            isPinned: note.isPinned
         )
         self.id = note.id
 
@@ -202,7 +205,7 @@ final class NoteEntity {
 
     // MARK: - Export/Conversion
     func toNote() -> Note {
-        var note = Note(title: title, content: content, tags: tagNames)
+        var note = Note(title: title, content: content, tags: tagNames, isPinned: isPinned)
         note.id = id
         note.date = modifiedAt
         return note

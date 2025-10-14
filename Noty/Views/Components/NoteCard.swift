@@ -12,7 +12,7 @@ struct NoteCard: View {
     let onTap: () -> Void
     @State private var isHovering = false
     @State private var showExportSheet = false
-    @EnvironmentObject private var notesManager: NotesManager
+    @EnvironmentObject private var notesManager: SimpleSwiftDataManager
     
     var body: some View {
         Button(action: onTap) {
@@ -133,7 +133,7 @@ struct NoteCard: View {
             }
             
             // Floating tags overlay
-            if !note.tags.isEmpty {
+            if FeatureFlags.tagsEnabled && !note.tags.isEmpty {
                 HStack(spacing: 4) {
                     ForEach(Array(note.tags.prefix(3)), id: \.self) { tag in
                         TagView(tag: tag)

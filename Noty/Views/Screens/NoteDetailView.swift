@@ -83,7 +83,7 @@ struct NoteDetailView: View {
 
             ScrollViewReader { proxy in
                 ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 8) {
                         titleField
                             .background(
                                 GeometryReader { geo in
@@ -106,7 +106,9 @@ struct NoteDetailView: View {
                                         }
                                 }
                             )
-                        tagsRow
+                        if FeatureFlags.tagsEnabled {
+                            tagsRow
+                        }
                         // Body text editor - unified with header, flows naturally
                         TodoRichTextEditor(
                             text: $editedContent,
