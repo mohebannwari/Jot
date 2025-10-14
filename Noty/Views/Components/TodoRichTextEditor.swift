@@ -1866,13 +1866,20 @@ struct TodoRichTextEditor: View {
                     forName: .insertVoiceTranscriptInEditor, object: nil, queue: .main
                 ) { [weak self] notification in
                     NSLog("📝 Coordinator: Received insertVoiceTranscriptInEditor notification")
-                    guard let transcript = notification.object as? String else {
-                        NSLog("📝 Coordinator: No transcript in notification object")
-                        return
-                    }
-                    NSLog("📝 Coordinator: Got transcript: %@", transcript)
-                    Task { @MainActor [weak self] in
-                        self?.insertVoiceTranscript(transcript: transcript)
+                    // We're on main queue (specified in observer), use assumeIsolated for synchronous execution
+                    // This prevents race condition with view dismissal that occurred with Task wrapper
+                    MainActor.assumeIsolated {
+                        guard let self = self else {
+                            NSLog("⚠️ Coordinator deallocated before transcript insertion")
+                            return
+                        }
+                        guard let transcript = notification.object as? String else {
+                            NSLog("📝 Coordinator: No transcript in notification object")
+                            return
+                        }
+                        NSLog("📝 Coordinator: Got transcript: %@", transcript)
+                        self.insertVoiceTranscript(transcript: transcript)
+                        NSLog("📝 Coordinator: Transcript insertion completed")
                     }
                 }
                 
@@ -1886,7 +1893,11 @@ struct TodoRichTextEditor: View {
                     }
                     NSLog("📝 Coordinator: Got image filename: %@", filename)
                     Task { @MainActor [weak self] in
-                        self?.insertImage(filename: filename)
+                        guard let self = self else {
+                            NSLog("⚠️ Coordinator deallocated before image insertion")
+                            return
+                        }
+                        self.insertImage(filename: filename)
                     }
                 }
 
@@ -3961,13 +3972,20 @@ struct TodoRichTextEditor: View {
                     forName: .insertVoiceTranscriptInEditor, object: nil, queue: .main
                 ) { [weak self] notification in
                     NSLog("📝 Coordinator: Received insertVoiceTranscriptInEditor notification")
-                    guard let transcript = notification.object as? String else {
-                        NSLog("📝 Coordinator: No transcript in notification object")
-                        return
-                    }
-                    NSLog("📝 Coordinator: Got transcript: %@", transcript)
-                    Task { @MainActor [weak self] in
-                        self?.insertVoiceTranscript(transcript: transcript)
+                    // We're on main queue (specified in observer), use assumeIsolated for synchronous execution
+                    // This prevents race condition with view dismissal that occurred with Task wrapper
+                    MainActor.assumeIsolated {
+                        guard let self = self else {
+                            NSLog("⚠️ Coordinator deallocated before transcript insertion")
+                            return
+                        }
+                        guard let transcript = notification.object as? String else {
+                            NSLog("📝 Coordinator: No transcript in notification object")
+                            return
+                        }
+                        NSLog("📝 Coordinator: Got transcript: %@", transcript)
+                        self.insertVoiceTranscript(transcript: transcript)
+                        NSLog("📝 Coordinator: Transcript insertion completed")
                     }
                 }
 

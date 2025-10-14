@@ -19,68 +19,85 @@ public final class Transcriber: Transcribing {
             NSLog("Transcriber.transcribe: File does not exist at path: %@", url.path)
             return nil
         }
-        
+
         // Ensure authorization before attempting transcription
         guard await ensureAuthorization() else {
             NSLog("Transcriber.transcribe: Speech recognition not authorized")
             return nil
         }
-        
+
         // Check if speech recognizer is available
         guard let recognizer = SFSpeechRecognizer(), recognizer.isAvailable else {
             NSLog("Transcriber.transcribe: Speech recognizer unavailable")
             return nil
         }
-        
+
         NSLog("Transcriber.transcribe: Starting transcription for file: %@", url.path)
-        
+
         let request = SFSpeechURLRecognitionRequest(url: url)
         request.shouldReportPartialResults = false
         request.requiresOnDeviceRecognition = false
 
-        // Use a simpler approach with explicit cancellation
-        return await withCheckedContinuation { continuation in
-            var task: SFSpeechRecognitionTask?
-            var didResume = false
-            let lock = NSLock()
+        // Use async/await with proper task cancellation
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { (continuation: CheckedContinuation<String?, Never>) in
+                // Use actor to safely manage state
+                actor RecognitionState {
+                    var task: SFSpeechRecognitionTask?
+                    var hasResumed = false
 
-            task = recognizer.recognitionTask(with: request) { result, error in
-                lock.lock()
-                defer { lock.unlock() }
+                    func setTask(_ task: SFSpeechRecognitionTask) {
+                        self.task = task
+                    }
 
-                guard !didResume else { return }
+                    func cancelTask() {
+                        task?.cancel()
+                        task = nil
+                    }
 
-                if let error = error {
-                    NSLog("Transcriber.transcribe: Recognition error: %@", error.localizedDescription)
-                    didResume = true
-                    task?.cancel()
-                    continuation.resume(returning: nil)
-                    return
+                    func tryResume(with result: String?, continuation: CheckedContinuation<String?, Never>) {
+                        guard !hasResumed else {
+                            NSLog("Transcriber: Ignoring duplicate resume attempt")
+                            return
+                        }
+                        hasResumed = true
+                        continuation.resume(returning: result)
+                    }
                 }
 
-                if let result = result, result.isFinal {
-                    NSLog("Transcriber.transcribe: Transcription complete: %@", result.bestTranscription.formattedString)
-                    didResume = true
-                    continuation.resume(returning: result.bestTranscription.formattedString)
-                } else if result == nil {
-                    NSLog("Transcriber.transcribe: No result returned")
-                    didResume = true
-                    continuation.resume(returning: nil)
+                let state = RecognitionState()
+
+                // Start recognition task
+                let recognitionTask = recognizer.recognitionTask(with: request) { result, error in
+                    Task {
+                        if let error = error {
+                            NSLog("Transcriber.transcribe: Recognition error: %@", error.localizedDescription)
+                            await state.tryResume(with: nil, continuation: continuation)
+                            return
+                        }
+
+                        if let result = result, result.isFinal {
+                            NSLog("Transcriber.transcribe: Transcription complete: %@", result.bestTranscription.formattedString)
+                            await state.tryResume(with: result.bestTranscription.formattedString, continuation: continuation)
+                        }
+                    }
+                }
+
+                // Store the task for cancellation
+                Task {
+                    await state.setTask(recognitionTask)
+                }
+
+                // Timeout handler
+                Task {
+                    try? await Task.sleep(for: .seconds(30))
+                    NSLog("Transcriber.transcribe: Timeout after 30 seconds")
+                    await state.cancelTask()
+                    await state.tryResume(with: nil, continuation: continuation)
                 }
             }
-
-            // Timeout handler
-            Task {
-                try? await Task.sleep(nanoseconds: 30 * 1_000_000_000)
-                lock.lock()
-                defer { lock.unlock() }
-
-                guard !didResume else { return }
-                didResume = true
-                NSLog("Transcriber.transcribe: Timeout after 30 seconds")
-                task?.cancel()
-                continuation.resume(returning: nil)
-            }
+        } onCancel: {
+            NSLog("Transcriber.transcribe: Task was cancelled")
         }
     }
 }

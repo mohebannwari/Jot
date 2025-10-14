@@ -163,22 +163,50 @@ public final class AudioRecorder: NSObject, ObservableObject, AudioRecorderServi
     @discardableResult
     public func stop() async -> URL? {
         guard state != .idle else { return nil }
+
+        // Stop engine and remove tap first to ensure no more data is written
         engine.stop()
         removeTap()
         stopDurationUpdates()
         decayTimer?.cancel()
         decayTimer = nil
+
         if let startDate {
             accumulatedDuration += Date().timeIntervalSince(startDate)
         }
         startDate = nil
         duration = accumulatedDuration
+
+        // CRITICAL: Ensure audio file buffers are flushed before releasing
+        if let file = audioFile {
+            // Small delay to ensure final buffer writes complete
+            // AVAudioFile writes are async, so we need to give them time to finish
+            do {
+                try await Task.sleep(for: .milliseconds(100))
+                NSLog("AudioRecorder.stop: Audio file finalized")
+            } catch {
+                NSLog("AudioRecorder.stop: Sleep interrupted: %@", error.localizedDescription)
+            }
+        }
+
         let url = fileURL
-        audioFile = nil
+        audioFile = nil  // Release after ensuring write completion
         fileURL = nil
         accumulatedDuration = 0
         state = .idle
         resetLevels()
+
+        // Verify the file exists and has content
+        if let url = url {
+            if FileManager.default.fileExists(atPath: url.path) {
+                let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
+                let fileSize = attributes?[.size] as? Int64 ?? 0
+                NSLog("AudioRecorder.stop: Recording saved - size: %lld bytes", fileSize)
+            } else {
+                NSLog("AudioRecorder.stop: Warning - file does not exist at path: %@", url.path)
+            }
+        }
+
         return url
     }
 

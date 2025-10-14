@@ -45,7 +45,7 @@ struct NoteDetailView: View {
     
     // Auxiliary overlays
     @State private var showVoiceRecorderOverlay = false
-    @State private var micSessionID = UUID()
+    // @State private var micSessionID = UUID()  // Removed to prevent view recreation crashes
     @State private var showImagePicker = false
     @State private var showLinkInputOverlay = false
     @State private var linkInputText = ""
@@ -756,7 +756,7 @@ struct NoteDetailView: View {
             },
             autoStart: true
         )
-        .id(micSessionID)
+        // .id(micSessionID)  // Removed to prevent view recreation during async operations
     }
 
     private var linkInputPrompt: some View {
@@ -885,7 +885,7 @@ struct NoteDetailView: View {
             return true
         case .voiceRecord:
             hideLinkInputOverlay()
-            micSessionID = UUID()
+            // micSessionID = UUID()  // Removed to prevent view recreation
             showVoiceRecorderOverlay = true
             return true
         case .link:
@@ -898,17 +898,20 @@ struct NoteDetailView: View {
 
     private func processVoiceRecorderResult(_ result: MicCaptureControl.Result) {
         handleVoiceRecording(result)
-        dismissVoiceRecorderOverlay()
+
+        // Give more time for text insertion to complete
+        // This ensures the transcription is fully inserted before dismissing the overlay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            self.dismissVoiceRecorderOverlay()
+        }
     }
 
     private func dismissVoiceRecorderOverlay() {
-        DispatchQueue.main.async {
-            guard self.showVoiceRecorderOverlay else { return }
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
-                self.showVoiceRecorderOverlay = false
-            }
-            self.micSessionID = UUID()
+        guard showVoiceRecorderOverlay else { return }
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+            showVoiceRecorderOverlay = false
         }
+        // micSessionID = UUID()  // Removed to prevent view recreation crashes
     }
 
     private func presentLinkInputOverlay() {
@@ -1022,13 +1025,12 @@ struct NoteDetailView: View {
         if let transcript = result.transcript, !transcript.isEmpty {
             NSLog("🎤 NoteDetailView.handleVoiceRecording: Posting notification with transcript: %@", transcript)
 
-            // Ensure we're on main thread and add slight delay to ensure coordinator is ready
-            DispatchQueue.main.async {
-                NSLog("🎤 NoteDetailView.handleVoiceRecording: About to post notification on main thread")
-                NotificationCenter.default.post(
-                    name: .insertVoiceTranscriptInEditor, object: transcript)
-                NSLog("🎤 NoteDetailView.handleVoiceRecording: Notification posted successfully")
-            }
+            // Already on @MainActor, post directly without redundant dispatch
+            NotificationCenter.default.post(
+                name: .insertVoiceTranscriptInEditor,
+                object: transcript
+            )
+            NSLog("🎤 NoteDetailView.handleVoiceRecording: Notification posted successfully")
         } else {
             NSLog("🎤 NoteDetailView.handleVoiceRecording: No transcript to insert")
         }
