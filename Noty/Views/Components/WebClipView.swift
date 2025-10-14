@@ -15,19 +15,21 @@ struct WebClipView: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 4) {
             Image(systemName: "link")
-                .font(FontManager.heading(size: 11, weight: .medium))
-                .foregroundColor(linkColor)
+                .font(FontManager.metadata(size: 10, weight: .medium))
+                .foregroundStyle(foregroundColor)
 
             Text(cleanedDomain)
-                .font(FontManager.heading(size: 12, weight: .medium))
-                .foregroundColor(linkColor)
+                .font(FontManager.metadata(size: 10, weight: .medium))
+                .foregroundStyle(foregroundColor)
                 .lineLimit(1)
+                .textCase(.lowercase)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(capsuleBackground, in: Capsule())
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
+        .frame(minWidth: 54, minHeight: 20)
+        .background(backgroundColor, in: Capsule())
         .contentShape(Capsule())
         .onTapGesture {
             if let urlString = url ?? URL(string: "https://\(domain)")?.absoluteString,
@@ -40,16 +42,18 @@ struct WebClipView: View {
                 #endif
             }
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityLabel)
     }
 
-    private var linkColor: Color {
+    private var foregroundColor: Color {
         colorScheme == .dark ? .white : .black
     }
 
-    private var capsuleBackground: Color {
+    private var backgroundColor: Color {
         colorScheme == .dark
-            ? Color.white.opacity(0.1)
-            : Color.black.opacity(0.06)
+            ? Color.white.opacity(0.12)
+            : Color.black.opacity(0.08)
     }
 
     private var cleanedDomain: String {
@@ -57,6 +61,12 @@ struct WebClipView: View {
             .replacingOccurrences(of: "https://", with: "")
             .replacingOccurrences(of: "http://", with: "")
             .replacingOccurrences(of: "www.", with: "")
+    }
+
+    private var accessibilityLabel: String {
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let label = trimmedTitle.isEmpty ? cleanedDomain : trimmedTitle
+        return "Open \(label)"
     }
 }
 

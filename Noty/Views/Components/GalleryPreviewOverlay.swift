@@ -15,6 +15,7 @@ import UIKit
 
 struct GalleryPreviewOverlay: View {
     let image: PlatformImage
+    var onTap: (() -> Void)? = nil
 
     @Environment(\.colorScheme) private var colorScheme
     @State private var isHovering = false
@@ -95,11 +96,17 @@ struct GalleryPreviewOverlay: View {
         Rectangle()
             .fill(Color.clear)
             .contentShape(Rectangle())
+            .onTapGesture {
+                onTap?()
+            }
+            .macPointingHandCursor()
+#if os(macOS)
             .onHover { hovering in
                 withAnimation(.smooth(duration: 0.25)) {
                     isHovering = hovering
                 }
             }
+#endif
     }
 
     private var baseOffset: CGSize {

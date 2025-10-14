@@ -104,6 +104,7 @@ private extension MicCaptureControl {
                 .frame(width: 20, height: 20)
         }
         .buttonStyle(.plain)
+        .macPointingHandCursor()
         .frame(width: 44, height: 44)
         .background(Circle().fill(.clear))
         .liquidGlass(in: Circle())
@@ -125,6 +126,7 @@ private extension MicCaptureControl {
                     .frame(width: 20, height: 20)
             }
             .buttonStyle(.plain)
+            .macPointingHandCursor()
             .background(
                 Circle()
                     .fill(Color.clear)
@@ -165,6 +167,7 @@ private extension MicCaptureControl {
                     .padding(8)
             }
             .buttonStyle(.plain)
+            .macPointingHandCursor()
             .background(cancelButtonColor, in: Capsule())
             .accessibilityLabel(Text("Cancel recording"))
 
@@ -181,6 +184,7 @@ private extension MicCaptureControl {
                     .padding(8)
             }
             .buttonStyle(.plain)
+            .macPointingHandCursor()
             .background(resumeButtonColor, in: Capsule())
             .accessibilityLabel(Text("Resume recording"))
 
@@ -205,6 +209,7 @@ private extension MicCaptureControl {
                 }
             }
             .buttonStyle(.plain)
+            .macPointingHandCursor()
             .background(sendButtonColor, in: Capsule())
             .disabled(viewModel.isProcessingSend)
             .accessibilityLabel(Text(viewModel.isProcessingSend ? "Sending voice note" : "Send voice note"))
@@ -267,6 +272,7 @@ private extension MicCaptureControl {
             }
             .font(FontManager.heading(size: 13, weight: .medium))
             .buttonStyle(.plain)
+            .macPointingHandCursor()
             .foregroundStyle(Color.accentColor)
         }
         .padding(.horizontal, 16)

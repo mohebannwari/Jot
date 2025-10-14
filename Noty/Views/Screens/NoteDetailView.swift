@@ -18,6 +18,8 @@ struct NoteDetailView: View {
     let note: Note
     @Binding var isPresented: Bool
     var onSave: (Note) -> Void
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @State private var editedTitle: String
     @State private var editedContent: String
     @State private var editedTags: [String]
@@ -38,6 +40,8 @@ struct NoteDetailView: View {
     @Namespace private var glassNamespace
     @State private var galleryPreviewImage: PlatformImage?
     @State private var lastGalleryFilename: String?
+    @State private var galleryItems: [GalleryGridOverlay.Item] = []
+    @State private var showGalleryGrid = false
     
     // Auxiliary overlays
     @State private var showVoiceRecorderOverlay = false
@@ -72,7 +76,7 @@ struct NoteDetailView: View {
         )
     }
 
-    var body: some View {
+    private var noteContent: some View {
         ZStack(alignment: .topLeading) {
             Color.clear
                 .ignoresSafeArea()
@@ -143,22 +147,10 @@ struct NoteDetailView: View {
                     Rectangle()
                         .fill(Color.clear)
                         .frame(height: 120)
-                        .background(.ultraThickMaterial, ignoresSafeAreaEdges: .top)
-                        .mask(
-                            LinearGradient(
-                                gradient: Gradient(stops: [
-                                    .init(color: .black, location: 0.0),
-                                    .init(color: .black.opacity(0.95), location: 0.25),
-                                    .init(color: .black.opacity(0.9), location: 0.35),
-                                    .init(color: .black.opacity(0.7), location: 0.5),
-                                    .init(color: .black.opacity(0.4), location: 0.65),
-                                    .init(color: .black.opacity(0.15), location: 0.8),
-                                    .init(color: .black.opacity(0.0), location: 0.9),
-                                    .init(color: .clear, location: 1.0),
-                                ]),
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
+                        .background(
+                            headerMaterialBase
+                                .mask(headerMaskGradient)
+                                .ignoresSafeArea(edges: .top)
                         )
                         .blur(radius: 0.1)
 
@@ -190,7 +182,12 @@ struct NoteDetailView: View {
         }
         .overlay(alignment: .bottomLeading) {
             if let previewImage = galleryPreviewImage {
-                GalleryPreviewOverlay(image: previewImage)
+                GalleryPreviewOverlay(image: previewImage, onTap: {
+                    guard !galleryItems.isEmpty else { return }
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                        showGalleryGrid = true
+                    }
+                })
                     .padding(.leading, 22)
                     .padding(.bottom, 22)
                     .transition(.opacity.combined(with: .scale(scale: 0.94)))
@@ -467,6 +464,7 @@ struct NoteDetailView: View {
                 .frame(width: 32, height: 32)
         }
         .buttonStyle(.plain)
+        .macPointingHandCursor()
         .if(available26) { view in
             view.glassEffect(.regular.interactive(true), in: Circle())
                 .glassID("back-button", in: glassNamespace)
@@ -599,6 +597,7 @@ struct NoteDetailView: View {
                 }
             }
             .animation(.spring(response: 0.35, dampingFraction: 0.75), value: isAddingTag)
+            .macPointingHandCursor()
 
             // Existing tags in separate scrollable container
             if !editedTags.isEmpty {
@@ -651,6 +650,64 @@ struct NoteDetailView: View {
         .onExitCommand {
             if isAddingTag { cancelTagInput() }
         }
+    }
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            noteContent
+                .blur(radius: showGalleryGrid ? 0.6 : 0)
+                .scaleEffect(showGalleryGrid ? 0.996 : 1.0)
+                .animation(.smooth(duration: 0.28), value: showGalleryGrid)
+                .allowsHitTesting(!showGalleryGrid)
+
+            if showGalleryGrid, !galleryItems.isEmpty {
+                GalleryGridOverlay(
+                    items: galleryItems,
+                    onDismiss: {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                            showGalleryGrid = false
+                        }
+                    }
+                )
+                .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                .zIndex(200)
+            }
+        }
+    }
+
+    // MARK: - Header Styling Helpers
+    @ViewBuilder
+    private var headerMaterialBase: some View {
+        if reduceTransparency {
+            Rectangle().fill(headerTintColor)
+        } else {
+            Rectangle()
+                .fill(.ultraThickMaterial)
+                .overlay(Rectangle().fill(headerTintColor))
+        }
+    }
+
+    private var headerTintColor: Color {
+        if colorScheme == .dark {
+            return Color(red: 0.07, green: 0.07, blue: 0.08).opacity(0.96)
+        } else {
+            return Color(red: 0.97, green: 0.97, blue: 0.99).opacity(0.94)
+        }
+    }
+
+    private var headerMaskGradient: LinearGradient {
+        LinearGradient(
+            gradient: Gradient(stops: [
+                .init(color: Color.white, location: 0.0),
+                .init(color: Color.white.opacity(0.96), location: 0.2),
+                .init(color: Color.white.opacity(0.8), location: 0.45),
+                .init(color: Color.white.opacity(0.45), location: 0.68),
+                .init(color: Color.white.opacity(0.18), location: 0.82),
+                .init(color: Color.clear, location: 1.0),
+            ]),
+            startPoint: .top,
+            endPoint: .bottom
+        )
     }
 
     // MARK: - Bottom Overlay
@@ -723,6 +780,7 @@ struct NoteDetailView: View {
                         linkInputText.isEmpty ? Color("TertiaryTextColor") : Color("AccentColor"))
             }
             .buttonStyle(.plain)
+            .macPointingHandCursor()
             .disabled(linkInputText.isEmpty)
         }
         .padding(.horizontal, 16)
@@ -894,16 +952,42 @@ struct NoteDetailView: View {
 
     private func updateGalleryPreview(for text: String) {
         let filenames = extractGalleryFilenames(from: text)
-        let newFilename = filenames.last
+        let currentIDs = galleryItems.map(\.id)
+        let needsReload = filenames != currentIDs
 
-        guard newFilename != lastGalleryFilename || (newFilename == nil && galleryPreviewImage != nil)
-        else { return }
+        let items: [GalleryGridOverlay.Item]
+        if needsReload {
+            items = filenames.compactMap { filename -> GalleryGridOverlay.Item? in
+                guard let loadedImage = loadGalleryImage(named: filename) else { return nil }
+                return GalleryGridOverlay.Item(id: filename, image: loadedImage)
+            }
+            galleryItems = items
+        } else {
+            items = galleryItems
+        }
 
-        lastGalleryFilename = newFilename
-        let loadedImage = newFilename.flatMap { loadGalleryImage(named: $0) }
+        guard let latestItem = items.last else {
+            lastGalleryFilename = nil
+            if galleryPreviewImage != nil {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                    galleryPreviewImage = nil
+                }
+            }
+            if showGalleryGrid {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                    showGalleryGrid = false
+                }
+            }
+            return
+        }
+
+        let shouldUpdatePreview = latestItem.id != lastGalleryFilename || galleryPreviewImage == nil
+        lastGalleryFilename = latestItem.id
+
+        guard shouldUpdatePreview else { return }
 
         withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
-            galleryPreviewImage = loadedImage
+            galleryPreviewImage = latestItem.image
         }
     }
 
@@ -1067,6 +1151,7 @@ private struct TagPill: View {
         .opacity(visible ? 1 : 0)
         .animation(.bouncy(duration: 0.3), value: isHovered)
         .animation(.bouncy(duration: 0.2), value: isPressed)
+        .macPointingHandCursor()
     }
 
     private var available26: Bool {

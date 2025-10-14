@@ -891,8 +891,12 @@ struct TodoRichTextEditor: View {
 
                     attachment.image = nsImage
 
-                    // Position at baseline - no negative offset needed
-                    attachment.bounds = CGRect(origin: .zero, size: displaySize)
+                    attachment.bounds = CGRect(
+                        x: 0,
+                        y: Self.imageTagVerticalOffset(for: displaySize.height),
+                        width: displaySize.width,
+                        height: displaySize.height
+                    )
                     let attributed = NSMutableAttributedString(attachment: attachment)
                 #else
                     // Create the view without artificial width constraints - let it size to content
@@ -924,8 +928,12 @@ struct TodoRichTextEditor: View {
 
                     attachment.image = uiImage
 
-                    // Position at baseline - no negative offset needed
-                    attachment.bounds = CGRect(origin: .zero, size: displaySize)
+                    attachment.bounds = CGRect(
+                        x: 0,
+                        y: Self.imageTagVerticalOffset(for: displaySize.height),
+                        width: displaySize.width,
+                        height: displaySize.height
+                    )
                     let attributed = NSMutableAttributedString(attachment: attachment)
                 #endif
 

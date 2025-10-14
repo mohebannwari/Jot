@@ -174,7 +174,7 @@ struct ContentView: View {
                 .zIndex(100)
             }
         }
-        .containerBackground(.thickMaterial, for: .window)
+        .background(AppWindowBackground())
         // Search logic will be reintroduced with the redesigned manager
         .onAppear { searchEngine.setNotes(notesManager.notes) }
         .onChange(of: notesManager.notes) { notes in
