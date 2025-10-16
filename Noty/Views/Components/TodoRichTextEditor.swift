@@ -283,7 +283,7 @@ struct TodoRichTextEditor: View {
     @State private var commandMenuPosition: CGPoint = .zero
     @State private var commandMenuSelectedIndex = 0
     @State private var commandSlashLocation: Int = -1
-    fileprivate static let commandMenuActions: [EditTool] = [.imageUpload, .voiceRecord, .link]
+    fileprivate static let commandMenuActions: [EditTool] = [.imageUpload, .voiceRecord, .link, .todo]
     fileprivate static let commandMenuBaseWidth: CGFloat = CommandMenuLayout.width
     fileprivate static let commandMenuOuterPadding: CGFloat = CommandMenuLayout.outerPadding
     fileprivate static let commandMenuHorizontalPadding = commandMenuOuterPadding * 2
@@ -1954,10 +1954,15 @@ struct TodoRichTextEditor: View {
                                 textView.didChangeText()
                             }
                         }
-                        
+
                         // Apply the selected tool
-                        self.formatter.applyFormatting(to: textView, tool: tool)
-                        
+                        // Special handling for todo checkbox to use proper attachment instead of text
+                        if tool == .todo {
+                            self.insertTodo()
+                        } else {
+                            self.formatter.applyFormatting(to: textView, tool: tool)
+                        }
+
                         // Sync the text back
                         self.syncText()
                     }
@@ -2485,11 +2490,18 @@ struct TodoRichTextEditor: View {
                     if textView.shouldChangeText(in: slashRange, replacementString: "") {
                         textStorage.replaceCharacters(in: slashRange, with: "")
                         textView.didChangeText()
+                        // Position cursor at the location where "/" was removed
+                        textView.setSelectedRange(NSRange(location: slashLocation, length: 0))
                     }
                 }
 
                 // Apply the selected tool
-                formatter.applyFormatting(to: textView, tool: tool)
+                // Special handling for todo checkbox to use proper attachment instead of text
+                if tool == .todo {
+                    insertTodo()
+                } else {
+                    formatter.applyFormatting(to: textView, tool: tool)
+                }
 
                 // Sync the text back
                 syncText()
@@ -4295,10 +4307,17 @@ struct TodoRichTextEditor: View {
                 if slashLocation >= 0 && slashLocation < textStorage.length {
                     let slashRange = NSRange(location: slashLocation, length: 1)
                     textStorage.replaceCharacters(in: slashRange, with: "")
+                    // Position cursor at the location where "/" was removed
+                    textView.selectedRange = NSRange(location: slashLocation, length: 0)
                 }
 
                 // Apply the selected tool
-                formatter.applyFormatting(to: textView, tool: tool)
+                // Special handling for todo checkbox to use proper attachment instead of text
+                if tool == .todo {
+                    insertTodo()
+                } else {
+                    formatter.applyFormatting(to: textView, tool: tool)
+                }
 
                 // Sync the text back
                 syncText()

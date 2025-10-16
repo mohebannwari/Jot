@@ -790,7 +790,7 @@ enum EditTool: String, CaseIterable {
         case .underline: return "Underline"
         case .strikethrough: return "Strikethrough"
         case .bulletList: return "Bullet List"
-        case .todo: return "Todo Checkbox"
+        case .todo: return "To-Do"
         case .indentLeft: return "Decrease Indent"
         case .indentRight: return "Increase Indent"
         case .alignLeft: return "Align Left"
