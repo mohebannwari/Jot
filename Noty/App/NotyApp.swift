@@ -23,6 +23,51 @@ struct NotyApp: App {
             fatalError("Cannot initialize database. Please check logs.")
         }
         _notesManager = StateObject(wrappedValue: manager)
+
+        // Clean up temporary files on app launch
+        Self.cleanupTemporaryFiles()
+    }
+
+    /// Clean up temporary files that may have accumulated from previous sessions
+    private static func cleanupTemporaryFiles() {
+        let fileManager = FileManager.default
+        let tmpDirectory = fileManager.temporaryDirectory
+
+        // Clean up voice recording directory
+        let micCaptureDir = tmpDirectory.appendingPathComponent("MicCapture", isDirectory: true)
+        if fileManager.fileExists(atPath: micCaptureDir.path) {
+            do {
+                let files = try fileManager.contentsOfDirectory(at: micCaptureDir, includingPropertiesForKeys: nil)
+                for file in files {
+                    try? fileManager.removeItem(at: file)
+                }
+                NSLog("🧹 NotyApp: Cleaned up %d temporary voice recording(s)", files.count)
+            } catch {
+                NSLog("🧹 NotyApp: Failed to cleanup voice recordings: %@", error.localizedDescription)
+            }
+        }
+
+        // Clean up orphaned temporary image files (UUID-named files in tmp root)
+        do {
+            let files = try fileManager.contentsOfDirectory(at: tmpDirectory, includingPropertiesForKeys: [.isRegularFileKey])
+            var cleanedCount = 0
+            for file in files {
+                // Check if it's a regular file with UUID-like name pattern and image extension
+                let filename = file.lastPathComponent
+                let isImage = ["jpg", "jpeg", "png", "heic", "heif"].contains(file.pathExtension.lowercased())
+
+                // Only clean up if it looks like our temp files (UUID pattern)
+                if isImage && filename.count > 30 {  // UUID filenames are typically 36+ chars
+                    try? fileManager.removeItem(at: file)
+                    cleanedCount += 1
+                }
+            }
+            if cleanedCount > 0 {
+                NSLog("🧹 NotyApp: Cleaned up %d temporary image(s)", cleanedCount)
+            }
+        } catch {
+            NSLog("🧹 NotyApp: Failed to cleanup temp directory: %@", error.localizedDescription)
+        }
     }
 
     var body: some Scene {

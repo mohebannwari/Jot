@@ -1037,19 +1037,25 @@ struct NoteDetailView: View {
             NSLog("🎤 NoteDetailView.handleVoiceRecording: No transcript to insert")
         }
 
-        // TODO: Save audio file if needed
-        // The audio file is available at result.audioURL
+        // Clean up temporary audio file (transcript already extracted, audio not stored)
+        do {
+            try FileManager.default.removeItem(at: result.audioURL)
+            NSLog("🎤 NoteDetailView.handleVoiceRecording: Cleaned up temp audio file at %@", result.audioURL.path)
+        } catch {
+            NSLog("🎤 NoteDetailView.handleVoiceRecording: Failed to cleanup temp audio: %@", error.localizedDescription)
+        }
+
         NSLog("🎤 NoteDetailView.handleVoiceRecording: END")
     }
     
     private func handleImageSelection(_ imageURL: URL) {
         NSLog("🖼️ NoteDetailView.handleImageSelection: START - imageURL: %@", imageURL.path)
-        
+
         Task {
             // Save the image to the storage directory
             if let filename = await ImageStorageManager.shared.saveImage(from: imageURL) {
                 NSLog("🖼️ NoteDetailView.handleImageSelection: Image saved as %@", filename)
-                
+
                 // Post notification to insert image in editor
                 await MainActor.run {
                     NSLog("🖼️ NoteDetailView.handleImageSelection: Posting notification with filename")
@@ -1062,8 +1068,16 @@ struct NoteDetailView: View {
             } else {
                 NSLog("🖼️ NoteDetailView.handleImageSelection: Failed to save image")
             }
+
+            // Clean up temporary image file (already saved/processed to permanent storage)
+            do {
+                try FileManager.default.removeItem(at: imageURL)
+                NSLog("🖼️ NoteDetailView.handleImageSelection: Cleaned up temp image at %@", imageURL.path)
+            } catch {
+                NSLog("🖼️ NoteDetailView.handleImageSelection: Failed to cleanup temp image: %@", error.localizedDescription)
+            }
         }
-        
+
         NSLog("🖼️ NoteDetailView.handleImageSelection: END")
     }
 
