@@ -23,103 +23,48 @@ struct ContentView: View {
             VStack(spacing: 0) {
                 ScrollView {
                     VStack(spacing: 36) {
-                        // PINNED NOTES Section
                         if !pinnedNotes.isEmpty {
                             PinnedNotesSection(
                                 notes: pinnedNotes,
-                                onNoteTap: { note in
-                                    HapticManager.shared.noteInteraction()
-                                    withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
-                                        selectedNote = note
-                                        isNoteDetailPresented = true
-                                    }
-                                }
+                                onNoteTap: openNote
                             )
                         }
 
-                        // Today Section
                         if !todayNotes.isEmpty {
-                            NotesSection(
-                                title: "TODAY",
-                                notes: todayNotes,
-                                onNoteTap: { note in
-                                    HapticManager.shared.noteInteraction()
-                                    withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
-                                        selectedNote = note
-                                        isNoteDetailPresented = true
-                                    }
-                                },
-                                onDeleteNote: { noteId in
-                                    notesManager.deleteNote(id: noteId)
-                                }
-                            )
+                            NotesSection(title: "TODAY", notes: todayNotes,
+                                         onNoteTap: openNote, onDeleteNote: deleteNote)
                         }
 
-                        // This Month Section
                         if !thisMonthNotes.isEmpty {
-                            NotesSection(
-                                title: "THIS MONTH",
-                                notes: thisMonthNotes,
-                                onNoteTap: { note in
-                                    HapticManager.shared.noteInteraction()
-                                    withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
-                                        selectedNote = note
-                                        isNoteDetailPresented = true
-                                    }
-                                },
-                                onDeleteNote: { noteId in
-                                    notesManager.deleteNote(id: noteId)
-                                }
-                            )
+                            NotesSection(title: "THIS MONTH", notes: thisMonthNotes,
+                                         onNoteTap: openNote, onDeleteNote: deleteNote)
                         }
 
-                        // This Year Section
                         if !thisYearNotes.isEmpty {
-                            NotesSection(
-                                title: "THIS YEAR",
-                                notes: thisYearNotes,
-                                onNoteTap: { note in
-                                    HapticManager.shared.noteInteraction()
-                                    withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
-                                        selectedNote = note
-                                        isNoteDetailPresented = true
-                                    }
-                                },
-                                onDeleteNote: { noteId in
-                                    notesManager.deleteNote(id: noteId)
-                                }
-                            )
+                            NotesSection(title: "THIS YEAR", notes: thisYearNotes,
+                                         onNoteTap: openNote, onDeleteNote: deleteNote)
                         }
 
-                        // Older Section
                         if !olderNotes.isEmpty {
-                            NotesSection(
-                                title: "OLDER",
-                                notes: olderNotes,
-                                onNoteTap: { note in
-                                    HapticManager.shared.noteInteraction()
-                                    withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
-                                        selectedNote = note
-                                        isNoteDetailPresented = true
-                                    }
-                                },
-                                onDeleteNote: { noteId in
-                                    notesManager.deleteNote(id: noteId)
-                                }
-                            )
+                            NotesSection(title: "OLDER", notes: olderNotes,
+                                         onNoteTap: openNote, onDeleteNote: deleteNote)
                         }
                     }
+                    #if os(iOS)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 16)
+                    #else
                     .frame(width: 400)
+                    .padding(.horizontal, 30)
+                    #endif
                     .padding(.top, pinnedNotes.isEmpty ? 24 : 18)
-                    .padding(.leading, 30)
-                    .padding(.trailing, 30)
                     .padding(.bottom, 80)
                 }
                 .scrollIndicators(.never)
             }
             .opacity(isNoteDetailPresented ? 0 : 1)
             .offset(x: isNoteDetailPresented ? -20 : 0)
-            .animation(.spring(response: 0.35, dampingFraction: 0.82), value: isNoteDetailPresented)
+            .animation(.notySpring, value: isNoteDetailPresented)
             .contentShape(Rectangle())
             .onTapGesture {
                 // Close search when tapping outside
@@ -134,7 +79,7 @@ struct ContentView: View {
                 .environmentObject(themeManager)
                 .opacity(isNoteDetailPresented ? 0 : 1)
                 .offset(x: isNoteDetailPresented ? -20 : 0)
-                .animation(.spring(response: 0.35, dampingFraction: 0.82), value: isNoteDetailPresented)
+                .animation(.notySpring, value: isNoteDetailPresented)
                 .onTapGesture {
                     // Close search when tapping bottom bar
                     if isSearchActive {
@@ -144,19 +89,13 @@ struct ContentView: View {
                 }
 
             // Floating Search Overlay (does not affect other buttons)
-            FloatingSearch(engine: searchEngine) { note in
-                HapticManager.shared.noteInteraction()
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
-                    selectedNote = note
-                    isNoteDetailPresented = true
-                }
-            }
+            FloatingSearch(engine: searchEngine, onNoteSelected: openNote)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
             .padding(.leading, 18)
             .padding(.bottom, 18)
             .opacity(isNoteDetailPresented ? 0 : 1)
             .offset(x: isNoteDetailPresented ? -20 : 0)
-            .animation(.spring(response: 0.35, dampingFraction: 0.82), value: isNoteDetailPresented)
+            .animation(.notySpring, value: isNoteDetailPresented)
             .onChange(of: searchEngine.query) { _, newValue in
                 isSearchActive = !newValue.isEmpty
             }
@@ -181,6 +120,22 @@ struct ContentView: View {
             searchEngine.setNotes(notes)
         }
     }
+
+    // MARK: - Actions
+
+    private func openNote(_ note: Note) {
+        HapticManager.shared.noteInteraction()
+        withAnimation(.notySpring) {
+            selectedNote = note
+            isNoteDetailPresented = true
+        }
+    }
+
+    private func deleteNote(_ id: UUID) {
+        notesManager.deleteNote(id: id)
+    }
+
+    // MARK: - Computed Properties
 
     private var displayedNotes: [Note] {
         // For now always show all notes until the new search manager is introduced
@@ -244,7 +199,7 @@ struct ContentView: View {
     private func createAndOpenNewNote() {
         HapticManager.shared.noteInteraction()
         let note = notesManager.addNote(title: "New Note", content: "")
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+        withAnimation(.notySpring) {
             selectedNote = note
             isNoteDetailPresented = true
         }
@@ -310,7 +265,7 @@ struct NoteListCard: View {
                 
                 // Date - positioned on the right in numeric format (MM.DD.YY)
                 // Uses SF Mono for metadata with subdued color for visual hierarchy
-                Text(dateFormatter.string(from: note.date))
+                Text(Self.dateFormatter.string(from: note.date))
                     .font(FontManager.metadata(size: 11, weight: .medium))
                     .foregroundColor(Color.primary.opacity(0.55))
                     .kerning(-0.25)
@@ -379,24 +334,11 @@ struct NoteListCard: View {
         }
     }
 
-    // Date formatter for numeric format: DD.MM.YY (e.g., 10.11.25)
-    private var dateFormatter: DateFormatter {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "dd.MM.yy"
-        return formatter
-    }
-}
-
-// List Tag View Component (Figma design)
-struct ListTagView: View {
-    let tag: String
-
-    var body: some View {
-        Text(tag)
-            .font(FontManager.heading(size: 13, weight: .medium))
-            .foregroundColor(Color(red: 59 / 255, green: 130 / 255, blue: 246 / 255))  // blue-500
-            .kerning(0)
-    }
+    private static let dateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "dd.MM.yy"
+        return f
+    }()
 }
 
 // Pinned Notes Section with Liquid Glass Capsule

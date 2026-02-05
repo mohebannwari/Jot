@@ -106,3 +106,29 @@ extension View {
     func macArrowCursor() -> some View { self }
 }
 #endif
+
+// MARK: - Shared Animation Constants
+
+extension Animation {
+    /// Standard spring used throughout the app for transitions and materialization.
+    static let notySpring = Animation.spring(response: 0.35, dampingFraction: 0.82)
+
+    /// Bouncy spring for interactive feedback (tags, buttons, hover).
+    static let notyBounce = Animation.bouncy(duration: 0.3)
+
+    /// Fast smooth animation for toolbar and subtle state changes.
+    static let notySmoothFast = Animation.smooth(duration: 0.2)
+}
+
+// MARK: - Conditional View Modifier
+
+extension View {
+    @ViewBuilder
+    func `if`<Transform: View>(_ condition: Bool, transform: (Self) -> Transform) -> some View {
+        if condition {
+            transform(self)
+        } else {
+            self
+        }
+    }
+}

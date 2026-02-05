@@ -32,6 +32,15 @@ A macOS note-taking app built with SwiftUI and Apple's Liquid Glass design syste
 - Test suite has async/MainActor compilation issues
 - Minor build warnings (4 non-critical)
 
+## Completed Features
+- Note CRUD operations (create, edit, delete, pin)
+- Real-time search and filtering
+- Note pinning system
+- Export functionality (PDF, Markdown, HTML)
+- File attachments with inline image display
+- Voice recording with transcription (Speech framework)
+- SwiftData persistence with automatic JSON migration
+
 ## Incomplete Features
 - Folder management system with renaming
 - Tag creation/editing interface
@@ -39,16 +48,18 @@ A macOS note-taking app built with SwiftUI and Apple's Liquid Glass design syste
 - Advanced search with ML suggestions
 - Markdown preview
 - File drag-and-drop
-- Export functionality (PDF, Markdown)
 - Cloud synchronization
 
 ## Tech Stack
 - SwiftUI (iOS 26+/macOS 26+)
+- SwiftData for persistence
 - Liquid Glass design system
 - AVFoundation for audio recording
 - Speech framework for transcription
-- JSON persistence for notes
 - XCTest for testing
+
+## Branch Status
+- `ios-migration` branch: iOS platform migration in progress
 
 ## Project Structure
 ```
