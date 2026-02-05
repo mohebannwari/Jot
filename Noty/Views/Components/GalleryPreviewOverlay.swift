@@ -20,12 +20,12 @@ struct GalleryPreviewOverlay: View {
     @Environment(\.colorScheme) private var colorScheme
     @State private var isHovering = false
 
-    private let baseShape = RoundedRectangle(cornerRadius: 12, style: .continuous)
-    private let imageShape = RoundedRectangle(cornerRadius: 12, style: .continuous)
-    private let tileSize: CGFloat = 52
-    private let offsetAmount: CGFloat = 12
-    private let baseBorderWidth: CGFloat = 2.0
-    private let imageBorderWidth: CGFloat = 2.0
+    private let baseShape = RoundedRectangle(cornerRadius: 8, style: .continuous)
+    private let imageShape = RoundedRectangle(cornerRadius: 8, style: .continuous)
+    private let tileSize: CGFloat = 40
+    private let offsetAmount: CGFloat = 8
+    private let baseBorderWidth: CGFloat = 1.5
+    private let imageBorderWidth: CGFloat = 1.5
     private let hoverSpread: CGFloat = 4
 
     var body: some View {

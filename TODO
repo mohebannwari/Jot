@@ -20,21 +20,21 @@
 - [x] Tab system with liquid glass tab bars
 - [x] Enhanced card layouts with advanced glass effects
 - [x] Canvas view for visual note organization
-- [ ] Image upload and management with glass modals
+- [x] Image upload and management with glass modals
 - [ ] Folder management system with renaming/editing capabilities
 - [ ] Tag creation and editing interface
 - [ ] Multiple view modes with smooth liquid glass transitions
 
 ## Core Functionality
-- [ ] Note CRUD operations
-- [ ] Search and filtering logic
+- [x] Note CRUD operations
+- [x] Search and filtering logic
 - [ ] Advanced search with filtering and ML suggestions
-- [ ] Note pinning system
+- [x] Note pinning system
 - [ ] Folder organization backend
 - [ ] Tag management backend with color-coding and hashtags
-- [ ] Data persistence (Core Data/SwiftData)
+- [x] Data persistence (SwiftData with automatic JSON migration)
 - [ ] Note synchronization
-- [ ] Dictation features using Speech framework
+- [x] Dictation features using Speech framework
 - [ ] Calendar integration and scheduling
 - [ ] Markdown support with live preview
 - [ ] File upload capabilities with drag-and-drop
@@ -47,7 +47,7 @@
 - [ ] Complete typography system implementation
 - [ ] Consistent spacing and layout grid
 - [ ] SF Symbols icon system
-- [ ] Unified animation patterns (.bouncy duration: 0.3)
+- [x] Unified animation patterns (.notySpring, .notyBounce, .notySmoothFast)
 
 ## Performance & Quality Assurance
 - [ ] Accessibility compliance (Reduced Transparency, Increased Contrast, Reduced Motion)
@@ -63,7 +63,7 @@
 - [ ] Image Playground integration
 - [ ] Advanced search with ML suggestions
 - [ ] Collaboration features with SharePlay
-- [ ] Export functionality (PDF, Markdown, etc.)
+- [x] Export functionality (PDF, Markdown, HTML)
 - [ ] Keyboard shortcuts and accessibility
 - [ ] Cross-platform synchronization
 

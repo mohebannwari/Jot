@@ -78,6 +78,8 @@ struct NotyApp: App {
                 .preferredColorScheme(themeManager.currentTheme.colorScheme)
                 .containerShape(.rect(cornerRadius: 16))
         }
+        #if os(macOS)
         .windowStyle(.hiddenTitleBar)
+        #endif
     }
 }

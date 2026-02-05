@@ -221,11 +221,13 @@ struct FloatingSearch: View {
                         expandSearch()
                     }
                 }
+                #if os(macOS)
                 .onExitCommand {
                     if searchState != .collapsed {
                         closeSearch()
                     }
                 }
+                #endif
                 .onAppear {
                     performanceMonitor.trackFeatureUsage("search_interface")
                     if searchState != .collapsed {
