@@ -12,7 +12,6 @@ struct AISummaryBox: View {
     let summaryText: String
     let onDismiss: () -> Void
     @State private var isVisible = false
-    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -54,7 +53,7 @@ struct AISummaryBox: View {
                 )
         )
         .shadow(
-            color: Color.black.opacity(colorScheme == .dark ? 0.3 : 0.08),
+            color: Color.black.opacity(0.06),
             radius: 8,
             x: 0,
             y: 4

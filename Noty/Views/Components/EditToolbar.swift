@@ -172,7 +172,7 @@ struct EditToolbar: View {
                         .background(
                             Capsule()
                                 .fill(Color("CardBackgroundColor"))
-                                .shadow(color: Color.black.opacity(0.15), radius: 10, x: 0, y: 4)
+                                .shadow(color: Color.black.opacity(0.06), radius: 8, x: 0, y: 4)
                         )
                         .position(x: buttonCenterX, y: yOffset)
                         .allowsHitTesting(false)
@@ -634,13 +634,12 @@ struct EditToolbar: View {
                     Image(systemName: "arrow.right.circle.fill")
                         .font(FontManager.heading(size: 16, weight: .regular))
                         .foregroundColor(
-                            linkURL.isEmpty ? Color("TertiaryTextColor") : Color("AccentColor"))
+                            linkURL.isEmpty ? Color("SecondaryTextColor") : Color("AccentColor"))
                 }
                 .buttonStyle(.plain)
                 .disabled(linkURL.isEmpty)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(12)
             .liquidGlass(in: Capsule())
             .frame(width: 240)
 

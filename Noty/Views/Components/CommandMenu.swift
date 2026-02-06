@@ -44,8 +44,6 @@ struct CommandMenu: View {
     // Maximum height for the menu
     var maxHeight: CGFloat = CommandMenuLayout.defaultMaxHeight
 
-    @Environment(\.colorScheme) private var colorScheme
-
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: false) {
@@ -73,8 +71,8 @@ struct CommandMenu: View {
         .frame(width: CommandMenuLayout.width)
         .padding(CommandMenuLayout.outerPadding)  // Proper padding for concentricity
         .liquidGlass(in: RoundedRectangle(cornerRadius: 28, style: .continuous))  // Corner radius adapts to padding (12 + 4 = 16)
-        .shadow(color: .black.opacity(0.3), radius: 30, x: 0, y: 15)
-        .shadow(color: .black.opacity(0.18), radius: 12, x: 0, y: 6)
+        .shadow(color: .black.opacity(0.12), radius: 24, x: 0, y: 12)
+        .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 4)
     }
 }
 
@@ -85,19 +83,33 @@ struct CommandMenuItem: View {
 
     @Environment(\.colorScheme) private var colorScheme
 
+    private var selectedForegroundColor: Color {
+        colorScheme == .dark ? .white : Color("PrimaryTextColor")
+    }
+
+    private var selectedShortcutColor: Color {
+        colorScheme == .dark
+            ? Color.white.opacity(0.84)
+            : Color("PrimaryTextColor").opacity(0.72)
+    }
+
+    private var selectedBackgroundColor: Color {
+        Color("HoverBackgroundColor").opacity(colorScheme == .dark ? 0.95 : 1.0)
+    }
+
     var body: some View {
         HStack(spacing: 10) {
             // Tool icon - smaller size for proper scale
             Image(systemName: tool.iconName)
                 .font(FontManager.heading(size: 13, weight: .medium))
-                .foregroundStyle(isSelected ? .white : .primary)
+                .foregroundStyle(isSelected ? selectedForegroundColor : .primary)
                 .frame(width: 16, height: 16)
                 .symbolRenderingMode(.monochrome)
 
             // Tool name
             Text(tool.name)
                 .font(FontManager.heading(size: 13, weight: .regular))
-                .foregroundStyle(isSelected ? .white : .primary)
+                .foregroundStyle(isSelected ? selectedForegroundColor : .primary)
 
             Spacer(minLength: 0)
 
@@ -105,7 +117,7 @@ struct CommandMenuItem: View {
             if let shortcut = tool.keyboardShortcut {
                 Text("⌘\(shortcut.character.uppercased())")
                     .font(FontManager.metadata(size: 11, weight: .regular))
-                    .foregroundStyle(isSelected ? .white.opacity(0.85) : .secondary)
+                    .foregroundStyle(isSelected ? selectedShortcutColor : .secondary)
             }
         }
         .padding(.horizontal, 10)
@@ -114,7 +126,7 @@ struct CommandMenuItem: View {
             Group {
                 if isSelected {
                     RoundedRectangle(cornerRadius: 999, style: .continuous)
-                        .fill(Color.black.opacity(0.2))
+                        .fill(selectedBackgroundColor)
                 } else {
                     Color.clear
                 }

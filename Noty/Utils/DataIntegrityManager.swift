@@ -543,7 +543,7 @@ struct DataHealthMetrics: Sendable {
 extension ModelContainer {
     static let shared: ModelContainer = {
         do {
-            let schema = Schema([NoteEntity.self, TagEntity.self])
+            let schema = Schema([NoteEntity.self, TagEntity.self, FolderEntity.self])
             let config = ModelConfiguration(schema: schema)
             return try ModelContainer(for: schema, configurations: [config])
         } catch {

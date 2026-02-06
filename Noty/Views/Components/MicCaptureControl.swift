@@ -234,7 +234,7 @@ private extension MicCaptureControl {
     }
 
     private var resumeIconColor: Color {
-        colorScheme == .dark ? .white : .black
+        Color("PrimaryTextColor")
     }
 
     private var sendButtonColor: Color {

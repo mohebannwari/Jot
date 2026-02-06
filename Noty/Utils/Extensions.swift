@@ -99,11 +99,17 @@ extension View {
     func macArrowCursor() -> some View {
         modifier(MacCursorModifier(cursor: .arrow))
     }
+
+    /// Applies a horizontal resize cursor on macOS for split-handle interactions.
+    func macResizeLeftRightCursor() -> some View {
+        modifier(MacCursorModifier(cursor: .resizeLeftRight))
+    }
 }
 #else
 extension View {
     func macPointingHandCursor() -> some View { self }
     func macArrowCursor() -> some View { self }
+    func macResizeLeftRightCursor() -> some View { self }
 }
 #endif
 

@@ -221,6 +221,7 @@ struct TagView: View {
         .padding(.leading, 4)
         .padding(.trailing, 8)
         .padding(.vertical, 4)
+        .background(.ultraThinMaterial, in: Capsule())
         .background(Color("TagBackgroundColor"), in: Capsule())
     }
 }

@@ -8,7 +8,6 @@
 import SwiftUI
 
 struct FileAttachmentTagView: View {
-    @Environment(\.colorScheme) private var colorScheme
     let label: String
 
     var body: some View {
@@ -44,12 +43,10 @@ struct FileAttachmentTagView: View {
     }
 
     private var foregroundColor: Color {
-        colorScheme == .dark ? .white : .black
+        Color("PrimaryTextColor")
     }
 
     private var backgroundColor: Color {
-        colorScheme == .dark
-            ? Color.white.opacity(0.12)
-            : Color.black.opacity(0.08)
+        Color("SurfaceTranslucentColor")
     }
 }

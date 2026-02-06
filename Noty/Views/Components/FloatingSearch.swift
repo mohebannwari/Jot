@@ -18,6 +18,7 @@ enum SearchState {
 struct FloatingSearch: View {
     @ObservedObject var engine: SearchEngine
     let onNoteSelected: (Note) -> Void
+    var maxExpandedWidth: CGFloat = 300
     @State private var searchState: SearchState = .collapsed
     @State private var shouldCollapseFromOutside = false
     @State private var searchText = ""
@@ -206,7 +207,7 @@ struct FloatingSearch: View {
                     in: RoundedRectangle(cornerRadius: currentCornerRadius, style: .continuous)
                 )
                 .glassID("floating-search.surface", in: searchNamespace)
-                .frame(maxWidth: searchState == .collapsed ? nil : 300)
+                .frame(maxWidth: searchState == .collapsed ? nil : maxExpandedWidth)
                 .scaleEffect(isHoveringCollapsedPill && searchState == .collapsed ? 1.02 : 1.0)
                 .contentShape(RoundedRectangle(cornerRadius: currentCornerRadius, style: .continuous))
                 .onHover { hovering in
@@ -250,7 +251,7 @@ struct FloatingSearch: View {
                 RoundedRectangle(cornerRadius: currentCornerRadius, style: .continuous)
                     .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
             )
-            .frame(maxWidth: searchState == .collapsed ? nil : 300)
+            .frame(maxWidth: searchState == .collapsed ? nil : maxExpandedWidth)
             .scaleEffect(isHoveringCollapsedPill && searchState == .collapsed ? 1.02 : 1.0)
             .contentShape(RoundedRectangle(cornerRadius: currentCornerRadius, style: .continuous))
             .onHover { hovering in

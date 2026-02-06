@@ -8,11 +8,11 @@
 import SwiftUI
 
 struct WebClipView: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     let title: String
     let domain: String
     let url: String?
-
-    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         HStack(spacing: 4) {
@@ -30,6 +30,10 @@ struct WebClipView: View {
         .padding(.vertical, 4)
         .frame(minWidth: 54, minHeight: 20)
         .background(backgroundColor, in: Capsule())
+        .overlay(
+            Capsule()
+                .stroke(borderColor, lineWidth: 0.5)
+        )
         .contentShape(Capsule())
         .onTapGesture {
             if let urlString = url ?? URL(string: "https://\(domain)")?.absoluteString,
@@ -47,13 +51,19 @@ struct WebClipView: View {
     }
 
     private var foregroundColor: Color {
-        colorScheme == .dark ? .white : .black
+        colorScheme == .dark ? .white : Color("PrimaryTextColor")
     }
 
     private var backgroundColor: Color {
         colorScheme == .dark
-            ? Color.white.opacity(0.12)
-            : Color.black.opacity(0.08)
+            ? Color.white.opacity(0.16)
+            : Color("SurfaceTranslucentColor")
+    }
+
+    private var borderColor: Color {
+        colorScheme == .dark
+            ? Color.white.opacity(0.22)
+            : Color.black.opacity(0.06)
     }
 
     private var cleanedDomain: String {

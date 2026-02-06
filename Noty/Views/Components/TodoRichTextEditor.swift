@@ -270,6 +270,7 @@ private final class NoteFileAttachment: NSTextAttachment {
 
 struct TodoRichTextEditor: View {
     @Binding var text: String
+    var focusRequestID: UUID? = nil
     var onToolbarAction: ((EditTool) -> Void)?
     var onCommandMenuSelection: ((EditTool) -> Void)?
     @Environment(\.colorScheme) private var colorScheme
@@ -315,6 +316,7 @@ struct TodoRichTextEditor: View {
 
     init(
         text: Binding<String>,
+        focusRequestID: UUID? = nil,
         onToolbarAction: ((EditTool) -> Void)? = nil,
         onCommandMenuSelection: ((EditTool) -> Void)? = nil
     ) {
@@ -322,6 +324,7 @@ struct TodoRichTextEditor: View {
             "DEBUG: TodoRichTextEditor init called with text: '\(text.wrappedValue.prefix(100))...'"
         )
         self._text = text
+        self.focusRequestID = focusRequestID
         self.onToolbarAction = onToolbarAction
         self.onCommandMenuSelection = onCommandMenuSelection
     }
@@ -340,10 +343,18 @@ struct TodoRichTextEditor: View {
         return Group {
             #if os(macOS)
                 TodoEditorRepresentable(
-                    text: $text, colorScheme: colorScheme, bottomInset: bottomInset)
+                    text: $text,
+                    colorScheme: colorScheme,
+                    bottomInset: bottomInset,
+                    focusRequestID: focusRequestID
+                )
             #else
                 TodoEditorRepresentable(
-                    text: $text, colorScheme: colorScheme, bottomInset: bottomInset)
+                    text: $text,
+                    colorScheme: colorScheme,
+                    bottomInset: bottomInset,
+                    focusRequestID: focusRequestID
+                )
             #endif
         }
         .frame(maxWidth: .infinity)  // Natural height based on content
@@ -574,6 +585,7 @@ struct TodoRichTextEditor: View {
         @Binding var text: String
         let colorScheme: ColorScheme
         let bottomInset: CGFloat
+        let focusRequestID: UUID?
         private let unlimitedDimension = CGFloat.greatestFiniteMagnitude
 
         func makeNSView(context: Context) -> InlineNSTextView {
@@ -689,6 +701,7 @@ struct TodoRichTextEditor: View {
 
             // Only update text if it has actually changed
             context.coordinator.updateIfNeeded(with: text)
+            context.coordinator.requestFocusIfNeeded(focusRequestID)
         }
 
         // Report dynamic size to SwiftUI so the editor grows with its content naturally
@@ -725,7 +738,11 @@ struct TodoRichTextEditor: View {
         }
 
         func makeCoordinator() -> Coordinator {
-            return Coordinator(text: $text, colorScheme: colorScheme)
+            return Coordinator(
+                text: $text,
+                colorScheme: colorScheme,
+                focusRequestID: focusRequestID
+            )
         }
 
         private func resolvedColorScheme(for view: NSView?) -> ColorScheme? {
@@ -770,6 +787,7 @@ struct TodoRichTextEditor: View {
             private let formatter = TextFormattingManager()
             private var isUpdating = false
             private var textBinding: Binding<String>
+            private var lastHandledFocusRequestID: UUID?
 #if os(macOS)
             private struct HiddenAttachmentState {
                 let attachment: NSTextAttachment
@@ -1794,9 +1812,10 @@ struct TodoRichTextEditor: View {
             }
 #endif
 
-            init(text: Binding<String>, colorScheme: ColorScheme) {
+            init(text: Binding<String>, colorScheme: ColorScheme, focusRequestID: UUID?) {
                 self.textBinding = text
                 self.currentColorScheme = colorScheme
+                self.lastHandledFocusRequestID = focusRequestID
             }
 
             deinit {
@@ -1971,6 +1990,17 @@ struct TodoRichTextEditor: View {
                 observers = [
                     insertTodo, insertLink, insertVoiceTranscript, insertImage, applyTool, applyCommandMenuTool,
                 ]
+            }
+
+            func requestFocusIfNeeded(_ focusRequestID: UUID?) {
+                guard let focusRequestID else { return }
+                guard lastHandledFocusRequestID != focusRequestID else { return }
+                lastHandledFocusRequestID = focusRequestID
+                guard let textView else { return }
+
+                DispatchQueue.main.async {
+                    textView.window?.makeFirstResponder(textView)
+                }
             }
 
 #if os(macOS)
@@ -3697,6 +3727,7 @@ struct TodoRichTextEditor: View {
         @Binding var text: String
         let colorScheme: ColorScheme
         let bottomInset: CGFloat
+        let focusRequestID: UUID?
 
         // A custom text view that correctly reports its intrinsic content size
         // for proper dynamic height sizing in SwiftUI.
@@ -3880,6 +3911,7 @@ struct TodoRichTextEditor: View {
 
             // Only update text if it has actually changed
             context.coordinator.updateIfNeeded(with: text)
+            context.coordinator.requestFocusIfNeeded(focusRequestID)
         }
 
         // Report dynamic size to SwiftUI so the editor grows with its content (no minHeight)
@@ -3898,7 +3930,11 @@ struct TodoRichTextEditor: View {
         }
 
         func makeCoordinator() -> Coordinator {
-            Coordinator(text: $text, colorScheme: colorScheme)
+            Coordinator(
+                text: $text,
+                colorScheme: colorScheme,
+                focusRequestID: focusRequestID
+            )
         }
 
         private func resolvedColorScheme(for view: UIView) -> ColorScheme {
@@ -3918,6 +3954,7 @@ struct TodoRichTextEditor: View {
             private var isUpdating = false
             private var textBinding: Binding<String>
             private var currentColorScheme: ColorScheme
+            private var lastHandledFocusRequestID: UUID?
             private struct FileAttachmentMetadata {
                 let storedFilename: String
                 let originalFilename: String
@@ -3950,9 +3987,10 @@ struct TodoRichTextEditor: View {
                 return 0.0
             }()
 
-            init(text: Binding<String>, colorScheme: ColorScheme) {
+            init(text: Binding<String>, colorScheme: ColorScheme, focusRequestID: UUID?) {
                 self.textBinding = text
                 self.currentColorScheme = colorScheme
+                self.lastHandledFocusRequestID = focusRequestID
             }
 
             deinit {
@@ -4014,6 +4052,17 @@ struct TodoRichTextEditor: View {
                 let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
                 tap.cancelsTouchesInView = false
                 textView.addGestureRecognizer(tap)
+            }
+
+            func requestFocusIfNeeded(_ focusRequestID: UUID?) {
+                guard let focusRequestID else { return }
+                guard lastHandledFocusRequestID != focusRequestID else { return }
+                lastHandledFocusRequestID = focusRequestID
+                guard let textView else { return }
+
+                DispatchQueue.main.async {
+                    _ = textView.becomeFirstResponder()
+                }
             }
 
             func updateColorScheme(_ scheme: ColorScheme) {

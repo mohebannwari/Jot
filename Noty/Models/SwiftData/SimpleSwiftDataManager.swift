@@ -8,10 +8,14 @@ import OSLog
 final class SimpleSwiftDataManager: ObservableObject {
 
     @Published var notes: [Note] = []
+    @Published var folders: [Folder] = []
+    @Published private(set) var hasLoadedInitialNotes = false
+    @Published private(set) var hasCompletedMigrationCheck = false
 
     private let modelContainer: ModelContainer
     private let modelContext: ModelContext
     private let backgroundContext: ModelContext
+    private let shouldAutoMigrateFromJSON: Bool
     private let logger = Logger(subsystem: "com.noty.app", category: "SimpleSwiftDataManager")
     private let performanceMonitor = PerformanceMonitor.shared
 
@@ -19,9 +23,9 @@ final class SimpleSwiftDataManager: ObservableObject {
     private let batchSize = 50
     private let maxLoadLimit = 500
 
-    init() throws {
+    init(autoMigrateFromJSON: Bool = true) throws {
         // Setup SwiftData container
-        let schema = Schema([NoteEntity.self, TagEntity.self])
+        let schema = Schema([NoteEntity.self, TagEntity.self, FolderEntity.self])
         let configuration = ModelConfiguration(
             schema: schema,
             isStoredInMemoryOnly: false,
@@ -31,6 +35,7 @@ final class SimpleSwiftDataManager: ObservableObject {
         self.modelContainer = try ModelContainer(for: schema, configurations: [configuration])
         self.modelContext = ModelContext(modelContainer)
         self.backgroundContext = ModelContext(modelContainer)
+        self.shouldAutoMigrateFromJSON = autoMigrateFromJSON
 
         // Configure main context for UI
         modelContext.autosaveEnabled = true
@@ -38,19 +43,42 @@ final class SimpleSwiftDataManager: ObservableObject {
         // Configure background context for performance
         backgroundContext.autosaveEnabled = false
 
-        // Load initial data with limit
-        loadNotes()
+        // Load initial data with deterministic readiness sequencing
+        hasLoadedInitialNotes = false
+        hasCompletedMigrationCheck = false
+        loadFolders()
 
-        // Auto-migrate from JSON if exists and SwiftData is empty
+        // Auto-migrate from JSON if enabled, then load notes for initial UI state
         Task {
-            await autoMigrateFromJSONIfNeeded()
+            if self.shouldAutoMigrateFromJSON {
+                await self.autoMigrateFromJSONIfNeeded()
+            } else {
+                self.hasCompletedMigrationCheck = true
+            }
+
+            self.loadNotes(isInitialLoad: true)
         }
     }
 
     // MARK: - Basic Operations
 
-    private func loadNotes() {
+    private func fetchNotesFromStore(limit: Int? = nil) throws -> [Note] {
+        var descriptor = FetchDescriptor<NoteEntity>(
+            sortBy: [SortDescriptor(\.modifiedAt, order: .reverse)]
+        )
+        if let limit {
+            descriptor.fetchLimit = limit
+        }
+        return try modelContext.fetch(descriptor).map { $0.toNote() }
+    }
+
+    private func loadNotes(isInitialLoad: Bool = false) {
         Task {
+            defer {
+                if isInitialLoad {
+                    self.hasLoadedInitialNotes = true
+                }
+            }
             do {
                 self.notes = try await performanceMonitor.trackSwiftDataOperation(
                     operation: .fetch,
@@ -59,11 +87,8 @@ final class SimpleSwiftDataManager: ObservableObject {
                     var descriptor = FetchDescriptor<NoteEntity>(
                         sortBy: [SortDescriptor(\.modifiedAt, order: .reverse)]
                     )
-                    // Limit initial load for better performance
                     descriptor.fetchLimit = self.maxLoadLimit
-
-                    let noteEntities = try modelContext.fetch(descriptor)
-                    let notes = noteEntities.map { $0.toNote() }
+                    let notes = try modelContext.fetch(descriptor).map { $0.toNote() }
 
                     await MainActor.run {
                         logger.info("Loaded \(notes.count) notes from SwiftData (limited to \(self.maxLoadLimit))")
@@ -80,8 +105,30 @@ final class SimpleSwiftDataManager: ObservableObject {
         }
     }
 
-    func addNote(title: String = "Untitled", content: String = "", tags: [String] = []) -> Note {
+    private func loadFolders() {
+        do {
+            let descriptor = FetchDescriptor<FolderEntity>(
+                sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+            )
+            let folderEntities = try modelContext.fetch(descriptor)
+            folders = folderEntities.map { $0.toFolder() }
+        } catch {
+            logger.error("Failed to load folders: \(error)")
+            folders = []
+        }
+    }
+
+    func addNote(
+        title: String = "Untitled",
+        content: String = "",
+        tags: [String] = [],
+        folderID: UUID? = nil
+    ) -> Note {
         let noteEntity = NoteEntity(title: title, content: content)
+        noteEntity.folderID = folderID
+        if folderID != nil {
+            noteEntity.isPinned = false
+        }
         noteEntity.setTags(tags, in: modelContext)
 
         modelContext.insert(noteEntity)
@@ -95,7 +142,7 @@ final class SimpleSwiftDataManager: ObservableObject {
         } catch {
             logger.error("Failed to add note: \(error)")
             // Return a temporary note for error handling
-            return Note(title: title, content: content, tags: tags)
+            return Note(title: title, content: content, tags: tags, folderID: folderID)
         }
     }
 
@@ -112,13 +159,19 @@ final class SimpleSwiftDataManager: ObservableObject {
 
             noteEntity.updateTitle(updatedNote.title)
             noteEntity.updateContent(updatedNote.content)
+            noteEntity.folderID = updatedNote.folderID
+            noteEntity.isPinned = updatedNote.folderID == nil ? updatedNote.isPinned : false
             noteEntity.setTags(updatedNote.tags, in: modelContext)
 
             try modelContext.save()
 
             // Update local array
             if let index = notes.firstIndex(where: { $0.id == updatedNote.id }) {
-                notes[index] = updatedNote
+                var localNote = updatedNote
+                if localNote.folderID != nil {
+                    localNote.isPinned = false
+                }
+                notes[index] = localNote
             }
 
             logger.info("Updated note: \(updatedNote.title)")
@@ -150,6 +203,34 @@ final class SimpleSwiftDataManager: ObservableObject {
         }
     }
 
+    @discardableResult
+    func deleteNotes(ids: Set<UUID>) -> Int {
+        guard !ids.isEmpty else { return 0 }
+
+        do {
+            let descriptor = FetchDescriptor<NoteEntity>()
+            let entities = try modelContext.fetch(descriptor)
+            let toDelete = entities.filter { ids.contains($0.id) }
+
+            guard !toDelete.isEmpty else {
+                logger.warning("No matching notes found for batch delete")
+                return 0
+            }
+
+            for entity in toDelete {
+                modelContext.delete(entity)
+            }
+
+            try modelContext.save()
+            notes.removeAll { ids.contains($0.id) }
+            logger.info("Deleted \(toDelete.count) notes in batch")
+            return toDelete.count
+        } catch {
+            logger.error("Failed to batch delete notes: \(error)")
+            return 0
+        }
+    }
+
     func togglePin(id: UUID) {
         do {
             let predicate = #Predicate<NoteEntity> { $0.id == id }
@@ -158,6 +239,11 @@ final class SimpleSwiftDataManager: ObservableObject {
 
             guard let noteEntity = entities.first else {
                 logger.warning("Note with ID \(id) not found for toggle pin")
+                return
+            }
+
+            if noteEntity.folderID != nil {
+                logger.info("Ignoring pin toggle for note in folder: \(id)")
                 return
             }
 
@@ -198,6 +284,163 @@ final class SimpleSwiftDataManager: ObservableObject {
 
         } catch {
             logger.error("Failed to replace all notes: \(error)")
+        }
+    }
+
+    // MARK: - Folder Operations
+
+    @discardableResult
+    func createFolder(name: String) -> Folder? {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        let entity = FolderEntity(name: trimmed)
+        modelContext.insert(entity)
+
+        do {
+            try modelContext.save()
+            let folder = entity.toFolder()
+            folders.insert(folder, at: 0)
+            return folder
+        } catch {
+            logger.error("Failed to create folder: \(error)")
+            return nil
+        }
+    }
+
+    func renameFolder(id: UUID, name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        do {
+            let predicate = #Predicate<FolderEntity> { $0.id == id }
+            let descriptor = FetchDescriptor(predicate: predicate)
+            let entities = try modelContext.fetch(descriptor)
+            guard let entity = entities.first else {
+                logger.warning("Folder with ID \(id) not found for rename")
+                return
+            }
+
+            entity.rename(to: trimmed)
+            try modelContext.save()
+
+            if let index = folders.firstIndex(where: { $0.id == id }) {
+                folders[index].name = trimmed
+                folders[index].modifiedAt = entity.modifiedAt
+            }
+        } catch {
+            logger.error("Failed to rename folder: \(error)")
+        }
+    }
+
+    func deleteFolder(id: UUID) {
+        do {
+            let folderPredicate = #Predicate<FolderEntity> { $0.id == id }
+            let folderDescriptor = FetchDescriptor(predicate: folderPredicate)
+            let folderEntities = try modelContext.fetch(folderDescriptor)
+            guard let folderEntity = folderEntities.first else {
+                logger.warning("Folder with ID \(id) not found for deletion")
+                return
+            }
+
+            let notePredicate = #Predicate<NoteEntity> { $0.folderID == id }
+            let noteDescriptor = FetchDescriptor(predicate: notePredicate)
+            let noteEntities = try modelContext.fetch(noteDescriptor)
+
+            for noteEntity in noteEntities {
+                noteEntity.folderID = nil
+            }
+
+            modelContext.delete(folderEntity)
+            try modelContext.save()
+
+            folders.removeAll { $0.id == id }
+            for index in notes.indices where notes[index].folderID == id {
+                notes[index].folderID = nil
+            }
+        } catch {
+            logger.error("Failed to delete folder: \(error)")
+        }
+    }
+
+    @discardableResult
+    func createFolder(withNoteID noteID: UUID, name: String) -> Folder? {
+        guard let folder = createFolder(name: name) else {
+            return nil
+        }
+
+        _ = moveNote(id: noteID, toFolderID: folder.id)
+        return folder
+    }
+
+    @discardableResult
+    func moveNote(id: UUID, toFolderID folderID: UUID?) -> Bool {
+        do {
+            let predicate = #Predicate<NoteEntity> { $0.id == id }
+            let descriptor = FetchDescriptor(predicate: predicate)
+            let entities = try modelContext.fetch(descriptor)
+
+            guard let noteEntity = entities.first else {
+                logger.warning("Note with ID \(id) not found for move")
+                return false
+            }
+
+            noteEntity.folderID = folderID
+            if folderID != nil {
+                noteEntity.isPinned = false
+            }
+
+            try modelContext.save()
+
+            if let index = notes.firstIndex(where: { $0.id == id }) {
+                notes[index].folderID = folderID
+                if folderID != nil {
+                    notes[index].isPinned = false
+                }
+            }
+
+            return true
+        } catch {
+            logger.error("Failed to move note: \(error)")
+            return false
+        }
+    }
+
+    @discardableResult
+    func moveNotes(ids: Set<UUID>, toFolderID folderID: UUID?) -> Int {
+        guard !ids.isEmpty else { return 0 }
+
+        do {
+            let descriptor = FetchDescriptor<NoteEntity>()
+            let entities = try modelContext.fetch(descriptor)
+            let toMove = entities.filter { ids.contains($0.id) }
+
+            guard !toMove.isEmpty else {
+                logger.warning("No matching notes found for batch move")
+                return 0
+            }
+
+            for entity in toMove {
+                entity.folderID = folderID
+                if folderID != nil {
+                    entity.isPinned = false
+                }
+            }
+
+            try modelContext.save()
+
+            for index in notes.indices where ids.contains(notes[index].id) {
+                notes[index].folderID = folderID
+                if folderID != nil {
+                    notes[index].isPinned = false
+                }
+            }
+
+            logger.info("Moved \(toMove.count) notes in batch")
+            return toMove.count
+        } catch {
+            logger.error("Failed to batch move notes: \(error)")
+            return 0
         }
     }
 
@@ -256,6 +499,10 @@ final class SimpleSwiftDataManager: ObservableObject {
     // MARK: - Migration Helper
 
     private func autoMigrateFromJSONIfNeeded() async {
+        defer {
+            hasCompletedMigrationCheck = true
+        }
+
         // Check if SwiftData is empty
         do {
             let descriptor = FetchDescriptor<NoteEntity>()
@@ -284,6 +531,7 @@ final class SimpleSwiftDataManager: ObservableObject {
             }
 
             logger.info("Found \(jsonNotes.count) notes in JSON, starting migration...")
+            hasLoadedInitialNotes = false
 
             // Perform migration
             try await migrateFromJSON(jsonNotes)
@@ -332,14 +580,20 @@ final class SimpleSwiftDataManager: ObservableObject {
                     }
 
                     await MainActor.run {
-                        // Reload UI on main thread
-                        self.loadNotes()
-                        self.logger.info("Migration completed successfully")
+                        do {
+                            self.notes = try self.fetchNotesFromStore(limit: self.maxLoadLimit)
+                            self.logger.info("Migration completed successfully")
+                        } catch {
+                            self.notes = []
+                            self.logger.error("Migration reload failed: \(error)")
+                        }
+                        self.hasLoadedInitialNotes = true
                         continuation.resume()
                     }
                 } catch {
                     await MainActor.run {
                         self.logger.error("Migration failed: \(error)")
+                        self.hasLoadedInitialNotes = true
                         continuation.resume()
                     }
                 }
@@ -379,8 +633,15 @@ final class SimpleSwiftDataManager: ObservableObject {
             modelContext.delete(tag)
         }
 
+        let folderDescriptor = FetchDescriptor<FolderEntity>()
+        let folderEntities = try modelContext.fetch(folderDescriptor)
+        for folder in folderEntities {
+            modelContext.delete(folder)
+        }
+
         try modelContext.save()
         notes.removeAll()
+        folders.removeAll()
 
         logger.info("Cleared all SwiftData")
     }
@@ -409,6 +670,7 @@ final class SimpleSwiftDataManager: ObservableObject {
     func clearMemoryCache() {
         // Reset to initial load limit
         loadNotes()
+        loadFolders()
     }
 }
 

@@ -18,7 +18,8 @@ import UIKit
 
 struct NoteDetailView: View {
     let note: Note
-    @Binding var isPresented: Bool
+    let focusRequestID: UUID
+    let contentTopInsetAdjustment: CGFloat
     var onSave: (Note) -> Void
 
     // MARK: - Environment
@@ -29,6 +30,8 @@ struct NoteDetailView: View {
     @State private var editedTitle: String
     @State private var editedContent: String
     @State private var editedTags: [String]
+    @State private var autosaveWorkItem: DispatchWorkItem?
+    @State private var lastSavedSnapshot: DraftSnapshot
 
     static let imageTagPattern = #"\[\[image\|\|\|([^\]]+)\]\]"#
     static let imageTagRegex = try? NSRegularExpression(pattern: imageTagPattern, options: [])
@@ -38,7 +41,6 @@ struct NoteDetailView: View {
     @FocusState private var isAddingTagFocused: Bool
 
     // MARK: - UI animation state
-    @State private var isViewMaterialized = false
     @State private var glassElementsVisible = false
     @State private var hoveredTag: String?
     @State private var pressedTag: String?
@@ -75,15 +77,30 @@ struct NoteDetailView: View {
         return f
     }()
 
+    private struct DraftSnapshot: Equatable {
+        let title: String
+        let content: String
+        let tags: [String]
+    }
+
     // MARK: - Init
 
-    init(note: Note, isPresented: Binding<Bool>, onSave: @escaping (Note) -> Void) {
+    init(
+        note: Note,
+        focusRequestID: UUID,
+        contentTopInsetAdjustment: CGFloat = 0,
+        onSave: @escaping (Note) -> Void
+    ) {
         self.note = note
-        self._isPresented = isPresented
+        self.focusRequestID = focusRequestID
+        self.contentTopInsetAdjustment = contentTopInsetAdjustment
         self.onSave = onSave
         self._editedTitle = State(initialValue: note.title)
         self._editedContent = State(initialValue: note.content)
         self._editedTags = State(initialValue: note.tags)
+        self._lastSavedSnapshot = State(
+            initialValue: DraftSnapshot(title: note.title, content: note.content, tags: note.tags)
+        )
     }
 
     // MARK: - Body
@@ -123,7 +140,7 @@ struct NoteDetailView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text(noteDateString)
                             .font(FontManager.metadata(size: 11, weight: .medium))
-                            .foregroundColor(Color.primary.opacity(0.55))
+                            .foregroundColor(Color("SecondaryTextColor"))
                             .kerning(-0.25)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.bottom, 0)
@@ -149,6 +166,7 @@ struct NoteDetailView: View {
                         }
                         TodoRichTextEditor(
                             text: $editedContent,
+                            focusRequestID: focusRequestID,
                             onToolbarAction: handleEditToolAction,
                             onCommandMenuSelection: handleCommandMenuSelection
                         )
@@ -160,7 +178,7 @@ struct NoteDetailView: View {
                                 .id("menuSpacer")
                         }
                     }
-                    .padding(.top, 72)
+                    .padding(.top, 72 + contentTopInsetAdjustment)
                     .padding(.horizontal, 42)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -210,10 +228,6 @@ struct NoteDetailView: View {
                 .zIndex(15)
             }
 
-            backButton
-                .padding(.horizontal, 24)
-                .padding(.top, 16)
-                .zIndex(20)
         }
         .overlay(alignment: .bottomLeading) {
             if let previewImage = galleryPreviewImage {
@@ -257,30 +271,24 @@ struct NoteDetailView: View {
                 }
             }
         }
-        .opacity(isViewMaterialized ? 1 : 0)
-        .offset(x: isViewMaterialized ? 0 : 40)
-        .animation(.notySpring, value: isViewMaterialized)
         .onAppear {
             updateGalleryPreview(for: editedContent)
-            DispatchQueue.main.async {
-                withAnimation(.notySpring) {
-                    self.isViewMaterialized = true
-                }
-                withAnimation(.notySpring.delay(0.1)) {
-                    self.glassElementsVisible = true
-                }
-            }
+            glassElementsVisible = true
         }
         .onDisappear {
-            DispatchQueue.main.async {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
-                    self.isViewMaterialized = false
-                    self.glassElementsVisible = false
-                }
-            }
+            autosaveWorkItem?.cancel()
+            persistIfNeeded()
+            glassElementsVisible = false
+        }
+        .onChange(of: editedTitle) { _, _ in
+            scheduleAutosave()
         }
         .onChange(of: editedContent) { newValue in
             updateGalleryPreview(for: newValue)
+            scheduleAutosave()
+        }
+        .onChange(of: editedTags) { _, _ in
+            scheduleAutosave()
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("ShowCommandMenu")))
         { notification in
@@ -355,20 +363,9 @@ struct NoteDetailView: View {
                 .frame(minWidth: 800, minHeight: 600)
             #endif
         }
-        .transition(.asymmetric(
-            insertion: .move(edge: .trailing).combined(with: .opacity),
-            removal: .move(edge: .trailing).combined(with: .opacity)
-        ))
     }
 
     // MARK: - Computed Properties
-
-    private var available26: Bool {
-        if #available(iOS 26.0, macOS 26.0, *) {
-            return true
-        }
-        return false
-    }
 
     private var noteDateString: String {
         Self.dateFormatter.string(from: note.date)
@@ -381,38 +378,6 @@ struct NoteDetailView: View {
         let hasMinimalContent = editedContent.trimmingCharacters(in: .whitespacesAndNewlines)
             .isEmpty
         return hasMinimalTitle && hasMinimalContent
-    }
-
-    // MARK: - Header Components
-
-    @ViewBuilder
-    private var backButton: some View {
-        Button(action: {
-            HapticManager.shared.navigation()
-            closeNote()
-        }) {
-            Image(systemName: "chevron.left")
-                .font(FontManager.heading(size: 16, weight: .semibold))
-                .foregroundColor(Color("PrimaryTextColor"))
-                .frame(width: 32, height: 32)
-        }
-        .buttonStyle(.plain)
-        .macPointingHandCursor()
-        .if(available26) { view in
-            view.glassEffect(.regular.interactive(true), in: Circle())
-                .glassID("back-button", in: glassNamespace)
-        }
-        .if(!available26) { view in
-            view.background(.ultraThinMaterial, in: Circle())
-        }
-        .background(
-            Circle()
-                .fill(Color.clear)
-                .frame(width: 44, height: 44)
-        )
-        .contentShape(Circle().size(width: 44, height: 44))
-        .scaleEffect(glassElementsVisible ? 1 : 0.9)
-        .opacity(glassElementsVisible ? 1 : 0)
     }
 
     // MARK: - Title
@@ -435,7 +400,7 @@ struct NoteDetailView: View {
                 Image(systemName: "plus")
                     .font(FontManager.heading(size: 12, weight: .semibold))
                     .foregroundColor(
-                        isAddingTag ? Color("AccentColor") : Color("TertiaryTextColor"))
+                        isAddingTag ? Color("AccentColor") : Color("SecondaryTextColor"))
 
                 if isAddingTag {
                     TextField("New tag", text: $newTagText)
@@ -457,7 +422,7 @@ struct NoteDetailView: View {
                 } else if isNewNote {
                     Text("New tag")
                         .font(FontManager.heading(size: 12, weight: .semibold))
-                        .foregroundColor(Color("TertiaryTextColor"))
+                        .foregroundColor(Color("SecondaryTextColor"))
                         .transition(.opacity)
                 }
             }
@@ -465,9 +430,9 @@ struct NoteDetailView: View {
             .padding(.vertical, 6)
             .frame(height: 28)
             .frame(width: isAddingTag ? 128 : (isNewNote ? nil : 28))
-            .background(
+            .overlay(
                 Capsule()
-                    .fill(Color("SurfaceTranslucentColor"))
+                    .strokeBorder(Color("BorderSubtleColor"), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
             )
             .background(
                 Capsule()
@@ -555,9 +520,9 @@ struct NoteDetailView: View {
 
     private var headerTintColor: Color {
         if colorScheme == .dark {
-            return Color(red: 0.07, green: 0.07, blue: 0.08).opacity(0.96)
+            return Color(red: 0.047, green: 0.039, blue: 0.035).opacity(0.96)
         } else {
-            return Color(red: 0.97, green: 0.97, blue: 0.99).opacity(0.94)
+            return Color(red: 0.961, green: 0.961, blue: 0.957).opacity(0.94)
         }
     }
 
@@ -637,7 +602,7 @@ struct NoteDetailView: View {
                 Image(systemName: "arrow.right.circle.fill")
                     .font(FontManager.heading(size: 16, weight: .regular))
                     .foregroundColor(
-                        linkInputText.isEmpty ? Color("TertiaryTextColor") : Color("AccentColor"))
+                        linkInputText.isEmpty ? Color("SecondaryTextColor") : Color("AccentColor"))
             }
             .buttonStyle(.plain)
             .macPointingHandCursor()
@@ -656,7 +621,14 @@ struct NoteDetailView: View {
 
     // MARK: - Helpers
 
-    private func closeNote() {
+    private func persistIfNeeded() {
+        let snapshot = DraftSnapshot(
+            title: editedTitle,
+            content: editedContent,
+            tags: editedTags
+        )
+        guard snapshot != lastSavedSnapshot else { return }
+
         var updatedNote = note
         updatedNote.title = editedTitle
         updatedNote.content = editedContent
@@ -664,16 +636,16 @@ struct NoteDetailView: View {
         updatedNote.date = Date()
 
         onSave(updatedNote)
+        lastSavedSnapshot = snapshot
+    }
 
-        withAnimation(.spring(response: 0.25, dampingFraction: 0.85)) {
-            glassElementsVisible = false
-            isViewMaterialized = false
+    private func scheduleAutosave() {
+        autosaveWorkItem?.cancel()
+        let workItem = DispatchWorkItem {
+            persistIfNeeded()
         }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            guard Thread.isMainThread else { return }
-            isPresented = false
-        }
+        autosaveWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: workItem)
     }
 
     private func addTag() {

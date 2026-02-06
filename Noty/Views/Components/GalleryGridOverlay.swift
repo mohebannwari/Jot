@@ -164,7 +164,7 @@ struct GalleryGridOverlay: View {
                     .stroke(controlStrokeColor, lineWidth: 0.6)
             )
             .matchedGeometryEffect(id: "gallery-control-surface", in: controlNamespace)
-            .shadow(color: Color.black.opacity(0.22), radius: 6, x: 0, y: 5)
+            .shadow(color: Color.black.opacity(0.06), radius: 8, x: 0, y: 4)
         }
         .buttonStyle(.plain)
         .padding(.bottom, 32)
@@ -195,7 +195,7 @@ struct GalleryGridOverlay: View {
             lightboxImage(for: item.image)
                 .matchedGeometryEffect(id: item.id, in: lightboxNamespace, properties: .frame, anchor: .center)
                 .frame(width: targetSize.width, height: targetSize.height)
-                .shadow(color: Color.black.opacity(0.28), radius: 24, x: 0, y: 18)
+                .shadow(color: Color.black.opacity(0.12), radius: 24, x: 0, y: 12)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         }
         .contentShape(Rectangle())
@@ -355,7 +355,7 @@ private struct GalleryGridTile: View {
                     tileShape
                         .stroke(borderColor, lineWidth: 1)
                 )
-                .shadow(color: Color.black.opacity(0.25), radius: 16, x: 0, y: 12)
+                .shadow(color: Color.black.opacity(0.12), radius: 24, x: 0, y: 12)
         }
         .aspectRatio(1, contentMode: .fit)
     }

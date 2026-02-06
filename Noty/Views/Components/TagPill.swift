@@ -44,6 +44,7 @@ struct TagPill: View {
         .padding(.trailing, 4)
         .padding(.vertical, 6)
         .frame(height: 28)
+        .background(.ultraThinMaterial, in: Capsule())
         .background(Color("TagBackgroundColor"), in: Capsule())
         .background(
             Capsule()

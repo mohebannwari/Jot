@@ -12,62 +12,79 @@ struct BottomBar: View {
     @State private var isHoveringNewNote = false
     @State private var isHoveringTheme = false
     @EnvironmentObject var themeManager: ThemeManager
-    
+
     var body: some View {
         ZStack(alignment: .bottom) {
+            newNoteButton
+                .padding(.bottom, 18)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
 
-            // Search pill is provided by FloatingSearch; remove duplicate button
-
-            // Independent: Bottom-center New note
-            Button {
-                onNewNote()
-            } label: {
-                Image(systemName: "pencil.and.scribble")
-                    .font(FontManager.heading(size: 16, weight: .regular))
-                    .foregroundColor(Color("ButtonPrimaryTextColor"))
-                    .frame(width: 52, height: 40)
-                    .background(Color("ButtonPrimaryBgColor"), in: RoundedRectangle(cornerRadius: 20))
-                    .scaleEffect(isHoveringNewNote ? 1.05 : 1.0)
-                    .shadow(
-                        color: Color.black.opacity(isHoveringNewNote ? 0.12 : 0.08),
-                        radius: isHoveringNewNote ? 8 : 4,
-                        x: 0,
-                        y: isHoveringNewNote ? 4 : 2
-                    )
-            }
-            .buttonStyle(PlainButtonStyle())
-            .onHover { hovering in
-                isHoveringNewNote = hovering
-            }
-            .animation(.easeInOut, value: isHoveringNewNote)
-            .padding(.bottom, 18)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-
-            // Independent: Bottom-right Theme toggle
-            Button {
-                themeManager.toggleTheme()
-            } label: {
-                Image(systemName: "circle.lefthalf.filled")
-                    .font(FontManager.heading(size: 16, weight: .regular))
-                    .foregroundColor(Color("PrimaryTextColor"))
-                    .frame(width: 40, height: 40)
-                    .liquidGlass(in: Circle())
-                    .scaleEffect(isHoveringTheme ? 1.1 : 1.0)
-                    .shadow(
-                        color: Color.black.opacity(isHoveringTheme ? 0.08 : 0.05),
-                        radius: isHoveringTheme ? 6 : 3,
-                        x: 0,
-                        y: isHoveringTheme ? 3 : 1.5
-                    )
-            }
-            .buttonStyle(PlainButtonStyle())
-            .onHover { hovering in
-                isHoveringTheme = hovering
-            }
-            .animation(.easeInOut, value: isHoveringTheme)
-            .padding(.trailing, 18)
-            .padding(.bottom, 18)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+            themeToggleButton
+                .padding(.trailing, 18)
+                .padding(.bottom, 18)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
         }
+    }
+
+    // MARK: - Buttons
+
+    private var newNoteButton: some View {
+        Button {
+            onNewNote()
+        } label: {
+            ZStack {
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(.clear)
+                    .liquidGlass(in: RoundedRectangle(cornerRadius: 20))
+
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(Color("ButtonPrimaryBgColor"))
+                    .allowsHitTesting(false)
+
+                Text("New Note")
+                    .font(FontManager.heading(size: 12, weight: .medium))
+                    .foregroundColor(Color("ButtonPrimaryTextColor"))
+                    .kerning(0)
+                    .padding(.horizontal, 16)
+            }
+            .frame(height: 40)
+            .fixedSize(horizontal: true, vertical: false)
+            .scaleEffect(isHoveringNewNote ? 1.05 : 1.0)
+            .shadow(
+                color: Color.black.opacity(isHoveringNewNote ? 0.08 : 0.06),
+                radius: isHoveringNewNote ? 12 : 8,
+                x: 0,
+                y: isHoveringNewNote ? 6 : 4
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+        .onHover { hovering in
+            isHoveringNewNote = hovering
+        }
+        .animation(.easeInOut, value: isHoveringNewNote)
+    }
+
+    private var themeToggleButton: some View {
+        Button {
+            themeManager.toggleTheme()
+        } label: {
+            Image(systemName: "circle.lefthalf.filled")
+                .font(FontManager.heading(size: 16, weight: .regular))
+                .foregroundColor(Color("PrimaryTextColor"))
+                .frame(width: 40, height: 40)
+                .liquidGlass(in: Circle())
+                .scaleEffect(isHoveringTheme ? 1.1 : 1.0)
+                .shadow(
+                    color: Color.black.opacity(isHoveringTheme ? 0.08 : 0.06),
+                    radius: isHoveringTheme ? 12 : 8,
+                    x: 0,
+                    y: isHoveringTheme ? 6 : 4
+                )
+        }
+        .buttonStyle(PlainButtonStyle())
+        .onHover { hovering in
+            isHoveringTheme = hovering
+        }
+        .animation(.easeInOut, value: isHoveringTheme)
     }
 }

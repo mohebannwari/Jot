@@ -80,6 +80,9 @@ struct NotyApp: App {
         }
         #if os(macOS)
         .windowStyle(.hiddenTitleBar)
+        .commands {
+            NoteSelectionCommands()
+        }
         #endif
     }
 }

@@ -97,10 +97,10 @@ struct ExportFormatSheet: View {
         .background(Color("CardBackgroundColor"))
         .clipShape(RoundedRectangle(cornerRadius: 24))
         .shadow(
-            color: Color.black.opacity(0.1),
-            radius: 40,
+            color: Color.black.opacity(0.12),
+            radius: 24,
             x: 0,
-            y: 20
+            y: 12
         )
     }
 

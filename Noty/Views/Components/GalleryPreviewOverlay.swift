@@ -66,7 +66,7 @@ struct GalleryPreviewOverlay: View {
                     .stroke(baseStrokeColor, lineWidth: baseBorderWidth)
             }
             .rotationEffect(baseRotation)
-            .shadow(color: Color.black.opacity(0.2), radius: 10, x: 0, y: 10)
+            .shadow(color: Color.black.opacity(0.06), radius: 8, x: 0, y: 4)
     }
 
     private var imageLayer: some View {
@@ -79,7 +79,7 @@ struct GalleryPreviewOverlay: View {
                     .stroke(imageStrokeColor, lineWidth: imageBorderWidth)
             }
             .rotationEffect(imageRotation)
-            .shadow(color: Color.black.opacity(0.3), radius: 8, x: 0, y: 6)
+            .shadow(color: Color.black.opacity(0.12), radius: 12, x: 0, y: 6)
     }
 
     private var layeredContent: some View {
