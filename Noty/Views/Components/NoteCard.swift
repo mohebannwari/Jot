@@ -23,7 +23,7 @@ struct NoteCard: View {
                     // Date Badge - using SF Mono for metadata
                     HStack(spacing: 4) {
                         Image(systemName: "calendar")
-                            .font(FontManager.metadata(size: 10, weight: .regular))
+                            .font(FontManager.icon())
                             .foregroundColor(Color("TertiaryTextColor"))
                         
                         Text(dateFormatter.string(from: note.date))
@@ -41,31 +41,33 @@ struct NoteCard: View {
                         Button {
                             // Pin functionality
                         } label: {
-                            Label("Pin Note", systemImage: "pin")
+                            Label("Pin Note", image: "IconThumbtack")
                         }
 
                         Button {
                             // Move to folder functionality
                         } label: {
-                            Label("Move to Folder", systemImage: "folder")
+                            Label("Move to Folder", image: "IconFolder2")
                         }
 
                         Button {
                             showExportSheet = true
                         } label: {
-                            Label("Export Note...", systemImage: "square.and.arrow.down")
+                            Label("Export Note...", image: "export note")
                         }
 
                         Divider()
 
-                        Button("Delete", role: .destructive) {
+                        Button(role: .destructive) {
                             withAnimation(.easeInOut(duration: 0.25)) {
                                 notesManager.deleteNote(id: note.id)
                             }
+                        } label: {
+                            Label("Delete", image: "delete")
                         }
                     } label: {
                         Image(systemName: "ellipsis")
-                            .font(FontManager.heading(size: 12, weight: .regular))
+                            .font(FontManager.icon())
                             .foregroundColor(Color("TertiaryTextColor"))
                             .frame(width: 24, height: 24)
                             .tintedLiquidGlass(in: Circle(), tint: Color("SurfaceTranslucentColor"))
@@ -209,7 +211,7 @@ struct TagView: View {
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: "tag.fill")
-                .font(FontManager.heading(size: 10, weight: .regular))
+                .font(FontManager.icon())
                 .foregroundColor(Color("TagTextColor"))
 
             Text(tag)

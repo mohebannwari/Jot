@@ -30,7 +30,7 @@ public struct ImagePickerControl: View {
             showingPicker = true
         } label: {
             Image(systemName: "photo.on.rectangle.angled")
-                .font(FontManager.heading(size: 20, weight: .medium))
+                .font(FontManager.icon(weight: .medium))
                 .foregroundStyle(Color("PrimaryTextColor"))
                 .frame(width: 20, height: 20)
         }
@@ -275,4 +275,3 @@ struct ImagePicker: UIViewControllerRepresentable {
 }
 
 #endif
-

@@ -100,11 +100,20 @@ struct CommandMenuItem: View {
     var body: some View {
         HStack(spacing: 10) {
             // Tool icon - smaller size for proper scale
-            Image(systemName: tool.iconName)
-                .font(FontManager.heading(size: 13, weight: .medium))
-                .foregroundStyle(isSelected ? selectedForegroundColor : .primary)
-                .frame(width: 16, height: 16)
-                .symbolRenderingMode(.monochrome)
+            Group {
+                if let assetName = tool.iconAssetName {
+                    Image(assetName)
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
+                } else {
+                    Image(systemName: tool.iconName)
+                        .font(FontManager.icon(weight: .medium))
+                        .symbolRenderingMode(.monochrome)
+                }
+            }
+            .foregroundStyle(isSelected ? selectedForegroundColor : .primary)
+            .frame(width: 16, height: 16)
 
             // Tool name
             Text(tool.name)
@@ -139,7 +148,35 @@ struct CommandMenuItem: View {
 // MARK: - EditTool Icon Extension
 
 extension EditTool {
-    /// SF Symbol name for each tool
+    /// Custom asset icon name, nil means fall back to SF Symbol
+    var iconAssetName: String? {
+        switch self {
+        case .titleCase: return nil
+        case .h1: return "IconH1"
+        case .h2: return "IconH2"
+        case .h3: return "IconH3"
+        case .bold: return "IconBold"
+        case .italic: return "IconItalic"
+        case .underline: return "IconUnderline"
+        case .strikethrough: return "IconStrikeThrough"
+        case .bulletList: return "todo-list"
+        case .todo: return "IconTodos"
+        case .indentLeft: return "IconTextIndentLeft"
+        case .indentRight: return "IconTextIndentRight"
+        case .alignLeft: return "IconAlignmentLeft"
+        case .alignCenter: return "IconAlignmentCenter"
+        case .alignRight: return "IconAlignmentRight"
+        case .alignJustify: return "IconAlignmentJustify"
+        case .lineBreak: return "IconLinebreak"
+        case .textSelect: return "IconTextSelectDashed"
+        case .divider: return "IconDivider"
+        case .link: return "insert link"
+        case .imageUpload: return "gallery"
+        case .voiceRecord: return "mic-recording"
+        }
+    }
+
+    /// SF Symbol name for each tool (fallback)
     var iconName: String {
         switch self {
         case .titleCase: return "pencil.tip.crop.circle"

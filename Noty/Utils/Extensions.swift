@@ -126,6 +126,15 @@ extension Animation {
     static let notySmoothFast = Animation.smooth(duration: 0.2)
 }
 
+// MARK: - Folder Color Helper
+
+extension Folder {
+    var folderColor: Color {
+        guard let hex = colorHex else { return Color("SecondaryTextColor") }
+        return Color(hex: hex)
+    }
+}
+
 // MARK: - Conditional View Modifier
 
 extension View {

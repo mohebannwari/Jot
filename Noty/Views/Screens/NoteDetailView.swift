@@ -178,8 +178,8 @@ struct NoteDetailView: View {
                                 .id("menuSpacer")
                         }
                     }
-                    .padding(.top, 72 + contentTopInsetAdjustment)
-                    .padding(.horizontal, 42)
+                    .padding(.top, 48 + contentTopInsetAdjustment)
+                    .padding(.horizontal, 60)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .scrollClipDisabled()
@@ -398,7 +398,7 @@ struct NoteDetailView: View {
         HStack(alignment: .top, spacing: 6) {
             HStack(spacing: 6) {
                 Image(systemName: "plus")
-                    .font(FontManager.heading(size: 12, weight: .semibold))
+                    .font(FontManager.icon(weight: .semibold))
                     .foregroundColor(
                         isAddingTag ? Color("AccentColor") : Color("SecondaryTextColor"))
 
@@ -586,8 +586,11 @@ struct NoteDetailView: View {
 
     private var linkInputPrompt: some View {
         HStack(spacing: 8) {
-            Image(systemName: "link")
-                .font(FontManager.heading(size: 12, weight: .regular))
+            Image("insert link")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 16, height: 16)
                 .foregroundColor(Color("SecondaryTextColor"))
 
             TextField("Enter URL", text: $linkInputText)

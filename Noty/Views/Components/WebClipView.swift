@@ -17,7 +17,7 @@ struct WebClipView: View {
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: "link")
-                .font(FontManager.metadata(size: 10, weight: .medium))
+                .font(FontManager.icon(weight: .medium))
                 .foregroundStyle(foregroundColor)
 
             Text(cleanedDomain)

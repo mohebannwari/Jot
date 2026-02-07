@@ -18,7 +18,7 @@ struct AISummaryBox: View {
             // Header with AI icon and title
             HStack(spacing: 8) {
                 Image(systemName: "sparkles")
-                    .font(FontManager.heading(size: 14, weight: .medium))
+                    .font(FontManager.icon(weight: .medium))
                     .foregroundColor(Color("AccentColor"))
 
                 Text("AI Summary")
@@ -29,7 +29,7 @@ struct AISummaryBox: View {
 
                 Button(action: onDismiss) {
                     Image(systemName: "ellipsis")
-                        .font(FontManager.heading(size: 14, weight: .regular))
+                        .font(FontManager.icon())
                         .foregroundColor(Color("SecondaryTextColor"))
                 }
                 .buttonStyle(.plain)

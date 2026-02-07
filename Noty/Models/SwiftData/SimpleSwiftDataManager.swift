@@ -8,6 +8,7 @@ import OSLog
 final class SimpleSwiftDataManager: ObservableObject {
 
     @Published var notes: [Note] = []
+    @Published var archivedNotes: [Note] = []
     @Published var folders: [Folder] = []
     @Published private(set) var hasLoadedInitialNotes = false
     @Published private(set) var hasCompletedMigrationCheck = false
@@ -63,7 +64,9 @@ final class SimpleSwiftDataManager: ObservableObject {
     // MARK: - Basic Operations
 
     private func fetchNotesFromStore(limit: Int? = nil) throws -> [Note] {
+        let predicate = #Predicate<NoteEntity> { $0.isArchived == false }
         var descriptor = FetchDescriptor<NoteEntity>(
+            predicate: predicate,
             sortBy: [SortDescriptor(\.modifiedAt, order: .reverse)]
         )
         if let limit {
@@ -84,7 +87,9 @@ final class SimpleSwiftDataManager: ObservableObject {
                     operation: .fetch,
                     recordCount: 0
                 ) {
+                    let predicate = #Predicate<NoteEntity> { $0.isArchived == false }
                     var descriptor = FetchDescriptor<NoteEntity>(
+                        predicate: predicate,
                         sortBy: [SortDescriptor(\.modifiedAt, order: .reverse)]
                     )
                     descriptor.fetchLimit = self.maxLoadLimit
@@ -102,6 +107,23 @@ final class SimpleSwiftDataManager: ObservableObject {
                     self.notes = []
                 }
             }
+        }
+    }
+
+    func loadArchivedNotes() {
+        do {
+            let predicate = #Predicate<NoteEntity> { $0.isArchived == true }
+            var descriptor = FetchDescriptor<NoteEntity>(
+                predicate: predicate,
+                sortBy: [SortDescriptor(\.modifiedAt, order: .reverse)]
+            )
+            descriptor.fetchLimit = maxLoadLimit
+            let fetched = try modelContext.fetch(descriptor).map { $0.toNote() }
+            archivedNotes = fetched
+            logger.info("Loaded \(fetched.count) archived notes")
+        } catch {
+            logger.error("Failed to load archived notes: \(error)")
+            archivedNotes = []
         }
     }
 
@@ -231,6 +253,69 @@ final class SimpleSwiftDataManager: ObservableObject {
         }
     }
 
+    // MARK: - Archive Operations
+
+    @discardableResult
+    func archiveNotes(ids: Set<UUID>) -> Int {
+        guard !ids.isEmpty else { return 0 }
+
+        do {
+            let descriptor = FetchDescriptor<NoteEntity>()
+            let entities = try modelContext.fetch(descriptor)
+            let toArchive = entities.filter { ids.contains($0.id) && !$0.isArchived }
+
+            guard !toArchive.isEmpty else {
+                logger.warning("No matching unarchived notes found for batch archive")
+                return 0
+            }
+
+            for entity in toArchive {
+                entity.isArchived = true
+                entity.modifiedAt = Date()
+            }
+
+            try modelContext.save()
+            notes.removeAll { ids.contains($0.id) }
+            loadArchivedNotes()
+            logger.info("Archived \(toArchive.count) notes in batch")
+            return toArchive.count
+        } catch {
+            logger.error("Failed to batch archive notes: \(error)")
+            return 0
+        }
+    }
+
+    @discardableResult
+    func unarchiveNotes(ids: Set<UUID>) -> Int {
+        guard !ids.isEmpty else { return 0 }
+
+        do {
+            let predicate = #Predicate<NoteEntity> { $0.isArchived == true }
+            let descriptor = FetchDescriptor<NoteEntity>(predicate: predicate)
+            let entities = try modelContext.fetch(descriptor)
+            let toUnarchive = entities.filter { ids.contains($0.id) }
+
+            guard !toUnarchive.isEmpty else {
+                logger.warning("No matching archived notes found for batch unarchive")
+                return 0
+            }
+
+            for entity in toUnarchive {
+                entity.isArchived = false
+                entity.modifiedAt = Date()
+            }
+
+            try modelContext.save()
+            archivedNotes.removeAll { ids.contains($0.id) }
+            loadNotes()
+            logger.info("Unarchived \(toUnarchive.count) notes in batch")
+            return toUnarchive.count
+        } catch {
+            logger.error("Failed to batch unarchive notes: \(error)")
+            return 0
+        }
+    }
+
     func togglePin(id: UUID) {
         do {
             let predicate = #Predicate<NoteEntity> { $0.id == id }
@@ -290,11 +375,11 @@ final class SimpleSwiftDataManager: ObservableObject {
     // MARK: - Folder Operations
 
     @discardableResult
-    func createFolder(name: String) -> Folder? {
+    func createFolder(name: String, colorHex: String? = nil) -> Folder? {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
-        let entity = FolderEntity(name: trimmed)
+        let entity = FolderEntity(name: trimmed, colorHex: colorHex)
         modelContext.insert(entity)
 
         do {

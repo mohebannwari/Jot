@@ -911,19 +911,15 @@ struct TodoRichTextEditor: View {
             private static let textFont = FontManager.bodyNS(size: 16, weight: .regular)
             private static let baseLineHeight: CGFloat = 24
             private static let todoLineHeight: CGFloat = 24
-            private static let checkboxIconSize: CGFloat = 24  // 24x24 pixels for better visibility
+            private static let checkboxIconSize: CGFloat = 18
             private static let baseBaselineOffset: CGFloat = 0.0
             private static let todoBaselineOffset: CGFloat = {
-                // Don't offset the text baseline
                 return 0.0
             }()
             private static let checkboxAttachmentYOffset: CGFloat = {
-                // With cellBaselineOffset override, we use 0 for bounds.origin.y
-                // The cell's baseline offset method handles all positioning
                 return 0.0
             }()
             private static let checkboxBaselineOffset: CGFloat = {
-                // No additional baseline adjustment needed
                 return 0.0
             }()
             private static let webClipMarkupPrefix = "[[webclip|"
@@ -3602,7 +3598,7 @@ struct TodoRichTextEditor: View {
 
     private final class TodoCheckboxAttachmentCell: NSTextAttachmentCell {
         var isChecked: Bool
-        private let size = NSSize(width: 24, height: 24)  // 24x24 pixels
+        private let size = NSSize(width: 18, height: 18)
 
         init(isChecked: Bool = false) {
             self.isChecked = isChecked
@@ -3679,7 +3675,7 @@ struct TodoRichTextEditor: View {
 
             // Use SF Symbols for perfect alignment and consistency
             let symbolName = isChecked ? "checkmark.circle.fill" : "circle"
-            let config = NSImage.SymbolConfiguration(pointSize: 24, weight: .regular)
+            let config = NSImage.SymbolConfiguration(pointSize: 18, weight: .regular)
 
             // Create the image with proper configuration
             guard
@@ -3966,24 +3962,18 @@ struct TodoRichTextEditor: View {
             private static let textFont = FontManager.bodyUI(size: 16, weight: .regular)
             private static let baseLineHeight: CGFloat = 24
             private static let todoLineHeight: CGFloat = 24
-            private static let checkboxIconSize: CGFloat = 24  // 24x24 pixels for better visibility
+            private static let checkboxIconSize: CGFloat = 18
             private static let baseBaselineOffset: CGFloat = 0.0
             private static let todoBaselineOffset: CGFloat = {
-                // Don't offset the text baseline
                 return 0.0
             }()
             private static let checkboxAttachmentYOffset: CGFloat = {
-                // Use font metrics for perfect alignment
-                // Center the checkbox with the cap height (height of capital letters)
-                // Formula from Apple docs: (capHeight - imageHeight) / 2
-                // Use Charter for body text alignment calculations
                 let font = FontManager.bodyUI(size: 16, weight: .regular)
-                let checkboxHeight: CGFloat = 24
+                let checkboxHeight: CGFloat = 18
                 let offset = (font.capHeight - checkboxHeight) / 2
                 return offset
             }()
             private static let checkboxBaselineOffset: CGFloat = {
-                // No additional baseline adjustment needed
                 return 0.0
             }()
 
@@ -4909,7 +4899,7 @@ struct TodoRichTextEditor: View {
 
                 // Use SF Symbols for perfect alignment and consistency
                 let symbolName = isChecked ? "checkmark.circle.fill" : "circle"
-                let config = UIImage.SymbolConfiguration(pointSize: 24, weight: .regular)
+                let config = UIImage.SymbolConfiguration(pointSize: 18, weight: .regular)
                 let image = UIImage(systemName: symbolName, withConfiguration: config)
 
                 // Apply appropriate color based on state and color scheme

@@ -10,11 +10,38 @@ import SwiftUI
 struct FileAttachmentTagView: View {
     let label: String
 
+    private var assetIconName: String? {
+        switch label.lowercased() {
+        case "image": return "gallery"
+        default: return nil
+        }
+    }
+
+    private var systemIconName: String {
+        switch label.lowercased() {
+        case "pdf": return "doc.richtext"
+        case "audio": return "waveform"
+        case "video": return "play.rectangle"
+        default: return "doc"
+        }
+    }
+
     var body: some View {
         HStack(spacing: 4) {
-            Image(systemName: iconName)
-                .font(FontManager.metadata(size: 10, weight: .medium))
-                .foregroundStyle(foregroundColor)
+            Group {
+                if let assetName = assetIconName {
+                    Image(assetName)
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
+                } else {
+                    Image(systemName: systemIconName)
+                        .font(FontManager.icon(weight: .medium))
+                }
+            }
+            .foregroundStyle(foregroundColor)
+            .frame(width: 12, height: 12)
+
             Text(label.lowercased())
                 .font(FontManager.metadata(size: 10, weight: .medium))
                 .foregroundStyle(foregroundColor)
@@ -25,21 +52,6 @@ struct FileAttachmentTagView: View {
         .background(backgroundColor, in: Capsule())
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(label.uppercased()) attachment")
-    }
-
-    private var iconName: String {
-        switch label.lowercased() {
-        case "pdf":
-            return "doc.richtext"
-        case "image":
-            return "photo"
-        case "audio":
-            return "waveform"
-        case "video":
-            return "play.rectangle"
-        default:
-            return "doc"
-        }
     }
 
     private var foregroundColor: Color {

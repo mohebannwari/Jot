@@ -73,13 +73,14 @@ struct NotyApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .frame(minWidth: 815, minHeight: 600)
                 .environmentObject(notesManager)
                 .environmentObject(themeManager)
-                .preferredColorScheme(themeManager.currentTheme.colorScheme)
                 .containerShape(.rect(cornerRadius: 16))
         }
         #if os(macOS)
         .windowStyle(.hiddenTitleBar)
+        .windowBackgroundDragBehavior(.disabled)
         .commands {
             NoteSelectionCommands()
         }

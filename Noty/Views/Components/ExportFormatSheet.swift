@@ -56,7 +56,7 @@ struct ExportFormatSheet: View {
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: "square.and.arrow.down")
-                        .font(FontManager.heading(size: 14, weight: .semibold))
+                        .font(FontManager.icon(weight: .semibold))
 
                     Text("Export")
                         .font(FontManager.heading(size: 16, weight: .semibold))
@@ -130,7 +130,7 @@ struct FormatButton: View {
             HStack(spacing: 12) {
                 // Icon
                 Image(systemName: format.systemImage)
-                    .font(FontManager.heading(size: 20, weight: .regular))
+                    .font(FontManager.icon())
                     .foregroundColor(isSelected ? Color("PrimaryTextColor") : Color("SecondaryTextColor"))
                     .frame(width: 24, height: 24)
 

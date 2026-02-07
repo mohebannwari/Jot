@@ -107,6 +107,13 @@ struct FontManager {
     static func metadata(size: CGFloat = 12, weight: Weight = .medium) -> Font {
         return Font.system(size: size, weight: weight.toSwiftUIWeight(), design: .monospaced)
     }
+
+    // MARK: - Icon Fonts
+
+    /// Standard icon font for UI/action symbols across the app.
+    static func icon(size: CGFloat = 16, weight: Weight = .regular) -> Font {
+        Font.system(size: size, weight: weight.toSwiftUIWeight(), design: .default)
+    }
     
     #if os(macOS)
     /// NSFont version for AppKit metadata
@@ -175,4 +182,3 @@ struct FontManager {
         }
     }
 }
-

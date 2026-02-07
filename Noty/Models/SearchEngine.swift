@@ -17,6 +17,7 @@ final class SearchEngine: ObservableObject {
     
     // Outputs
     @Published private(set) var results: [SearchHit] = []
+    @Published private(set) var recentQueries: [String]
     
     // Data
     private var allNotes: [Note] = []
@@ -24,8 +25,22 @@ final class SearchEngine: ObservableObject {
     // Internals
     private var cancellables = Set<AnyCancellable>()
     private let debounceMs: Int = 250
+    private let maxRecentQueries = 3
+    private let userDefaults: UserDefaults
+    private let recentQueriesKey: String
     
-    init() {
+    init(
+        userDefaults: UserDefaults = .standard,
+        recentQueriesKey: String = "SearchEngine.recentQueries"
+    ) {
+        self.userDefaults = userDefaults
+        self.recentQueriesKey = recentQueriesKey
+        let persistedQueries = userDefaults.stringArray(forKey: recentQueriesKey) ?? []
+        self.recentQueries = SearchEngine.normalizedRecentQueries(
+            persistedQueries,
+            maxCount: maxRecentQueries
+        )
+
         $query
             .removeDuplicates()
             .debounce(for: .milliseconds(debounceMs), scheduler: RunLoop.main)
@@ -37,6 +52,17 @@ final class SearchEngine: ObservableObject {
         allNotes = notes
         performSearch()
     }
+
+    func recordCommittedQuery(_ rawQuery: String) {
+        let trimmed = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        recentQueries = SearchEngine.normalizedRecentQueries(
+            [trimmed] + recentQueries,
+            maxCount: maxRecentQueries
+        )
+        userDefaults.set(recentQueries, forKey: recentQueriesKey)
+    }
     
     private func performSearch() {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -47,17 +73,18 @@ final class SearchEngine: ObservableObject {
         let lower = trimmed.lowercased()
         let tagQuery = lower.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
         let hasDistinctTagQuery = tagQuery != lower && !tagQuery.isEmpty
+        let searchOptions: String.CompareOptions = [.caseInsensitive, .diacriticInsensitive]
         let hits = allNotes.compactMap { note -> SearchHit? in
             var score = 0
             var matchType: MatchType = .content
             var titleRange: Range<String.Index>?
             var contentRange: Range<String.Index>?
             
-            if let r = note.title.lowercased().range(of: lower) {
+            if let r = note.title.range(of: trimmed, options: searchOptions) {
                 score += 100
                 matchType = .title
                 titleRange = r
-            } else if hasDistinctTagQuery, let r = note.title.lowercased().range(of: tagQuery) {
+            } else if hasDistinctTagQuery, let r = note.title.range(of: tagQuery, options: searchOptions) {
                 score += 100
                 matchType = .title
                 titleRange = r
@@ -70,10 +97,10 @@ final class SearchEngine: ObservableObject {
                 if matchType == .content { matchType = .tag }
             }
 
-            if let r = note.content.lowercased().range(of: lower) {
+            if let r = note.content.range(of: trimmed, options: searchOptions) {
                 score += 10
                 if matchType == .content { contentRange = r }
-            } else if hasDistinctTagQuery, let r = note.content.lowercased().range(of: tagQuery) {
+            } else if hasDistinctTagQuery, let r = note.content.range(of: tagQuery, options: searchOptions) {
                 score += 10
                 if matchType == .content { contentRange = r }
             }
@@ -85,6 +112,25 @@ final class SearchEngine: ObservableObject {
             return lhs.note.date > rhs.note.date
         }
         results = Array(hits.prefix(20))
+    }
+
+    private static func normalizedRecentQueries(_ queries: [String], maxCount: Int) -> [String] {
+        var normalized: [String] = []
+        for query in queries {
+            let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+
+            let isDuplicate = normalized.contains {
+                $0.compare(trimmed, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+            }
+            guard !isDuplicate else { continue }
+
+            normalized.append(trimmed)
+            if normalized.count == maxCount {
+                break
+            }
+        }
+        return normalized
     }
 }
 
@@ -114,4 +160,3 @@ struct SearchHit: Identifiable, Equatable {
 }
 
 enum MatchType { case title, content, tag }
-

@@ -18,6 +18,7 @@ struct FolderSection: View {
     let onMoveNotesToFolder: (Set<UUID>, UUID?) -> Void
     let onTogglePinForNotes: (Set<UUID>, Bool) -> Void
     let onExportNotes: (Set<UUID>) -> Void
+    var onArchiveNotes: ((Set<UUID>) -> Void)? = nil
     let onCreateNoteInFolder: (UUID) -> Void
     let onRenameFolder: (Folder) -> Void
     let onDeleteFolder: (Folder) -> Void
@@ -25,9 +26,10 @@ struct FolderSection: View {
 
     @State private var hoveredFolderID: UUID?
     @State private var dropTargetFolderID: UUID?
+    private let rowHoverHorizontalInset: CGFloat = 8
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 2) {
             ForEach(folders, id: \.id) { folder in
                 VStack(alignment: .leading, spacing: 6) {
                     folderRow(folder)
@@ -45,24 +47,20 @@ struct FolderSection: View {
         let isHovered = hoveredFolderID == folder.id
         let isDropTarget = dropTargetFolderID == folder.id
         let shouldShowActions = isHovered
-        let leadingSymbol: String = {
-            if isExpanded {
-                return isHovered ? "chevron.down" : "folder.fill"
-            }
-            return isHovered ? "chevron.right" : "folder"
-        }()
-        let leadingSymbolWeight: Font.Weight = leadingSymbol.hasPrefix("chevron") ? .semibold : .regular
-        let leadingSymbolSize: CGFloat = leadingSymbol.hasPrefix("chevron") ? 11 : 16
+        let leadingAsset = isExpanded ? "IconFolderOpen" : "IconFolder2"
 
         return HStack(spacing: 8) {
-            Image(systemName: leadingSymbol)
-                .font(.system(size: leadingSymbolSize, weight: leadingSymbolWeight))
-                .foregroundColor(.primary)
-                .frame(width: 16)
+            Image(leadingAsset)
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .foregroundColor(folder.folderColor)
+                .frame(width: 16, height: 16)
 
             Text(folder.name)
-                .font(FontManager.heading(size: 16, weight: .medium))
-                .foregroundColor(.primary)
+                .font(FontManager.heading(size: 13, weight: .medium))
+                .foregroundColor(Color("PrimaryTextColor"))
+                .tracking(-0.4)
                 .lineLimit(1)
                 .truncationMode(.tail)
 
@@ -74,14 +72,14 @@ struct FolderSection: View {
                         HapticManager.shared.buttonTap()
                         onCreateNoteInFolder(folder.id)
                     } label: {
-                        Label("Create New Notes", systemImage: "square.and.pencil")
+                        Label("Create New Notes", image: "IconNoteText")
                     }
 
                     Button {
                         HapticManager.shared.buttonTap()
                         onRenameFolder(folder)
                     } label: {
-                        Label("Rename Folder", systemImage: "pencil")
+                        Label("Rename Folder", image: "rename note")
                     }
 
                     Divider()
@@ -90,13 +88,13 @@ struct FolderSection: View {
                         HapticManager.shared.buttonTap()
                         onDeleteFolder(folder)
                     } label: {
-                        Label("Delete Folder", systemImage: "trash")
+                        Label("Delete Folder", image: "delete")
                     }
                 } label: {
                     Image(systemName: "ellipsis")
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundColor(Color("SecondaryTextColor"))
-                        .frame(width: 18, height: 18)
+                        .frame(width: 16, height: 16)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -105,10 +103,12 @@ struct FolderSection: View {
                     HapticManager.shared.buttonTap()
                     onCreateNoteInFolder(folder.id)
                 } label: {
-                    Image(systemName: "square.and.pencil")
-                        .font(.system(size: 16, weight: .semibold))
+                    Image("IconNoteText")
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
                         .foregroundColor(Color("SecondaryTextColor"))
-                        .frame(width: 20, height: 20)
+                        .frame(width: 16, height: 16)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -116,11 +116,13 @@ struct FolderSection: View {
             .opacity(shouldShowActions ? 1 : 0)
             .allowsHitTesting(shouldShowActions)
         }
-        .padding(.horizontal, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
         .padding(.vertical, 8)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(rowBackgroundColor(isDropTarget: isDropTarget, isHovered: isHovered))
+                .padding(.horizontal, rowHoverHorizontalInset)
         )
         .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .onTapGesture {
@@ -141,14 +143,14 @@ struct FolderSection: View {
                 HapticManager.shared.buttonTap()
                 onCreateNoteInFolder(folder.id)
             } label: {
-                Label("Create New Notes", systemImage: "square.and.pencil")
+                Label("Create New Notes", image: "IconNoteText")
             }
 
             Button {
                 HapticManager.shared.buttonTap()
                 onRenameFolder(folder)
             } label: {
-                Label("Rename Folder", systemImage: "pencil")
+                Label("Rename Folder", image: "rename note")
             }
 
             Divider()
@@ -157,7 +159,7 @@ struct FolderSection: View {
                 HapticManager.shared.buttonTap()
                 onDeleteFolder(folder)
             } label: {
-                Label("Delete Folder", systemImage: "trash")
+                Label("Delete Folder", image: "delete")
             }
         }
         .dropDestination(for: NoteDragItem.self) { items, _ in
@@ -196,6 +198,11 @@ struct FolderSection: View {
                     NoteListCard(
                         note: note,
                         isSelected: selectedNoteIDs.contains(note.id),
+                        leadingIconAssetName: "IconThumbtack",
+                        showLeadingIconOnHoverOnly: true,
+                        onLeadingIconTap: {
+                            onTogglePinForNotes(contextSelection(for: note), !note.isPinned)
+                        },
                         onTap: { interaction in onOpenNote(note, interaction) },
                         onTogglePin: { shouldPin in
                             onTogglePinForNotes(contextSelection(for: note), shouldPin)
@@ -208,9 +215,9 @@ struct FolderSection: View {
                         onMoveToFolder: { folderID in
                             onMoveNotesToFolder(contextSelection(for: note), folderID)
                         },
-                        onExport: { onExportNotes(contextSelection(for: note)) }
+                        onExport: { onExportNotes(contextSelection(for: note)) },
+                        onArchive: onArchiveNotes != nil ? { onArchiveNotes?(contextSelection(for: note)) } : nil
                     )
-                    .padding(.leading, 24)
                 }
 
                 if notes.count > 5 {

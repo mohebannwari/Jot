@@ -15,13 +15,15 @@ struct Note: Identifiable, Codable, Equatable {
     var tags: [String]
     var isPinned: Bool = false
     var folderID: UUID?
+    var isArchived: Bool = false
 
     init(
         title: String,
         content: String,
         tags: [String] = [],
         isPinned: Bool = false,
-        folderID: UUID? = nil
+        folderID: UUID? = nil,
+        isArchived: Bool = false
     ) {
         self.id = UUID()
         self.title = title
@@ -30,5 +32,6 @@ struct Note: Identifiable, Codable, Equatable {
         self.tags = tags
         self.isPinned = isPinned
         self.folderID = folderID
+        self.isArchived = isArchived
     }
 }

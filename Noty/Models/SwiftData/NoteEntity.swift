@@ -10,6 +10,7 @@ final class NoteEntity {
     var createdAt: Date
     var modifiedAt: Date
     var isPinned: Bool = false
+    var isArchived: Bool = false
     var folderID: UUID?
 
     // MARK: - Relationships
@@ -74,6 +75,7 @@ final class NoteEntity {
         createdAt: Date,
         modifiedAt: Date,
         isPinned: Bool = false,
+        isArchived: Bool = false,
         folderID: UUID? = nil
     ) {
         self.id = UUID()
@@ -82,6 +84,7 @@ final class NoteEntity {
         self.createdAt = createdAt
         self.modifiedAt = modifiedAt
         self.isPinned = isPinned
+        self.isArchived = isArchived
         self.folderID = folderID
         self.webClipURL = nil
         self.webClipTitle = nil
@@ -101,6 +104,7 @@ final class NoteEntity {
             createdAt: note.date,
             modifiedAt: note.date,
             isPinned: note.isPinned,
+            isArchived: note.isArchived,
             folderID: note.folderID
         )
         self.id = note.id
@@ -215,7 +219,7 @@ final class NoteEntity {
 
     // MARK: - Export/Conversion
     func toNote() -> Note {
-        var note = Note(title: title, content: content, tags: tagNames, isPinned: isPinned, folderID: folderID)
+        var note = Note(title: title, content: content, tags: tagNames, isPinned: isPinned, folderID: folderID, isArchived: isArchived)
         note.id = id
         note.date = modifiedAt
         return note

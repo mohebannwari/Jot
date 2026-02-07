@@ -20,7 +20,7 @@ struct TagPill: View {
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: "tag.fill")
-                .font(FontManager.heading(size: 10, weight: .regular))
+                .font(FontManager.icon())
                 .foregroundColor(Color("TagTextColor"))
             Text(text)
                 .font(FontManager.heading(size: 12, weight: .medium))
@@ -32,7 +32,7 @@ struct TagPill: View {
                 onRemove()
             }) {
                 Image(systemName: "xmark")
-                    .font(FontManager.heading(size: 8, weight: .bold))
+                    .font(FontManager.icon(weight: .bold))
                     .foregroundColor(Color("TagTextColor"))
                     .opacity(0.7)
             }

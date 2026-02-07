@@ -12,8 +12,11 @@ struct ImageAttachmentTagView: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            Image(systemName: "link")
-                .font(FontManager.metadata(size: 10, weight: .medium))
+            Image("insert link")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 12, height: 12)
                 .foregroundStyle(foregroundColor)
             Text("image")
                 .font(FontManager.metadata(size: 10, weight: .medium))

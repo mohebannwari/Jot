@@ -209,7 +209,7 @@ struct EditToolbar: View {
         HStack(spacing: 2) {
             ToolButton(
                 tool: .h1,
-                systemName: "1.circle",
+                assetName: "IconH1",
                 isSelected: selectedTool == .h1,
                 isHovered: hoveredTool == .h1,
                 action: { handleToolAction(.h1) },
@@ -228,7 +228,7 @@ struct EditToolbar: View {
 
             ToolButton(
                 tool: .h2,
-                systemName: "2.circle",
+                assetName: "IconH2",
                 isSelected: selectedTool == .h2,
                 isHovered: hoveredTool == .h2,
                 action: { handleToolAction(.h2) },
@@ -247,7 +247,7 @@ struct EditToolbar: View {
 
             ToolButton(
                 tool: .h3,
-                systemName: "3.circle",
+                assetName: "IconH3",
                 isSelected: selectedTool == .h3,
                 isHovered: hoveredTool == .h3,
                 action: { handleToolAction(.h3) },
@@ -270,7 +270,7 @@ struct EditToolbar: View {
         HStack(spacing: 2) {
             ToolButton(
                 tool: .bold,
-                systemName: "bold",
+                assetName: "IconBold",
                 isSelected: selectedTool == .bold,
                 isHovered: hoveredTool == .bold,
                 action: { handleToolAction(.bold) },
@@ -289,7 +289,7 @@ struct EditToolbar: View {
 
             ToolButton(
                 tool: .italic,
-                systemName: "italic",
+                assetName: "IconItalic",
                 isSelected: selectedTool == .italic,
                 isHovered: hoveredTool == .italic,
                 action: { handleToolAction(.italic) },
@@ -308,7 +308,7 @@ struct EditToolbar: View {
 
             ToolButton(
                 tool: .underline,
-                systemName: "underline",
+                assetName: "IconUnderline",
                 isSelected: selectedTool == .underline,
                 isHovered: hoveredTool == .underline,
                 action: { handleToolAction(.underline) },
@@ -327,7 +327,7 @@ struct EditToolbar: View {
 
             ToolButton(
                 tool: .strikethrough,
-                systemName: "strikethrough",
+                assetName: "IconStrikeThrough",
                 isSelected: selectedTool == .strikethrough,
                 isHovered: hoveredTool == .strikethrough,
                 action: { handleToolAction(.strikethrough) },
@@ -350,7 +350,7 @@ struct EditToolbar: View {
         HStack(spacing: 2) {
             ToolButton(
                 tool: .bulletList,
-                systemName: "list.bullet",
+                assetName: "todo-list",
                 isSelected: selectedTool == .bulletList,
                 isHovered: hoveredTool == .bulletList,
                 action: { handleToolAction(.bulletList) },
@@ -369,7 +369,7 @@ struct EditToolbar: View {
 
             ToolButton(
                 tool: .todo,
-                systemName: "checklist",
+                assetName: "IconTodos",
                 isSelected: selectedTool == .todo,
                 isHovered: hoveredTool == .todo,
                 action: { handleToolAction(.todo) },
@@ -392,7 +392,7 @@ struct EditToolbar: View {
         HStack(spacing: 2) {
             ToolButton(
                 tool: .indentLeft,
-                systemName: "decrease.indent",
+                assetName: "IconTextIndentLeft",
                 isSelected: selectedTool == .indentLeft,
                 isHovered: hoveredTool == .indentLeft,
                 action: { handleToolAction(.indentLeft) },
@@ -411,7 +411,7 @@ struct EditToolbar: View {
 
             ToolButton(
                 tool: .indentRight,
-                systemName: "increase.indent",
+                assetName: "IconTextIndentRight",
                 isSelected: selectedTool == .indentRight,
                 isHovered: hoveredTool == .indentRight,
                 action: { handleToolAction(.indentRight) },
@@ -434,7 +434,7 @@ struct EditToolbar: View {
         HStack(spacing: 2) {
             ToolButton(
                 tool: .alignLeft,
-                systemName: "text.alignleft",
+                assetName: "IconAlignmentLeft",
                 isSelected: selectedTool == .alignLeft,
                 isHovered: hoveredTool == .alignLeft,
                 action: { handleToolAction(.alignLeft) },
@@ -453,7 +453,7 @@ struct EditToolbar: View {
 
             ToolButton(
                 tool: .alignCenter,
-                systemName: "text.aligncenter",
+                assetName: "IconAlignmentCenter",
                 isSelected: selectedTool == .alignCenter,
                 isHovered: hoveredTool == .alignCenter,
                 action: { handleToolAction(.alignCenter) },
@@ -472,7 +472,7 @@ struct EditToolbar: View {
 
             ToolButton(
                 tool: .alignRight,
-                systemName: "text.alignright",
+                assetName: "IconAlignmentRight",
                 isSelected: selectedTool == .alignRight,
                 isHovered: hoveredTool == .alignRight,
                 action: { handleToolAction(.alignRight) },
@@ -491,7 +491,7 @@ struct EditToolbar: View {
 
             ToolButton(
                 tool: .alignJustify,
-                systemName: "text.justify",
+                assetName: "IconAlignmentJustify",
                 isSelected: selectedTool == .alignJustify,
                 isHovered: hoveredTool == .alignJustify,
                 action: { handleToolAction(.alignJustify) },
@@ -510,7 +510,7 @@ struct EditToolbar: View {
 
             ToolButton(
                 tool: .lineBreak,
-                systemName: "return",
+                assetName: "IconLinebreak",
                 isSelected: selectedTool == .lineBreak,
                 isHovered: hoveredTool == .lineBreak,
                 action: { handleToolAction(.lineBreak) },
@@ -533,7 +533,7 @@ struct EditToolbar: View {
         HStack(spacing: 2) {
             ToolButton(
                 tool: .textSelect,
-                systemName: "selection.pin.in.out",
+                assetName: "IconTextSelectDashed",
                 isSelected: selectedTool == .textSelect,
                 isHovered: hoveredTool == .textSelect,
                 action: { handleToolAction(.textSelect) },
@@ -552,7 +552,7 @@ struct EditToolbar: View {
 
             ToolButton(
                 tool: .divider,
-                systemName: "minus",
+                assetName: "IconDivider",
                 isSelected: selectedTool == .divider,
                 isHovered: hoveredTool == .divider,
                 action: { handleToolAction(.divider) },
@@ -574,7 +574,7 @@ struct EditToolbar: View {
     private var linkTool: some View {
         ToolButton(
             tool: .link,
-            systemName: "link",
+            assetName: "insert link",
             isSelected: selectedTool == .link || showLinkInput,
             isHovered: hoveredTool == .link,
             action: {
@@ -617,8 +617,11 @@ struct EditToolbar: View {
     private var linkInputField: some View {
         VStack(spacing: 4) {
             HStack(spacing: 4) {
-                Image(systemName: "link")
-                    .font(FontManager.heading(size: 12, weight: .regular))
+                Image("insert link")
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 16, height: 16)
                     .foregroundColor(Color("SecondaryTextColor"))
 
                 TextField("Enter URL", text: $linkURL)
@@ -712,7 +715,8 @@ private struct Triangle: Shape {
 
 private struct ToolButton: View {
     let tool: EditTool
-    let systemName: String
+    var systemName: String = ""
+    var assetName: String? = nil
     let isSelected: Bool
     let isHovered: Bool
     let action: () -> Void
@@ -720,19 +724,31 @@ private struct ToolButton: View {
 
     @State private var buttonFrame: CGRect = .zero
 
+    private var iconColor: Color {
+        isSelected
+            ? Color("AccentColor")
+            : isHovered ? Color("PrimaryTextColor") : Color("SecondaryTextColor")
+    }
+
     var body: some View {
         Button(action: action) {
-            Image(systemName: systemName)
-                .font(FontManager.heading(size: 16, weight: .medium))
-                .foregroundColor(
-                    isSelected
-                        ? Color("AccentColor")
-                        : isHovered ? Color("PrimaryTextColor") : Color("SecondaryTextColor")
-                )
-                .scaleEffect(isSelected ? 1.1 : (isHovered ? 1.05 : 1.0))
-                .animation(.bouncy(duration: 0.2), value: isSelected)
-                .animation(.bouncy(duration: 0.2), value: isHovered)
-                .frame(width: 20, height: 20)
+            Group {
+                if let assetName {
+                    Image(assetName)
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 16, height: 16)
+                } else {
+                    Image(systemName: systemName)
+                        .font(FontManager.heading(size: 16, weight: .medium))
+                }
+            }
+            .foregroundColor(iconColor)
+            .scaleEffect(isSelected ? 1.1 : (isHovered ? 1.05 : 1.0))
+            .animation(.bouncy(duration: 0.2), value: isSelected)
+            .animation(.bouncy(duration: 0.2), value: isHovered)
+            .frame(width: 20, height: 20)
         }
         .buttonStyle(.plain)
         .frame(width: 44, height: 44)

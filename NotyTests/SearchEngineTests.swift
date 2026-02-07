@@ -45,5 +45,61 @@ final class SearchEngineTests: XCTestCase {
         engine.setNotes([n]) // triggers performSearch immediately
         XCTAssertEqual(engine.results.first?.note.id, n.id)
     }
-}
 
+    @MainActor
+    func testRecentQueriesCappedAndDeduplicated() {
+        let (engine, defaults, suiteName) = makeIsolatedSearchEngine()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        engine.recordCommittedQuery("alpha")
+        engine.recordCommittedQuery("beta")
+        engine.recordCommittedQuery("gamma")
+        engine.recordCommittedQuery("beta")
+        engine.recordCommittedQuery("delta")
+
+        XCTAssertEqual(engine.recentQueries, ["delta", "beta", "gamma"])
+    }
+
+    @MainActor
+    func testRecentQueriesPersistAcrossInstances() {
+        let key = "search-recent-\(UUID().uuidString)"
+        let suiteName = "SearchEngineTests.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            XCTFail("Unable to create isolated UserDefaults suite")
+            return
+        }
+        defaults.removePersistentDomain(forName: suiteName)
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let first = SearchEngine(userDefaults: defaults, recentQueriesKey: key)
+        first.recordCommittedQuery("first")
+        first.recordCommittedQuery("second")
+
+        let second = SearchEngine(userDefaults: defaults, recentQueriesKey: key)
+        XCTAssertEqual(second.recentQueries, ["second", "first"])
+    }
+
+    @MainActor
+    func testTypingQueryDoesNotRecordRecentQuery() {
+        let (engine, defaults, suiteName) = makeIsolatedSearchEngine()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        engine.query = "typed only"
+        XCTAssertTrue(engine.recentQueries.isEmpty)
+
+        engine.recordCommittedQuery(engine.query)
+        XCTAssertEqual(engine.recentQueries, ["typed only"])
+    }
+
+    @MainActor
+    private func makeIsolatedSearchEngine() -> (SearchEngine, UserDefaults, String) {
+        let key = "search-recent-\(UUID().uuidString)"
+        let suiteName = "SearchEngineTests.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            fatalError("Unable to create isolated UserDefaults suite")
+        }
+        defaults.removePersistentDomain(forName: suiteName)
+        let engine = SearchEngine(userDefaults: defaults, recentQueriesKey: key)
+        return (engine, defaults, suiteName)
+    }
+}
