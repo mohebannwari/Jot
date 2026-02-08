@@ -16,10 +16,10 @@ struct ImageAttachmentTagView: View {
                 .renderingMode(.template)
                 .resizable()
                 .scaledToFit()
-                .frame(width: 12, height: 12)
+                .frame(width: 14, height: 14)
                 .foregroundStyle(foregroundColor)
             Text("image")
-                .font(FontManager.metadata(size: 10, weight: .medium))
+                .font(FontManager.metadata(size: 12, weight: .medium))
                 .foregroundStyle(foregroundColor)
                 .textCase(.lowercase)
         }

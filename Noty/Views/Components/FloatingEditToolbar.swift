@@ -539,7 +539,7 @@ private struct FloatingToolButton: View {
                         .renderingMode(.template)
                         .resizable()
                         .scaledToFit()
-                        .frame(width: 16, height: 16)
+                        .frame(width: 18, height: 18)
                 } else {
                     Image(systemName: systemName)
                         .font(FontManager.icon(weight: .medium))

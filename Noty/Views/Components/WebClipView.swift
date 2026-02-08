@@ -16,12 +16,15 @@ struct WebClipView: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            Image(systemName: "link")
-                .font(FontManager.icon(weight: .medium))
+            Image("insert link")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 14, height: 14)
                 .foregroundStyle(foregroundColor)
 
             Text(cleanedDomain)
-                .font(FontManager.metadata(size: 10, weight: .medium))
+                .font(FontManager.metadata(size: 12, weight: .medium))
                 .foregroundStyle(foregroundColor)
                 .lineLimit(1)
                 .textCase(.lowercase)
@@ -30,10 +33,6 @@ struct WebClipView: View {
         .padding(.vertical, 4)
         .frame(minWidth: 54, minHeight: 20)
         .background(backgroundColor, in: Capsule())
-        .overlay(
-            Capsule()
-                .stroke(borderColor, lineWidth: 0.5)
-        )
         .contentShape(Capsule())
         .onTapGesture {
             if let urlString = url ?? URL(string: "https://\(domain)")?.absoluteString,
@@ -51,19 +50,13 @@ struct WebClipView: View {
     }
 
     private var foregroundColor: Color {
-        colorScheme == .dark ? .white : Color("PrimaryTextColor")
+        Color("PrimaryTextColor")
     }
 
     private var backgroundColor: Color {
         colorScheme == .dark
-            ? Color.white.opacity(0.16)
+            ? Color.white.opacity(0.15)
             : Color("SurfaceTranslucentColor")
-    }
-
-    private var borderColor: Color {
-        colorScheme == .dark
-            ? Color.white.opacity(0.22)
-            : Color.black.opacity(0.06)
     }
 
     private var cleanedDomain: String {

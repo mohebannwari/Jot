@@ -10,12 +10,25 @@ import SwiftUI
 struct CreateFolderSheet: View {
     let onCreate: (String, String?) -> Void
     let onCancel: () -> Void
+    let editingFolder: Folder?
 
-    @State private var folderName: String = "New Folder"
-    @State private var selectedColorHex: String? = nil
+    @State private var folderName: String
+    @State private var selectedColorHex: String?
     @State private var isCustomColorPickerPresented = false
     @State private var customColor: Color = .gray
     @FocusState private var isNameFieldFocused: Bool
+
+    private var isEditing: Bool { editingFolder != nil }
+
+    init(onCreate: @escaping (String, String?) -> Void,
+         onCancel: @escaping () -> Void,
+         editingFolder: Folder? = nil) {
+        self.onCreate = onCreate
+        self.onCancel = onCancel
+        self.editingFolder = editingFolder
+        _folderName = State(initialValue: editingFolder?.name ?? "New Folder")
+        _selectedColorHex = State(initialValue: editingFolder?.colorHex)
+    }
 
     private static let presetColors: [(name: String, hex: String)] = [
         ("zinc", "#71717a"),
@@ -67,7 +80,7 @@ struct CreateFolderSheet: View {
                         .resizable()
                         .scaledToFit()
                         .foregroundColor(Color("SecondaryTextColor"))
-                        .frame(width: 16, height: 16)
+                        .frame(width: 18, height: 18)
                 }
                 .buttonStyle(.plain)
             }
@@ -89,7 +102,7 @@ struct CreateFolderSheet: View {
                     .resizable()
                     .scaledToFit()
                     .foregroundColor(Color("SecondaryTextColor"))
-                    .frame(width: 16, height: 16)
+                    .frame(width: 18, height: 18)
 
                 Text("Choose folder color")
                     .font(FontManager.heading(size: 13, weight: .medium))
@@ -181,7 +194,7 @@ struct CreateFolderSheet: View {
             Button {
                 submitCreate()
             } label: {
-                Text("Create")
+                Text(isEditing ? "Save" : "Create")
                     .font(FontManager.heading(size: 12, weight: .semibold))
                     .tracking(-0.3)
                     .foregroundColor(Color("ButtonPrimaryTextColor"))

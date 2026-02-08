@@ -519,11 +519,7 @@ struct NoteDetailView: View {
     }
 
     private var headerTintColor: Color {
-        if colorScheme == .dark {
-            return Color(red: 0.047, green: 0.039, blue: 0.035).opacity(0.96)
-        } else {
-            return Color(red: 0.961, green: 0.961, blue: 0.957).opacity(0.94)
-        }
+        Color("BackgroundColor").opacity(0.70)
     }
 
     private var headerMaskGradient: LinearGradient {
@@ -590,7 +586,7 @@ struct NoteDetailView: View {
                 .renderingMode(.template)
                 .resizable()
                 .scaledToFit()
-                .frame(width: 16, height: 16)
+                .frame(width: 18, height: 18)
                 .foregroundColor(Color("SecondaryTextColor"))
 
             TextField("Enter URL", text: $linkInputText)
@@ -603,7 +599,7 @@ struct NoteDetailView: View {
 
             Button(action: submitLink) {
                 Image(systemName: "arrow.right.circle.fill")
-                    .font(FontManager.heading(size: 16, weight: .regular))
+                    .font(FontManager.heading(size: 18, weight: .regular))
                     .foregroundColor(
                         linkInputText.isEmpty ? Color("SecondaryTextColor") : Color("AccentColor"))
             }

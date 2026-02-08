@@ -27,6 +27,12 @@ final class FolderEntity {
         self.modifiedAt = Date()
     }
 
+    func update(name: String, colorHex: String?) {
+        self.name = name
+        self.colorHex = colorHex
+        self.modifiedAt = Date()
+    }
+
     func toFolder() -> Folder {
         Folder(id: id, name: name, colorHex: colorHex, createdAt: createdAt, modifiedAt: modifiedAt)
     }

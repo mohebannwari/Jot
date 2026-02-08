@@ -418,6 +418,32 @@ final class SimpleSwiftDataManager: ObservableObject {
         }
     }
 
+    func updateFolder(id: UUID, name: String, colorHex: String?) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        do {
+            let predicate = #Predicate<FolderEntity> { $0.id == id }
+            let descriptor = FetchDescriptor(predicate: predicate)
+            let entities = try modelContext.fetch(descriptor)
+            guard let entity = entities.first else {
+                logger.warning("Folder with ID \(id) not found for update")
+                return
+            }
+
+            entity.update(name: trimmed, colorHex: colorHex)
+            try modelContext.save()
+
+            if let index = folders.firstIndex(where: { $0.id == id }) {
+                folders[index].name = trimmed
+                folders[index].colorHex = colorHex
+                folders[index].modifiedAt = entity.modifiedAt
+            }
+        } catch {
+            logger.error("Failed to update folder: \(error)")
+        }
+    }
+
     func deleteFolder(id: UUID) {
         do {
             let folderPredicate = #Predicate<FolderEntity> { $0.id == id }

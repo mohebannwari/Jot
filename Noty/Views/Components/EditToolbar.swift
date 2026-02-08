@@ -35,7 +35,7 @@ struct EditToolbar: View {
                 // Main toggle button (always visible)
                 Button(action: toggleExpansion) {
                     Image(systemName: "textformat")
-                        .font(FontManager.heading(size: 16, weight: .regular))
+                        .font(FontManager.heading(size: 18, weight: .regular))
                         .foregroundColor(Color("PrimaryTextColor"))
                         .frame(width: 20, height: 20)
                 }
@@ -621,7 +621,7 @@ struct EditToolbar: View {
                     .renderingMode(.template)
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 16, height: 16)
+                    .frame(width: 18, height: 18)
                     .foregroundColor(Color("SecondaryTextColor"))
 
                 TextField("Enter URL", text: $linkURL)
@@ -635,7 +635,7 @@ struct EditToolbar: View {
 
                 Button(action: insertLink) {
                     Image(systemName: "arrow.right.circle.fill")
-                        .font(FontManager.heading(size: 16, weight: .regular))
+                        .font(FontManager.heading(size: 18, weight: .regular))
                         .foregroundColor(
                             linkURL.isEmpty ? Color("SecondaryTextColor") : Color("AccentColor"))
                 }
@@ -738,10 +738,10 @@ private struct ToolButton: View {
                         .renderingMode(.template)
                         .resizable()
                         .scaledToFit()
-                        .frame(width: 16, height: 16)
+                        .frame(width: 18, height: 18)
                 } else {
                     Image(systemName: systemName)
-                        .font(FontManager.heading(size: 16, weight: .medium))
+                        .font(FontManager.heading(size: 18, weight: .medium))
                 }
             }
             .foregroundColor(iconColor)

@@ -55,12 +55,11 @@ struct ContentView: View {
     @State private var detailFocusRequestID = UUID()
     @State private var hasAppliedInitialLaunchSelection = false
     @State private var isAutoCreatingStarterNote = false
+    @State private var aiToolsState: AIToolsState = .collapsed
 
     @State private var isCreateFolderAlertPresented = false
     @State private var pendingFolderCreationIntent: FolderCreationIntent = .standalone
-    @State private var isRenameFolderAlertPresented = false
-    @State private var renameFolderName = ""
-    @State private var pendingFolderToRename: Folder?
+    @State private var pendingFolderToEdit: Folder?
 
     @State private var isBatchDeleteConfirmationPresented = false
     @State private var pendingDeleteNoteIDs: Set<UUID> = []
@@ -79,10 +78,10 @@ struct ContentView: View {
 
     // Window corner radius from NotyApp containerShape
     private let windowCornerRadius: CGFloat = 16
-    private let windowContentPadding: CGFloat = 4
+    private let windowContentPadding: CGFloat = 8
     private let sidebarDesignColumnWidth: CGFloat = 295
-    private let sidebarMenuTop: CGFloat = 49
-    private let sidebarNotesTop: CGFloat = 165
+    private let sidebarMenuTop: CGFloat = 45
+    private let sidebarNotesTop: CGFloat = 161
     private let sidebarSectionSpacing: CGFloat = 22
     private let sidebarChromeSpacing: CGFloat = 12
     private let sidebarMinWidth: CGFloat = 295
@@ -95,20 +94,23 @@ struct ContentView: View {
         blendDuration: 0.15
     )
     private let detailToggleToContentExtraSpacingWhenSidebarHidden: CGFloat = 16
-    private let sidebarIconSize: CGFloat = 16
+    private let sidebarIconSize: CGFloat = 18
     private let sidebarTopIconSpacingCollapsed: CGFloat = 8
     private let sidebarTopBarButtonSize: CGFloat = 20
     private let sidebarTopBarTrafficLightGap: CGFloat = 12
-    private let sidebarRowHoverInset: CGFloat = 8
-    private let sidebarItemHPadding: CGFloat = 16
+    private let sidebarRowHoverInset: CGFloat = 0
+    private var sidebarItemLeadingPadding: CGFloat {
+        max(0, 18 - windowContentPadding)
+    }
+    private let sidebarItemTrailingPadding: CGFloat = 8
     private let sidebarItemVPadding: CGFloat = 8
     private let sidebarMenuItemHeight: CGFloat = 32
     /// Gap between menu container bottom and "Notes" header text (Figma Notes Header py-top).
     private var sidebarMenuToNotesGap: CGFloat {
         sidebarNotesTop - sidebarMenuTop - (sidebarMenuItemHeight * 3)
     }
-    private var detailOuterCornerRadius: CGFloat {
-        windowCornerRadius - windowContentPadding
+    private var sidebarSettingsBottomPadding: CGFloat {
+        max(0, 12 - windowContentPadding)
     }
     private var sidebarResizeHandleTopInset: CGFloat {
         sidebarNotesTop + 16
@@ -130,7 +132,9 @@ struct ContentView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            let availableWidth = geometry.size.width - (windowContentPadding * 2)
+            let effectivePadding: CGFloat = isSidebarVisible ? windowContentPadding : 0
+            let availableWidth = geometry.size.width - (effectivePadding * 2)
+            let sidebarDetailGap: CGFloat = isSidebarVisible ? 10 : 0
             let resolvedSidebarWidth = clampedSidebarWidth(sidebarWidth, totalWidth: availableWidth)
             let expandedSidebarWidth = selectedNote == nil ? availableWidth : resolvedSidebarWidth
             let visibleSidebarWidth = isSidebarVisible ? expandedSidebarWidth : 0
@@ -152,24 +156,32 @@ struct ContentView: View {
                         }
 
                     if let note = selectedNote {
+                        let detailWidth: CGFloat = isSidebarVisible
+                            ? max(0, availableWidth - visibleSidebarWidth - sidebarDetailGap)
+                            : availableWidth
+                        let detailCornerRadius: CGFloat = isSidebarVisible ? windowCornerRadius - windowContentPadding : 0
+
                         detailPane(note: note)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .background(colorScheme == .dark ? Color(red: 0.16, green: 0.14, blue: 0.14) : Color(red: 0.906, green: 0.898, blue: 0.894))
-                            .clipShape(
-                                RoundedRectangle(cornerRadius: detailOuterCornerRadius, style: .continuous)
+                            .frame(width: detailWidth)
+                            .frame(maxHeight: .infinity)
+                            .background(
+                                RoundedRectangle(cornerRadius: detailCornerRadius, style: .continuous)
+                                    .fill(colorScheme == .dark ? Color(red: 0.16, green: 0.14, blue: 0.14) : Color(red: 0.906, green: 0.898, blue: 0.894))
                             )
-                            .frame(
-                                width: isSidebarVisible
-                                    ? max(0, availableWidth - visibleSidebarWidth)
-                                    : availableWidth
-                            )
+                            .clipShape(RoundedRectangle(cornerRadius: detailCornerRadius, style: .continuous))
+                            .overlay(alignment: .bottomTrailing) {
+                                AIToolsOverlay(state: $aiToolsState)
+                                    .padding(.trailing, 18)
+                                    .padding(.bottom, 18)
+                            }
+                            .padding(.leading, sidebarDetailGap)
                     }
                 }
 
                 appCenteredSearchOverlay()
                     .zIndex(3)
             }
-            .padding(windowContentPadding)
+            .padding(effectivePadding)
             .animation(sidebarVisibilityAnimation, value: isSidebarVisible)
 #if os(macOS)
             .overlay(alignment: .topLeading) {
@@ -271,16 +283,20 @@ struct ContentView: View {
             .presentationBackground(.clear)
             .presentationDragIndicator(.hidden)
         }
-        .alert("Rename Folder", isPresented: $isRenameFolderAlertPresented) {
-            TextField("Folder name", text: $renameFolderName)
-            Button("Cancel", role: .cancel) {
-                pendingFolderToRename = nil
-            }
-            Button("Save") {
-                confirmRenameFolder()
-            }
-        } message: {
-            Text("Update the folder name.")
+        .sheet(item: $pendingFolderToEdit) { folder in
+            CreateFolderSheet(
+                onCreate: { name, colorHex in
+                    confirmEditFolder(name: name, colorHex: colorHex)
+                    pendingFolderToEdit = nil
+                },
+                onCancel: {
+                    pendingFolderToEdit = nil
+                },
+                editingFolder: folder
+            )
+            .presentationDetents([.height(340)])
+            .presentationBackground(.clear)
+            .presentationDragIndicator(.hidden)
         }
         .alert("Delete Selected Notes?", isPresented: $isBatchDeleteConfirmationPresented) {
             Button("Cancel", role: .cancel) {
@@ -402,7 +418,7 @@ struct ContentView: View {
                                 onCreateNoteInFolder: { folderID in
                                     createAndOpenNewNote(inFolder: folderID)
                                 },
-                                onRenameFolder: promptRenameFolder,
+                                onRenameFolder: promptEditFolder,
                                 onDeleteFolder: deleteFolder,
                                 onDropNoteIntoFolder: { noteID, folderID in
                                     moveNote(noteID: noteID, toFolderID: folderID)
@@ -538,6 +554,16 @@ struct ContentView: View {
                     isSearchPresented = false
                 }
             }
+
+            // Settings -- pinned to bottom of sidebar
+            VStack {
+                Spacer()
+                sidebarMenuItem(assetName: "IconSettingsGear1", label: "Settings") {
+                    // No action yet - UI only
+                }
+            }
+            .frame(width: sidebarDesignColumnWidth, alignment: .leading)
+            .padding(.bottom, sidebarSettingsBottomPadding)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
@@ -618,7 +644,8 @@ struct ContentView: View {
 
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, sidebarItemHPadding)
+            .padding(.leading, sidebarItemLeadingPadding)
+            .padding(.trailing, sidebarItemTrailingPadding)
             .padding(.vertical, sidebarItemVPadding)
             .frame(height: sidebarMenuItemHeight)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -645,7 +672,7 @@ struct ContentView: View {
     }
 
     private var sidebarNotesHeader: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 12) {
             Text(isShowingArchive ? "Archive" : "Notes")
                 .font(FontManager.heading(size: 13, weight: .medium))
                 .foregroundColor(Color("SecondaryTextColor"))
@@ -676,7 +703,8 @@ struct ContentView: View {
                 .macPointingHandCursor()
             }
         }
-        .padding(.horizontal, sidebarItemHPadding)
+        .padding(.leading, sidebarItemLeadingPadding)
+        .padding(.trailing, sidebarItemTrailingPadding)
         .frame(width: sidebarDesignColumnWidth, alignment: .leading)
     }
 
@@ -702,7 +730,8 @@ struct ContentView: View {
                     .font(FontManager.metadata(size: 11, weight: .regular))
                     .foregroundColor(Color("SecondaryTextColor"))
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, sidebarItemHPadding)
+                    .padding(.leading, sidebarItemLeadingPadding)
+                    .padding(.trailing, sidebarItemTrailingPadding)
                     .padding(.top, 12)
             } else {
                 ForEach(notesManager.archivedNotes, id: \.id) { note in
@@ -1128,19 +1157,17 @@ struct ContentView: View {
         pendingFolderCreationIntent = .standalone
     }
 
-    private func promptRenameFolder(_ folder: Folder) {
-        renameFolderName = folder.name
-        pendingFolderToRename = folder
-        isRenameFolderAlertPresented = true
+    private func promptEditFolder(_ folder: Folder) {
+        pendingFolderToEdit = folder
     }
 
-    private func confirmRenameFolder() {
-        let trimmedName = renameFolderName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedName.isEmpty, let folder = pendingFolderToRename else { return }
+    private func confirmEditFolder(name: String, colorHex: String?) {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty, let folder = pendingFolderToEdit else { return }
 
         HapticManager.shared.buttonTap()
-        notesManager.renameFolder(id: folder.id, name: trimmedName)
-        pendingFolderToRename = nil
+        notesManager.updateFolder(id: folder.id, name: trimmedName, colorHex: colorHex)
+        pendingFolderToEdit = nil
     }
 
     private func deleteFolder(_ folder: Folder) {
@@ -1456,7 +1483,8 @@ struct NotesSection: View {
                 .font(FontManager.heading(size: 10, weight: .medium))
                 .foregroundColor(Color("SecondaryTextColor"))
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 16)
+                .padding(.leading, 10)
+                .padding(.trailing, 8)
 
             // Notes list
             ForEach(notes, id: \.id) { note in
@@ -1534,7 +1562,7 @@ struct NoteListCard: View {
                                 .resizable()
                                 .scaledToFit()
                                 .foregroundColor(Color("SecondaryTextColor"))
-                                .frame(width: 16, height: 16)
+                                .frame(width: 18, height: 18)
                                 .contentShape(Rectangle())
                                 .onTapGesture {
                                     onLeadingIconTap()
@@ -1548,7 +1576,7 @@ struct NoteListCard: View {
                                 .resizable()
                                 .scaledToFit()
                                 .foregroundColor(Color("SecondaryTextColor"))
-                                .frame(width: 16, height: 16)
+                                .frame(width: 18, height: 18)
                                 .opacity(isLeadingIconVisible ? 1 : 0)
                         }
                     }
@@ -1567,13 +1595,13 @@ struct NoteListCard: View {
                     .font(FontManager.heading(size: 10, weight: .medium))
                     .foregroundColor(Color("SecondaryTextColor"))
             }
-            .padding(.horizontal, 16)
+            .padding(.leading, 10)
+            .padding(.trailing, 8)
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(isSelected ? Color("SurfaceTranslucentColor") : Color.clear)
-                    .padding(.horizontal, 8)
             )
             .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }

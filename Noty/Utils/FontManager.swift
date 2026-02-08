@@ -111,7 +111,7 @@ struct FontManager {
     // MARK: - Icon Fonts
 
     /// Standard icon font for UI/action symbols across the app.
-    static func icon(size: CGFloat = 16, weight: Weight = .regular) -> Font {
+    static func icon(size: CGFloat = 18, weight: Weight = .regular) -> Font {
         Font.system(size: size, weight: weight.toSwiftUIWeight(), design: .default)
     }
     

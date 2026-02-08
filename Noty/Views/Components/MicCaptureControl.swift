@@ -153,22 +153,21 @@ private extension MicCaptureControl {
     }
 
     var pausedView: some View {
-        HStack(spacing: 3) {
+        HStack(spacing: 2) {
             Button {
                 HapticManager.shared.buttonTap()
                 Task { @MainActor in
                     await viewModel.cancelCapture()
                 }
             } label: {
-                Image(systemName: "xmark")
-                    .font(FontManager.icon(weight: .medium))
-                    .foregroundStyle(.red)
+                Image("IconCircleX")
+                    .resizable()
+                    .scaledToFit()
                     .frame(width: 20, height: 20)
-                    .padding(8)
+                    .padding(4)
             }
             .buttonStyle(.plain)
             .macPointingHandCursor()
-            .background(cancelButtonColor, in: Capsule())
             .accessibilityLabel(Text("Cancel recording"))
 
             Button {
@@ -177,15 +176,14 @@ private extension MicCaptureControl {
                     await viewModel.resumeRecording()
                 }
             } label: {
-                Image(systemName: "record.circle")
-                    .font(FontManager.icon(weight: .medium))
-                    .foregroundStyle(resumeIconColor)
+                Image("IconResume")
+                    .resizable()
+                    .scaledToFit()
                     .frame(width: 20, height: 20)
-                    .padding(8)
+                    .padding(4)
             }
             .buttonStyle(.plain)
             .macPointingHandCursor()
-            .background(resumeButtonColor, in: Capsule())
             .accessibilityLabel(Text("Resume recording"))
 
             Button {
@@ -198,24 +196,22 @@ private extension MicCaptureControl {
                     ProgressView()
                         .progressViewStyle(CircularProgressViewStyle(tint: .white))
                         .scaleEffect(0.8)
-                        .frame(width: 20, height: 20)
-                        .padding(8)
+                        .frame(width: 18, height: 18)
+                        .padding(4)
                 } else {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(FontManager.icon(weight: .medium))
-                        .foregroundStyle(.white)
+                    Image("IconArrowUpCircle")
+                        .resizable()
+                        .scaledToFit()
                         .frame(width: 20, height: 20)
-                        .padding(8)
+                        .padding(4)
                 }
             }
             .buttonStyle(.plain)
             .macPointingHandCursor()
-            .background(sendButtonColor, in: Capsule())
             .disabled(viewModel.isProcessingSend)
             .accessibilityLabel(Text(viewModel.isProcessingSend ? "Sending voice note" : "Send voice note"))
         }
         .padding(2)
-        .frame(height: 44)
         .background(Capsule().fill(.clear))
         .liquidGlass(in: Capsule())
         .overlay(cancelShortcut)

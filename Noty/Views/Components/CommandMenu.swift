@@ -12,7 +12,7 @@ enum CommandMenuLayout {
     static let itemHeight: CGFloat = 36  // Updated to match padding(.vertical, 10) + content height
     static let itemSpacing: CGFloat = 0  // Spacing between items
     static let defaultMaxHeight: CGFloat = 280
-    static let width: CGFloat = 140
+    static let width: CGFloat = 150
     static let outerPadding: CGFloat = 12
 
     // Calculate the ideal height to fit content without extra space
@@ -113,7 +113,7 @@ struct CommandMenuItem: View {
                 }
             }
             .foregroundStyle(isSelected ? selectedForegroundColor : .primary)
-            .frame(width: 16, height: 16)
+            .frame(width: 18, height: 18)
 
             // Tool name
             Text(tool.name)

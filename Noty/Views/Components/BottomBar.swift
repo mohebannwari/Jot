@@ -69,7 +69,7 @@ struct BottomBar: View {
             themeManager.toggleTheme()
         } label: {
             Image(systemName: "circle.lefthalf.filled")
-                .font(FontManager.heading(size: 16, weight: .regular))
+                .font(FontManager.heading(size: 18, weight: .regular))
                 .foregroundColor(Color("PrimaryTextColor"))
                 .frame(width: 40, height: 40)
                 .liquidGlass(in: Circle())

@@ -22,10 +22,10 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		32158BBB2E92F3D600C62F24 /* Exceptions for "NotyTests" folder in "Noty" target */ = {
+		3200228E2F3812F6001767F3 /* Exceptions for "NotyTests" folder in "Noty" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
-				Noty.icon,
+				"noty-new.icon",
 			);
 			target = 32921E072E424DC0006A7C11 /* Noty */;
 		};
@@ -50,7 +50,7 @@
 		33AA00002E45AAAA00000000 /* NotyTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
-				32158BBB2E92F3D600C62F24 /* Exceptions for "NotyTests" folder in "Noty" target */,
+				3200228E2F3812F6001767F3 /* Exceptions for "NotyTests" folder in "Noty" target */,
 			);
 			path = NotyTests;
 			sourceTree = "<group>";
@@ -324,7 +324,7 @@
 		32921E142E424DC1006A7C11 /* Debug configuration for PBXNativeTarget "Noty" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = Noty;
+				ASSETCATALOG_COMPILER_APPICON_NAME = "noty-new";
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_ENTITLEMENTS = Noty/Noty.entitlements;
@@ -362,7 +362,7 @@
 		32921E152E424DC1006A7C11 /* Release configuration for PBXNativeTarget "Noty" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = Noty;
+				ASSETCATALOG_COMPILER_APPICON_NAME = "noty-new";
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_ENTITLEMENTS = Noty/Noty.entitlements;

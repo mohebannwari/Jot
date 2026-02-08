@@ -126,7 +126,7 @@ struct FloatingSearch: View {
                     .resizable()
                     .scaledToFit()
                     .foregroundColor(Color("SecondaryTextColor"))
-                    .frame(width: 16, height: 16)
+                    .frame(width: 18, height: 18)
 
                 TextField("Search", text: $searchText)
                     .font(FontManager.heading(size: 13, weight: .medium))
@@ -157,7 +157,7 @@ struct FloatingSearch: View {
                         .resizable()
                         .scaledToFit()
                         .foregroundColor(Color("SecondaryTextColor"))
-                        .frame(width: 16, height: 16)
+                        .frame(width: 18, height: 18)
                 }
                 .buttonStyle(.plain)
             }
@@ -199,7 +199,7 @@ struct FloatingSearch: View {
                                     .resizable()
                                     .scaledToFit()
                                     .foregroundColor(Color("SecondaryTextColor"))
-                                    .frame(width: 16, height: 16)
+                                    .frame(width: 18, height: 18)
 
                                 Text(query)
                                     .font(FontManager.heading(size: 15, weight: .medium))
@@ -258,7 +258,7 @@ struct FloatingSearch: View {
                         .resizable()
                         .scaledToFit()
                         .foregroundColor(Color("SecondaryTextColor"))
-                        .frame(width: 16, height: 16)
+                        .frame(width: 18, height: 18)
 
                     Text(result.note.title)
                         .font(FontManager.heading(size: 15, weight: .medium))

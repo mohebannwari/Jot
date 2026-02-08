@@ -82,9 +82,9 @@ private extension AppWindowBackground {
 private extension AppWindowBackground {
     var baseTintColor: Color {
         if colorScheme == .dark {
-            return Color(red: 0.047, green: 0.039, blue: 0.035, opacity: 0.94)
+            return Color(red: 0.047, green: 0.039, blue: 0.035, opacity: 0.30)
         } else {
-            return Color(red: 0.961, green: 0.961, blue: 0.957, opacity: 0.94)
+            return Color(red: 1.0, green: 1.0, blue: 1.0, opacity: 0.36)
         }
     }
 

@@ -26,7 +26,7 @@ struct FolderSection: View {
 
     @State private var hoveredFolderID: UUID?
     @State private var dropTargetFolderID: UUID?
-    private let rowHoverHorizontalInset: CGFloat = 8
+    private let rowHoverHorizontalInset: CGFloat = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -55,7 +55,7 @@ struct FolderSection: View {
                 .resizable()
                 .scaledToFit()
                 .foregroundColor(folder.folderColor)
-                .frame(width: 16, height: 16)
+                .frame(width: 18, height: 18)
 
             Text(folder.name)
                 .font(FontManager.heading(size: 13, weight: .medium))
@@ -66,23 +66,14 @@ struct FolderSection: View {
 
             Spacer(minLength: 8)
 
-            HStack(spacing: 8) {
+            HStack(spacing: 12) {
                 Menu {
-                    Button {
-                        HapticManager.shared.buttonTap()
-                        onCreateNoteInFolder(folder.id)
-                    } label: {
-                        Label("Create New Notes", image: "IconNoteText")
-                    }
-
                     Button {
                         HapticManager.shared.buttonTap()
                         onRenameFolder(folder)
                     } label: {
-                        Label("Rename Folder", image: "rename note")
+                        Label("Edit Folder", image: "rename note")
                     }
-
-                    Divider()
 
                     Button(role: .destructive) {
                         HapticManager.shared.buttonTap()
@@ -92,9 +83,9 @@ struct FolderSection: View {
                     }
                 } label: {
                     Image(systemName: "ellipsis")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(FontManager.icon(weight: .medium))
                         .foregroundColor(Color("SecondaryTextColor"))
-                        .frame(width: 16, height: 16)
+                        .frame(width: 18, height: 18)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -108,7 +99,7 @@ struct FolderSection: View {
                         .resizable()
                         .scaledToFit()
                         .foregroundColor(Color("SecondaryTextColor"))
-                        .frame(width: 16, height: 16)
+                        .frame(width: 18, height: 18)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -117,7 +108,8 @@ struct FolderSection: View {
             .allowsHitTesting(shouldShowActions)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 16)
+        .padding(.leading, 10)
+        .padding(.trailing, 8)
         .padding(.vertical, 8)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -141,19 +133,10 @@ struct FolderSection: View {
         .contextMenu {
             Button {
                 HapticManager.shared.buttonTap()
-                onCreateNoteInFolder(folder.id)
-            } label: {
-                Label("Create New Notes", image: "IconNoteText")
-            }
-
-            Button {
-                HapticManager.shared.buttonTap()
                 onRenameFolder(folder)
             } label: {
-                Label("Rename Folder", image: "rename note")
+                Label("Edit Folder", image: "rename note")
             }
-
-            Divider()
 
             Button(role: .destructive) {
                 HapticManager.shared.buttonTap()
