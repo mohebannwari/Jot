@@ -87,7 +87,7 @@ struct CreateFolderSheet: View {
             }
         }
         .padding(12)
-        .background(Color("SurfaceDefaultColor"))
+        .background(Color("SurfaceElevatedColor"))
         .clipShape(Capsule())
         .shadow(color: Color.black.opacity(0.06), radius: 3, x: 0, y: 1)
         .shadow(color: Color.black.opacity(0.03), radius: 1, x: 0, y: 0)
@@ -174,16 +174,19 @@ struct CreateFolderSheet: View {
                     )
                     .overlay(
                         Image(systemName: "plus")
-                            .font(.system(size: 20, weight: .medium))
+                            .font(.system(size: 15, weight: .medium))
                             .foregroundColor(Color("SecondaryTextColor"))
                     )
             }
-        }
-        .overlay {
+
             ColorPicker("", selection: $customColor, supportsOpacity: false)
                 .labelsHidden()
-                .opacity(0.015)
+                .frame(width: circleSize, height: circleSize)
+                .opacity(0.011)
+                .allowsHitTesting(true)
         }
+        .frame(width: circleSize, height: circleSize)
+        .contentShape(Circle())
         .onChange(of: customColor) { _, newColor in
             selectedColorHex = newColor.toHexString()
         }

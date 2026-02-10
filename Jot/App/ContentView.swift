@@ -8,6 +8,21 @@
 import SwiftUI
 #if os(macOS)
 import AppKit
+
+/// Makes the hosting NSWindow transparent so liquid glass is the sole background layer.
+struct WindowTransparencyView: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async {
+            guard let window = view.window else { return }
+            window.isOpaque = false
+            window.backgroundColor = .clear
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
 #endif
 
 enum SidebarSectionFilter: String, CaseIterable, Identifiable {
@@ -220,16 +235,13 @@ struct ContentView: View {
             }
         }
         .background {
-            ZStack {
-                #if os(macOS)
-                BackdropBlurView(material: .hudWindow, blendingMode: .behindWindow)
-                #else
-                BackdropBlurView(style: .systemUltraThinMaterial)
-                #endif
-                Color("BackgroundColor")
-            }
-            .ignoresSafeArea()
+            Color.clear
+                .ignoresSafeArea()
+                .liquidGlass(in: Rectangle())
         }
+        #if os(macOS)
+        .background(WindowTransparencyView())
+        #endif
         #if os(macOS)
         .background(
             TrafficLightAligner(
@@ -426,15 +438,6 @@ struct ContentView: View {
     @ViewBuilder
     private func sidebarContent() -> some View {
         ZStack(alignment: .topLeading) {
-            ZStack {
-                #if os(macOS)
-                BackdropBlurView(material: .hudWindow, blendingMode: .behindWindow)
-                #else
-                BackdropBlurView(style: .systemUltraThinMaterial)
-                #endif
-                Color("BackgroundColor")
-            }
-
             // Icon row -- positioned from runtime traffic light metrics (absolute)
             sidebarTitleBarRow
                 .padding(.top, iconTop - windowContentPadding)
@@ -1834,44 +1837,42 @@ struct NoteListCard: View {
                 if let icon = leadingIconAssetName {
                     let isLeadingIconVisible = !showLeadingIconOnHoverOnly || isHovered
                     let isShowingHoverVariant = isHovered && hoverLeadingIconAssetName != nil
-                    let effectiveBaseIcon = isActiveNote ? "IconWriting" : icon
-                    let displayIcon = isShowingHoverVariant ? hoverLeadingIconAssetName! : effectiveBaseIcon
-                    let displayTint = (isActiveNote && !isShowingHoverVariant) ? activeIconTint : Color("SecondaryTextColor")
-                    let isInteractive = isShowingHoverVariant || !isActiveNote
+                    let showDot = isActiveNote && !isShowingHoverVariant
                     Group {
-                        if let onLeadingIconTap, isInteractive {
-                            Image(displayIcon)
+                        if showDot {
+                            Circle()
+                                .fill(Color(red: 0.992, green: 0.729, blue: 0.455))
+                                .frame(width: 4, height: 4)
+                        } else if let onLeadingIconTap, isLeadingIconVisible {
+                            Image(icon)
                                 .renderingMode(.template)
                                 .resizable()
                                 .scaledToFit()
-                                .foregroundColor(displayTint)
+                                .foregroundColor(Color("SecondaryTextColor"))
                                 .frame(width: 20, height: 20)
                                 .contentShape(Rectangle())
                                 .onTapGesture {
                                     onLeadingIconTap()
                                 }
                                 .macPointingHandCursor()
-                            .opacity(isLeadingIconVisible ? 1 : 0)
-                            .allowsHitTesting(isLeadingIconVisible)
+                                .opacity(isLeadingIconVisible ? 1 : 0)
+                                .allowsHitTesting(isLeadingIconVisible)
                         } else {
-                            Image(displayIcon)
+                            Image(icon)
                                 .renderingMode(.template)
                                 .resizable()
                                 .scaledToFit()
-                                .foregroundColor(displayTint)
+                                .foregroundColor(Color("SecondaryTextColor"))
                                 .frame(width: 20, height: 20)
-                                .opacity((isActiveNote || isLeadingIconVisible) ? 1 : 0)
+                                .opacity(isLeadingIconVisible ? 1 : 0)
                         }
                     }
                     .animation(.easeInOut(duration: 0.12), value: isLeadingIconVisible)
                     .animation(.easeInOut(duration: 0.12), value: isActiveNote)
                 } else if isActiveNote {
-                    Image("IconWriting")
-                        .renderingMode(.template)
-                        .resizable()
-                        .scaledToFit()
-                        .foregroundColor(activeIconTint)
-                        .frame(width: 20, height: 20)
+                    Circle()
+                        .fill(Color(red: 0.992, green: 0.729, blue: 0.455))
+                        .frame(width: 4, height: 4)
                 }
 
                 Text(note.title)
