@@ -1,6 +1,6 @@
 # Liquid Glass Implementation Guide
 
-*This file contains the implementation rules and patterns for Apple's Liquid Glass effects in the Noty app.*
+*This file contains the implementation rules and patterns for Apple's Liquid Glass effects in the Jot app.*
 
 **Last Updated:** September 2, 2025
 

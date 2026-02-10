@@ -1,18 +1,18 @@
 //
 //  view_architecture.swift
-//  Noty Examples
+//  Jot Examples
 //
-//  Simplified pattern extracted from: Noty/App/ContentView.swift
+//  Simplified pattern extracted from: Jot/App/ContentView.swift
 //
 //  This demonstrates the view composition and architecture patterns
-//  for building screen-level views in the Noty app.
+//  for building screen-level views in the Jot app.
 //
 
 import SwiftUI
 
 // MARK: - Screen-Level View Architecture
 
-/// Example screen view following Noty's composition pattern:
+/// Example screen view following Jot's composition pattern:
 /// - State objects for local managers
 /// - Environment objects for shared state
 /// - Computed properties for derived data
@@ -283,7 +283,7 @@ struct FloatingSearchBar: View {
     - Use @ViewBuilder for flexible composition
  
  3. STATE MANAGEMENT HIERARCHY
-    App Level (NotyApp.swift):
+    App Level (JotApp.swift):
     - ThemeManager
     - NotesManager
     

@@ -1,6 +1,6 @@
-# Noty Code Examples
+# Jot Code Examples
 
-This directory contains representative code patterns extracted from the Noty codebase. These examples serve as reference implementations for AI assistants when generating new code.
+This directory contains representative code patterns extracted from the Jot codebase. These examples serve as reference implementations for AI assistants when generating new code.
 
 ## Purpose
 
@@ -13,7 +13,7 @@ When implementing new features, AI assistants should:
 ## Examples Overview
 
 ### Component Pattern (`component_pattern.swift`)
-**Extracted from:** `Noty/Views/Components/NoteCard.swift`
+**Extracted from:** `Jot/Views/Components/NoteCard.swift`
 
 **Demonstrates:**
 - SwiftUI component structure (props → state → computed properties → body)
@@ -32,7 +32,7 @@ When implementing new features, AI assistants should:
 ---
 
 ### Manager Pattern (`manager_pattern.swift`)
-**Extracted from:** `Noty/Models/NotesManager.swift`
+**Extracted from:** `Jot/Models/NotesManager.swift`
 
 **Demonstrates:**
 - State management with @Published properties
@@ -51,7 +51,7 @@ When implementing new features, AI assistants should:
 ---
 
 ### Glass Effects Pattern (`glass_effects_pattern.swift`)
-**Extracted from:** `Noty/Utils/GlassEffects.swift`
+**Extracted from:** `Jot/Utils/GlassEffects.swift`
 
 **Demonstrates:**
 - Liquid Glass effect modifiers
@@ -70,7 +70,7 @@ When implementing new features, AI assistants should:
 ---
 
 ### View Architecture Pattern (`view_architecture.swift`)
-**Extracted from:** `Noty/App/ContentView.swift`
+**Extracted from:** `Jot/App/ContentView.swift`
 
 **Demonstrates:**
 - Root view composition
@@ -89,7 +89,7 @@ When implementing new features, AI assistants should:
 ---
 
 ### Testing Pattern (`testing_pattern.swift`)
-**Extracted from:** `NotyTests/NotesManagerTests.swift`
+**Extracted from:** `JotTests/NotesManagerTests.swift`
 
 **Demonstrates:**
 - XCTest setup and structure
@@ -108,10 +108,10 @@ When implementing new features, AI assistants should:
 
 ## Design System Compliance
 
-All examples follow Noty's design system:
+All examples follow Jot's design system:
 
 ### Colors
-Use semantic colors from `Noty/Ressources/Assets.xcassets/`:
+Use semantic colors from `Jot/Ressources/Assets.xcassets/`:
 - `BackgroundColor`
 - `CardBackgroundColor`
 - `PrimaryTextColor`

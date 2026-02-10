@@ -8,7 +8,7 @@ This is an example of a well-structured feature request that demonstrates how to
 
 **What do you want to build?**
 
-Add voice note recording capability to Noty with a beautiful Liquid Glass interface. Users should be able to:
+Add voice note recording capability to Jot with a beautiful Liquid Glass interface. Users should be able to:
 
 1. **Start recording** by tapping a microphone button in the bottom toolbar
 2. **See a real-time waveform** visualization while recording
@@ -28,7 +28,7 @@ The interface should follow Apple's Liquid Glass design language with:
 
 **User Story:**
 
-As a Noty user, I want to quickly record voice notes so that I can capture thoughts hands-free without typing.
+As a Jot user, I want to quickly record voice notes so that I can capture thoughts hands-free without typing.
 
 ---
 
@@ -44,11 +44,11 @@ As a Noty user, I want to quickly record voice notes so that I can capture thoug
 
 **Existing code to reference:**
 
-- `Noty/Models/AudioRecorder.swift` - Existing audio recording infrastructure (if it exists)
-- `Noty/Views/Components/NoteCard.swift` - Component structure and glass effects
-- `Noty/Views/Components/BottomBar.swift` - Toolbar pattern for adding new controls
-- `Noty/Models/NotesManager.swift` - Pattern for saving notes with metadata
-- `Noty/Utils/GlassEffects.swift` - Available glass effect modifiers
+- `Jot/Models/AudioRecorder.swift` - Existing audio recording infrastructure (if it exists)
+- `Jot/Views/Components/NoteCard.swift` - Component structure and glass effects
+- `Jot/Views/Components/BottomBar.swift` - Toolbar pattern for adding new controls
+- `Jot/Models/NotesManager.swift` - Pattern for saving notes with metadata
+- `Jot/Utils/GlassEffects.swift` - Available glass effect modifiers
 
 ---
 
@@ -63,7 +63,7 @@ As a Noty user, I want to quickly record voice notes so that I can capture thoug
 
 **Figma designs:**
 
-- https://www.figma.com/design/BhVLOWG63LckTVCuO3q0Tv/Noty
+- https://www.figma.com/design/BhVLOWG63LckTVCuO3q0Tv/Jot
 - Component: "Voice Recording Interface" (if exists)
 - Reference: Microphone button with glass effect
 - Reference: Waveform visualization with gradient
@@ -73,7 +73,7 @@ As a Noty user, I want to quickly record voice notes so that I can capture thoug
 - See `LIQUID_GLASS_GUIDE.md` for glass effect application rules
 - See `CLAUDE.md` section on "Key Implementation Details" for rich text editing
 - Check `TODO` for any planned audio features
-- Review `Noty/Models/Note.swift` to understand note data structure
+- Review `Jot/Models/Note.swift` to understand note data structure
 
 ---
 
@@ -178,7 +178,7 @@ Manual Testing:
 **Suggested Architecture:**
 
 ```
-Noty/
+Jot/
 ├── Models/
 │   ├── AudioRecorder.swift           # Recording manager
 │   └── AudioTranscriber.swift        # Speech-to-text

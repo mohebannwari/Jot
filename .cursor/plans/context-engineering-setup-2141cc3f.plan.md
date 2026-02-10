@@ -1,5 +1,5 @@
 <!-- 2141cc3f-863d-4c33-8576-11919c36d6eb 27555852-2b1d-473f-98eb-519f7fd4f172 -->
-# Context Engineering Template Setup for Noty
+# Context Engineering Template Setup for Jot
 
 ## Overview
 
@@ -39,7 +39,7 @@ The base template will include:
 
 ### 3. Create Examples Directory
 
-Set up `examples/` directory with representative code patterns from the Noty project:
+Set up `examples/` directory with representative code patterns from the Jot project:
 
 **Examples to create:**
 
@@ -113,7 +113,7 @@ Minimal updates to connect the system:
 ## Key Design Decisions
 
 1. **Preserve Existing CLAUDE.md**: All current project guidelines remain intact; context engineering adds a structured workflow on top
-2. **SwiftUI-Specific Examples**: Examples focus on SwiftUI patterns, Liquid Glass effects, and state management specific to Noty
+2. **SwiftUI-Specific Examples**: Examples focus on SwiftUI patterns, Liquid Glass effects, and state management specific to Jot
 3. **iOS 26+ Focus**: All templates reference the project's target of iOS 26+ and macOS 26+
 4. **Validation-First**: PRPs include automatic validation gates (build commands, tests) to ensure working implementations
 5. **Design System Compliance**: Every PRP template includes Liquid Glass design system requirements
@@ -121,7 +121,7 @@ Minimal updates to connect the system:
 ## Success Criteria
 
 - Custom commands `/generate-prp` and `/execute-prp` are functional
-- Example files accurately represent Noty's architecture patterns
+- Example files accurately represent Jot's architecture patterns
 - INITIAL template guides users to provide comprehensive feature requirements
 - Generated PRPs include all necessary context for autonomous implementation
 - Integration with existing documentation is seamless
@@ -143,7 +143,7 @@ Creating approximately 15-18 new files:
 
 - [ ] Create .claude/ directory with commands and settings for PRP generation and execution
 - [ ] Create PRPs/ directory with base template and example PRP for Liquid Glass features
-- [ ] Create examples/ directory with representative patterns from existing Noty codebase
+- [ ] Create examples/ directory with representative patterns from existing Jot codebase
 - [ ] Create INITIAL.md template and INITIAL_EXAMPLE.md with feature request guidance
 - [ ] Add PRPs-agentic-eng workflow files for multi-agent development patterns
 - [ ] Write CONTEXT_ENGINEERING.md comprehensive guide for using the system

@@ -1,7 +1,7 @@
 # Figma Source
 
-- Noty design file (always reference this):
-  https://www.figma.com/design/BhVLOWG63LckTVCuO3q0Tv/Noty?node-id=0-1&p=f&t=Exr6XkLRSkF2tndZ-0
+- Jot design file (always reference this):
+  https://www.figma.com/design/BhVLOWG63LckTVCuO3q0Tv/Jot?node-id=0-1&p=f&t=Exr6XkLRSkF2tndZ-0
 
 Suggested uses:
 - Verify tokens (colors, typography) before changing assets.

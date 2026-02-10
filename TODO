@@ -1,5 +1,5 @@
 
-# Noty Development TODO
+# Jot Development TODO
 
 ## Liquid Glass Implementation
 - [x] Convert remaining Figma components to liquid glass styling
@@ -47,7 +47,7 @@
 - [ ] Complete typography system implementation
 - [ ] Consistent spacing and layout grid
 - [ ] SF Symbols icon system
-- [x] Unified animation patterns (.notySpring, .notyBounce, .notySmoothFast)
+- [x] Unified animation patterns (.jotSpring, .jotBounce, .jotSmoothFast)
 
 ## Performance & Quality Assurance
 - [ ] Accessibility compliance (Reduced Transparency, Increased Contrast, Reduced Motion)

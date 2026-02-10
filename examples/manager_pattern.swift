@@ -1,11 +1,11 @@
 //
 //  manager_pattern.swift
-//  Noty Examples
+//  Jot Examples
 //
-//  Simplified pattern extracted from: Noty/Models/NotesManager.swift
+//  Simplified pattern extracted from: Jot/Models/NotesManager.swift
 //
 //  This demonstrates the standard manager structure for state management
-//  and data persistence in the Noty app.
+//  and data persistence in the Jot app.
 //
 
 import Foundation
@@ -13,7 +13,7 @@ import Combine
 
 // MARK: - Manager Pattern
 
-/// Example manager following Noty's established pattern:
+/// Example manager following Jot's established pattern:
 /// - @MainActor ensures all operations run on main thread
 /// - ObservableObject enables SwiftUI to observe changes
 /// - @Published properties trigger UI updates automatically
@@ -149,7 +149,7 @@ final class ExampleManager: ObservableObject {
         ).first!
         
         return appSupport
-            .appendingPathComponent("Noty", isDirectory: true)
+            .appendingPathComponent("Jot", isDirectory: true)
             .appendingPathComponent("example_data.json")
     }
     
@@ -158,7 +158,7 @@ final class ExampleManager: ObservableObject {
     private static func seedData() -> [ExampleItem] {
         return [
             ExampleItem(
-                title: "Welcome to Noty",
+                title: "Welcome to Jot",
                 content: "Start organizing your thoughts with beautiful notes."
             ),
             ExampleItem(

@@ -84,17 +84,17 @@ After implementation, verify each gate:
 
 **Build Validation:**
 ```bash
-xcodebuild -project Noty.xcodeproj -scheme Noty -configuration Debug build
+xcodebuild -project Jot.xcodeproj -scheme Jot -configuration Debug build
 ```
 
 **Test Validation:**
 ```bash
-xcodebuild -project Noty.xcodeproj -scheme Noty -destination 'platform=macOS' test
+xcodebuild -project Jot.xcodeproj -scheme Jot -destination 'platform=macOS' test
 ```
 
 **Clean Build (if needed):**
 ```bash
-xcodebuild -project Noty.xcodeproj -scheme Noty clean
+xcodebuild -project Jot.xcodeproj -scheme Jot clean
 ```
 
 ### 5. Handle Failures

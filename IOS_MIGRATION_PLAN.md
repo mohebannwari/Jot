@@ -1,4 +1,4 @@
-# iOS Migration Plan - Noty App
+# iOS Migration Plan - Jot App
 
 **Version:** 1.0
 **Last Updated:** October 16, 2025
@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-This document outlines the technical implementation plan for creating an iOS version of Noty while maintaining the existing macOS app. The approach uses a **shared codebase strategy** with platform-specific adaptations where necessary.
+This document outlines the technical implementation plan for creating an iOS version of Jot while maintaining the existing macOS app. The approach uses a **shared codebase strategy** with platform-specific adaptations where necessary.
 
 **Key Principle:** Zero destructive operations - all existing macOS functionality remains intact throughout the migration.
 
@@ -44,9 +44,9 @@ This document outlines the technical implementation plan for creating an iOS ver
 
 ### Directory Structure (Current)
 ```
-Noty/
+Jot/
 ├── App/                    # App entry point (2 files)
-│   ├── NotyApp.swift
+│   ├── JotApp.swift
 │   └── ContentView.swift
 ├── Models/                 # Data layer (6 files + SwiftData)
 │   ├── Note.swift
@@ -111,12 +111,12 @@ These files already reference UIKit (ready for iOS):
 
 #### What Goes in Platform-Specific/
 - **macOS/**
-  - `NotyApp+macOS.swift` - Window configuration
+  - `JotApp+macOS.swift` - Window configuration
   - `ContentView+macOS.swift` - macOS navigation
   - Custom window management
 
 - **iOS/**
-  - `NotyApp+iOS.swift` - Scene configuration
+  - `JotApp+iOS.swift` - Scene configuration
   - `ContentView+iOS.swift` - NavigationStack
   - Tab bar implementation
   - iOS-specific gestures
@@ -149,21 +149,21 @@ func liquidGlass(in shape: some Shape) -> some View {
 1. File → New → Target
 2. iOS → App
 3. Configuration:
-   - **Product Name:** Noty iOS
-   - **Bundle ID:** `com.mohebanwari.Noty.iOS`
+   - **Product Name:** Jot iOS
+   - **Bundle ID:** `com.mohebanwari.Jot.iOS`
    - **Interface:** SwiftUI
    - **Language:** Swift
    - **Minimum Deployment:** iOS 26.0
    - **Include Tests:** Yes
 
-**Result:** Creates `Noty iOS` folder with default SwiftUI template
+**Result:** Creates `Jot iOS` folder with default SwiftUI template
 
 ### Step 1.2: Configure Build Settings
 
 **iOS Target Build Settings:**
 ```
-PRODUCT_NAME = Noty
-PRODUCT_BUNDLE_IDENTIFIER = com.mohebanwari.Noty.iOS
+PRODUCT_NAME = Jot
+PRODUCT_BUNDLE_IDENTIFIER = com.mohebanwari.Jot.iOS
 TARGETED_DEVICE_FAMILY = 1,2 (iPhone & iPad)
 IPHONEOS_DEPLOYMENT_TARGET = 26.0
 SWIFT_VERSION = 5.0
@@ -172,8 +172,8 @@ ENABLE_PREVIEWS = YES
 
 **Preserve macOS Target Settings:**
 ```
-PRODUCT_NAME = Noty
-PRODUCT_BUNDLE_IDENTIFIER = com.mohebanwari.Noty
+PRODUCT_NAME = Jot
+PRODUCT_BUNDLE_IDENTIFIER = com.mohebanwari.Jot
 MACOSX_DEPLOYMENT_TARGET = 26.0
 (All existing settings remain unchanged)
 ```
@@ -201,10 +201,10 @@ MACOSX_DEPLOYMENT_TARGET = 26.0
 </array>
 
 <key>NSMicrophoneUsageDescription</key>
-<string>Noty needs microphone access for voice note recording.</string>
+<string>Jot needs microphone access for voice note recording.</string>
 
 <key>NSPhotoLibraryUsageDescription</key>
-<string>Noty needs photo library access to attach images to notes.</string>
+<string>Jot needs photo library access to attach images to notes.</string>
 ```
 
 ---
@@ -215,7 +215,7 @@ MACOSX_DEPLOYMENT_TARGET = 26.0
 
 **New Structure:**
 ```
-Noty/
+Jot/
 ├── Shared/                 # Cross-platform code (90% of codebase)
 │   ├── Models/            # 100% shared
 │   │   ├── Note.swift
@@ -254,7 +254,7 @@ Noty/
 │           └── MicCaptureDemoView.swift
 ├── macOS/                 # macOS-specific code (5% of codebase)
 │   ├── App/
-│   │   ├── NotyApp+macOS.swift
+│   │   ├── JotApp+macOS.swift
 │   │   └── ContentView+macOS.swift
 │   ├── WindowManagement/
 │   │   └── WindowConfiguration.swift
@@ -262,7 +262,7 @@ Noty/
 │       └── Assets.xcassets (macOS specific)
 └── iOS/                   # iOS-specific code (5% of codebase)
     ├── App/
-    │   ├── NotyApp+iOS.swift
+    │   ├── JotApp+iOS.swift
     │   └── ContentView+iOS.swift
     ├── Navigation/
     │   └── NavigationConfiguration.swift
@@ -289,19 +289,19 @@ Noty/
 ### Step 2.3: Target Membership Configuration
 
 **Shared Files Target Membership:**
-- ✅ Noty (macOS)
-- ✅ Noty iOS
-- ✅ NotyTests (both platforms)
+- ✅ Jot (macOS)
+- ✅ Jot iOS
+- ✅ JotTests (both platforms)
 
 **macOS-Specific Files:**
-- ✅ Noty (macOS)
-- ❌ Noty iOS
-- ✅ NotyTests (macOS)
+- ✅ Jot (macOS)
+- ❌ Jot iOS
+- ✅ JotTests (macOS)
 
 **iOS-Specific Files:**
-- ❌ Noty (macOS)
-- ✅ Noty iOS
-- ✅ NotyTests (iOS)
+- ❌ Jot (macOS)
+- ✅ Jot iOS
+- ✅ JotTests (iOS)
 
 ---
 
@@ -309,10 +309,10 @@ Noty/
 
 ### Step 3.1: App Entry Point
 
-#### Current: NotyApp.swift (macOS only)
+#### Current: JotApp.swift (macOS only)
 ```swift
 @main
-struct NotyApp: App {
+struct JotApp: App {
     @StateObject private var notesManager: SimpleSwiftDataManager
     @StateObject private var themeManager = ThemeManager()
 
@@ -327,16 +327,16 @@ struct NotyApp: App {
 }
 ```
 
-#### New: NotyApp.swift (Shared protocol)
+#### New: JotApp.swift (Shared protocol)
 ```swift
-// Shared/App/NotyApp.swift
-protocol NotyAppProtocol {
+// Shared/App/JotApp.swift
+protocol JotAppProtocol {
     var notesManager: SimpleSwiftDataManager { get }
     var themeManager: ThemeManager { get }
 }
 
 // Common initialization logic
-extension NotyAppProtocol {
+extension JotAppProtocol {
     static func initializeManagers() -> (SimpleSwiftDataManager, ThemeManager) {
         let manager: SimpleSwiftDataManager
         do {
@@ -351,10 +351,10 @@ extension NotyAppProtocol {
 
 #### macOS Entry Point
 ```swift
-// macOS/App/NotyApp+macOS.swift
+// macOS/App/JotApp+macOS.swift
 #if os(macOS)
 @main
-struct NotyApp: App, NotyAppProtocol {
+struct JotApp: App, JotAppProtocol {
     @StateObject private var notesManager: SimpleSwiftDataManager
     @StateObject private var themeManager: ThemeManager
 
@@ -387,10 +387,10 @@ struct NotyApp: App, NotyAppProtocol {
 
 #### iOS Entry Point
 ```swift
-// iOS/App/NotyApp+iOS.swift
+// iOS/App/JotApp+iOS.swift
 #if os(iOS)
 @main
-struct NotyApp: App, NotyAppProtocol {
+struct JotApp: App, JotAppProtocol {
     @StateObject private var notesManager: SimpleSwiftDataManager
     @StateObject private var themeManager: ThemeManager
 
@@ -464,7 +464,7 @@ struct ContentView: View {
     var body: some View {
         NavigationStack(path: $navigationPath) {
             NotesListView()
-                .navigationTitle("Noty")
+                .navigationTitle("Jot")
                 .navigationDestination(for: Note.self) { note in
                     NoteDetailView(note: note)
                 }
@@ -769,8 +769,8 @@ class HapticManager {
 **macOS Build Test:**
 ```bash
 xcodebuild \
-  -project Noty.xcodeproj \
-  -scheme Noty \
+  -project Jot.xcodeproj \
+  -scheme Jot \
   -destination 'platform=macOS' \
   build
 ```
@@ -778,8 +778,8 @@ xcodebuild \
 **iOS Build Test:**
 ```bash
 xcodebuild \
-  -project Noty.xcodeproj \
-  -scheme "Noty iOS" \
+  -project Jot.xcodeproj \
+  -scheme "Jot iOS" \
   -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
   build
 ```
@@ -835,8 +835,8 @@ xcodebuild \
 **Run macOS Tests:**
 ```bash
 xcodebuild \
-  -project Noty.xcodeproj \
-  -scheme Noty \
+  -project Jot.xcodeproj \
+  -scheme Jot \
   -destination 'platform=macOS' \
   test
 ```
@@ -844,17 +844,17 @@ xcodebuild \
 **Run iOS Tests:**
 ```bash
 xcodebuild \
-  -project Noty.xcodeproj \
-  -scheme "Noty iOS" \
+  -project Jot.xcodeproj \
+  -scheme "Jot iOS" \
   -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
   test
 ```
 
 **Create iOS Test Target:**
 ```
-Target Name: Noty iOS Tests
-Bundle ID: com.mohebanwari.Noty.iOS.Tests
-Host Application: Noty iOS
+Target Name: Jot iOS Tests
+Bundle ID: com.mohebanwari.Jot.iOS.Tests
+Host Application: Jot iOS
 ```
 
 ---
@@ -927,8 +927,8 @@ If directory reorganization breaks builds:
 
 ```bash
 # Restore original structure
-git checkout -- Noty/
-git clean -fd Noty/Shared Noty/macOS Noty/iOS
+git checkout -- Jot/
+git clean -fd Jot/Shared Jot/macOS Jot/iOS
 ```
 
 ### Phase 3 Rollback (Platform Adaptations)
@@ -936,8 +936,8 @@ If platform-specific code breaks macOS:
 
 ```bash
 # Restore specific files
-git checkout HEAD -- Noty/App/NotyApp.swift
-git checkout HEAD -- Noty/App/ContentView.swift
+git checkout HEAD -- Jot/App/JotApp.swift
+git checkout HEAD -- Jot/App/ContentView.swift
 
 # OR full rollback
 git reset --hard backup-pre-ios-migration

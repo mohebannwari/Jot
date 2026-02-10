@@ -1,8 +1,8 @@
 //
 //  glass_effects_pattern.swift
-//  Noty Examples
+//  Jot Examples
 //
-//  Simplified pattern extracted from: Noty/Utils/GlassEffects.swift
+//  Simplified pattern extracted from: Jot/Utils/GlassEffects.swift
 //
 //  This demonstrates how to apply Apple's Liquid Glass effects
 //  with appropriate fallbacks for older OS versions.

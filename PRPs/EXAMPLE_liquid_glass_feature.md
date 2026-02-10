@@ -14,7 +14,7 @@
 Add a floating action button (FAB) to the main canvas that allows users to quickly create new notes. The FAB should use Liquid Glass effects and follow Apple's design guidelines.
 
 ### User Story
-As a Noty user, I want to quickly create a new note from anywhere in the app so that I can capture ideas without navigating through menus.
+As a Jot user, I want to quickly create a new note from anywhere in the app so that I can capture ideas without navigating through menus.
 
 ### Key Requirements
 - Floating button visible on canvas view
@@ -60,7 +60,7 @@ User Taps FAB → notesManager.addNote() → New Note Created → Canvas Updates
 
 ### File Structure
 ```
-Noty/
+Jot/
 └── Views/
     └── Components/
         └── FloatingActionButton.swift     # New component
@@ -156,7 +156,7 @@ Scale effect: 1.0 → 1.08 on hover
 **Objective:** Build the reusable FAB component with Liquid Glass styling
 
 **Files to Create:**
-- `Noty/Views/Components/FloatingActionButton.swift`
+- `Jot/Views/Components/FloatingActionButton.swift`
 
 **Implementation Details:**
 ```swift
@@ -213,7 +213,7 @@ struct FloatingActionButton: View {
 
 **Validation:**
 ```bash
-xcodebuild -project Noty.xcodeproj -scheme Noty -configuration Debug build
+xcodebuild -project Jot.xcodeproj -scheme Jot -configuration Debug build
 ```
 
 **Success Criteria:**
@@ -228,7 +228,7 @@ xcodebuild -project Noty.xcodeproj -scheme Noty -configuration Debug build
 **Objective:** Add the FAB to the main app view with proper positioning
 
 **Files to Modify:**
-- `Noty/App/ContentView.swift`
+- `Jot/App/ContentView.swift`
 
 **Implementation Details:**
 Add the FAB as an overlay on the main content:
@@ -260,7 +260,7 @@ ZStack {
 
 **Validation:**
 ```bash
-xcodebuild -project Noty.xcodeproj -scheme Noty -configuration Debug build
+xcodebuild -project Jot.xcodeproj -scheme Jot -configuration Debug build
 ```
 
 **Success Criteria:**
@@ -275,12 +275,12 @@ xcodebuild -project Noty.xcodeproj -scheme Noty -configuration Debug build
 **Objective:** Ensure FAB functionality with unit tests
 
 **Files to Create:**
-- `NotyTests/FloatingActionButtonTests.swift`
+- `JotTests/FloatingActionButtonTests.swift`
 
 **Test Pattern:**
 ```swift
 import XCTest
-@testable import Noty
+@testable import Jot
 
 final class FloatingActionButtonTests: XCTestCase {
     @MainActor
@@ -306,7 +306,7 @@ final class FloatingActionButtonTests: XCTestCase {
 
 **Validation:**
 ```bash
-xcodebuild -project Noty.xcodeproj -scheme Noty -destination 'platform=macOS' test
+xcodebuild -project Jot.xcodeproj -scheme Jot -destination 'platform=macOS' test
 ```
 
 ---
@@ -348,13 +348,13 @@ xcodebuild -project Noty.xcodeproj -scheme Noty -destination 'platform=macOS' te
 ### Build Validation
 ```bash
 # Must succeed
-xcodebuild -project Noty.xcodeproj -scheme Noty -configuration Debug build
+xcodebuild -project Jot.xcodeproj -scheme Jot -configuration Debug build
 ```
 
 ### Test Validation
 ```bash
 # Must pass all tests
-xcodebuild -project Noty.xcodeproj -scheme Noty -destination 'platform=macOS' test
+xcodebuild -project Jot.xcodeproj -scheme Jot -destination 'platform=macOS' test
 ```
 
 ---
@@ -362,7 +362,7 @@ xcodebuild -project Noty.xcodeproj -scheme Noty -destination 'platform=macOS' te
 ## 8. Testing Requirements
 
 ### Unit Tests Location
-`NotyTests/FloatingActionButtonTests.swift`
+`JotTests/FloatingActionButtonTests.swift`
 
 ### Test Cases Required
 1. **Test note creation through FAB action**
@@ -371,7 +371,7 @@ xcodebuild -project Noty.xcodeproj -scheme Noty -destination 'platform=macOS' te
    - Assert: Verify note count increased and title correct
 
 ### Test Pattern Reference
-See `NotyTests/NotesManagerTests.swift` for established testing patterns with temporary storage and @MainActor.
+See `JotTests/NotesManagerTests.swift` for established testing patterns with temporary storage and @MainActor.
 
 ---
 
@@ -396,7 +396,7 @@ See `NotyTests/NotesManagerTests.swift` for established testing patterns with te
 ## 10. Documentation & References
 
 ### Figma Design
-- https://www.figma.com/design/BhVLOWG63LckTVCuO3q0Tv/Noty
+- https://www.figma.com/design/BhVLOWG63LckTVCuO3q0Tv/Jot
 - Reference floating action button components
 
 ### Apple Documentation
@@ -407,11 +407,11 @@ See `NotyTests/NotesManagerTests.swift` for established testing patterns with te
 Reference these examples:
 - `examples/component_pattern.swift` - Component structure
 - `examples/glass_effects_pattern.swift` - Liquid Glass usage
-- `Noty/Views/Components/NoteCard.swift` - Similar hover effect pattern
+- `Jot/Views/Components/NoteCard.swift` - Similar hover effect pattern
 
 ### Related Code
-- `Noty/Utils/GlassEffects.swift` - Glass effect modifiers
-- `Noty/Models/NotesManager.swift` - addNote() method
+- `Jot/Utils/GlassEffects.swift` - Glass effect modifiers
+- `Jot/Models/NotesManager.swift` - addNote() method
 
 ---
 

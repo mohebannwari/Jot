@@ -1,4 +1,4 @@
-# Noty
+# Jot
 
 A beautiful note-taking application for macOS built with SwiftUI and Apple's Liquid Glass design system (iOS 26+/macOS 26+).
 
@@ -37,7 +37,7 @@ See `CONTEXT_ENGINEERING.md` for the complete guide.
 
 ## Design Reference
 
-- **Figma**: https://www.figma.com/design/BhVLOWG63LckTVCuO3q0Tv/Noty?node-id=0-1&p=f&t=Exr6XkLRSkF2tndZ-0
+- **Figma**: https://www.figma.com/design/BhVLOWG63LckTVCuO3q0Tv/Jot?node-id=0-1&p=f&t=Exr6XkLRSkF2tndZ-0
 - **Design System**: Apple Liquid Glass (iOS 26+/macOS 26+)
 
 ## Documentation
@@ -52,21 +52,21 @@ See `CONTEXT_ENGINEERING.md` for the complete guide.
 
 ```bash
 # Build the app
-xcodebuild -project Noty.xcodeproj -scheme Noty -configuration Debug build
+xcodebuild -project Jot.xcodeproj -scheme Jot -configuration Debug build
 
 # Run tests
-xcodebuild -project Noty.xcodeproj -scheme Noty -destination 'platform=macOS' test
+xcodebuild -project Jot.xcodeproj -scheme Jot -destination 'platform=macOS' test
 
 # Clean build
-xcodebuild -project Noty.xcodeproj -scheme Noty clean
+xcodebuild -project Jot.xcodeproj -scheme Jot clean
 ```
 
 ### Project Structure
 
 ```
-Noty/
+Jot/
 ├── App/                    # App lifecycle and entry point
-│   ├── NotyApp.swift      # Main app struct
+│   ├── JotApp.swift      # Main app struct
 │   └── ContentView.swift  # Root view
 ├── Models/                 # Data layer and business logic
 │   ├── Note.swift         # Core Note model
@@ -92,7 +92,7 @@ Noty/
 ## Getting Started
 
 1. Clone the repository
-2. Open `Noty.xcodeproj` in Xcode
+2. Open `Jot.xcodeproj` in Xcode
 3. Build and run on macOS target (iOS 26+/macOS 26+ required)
 4. Review `CONTEXT_ENGINEERING.md` to understand the development workflow
 

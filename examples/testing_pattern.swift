@@ -1,19 +1,19 @@
 //
 //  testing_pattern.swift
-//  Noty Examples
+//  Jot Examples
 //
-//  Simplified pattern extracted from: NotyTests/NotesManagerTests.swift
+//  Simplified pattern extracted from: JotTests/NotesManagerTests.swift
 //
 //  This demonstrates the testing patterns and best practices for
-//  unit testing in the Noty app using XCTest.
+//  unit testing in the Jot app using XCTest.
 //
 
 import XCTest
-@testable import Noty
+@testable import Jot
 
 // MARK: - Testing Pattern
 
-/// Example test class following Noty's established patterns:
+/// Example test class following Jot's established patterns:
 /// - Named {FeatureName}Tests.swift
 /// - Tests marked with @MainActor for async code
 /// - Temporary storage for isolation
@@ -325,8 +325,8 @@ final class ExampleFeatureTests: XCTestCase {
      - Click diamond next to test: Run single test
      
      Command Line:
-     xcodebuild -project Noty.xcodeproj \
-                -scheme Noty \
+     xcodebuild -project Jot.xcodeproj \
+                -scheme Jot \
                 -destination 'platform=macOS' \
                 test
  

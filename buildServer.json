@@ -12,8 +12,8 @@
 	"argv": [
 		"/opt/homebrew/bin/xcode-build-server"
 	],
-	"workspace": "/Users/mohebanwari/development/Noty/Noty.xcodeproj/project.xcworkspace",
-	"build_root": "/Users/mohebanwari/Library/Developer/Xcode/DerivedData/Noty-bbjhlewxgcknttcumdxgbyjatzov",
-	"scheme": "Noty",
+	"workspace": "/Users/mohebanwari/development/Jot/Jot.xcodeproj/project.xcworkspace",
+	"build_root": "/Users/mohebanwari/Library/Developer/Xcode/DerivedData/Jot-bbjhlewxgcknttcumdxgbyjatzov",
+	"scheme": "Jot",
 	"kind": "xcode"
 }

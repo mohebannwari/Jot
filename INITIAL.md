@@ -1,6 +1,6 @@
 # Feature Request
 
-Use this template to request new features for the Noty app. Fill in each section with as much detail as possible to help generate a comprehensive Product Requirements Prompt (PRP).
+Use this template to request new features for the Jot app. Fill in each section with as much detail as possible to help generate a comprehensive Product Requirements Prompt (PRP).
 
 ---
 
@@ -53,7 +53,7 @@ As a {type of user}, I want to {goal} so that {benefit}.
 **Figma designs:**
 
 {Reference specific artboards or components from the Figma file:
-- https://www.figma.com/design/BhVLOWG63LckTVCuO3q0Tv/Noty
+- https://www.figma.com/design/BhVLOWG63LckTVCuO3q0Tv/Jot
 - Specific component: {name and location}}
 
 **Related features:**

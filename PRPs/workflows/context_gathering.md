@@ -81,11 +81,11 @@ Edge Cases:
 
 **Example:**
 ```
-Noty Architecture:
+Jot Architecture:
 
 Entry Point:
-- Noty/App/NotyApp.swift - App lifecycle
-- Noty/App/ContentView.swift - Root view
+- Jot/App/JotApp.swift - App lifecycle
+- Jot/App/ContentView.swift - Root view
 
 State Management:
 - @StateObject for screen-level managers
@@ -273,7 +273,7 @@ Integration Points:
 - Mock/stub approaches
 
 **Sources:**
-- `NotyTests/` directory
+- `JotTests/` directory
 - `examples/testing_pattern.swift`
 - Test configuration
 - CI/CD pipeline
@@ -283,7 +283,7 @@ Integration Points:
 Testing Standards:
 
 Unit Tests:
-- Location: NotyTests/{FeatureName}Tests.swift
+- Location: JotTests/{FeatureName}Tests.swift
 - Pattern: Arrange-Act-Assert
 - Use @MainActor for async code
 - Temporary storage for isolation
@@ -302,7 +302,7 @@ Mock Strategy:
 - Disable seeding in tests
 
 Validation Commands:
-xcodebuild -project Noty.xcodeproj -scheme Noty \
+xcodebuild -project Jot.xcodeproj -scheme Jot \
   -destination 'platform=macOS' test
 ```
 
@@ -374,10 +374,10 @@ User Workflows:
 **Tools:**
 ```swift
 // Semantic search
-codebase_search("How do we handle audio recording?", ["Noty/Models"])
+codebase_search("How do we handle audio recording?", ["Jot/Models"])
 
 // Text search
-grep("AudioRecorder", path: "Noty/")
+grep("AudioRecorder", path: "Jot/")
 
 // File search
 glob_file_search("*Recorder*.swift")

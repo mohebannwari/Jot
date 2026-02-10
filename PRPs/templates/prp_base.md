@@ -26,7 +26,7 @@ As a {user type}, I want to {goal} so that {benefit}.
 ## 2. Context & Background
 
 ### Existing Architecture
-{Describe how this fits into the current Noty architecture}
+{Describe how this fits into the current Jot architecture}
 
 **Related Components:**
 - `Component1` - {description}
@@ -58,7 +58,7 @@ User Action → State Update → UI Refresh
 
 ### File Structure
 ```
-Noty/
+Jot/
 ├── Models/
 │   └── {ManagerName}.swift           # State management
 ├── Views/
@@ -167,7 +167,7 @@ final class FeatureManager: ObservableObject {
 - Interactive elements need `.glassEffect(.regular.interactive(true))`
 
 ### Color Usage
-Use semantic colors from `Noty/Ressources/Assets.xcassets/`:
+Use semantic colors from `Jot/Ressources/Assets.xcassets/`:
 
 - `BackgroundColor` - Main app background
 - `CardBackgroundColor` - Card surfaces
@@ -232,7 +232,7 @@ withAnimation(.smooth) {
 **Validation:**
 ```bash
 # Command to verify this step
-xcodebuild -project Noty.xcodeproj -scheme Noty -configuration Debug build
+xcodebuild -project Jot.xcodeproj -scheme Jot -configuration Debug build
 ```
 
 **Success Criteria:**
@@ -251,12 +251,12 @@ xcodebuild -project Noty.xcodeproj -scheme Noty -configuration Debug build
 **Objective:** Ensure feature works correctly with comprehensive tests
 
 **Files to Create:**
-- `NotyTests/{FeatureName}Tests.swift`
+- `JotTests/{FeatureName}Tests.swift`
 
 **Test Pattern:**
 ```swift
 import XCTest
-@testable import Noty
+@testable import Jot
 
 final class FeatureTests: XCTestCase {
     @MainActor
@@ -275,7 +275,7 @@ final class FeatureTests: XCTestCase {
 
 **Validation:**
 ```bash
-xcodebuild -project Noty.xcodeproj -scheme Noty -destination 'platform=macOS' test
+xcodebuild -project Jot.xcodeproj -scheme Jot -destination 'platform=macOS' test
 ```
 
 ---
@@ -317,18 +317,18 @@ xcodebuild -project Noty.xcodeproj -scheme Noty -destination 'platform=macOS' te
 ### Build Validation
 ```bash
 # Must succeed
-xcodebuild -project Noty.xcodeproj -scheme Noty -configuration Debug build
+xcodebuild -project Jot.xcodeproj -scheme Jot -configuration Debug build
 ```
 
 ### Test Validation
 ```bash
 # Must pass all tests
-xcodebuild -project Noty.xcodeproj -scheme Noty -destination 'platform=macOS' test
+xcodebuild -project Jot.xcodeproj -scheme Jot -destination 'platform=macOS' test
 ```
 
 ### Clean Build (if needed)
 ```bash
-xcodebuild -project Noty.xcodeproj -scheme Noty clean
+xcodebuild -project Jot.xcodeproj -scheme Jot clean
 ```
 
 ---
@@ -336,7 +336,7 @@ xcodebuild -project Noty.xcodeproj -scheme Noty clean
 ## 8. Testing Requirements
 
 ### Unit Tests Location
-`NotyTests/{FeatureName}Tests.swift`
+`JotTests/{FeatureName}Tests.swift`
 
 ### Test Cases Required
 1. **Test basic functionality**
@@ -354,7 +354,7 @@ xcodebuild -project Noty.xcodeproj -scheme Noty clean
    - Verify data integrity
 
 ### Test Pattern Reference
-See `NotyTests/NotesManagerTests.swift` for established testing patterns.
+See `JotTests/NotesManagerTests.swift` for established testing patterns.
 
 ---
 
@@ -378,7 +378,7 @@ See `NotyTests/NotesManagerTests.swift` for established testing patterns.
 ## 10. Documentation & References
 
 ### Figma Design
-- https://www.figma.com/design/BhVLOWG63LckTVCuO3q0Tv/Noty
+- https://www.figma.com/design/BhVLOWG63LckTVCuO3q0Tv/Jot
 - {Specific artboard or component references}
 
 ### Apple Documentation

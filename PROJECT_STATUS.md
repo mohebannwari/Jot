@@ -1,6 +1,6 @@
-# Noty - Project Status
+# Jot - Project Status
 
-## What is Noty?
+## What is Jot?
 A macOS note-taking app built with SwiftUI and Apple's Liquid Glass design system (iOS 26+/macOS 26+). Features a card-based interface with search, rich text editing, voice recording with transcription, and AI-powered enhancements.
 
 ## Current Features
@@ -63,7 +63,7 @@ A macOS note-taking app built with SwiftUI and Apple's Liquid Glass design syste
 
 ## Project Structure
 ```
-Noty/
+Jot/
 ├── App/                    # Entry point and root view
 ├── Models/                 # Data layer (Note, NotesManager, SearchEngine)
 ├── Views/
@@ -76,13 +76,13 @@ Noty/
 ## Build Commands
 ```bash
 # Build
-xcodebuild -project Noty.xcodeproj -scheme Noty -configuration Debug build
+xcodebuild -project Jot.xcodeproj -scheme Jot -configuration Debug build
 
 # Test
-xcodebuild -project Noty.xcodeproj -scheme Noty -destination 'platform=macOS' test
+xcodebuild -project Jot.xcodeproj -scheme Jot -destination 'platform=macOS' test
 
 # Clean
-xcodebuild -project Noty.xcodeproj -scheme Noty clean
+xcodebuild -project Jot.xcodeproj -scheme Jot clean
 ```
 
 ## Development Approach

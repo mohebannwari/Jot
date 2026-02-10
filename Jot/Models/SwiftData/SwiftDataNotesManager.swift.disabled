@@ -1,0 +1,588 @@
+import Foundation
+import SwiftData
+import Combine
+import OSLog
+
+/// Enhanced notes manager using SwiftData with dual-storage capability and migration support
+@MainActor
+@Observable
+final class SwiftDataNotesManager {
+
+    // MARK: - Observable Properties
+    var notes: [Note] = []
+    var isLoading = false
+    var migrationProgress: Double = 0.0
+    var migrationStatus: MigrationStatus = .notStarted
+
+    // MARK: - Configuration
+    enum StorageMode {
+        case jsonOnly           // Legacy mode
+        case swiftDataOnly      // New mode
+        case dualStorage        // Migration mode
+    }
+
+    enum MigrationStatus: Equatable {
+        case notStarted
+        case inProgress
+        case completed
+        case failed(Error)
+        case rollback
+
+        static func == (lhs: MigrationStatus, rhs: MigrationStatus) -> Bool {
+            switch (lhs, rhs) {
+            case (.notStarted, .notStarted),
+                 (.inProgress, .inProgress),
+                 (.completed, .completed),
+                 (.rollback, .rollback):
+                return true
+            case (.failed, .failed):
+                return true
+            default:
+                return false
+            }
+        }
+    }
+
+    // MARK: - Private Properties
+    private let modelContainer: ModelContainer
+    private let modelContext: ModelContext
+    private let backgroundContext: ModelContext
+    private let legacyManager: NotesManager
+    private let logger = Logger(subsystem: "com.jot.app", category: "SwiftDataNotesManager")
+
+    private var storageMode: StorageMode
+    private var migrationTask: Task<Void, Never>?
+
+    // MARK: - Performance Monitoring
+    private var performanceMetrics = PerformanceMetrics()
+
+    // MARK: - Initialization
+
+    /// Initialize with automatic migration detection
+    init(storageURL: URL? = nil, enableMigration: Bool = true) {
+        // Initialize legacy manager
+        self.legacyManager = NotesManager(storageURL: storageURL, seedIfEmpty: false)
+
+        // Setup SwiftData container
+        let schema = Schema([NoteEntity.self, TagEntity.self])
+        let configuration = ModelConfiguration(
+            schema: schema,
+            isStoredInMemoryOnly: false,
+            allowsSave: true,
+            cloudKitDatabase: .automatic // Enable CloudKit sync
+        )
+
+        do {
+            self.modelContainer = try ModelContainer(for: schema, configurations: [configuration])
+            self.modelContext = ModelContext(modelContainer)
+            self.backgroundContext = ModelContext(modelContainer)
+
+            // Configure contexts
+            configureContexts()
+
+            // Determine storage mode
+            if enableMigration && !legacyManager.notes.isEmpty {
+                self.storageMode = .dualStorage
+                logger.info("Initialized in dual storage mode with \(self.legacyManager.notes.count) legacy notes")
+            } else if hasSwiftDataContent() {
+                self.storageMode = .swiftDataOnly
+                logger.info("Initialized in SwiftData-only mode")
+            } else {
+                self.storageMode = .jsonOnly
+                logger.info("Initialized in JSON-only mode")
+            }
+
+            // Load initial data
+            loadInitialData()
+
+            // Start migration if needed
+            if storageMode == .dualStorage && enableMigration {
+                startMigration()
+            }
+
+        } catch {
+            // Fallback to JSON-only mode
+            fatalError("Failed to initialize SwiftData container: \(error)")
+        }
+    }
+
+    /// Test initializer with in-memory storage
+    init(inMemory: Bool) {
+        self.legacyManager = NotesManager(seedIfEmpty: false)
+
+        let schema = Schema([NoteEntity.self, TagEntity.self])
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: inMemory)
+
+        do {
+            self.modelContainer = try ModelContainer(for: schema, configurations: [configuration])
+            self.modelContext = ModelContext(modelContainer)
+            self.backgroundContext = ModelContext(modelContainer)
+            self.storageMode = .swiftDataOnly
+
+            configureContexts()
+            loadInitialData()
+        } catch {
+            fatalError("Failed to initialize test container: \(error)")
+        }
+    }
+
+    deinit {
+        Task { @MainActor in
+            migrationTask?.cancel()
+        }
+    }
+
+    // MARK: - Context Configuration
+
+    private func configureContexts() {
+        // Configure automatic merging
+        modelContext.autosaveEnabled = true
+
+        // Configure background context for performance
+        backgroundContext.autosaveEnabled = false
+    }
+
+    // MARK: - Data Loading
+
+    private func loadInitialData() {
+        switch storageMode {
+        case .jsonOnly:
+            notes = legacyManager.notes
+            logger.info("Loaded \(self.notes.count) notes from JSON")
+
+        case .swiftDataOnly:
+            loadFromSwiftData()
+
+        case .dualStorage:
+            // During migration, show legacy data until migration completes
+            notes = legacyManager.notes
+            logger.info("Loaded \(self.notes.count) notes from JSON (dual storage mode)")
+        }
+    }
+
+    private func loadFromSwiftData() {
+        isLoading = true
+        defer { isLoading = false }
+
+        do {
+            let startTime = CFAbsoluteTimeGetCurrent()
+
+            let descriptor = FetchDescriptor<NoteEntity>(
+                sortBy: [SortDescriptor(\.modifiedAt, order: .reverse)]
+            )
+
+            let noteEntities = try modelContext.fetch(descriptor)
+            self.notes = noteEntities.map { $0.toNote() }
+
+            let loadTime = CFAbsoluteTimeGetCurrent() - startTime
+            performanceMetrics.recordLoadTime(loadTime, noteCount: notes.count)
+
+            logger.info("Loaded \(self.notes.count) notes from SwiftData in \(loadTime, privacy: .public)s")
+
+        } catch {
+            logger.error("Failed to load from SwiftData: \(error)")
+            // Fallback to legacy data
+            notes = legacyManager.notes
+        }
+    }
+
+    private func hasSwiftDataContent() -> Bool {
+        do {
+            var descriptor = FetchDescriptor<NoteEntity>()
+            descriptor.fetchLimit = 1
+            let entities = try modelContext.fetch(descriptor)
+            return !entities.isEmpty
+        } catch {
+            return false
+        }
+    }
+
+    // MARK: - CRUD Operations
+
+    @discardableResult
+    func addNote(title: String = "Untitled", content: String = "", tags: [String] = []) -> Note {
+        _ = CFAbsoluteTimeGetCurrent()
+
+        switch storageMode {
+        case .jsonOnly:
+            let note = legacyManager.addNote(title: title, content: content, tags: tags)
+            notes = legacyManager.notes
+            return note
+
+        case .swiftDataOnly, .dualStorage:
+            return addNoteToSwiftData(title: title, content: content, tags: tags)
+        }
+    }
+
+    private func addNoteToSwiftData(title: String, content: String, tags: [String]) -> Note {
+        let noteEntity = NoteEntity(title: title, content: content)
+        noteEntity.setTags(tags, in: modelContext)
+
+        modelContext.insert(noteEntity)
+
+        do {
+            try modelContext.save()
+            let note = noteEntity.toNote()
+
+            // Update local array
+            notes.insert(note, at: 0)
+
+            // Also add to legacy manager if in dual storage mode
+            if storageMode == .dualStorage {
+                _ = legacyManager.addNote(title: title, content: content, tags: tags)
+            }
+
+            let addTime = CFAbsoluteTimeGetCurrent()
+            performanceMetrics.recordOperationTime(.add, addTime)
+
+            logger.info("Added note '\(title)' to SwiftData")
+            return note
+
+        } catch {
+            logger.error("Failed to add note to SwiftData: \(error)")
+            // Fallback to legacy
+            let note = legacyManager.addNote(title: title, content: content, tags: tags)
+            notes = legacyManager.notes
+            return note
+        }
+    }
+
+    func updateNote(_ updatedNote: Note) {
+        let startTime = CFAbsoluteTimeGetCurrent()
+
+        switch storageMode {
+        case .jsonOnly:
+            legacyManager.updateNote(updatedNote)
+            notes = legacyManager.notes
+
+        case .swiftDataOnly, .dualStorage:
+            updateNoteInSwiftData(updatedNote)
+        }
+
+        let updateTime = CFAbsoluteTimeGetCurrent() - startTime
+        performanceMetrics.recordOperationTime(.update, updateTime)
+    }
+
+    private func updateNoteInSwiftData(_ updatedNote: Note) {
+        do {
+            let predicate = #Predicate<NoteEntity> { $0.id == updatedNote.id }
+            let descriptor = FetchDescriptor(predicate: predicate)
+            let entities = try modelContext.fetch(descriptor)
+
+            guard let noteEntity = entities.first else {
+                logger.warning("Note with ID \(updatedNote.id) not found for update")
+                return
+            }
+
+            // Update properties
+            noteEntity.updateTitle(updatedNote.title)
+            noteEntity.updateContent(updatedNote.content)
+            noteEntity.setTags(updatedNote.tags, in: modelContext)
+
+            try modelContext.save()
+
+            // Update local array
+            if let index = notes.firstIndex(where: { $0.id == updatedNote.id }) {
+                notes[index] = updatedNote
+            }
+
+            // Also update legacy if in dual storage
+            if storageMode == .dualStorage {
+                legacyManager.updateNote(updatedNote)
+            }
+
+            logger.info("Updated note '\(updatedNote.title)' in SwiftData")
+
+        } catch {
+            logger.error("Failed to update note in SwiftData: \(error)")
+            // Fallback to legacy
+            legacyManager.updateNote(updatedNote)
+            notes = legacyManager.notes
+        }
+    }
+
+    func deleteNote(id: UUID) {
+        let startTime = CFAbsoluteTimeGetCurrent()
+
+        switch storageMode {
+        case .jsonOnly:
+            legacyManager.deleteNote(id: id)
+            notes = legacyManager.notes
+
+        case .swiftDataOnly, .dualStorage:
+            deleteNoteFromSwiftData(id: id)
+        }
+
+        let deleteTime = CFAbsoluteTimeGetCurrent() - startTime
+        performanceMetrics.recordOperationTime(.delete, deleteTime)
+    }
+
+    private func deleteNoteFromSwiftData(id: UUID) {
+        do {
+            let predicate = #Predicate<NoteEntity> { $0.id == id }
+            let descriptor = FetchDescriptor(predicate: predicate)
+            let entities = try modelContext.fetch(descriptor)
+
+            guard let noteEntity = entities.first else {
+                logger.warning("Note with ID \(id) not found for deletion")
+                return
+            }
+
+            modelContext.delete(noteEntity)
+            try modelContext.save()
+
+            // Update local array
+            notes.removeAll { $0.id == id }
+
+            // Also delete from legacy if in dual storage
+            if storageMode == .dualStorage {
+                legacyManager.deleteNote(id: id)
+            }
+
+            logger.info("Deleted note with ID \(id) from SwiftData")
+
+        } catch {
+            logger.error("Failed to delete note from SwiftData: \(error)")
+            // Fallback to legacy
+            legacyManager.deleteNote(id: id)
+            notes = legacyManager.notes
+        }
+    }
+
+    // MARK: - Migration
+
+    private func startMigration() {
+        guard migrationStatus == .notStarted else { return }
+
+        migrationStatus = .inProgress
+        migrationProgress = 0.0
+
+        migrationTask = Task { @MainActor in
+            await performMigration()
+        }
+    }
+
+    private func performMigration() async {
+        logger.info("Starting migration from JSON to SwiftData")
+
+        let legacyNotes = legacyManager.notes
+        let totalNotes = legacyNotes.count
+
+        guard totalNotes > 0 else {
+            migrationStatus = .completed
+            storageMode = .swiftDataOnly
+            return
+        }
+
+        do {
+            // Migrate in batches for better performance
+            let batchSize = 50
+            var migratedCount = 0
+
+            for batch in legacyNotes.chunked(into: batchSize) {
+                try await migrateBatch(batch)
+                migratedCount += batch.count
+
+                await MainActor.run {
+                    migrationProgress = Double(migratedCount) / Double(totalNotes)
+                }
+
+                // Yield control periodically
+                await Task.yield()
+            }
+
+            // Clean up unused tags
+            try await cleanupUnusedTags()
+
+            await MainActor.run {
+                migrationStatus = .completed
+                storageMode = .swiftDataOnly
+                migrationProgress = 1.0
+
+                // Reload from SwiftData
+                loadFromSwiftData()
+
+                logger.info("Migration completed successfully. Migrated \(totalNotes) notes.")
+            }
+
+        } catch {
+            await MainActor.run {
+                migrationStatus = .failed(error)
+                logger.error("Migration failed: \(error)")
+            }
+        }
+    }
+
+    private func migrateBatch(_ notes: [Note]) async throws {
+        // Use background context for migration
+        let backgroundContext = ModelContext(modelContainer)
+
+        for note in notes {
+            let noteEntity = NoteEntity(from: note)
+            noteEntity.setTags(note.tags, in: backgroundContext)
+            backgroundContext.insert(noteEntity)
+        }
+
+        try backgroundContext.save()
+    }
+
+    private func cleanupUnusedTags() async throws {
+        let backgroundContext = ModelContext(modelContainer)
+        try TagEntity.cleanupUnusedTags(in: backgroundContext, olderThanDays: 0)
+        try TagEntity.mergeDuplicateTags(in: backgroundContext)
+        try backgroundContext.save()
+    }
+
+    // MARK: - Advanced Operations
+
+    func searchNotes(query: String) -> [Note] {
+        guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return notes
+        }
+
+        switch storageMode {
+        case .jsonOnly, .dualStorage:
+            // Use legacy search during JSON mode or migration
+            return legacyManager.notes.filter { note in
+                note.title.localizedCaseInsensitiveContains(query) ||
+                note.content.localizedCaseInsensitiveContains(query) ||
+                note.tags.contains { $0.localizedCaseInsensitiveContains(query) }
+            }
+
+        case .swiftDataOnly:
+            return searchNotesInSwiftData(query: query)
+        }
+    }
+
+    private func searchNotesInSwiftData(query: String) -> [Note] {
+        do {
+            let startTime = CFAbsoluteTimeGetCurrent()
+
+            let predicate = NoteEntity.searchPredicate(for: query)
+            let sortDescriptors = NoteEntity.sortByRelevance(query: query)
+            let descriptor = FetchDescriptor(predicate: predicate, sortBy: sortDescriptors)
+
+            let entities = try modelContext.fetch(descriptor)
+            let results = entities.map { $0.toNote() }
+
+            let searchTime = CFAbsoluteTimeGetCurrent() - startTime
+            performanceMetrics.recordSearchTime(searchTime, resultCount: results.count)
+
+            logger.info("SwiftData search returned \(results.count) results in \(searchTime)s")
+            return results
+
+        } catch {
+            logger.error("SwiftData search failed: \(error)")
+            // Fallback to in-memory search
+            return notes.filter { note in
+                note.title.localizedCaseInsensitiveContains(query) ||
+                note.content.localizedCaseInsensitiveContains(query) ||
+                note.tags.contains { $0.localizedCaseInsensitiveContains(query) }
+            }
+        }
+    }
+
+    func getPopularTags(limit: Int = 20) -> [String] {
+        switch storageMode {
+        case .jsonOnly, .dualStorage:
+            // Calculate from current notes
+            let tagCounts = Dictionary(grouping: notes.flatMap { $0.tags }) { $0 }
+                .mapValues { $0.count }
+            return Array(tagCounts.sorted { $0.value > $1.value }.prefix(limit).map { $0.key })
+
+        case .swiftDataOnly:
+            return getPopularTagsFromSwiftData(limit: limit)
+        }
+    }
+
+    private func getPopularTagsFromSwiftData(limit: Int) -> [String] {
+        do {
+            let descriptor = TagEntity.popularTagsPredicate(limit: limit)
+            let entities = try modelContext.fetch(descriptor)
+            return entities.map { $0.name }
+        } catch {
+            logger.error("Failed to fetch popular tags: \(error)")
+            return []
+        }
+    }
+
+    // MARK: - Rollback Support
+
+    func rollbackToJSON() async {
+        guard storageMode != .jsonOnly else { return }
+
+        logger.info("Rolling back to JSON storage")
+        migrationStatus = .rollback
+
+        // Clear SwiftData
+        do {
+            let noteDescriptor = FetchDescriptor<NoteEntity>()
+            let noteEntities = try modelContext.fetch(noteDescriptor)
+            for note in noteEntities {
+                modelContext.delete(note)
+            }
+
+            let tagDescriptor = FetchDescriptor<TagEntity>()
+            let tagEntities = try modelContext.fetch(tagDescriptor)
+            for tag in tagEntities {
+                modelContext.delete(tag)
+            }
+
+            try modelContext.save()
+
+            // Switch back to JSON mode
+            storageMode = .jsonOnly
+            self.notes = legacyManager.notes
+
+            logger.info("Rollback completed")
+
+        } catch {
+            logger.error("Rollback failed: \(error)")
+        }
+    }
+
+    // MARK: - Performance Monitoring
+
+    func getPerformanceMetrics() -> PerformanceMetrics {
+        return performanceMetrics
+    }
+}
+
+// MARK: - Performance Metrics
+
+struct PerformanceMetrics {
+    var averageLoadTime: TimeInterval = 0
+    var averageSearchTime: TimeInterval = 0
+    var operationTimes: [String: TimeInterval] = [:]
+    var totalOperations: Int = 0
+
+    mutating func recordLoadTime(_ time: TimeInterval, noteCount: Int) {
+        averageLoadTime = (averageLoadTime + time) / 2
+    }
+
+    mutating func recordSearchTime(_ time: TimeInterval, resultCount: Int) {
+        averageSearchTime = (averageSearchTime + time) / 2
+    }
+
+    mutating func recordOperationTime(_ operation: Operation, _ time: TimeInterval) {
+        let key = operation.rawValue
+        operationTimes[key] = (operationTimes[key] ?? 0 + time) / 2
+        totalOperations += 1
+    }
+
+    enum Operation: String {
+        case add = "add"
+        case update = "update"
+        case delete = "delete"
+    }
+}
+
+// MARK: - Array Extension
+
+extension Array {
+    func chunked(into size: Int) -> [[Element]] {
+        return stride(from: 0, to: count, by: size).map {
+            Array(self[$0..<Swift.min($0 + size, count)])
+        }
+    }
+}

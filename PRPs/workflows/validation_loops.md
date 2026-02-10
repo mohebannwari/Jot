@@ -62,7 +62,7 @@ This enables AI to deliver working code on the first try.
 
 **Command:**
 ```bash
-xcodebuild -project Noty.xcodeproj -scheme Noty -configuration Debug build
+xcodebuild -project Jot.xcodeproj -scheme Jot -configuration Debug build
 ```
 
 **Success Criteria:**
@@ -92,18 +92,18 @@ xcodebuild -project Noty.xcodeproj -scheme Noty -configuration Debug build
 **Commands:**
 ```bash
 # Run all tests
-xcodebuild -project Noty.xcodeproj -scheme Noty \
+xcodebuild -project Jot.xcodeproj -scheme Jot \
   -destination 'platform=macOS' test
 
 # Run specific test class
-xcodebuild -project Noty.xcodeproj -scheme Noty \
+xcodebuild -project Jot.xcodeproj -scheme Jot \
   -destination 'platform=macOS' \
-  -only-testing:NotyTests/FeatureTests test
+  -only-testing:JotTests/FeatureTests test
 
 # Run specific test method
-xcodebuild -project Noty.xcodeproj -scheme Noty \
+xcodebuild -project Jot.xcodeproj -scheme Jot \
   -destination 'platform=macOS' \
-  -only-testing:NotyTests/FeatureTests/testSpecificBehavior test
+  -only-testing:JotTests/FeatureTests/testSpecificBehavior test
 ```
 
 **Success Criteria:**
@@ -258,7 +258,7 @@ error: cannot find 'NotesManager' in scope
 ```
 
 **Analysis:**
-- Missing import: `import Noty` or `@testable import Noty`
+- Missing import: `import Jot` or `@testable import Jot`
 - Typo in name
 - File not in target
 
@@ -287,7 +287,7 @@ Read line 42, understand what was intended, use correct method
 Some errors cascade:
 
 ```
-error: cannot build module 'Noty' because module 'Noty' failed to build
+error: cannot build module 'Jot' because module 'Jot' failed to build
 ```
 
 **Analysis:**
@@ -322,7 +322,7 @@ Check implementation logic, fix to return correct value
 ```swift
 // Error: cannot find 'NotesManager' in scope
 // Fix: Add import
-import Noty
+import Jot
 ```
 
 **Type Mismatch**
@@ -447,7 +447,7 @@ class AudioRecorder: ObservableObject {
 ### Validation 1: Build
 
 ```bash
-xcodebuild -project Noty.xcodeproj -scheme Noty -configuration Debug build
+xcodebuild -project Jot.xcodeproj -scheme Jot -configuration Debug build
 ```
 
 **Result:** ❌ Failed
@@ -475,7 +475,7 @@ class AudioRecorder: ObservableObject {
 ### Validation 2: Build
 
 ```bash
-xcodebuild -project Noty.xcodeproj -scheme Noty -configuration Debug build
+xcodebuild -project Jot.xcodeproj -scheme Jot -configuration Debug build
 ```
 
 **Result:** ❌ Failed
@@ -504,7 +504,7 @@ final class AudioRecorder: ObservableObject {
 ### Validation 3: Build
 
 ```bash
-xcodebuild -project Noty.xcodeproj -scheme Noty -configuration Debug build
+xcodebuild -project Jot.xcodeproj -scheme Jot -configuration Debug build
 ```
 
 **Result:** ✅ Success
@@ -512,9 +512,9 @@ xcodebuild -project Noty.xcodeproj -scheme Noty -configuration Debug build
 ### Validation 4: Tests
 
 ```bash
-xcodebuild -project Noty.xcodeproj -scheme Noty \
+xcodebuild -project Jot.xcodeproj -scheme Jot \
   -destination 'platform=macOS' \
-  -only-testing:NotyTests/AudioRecorderTests test
+  -only-testing:JotTests/AudioRecorderTests test
 ```
 
 **Result:** ✅ All tests pass

@@ -46,7 +46,7 @@ Conduct a systematic investigation:
 ### 3. Gather Documentation
 - Fetch relevant API documentation if URLs provided
 - Include SwiftUI best practices for iOS 26+/macOS 26+
-- Reference Figma design file if applicable: https://www.figma.com/design/BhVLOWG63LckTVCuO3q0Tv/Noty
+- Reference Figma design file if applicable: https://www.figma.com/design/BhVLOWG63LckTVCuO3q0Tv/Jot
 - Note any MCP server resources or tools needed
 
 ### 4. Generate the PRP
@@ -83,8 +83,8 @@ Each step should include:
 
 **Success Criteria:**
 - Functional requirements checklist
-- Build passes: `xcodebuild -project Noty.xcodeproj -scheme Noty -configuration Debug build`
-- Tests pass: `xcodebuild -project Noty.xcodeproj -scheme Noty -destination 'platform=macOS' test`
+- Build passes: `xcodebuild -project Jot.xcodeproj -scheme Jot -configuration Debug build`
+- Tests pass: `xcodebuild -project Jot.xcodeproj -scheme Jot -destination 'platform=macOS' test`
 - Design system compliance verified
 - No linter errors
 

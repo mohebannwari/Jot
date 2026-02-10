@@ -143,7 +143,7 @@ struct AdaptiveGlassMorph: View {
 }
 ```
 
-## Best Practices for Noty App Implementation
+## Best Practices for Jot App Implementation
 
 ### 1. Note Cards Morphing
 - Use `GlassEffectContainer` for the entire grid of note cards

@@ -21,7 +21,7 @@ This guide provides a **quick reference** for understanding:
 ### 🟢 100% Shared Files (No Changes Needed)
 These files work identically on both platforms.
 
-**Target Membership:** ✅ Noty (macOS) + ✅ Noty iOS
+**Target Membership:** ✅ Jot (macOS) + ✅ Jot iOS
 
 **Location:** `Shared/`
 
@@ -35,7 +35,7 @@ These files work identically on both platforms.
 ### 🟡 95% Shared Files (Minor Platform Conditionals)
 These files need small `#if os()` additions but remain in Shared/.
 
-**Target Membership:** ✅ Noty (macOS) + ✅ Noty iOS
+**Target Membership:** ✅ Jot (macOS) + ✅ Jot iOS
 
 **Location:** `Shared/` (with conditional compilation)
 
@@ -50,13 +50,13 @@ These files need small `#if os()` additions but remain in Shared/.
 These files have distinct macOS and iOS versions.
 
 **Target Membership:**
-- macOS version: ✅ Noty (macOS)
-- iOS version: ✅ Noty iOS
+- macOS version: ✅ Jot (macOS)
+- iOS version: ✅ Jot iOS
 
 **Location:** `macOS/` or `iOS/`
 
 **Files:**
-- NotyApp.swift → NotyApp+macOS.swift / NotyApp+iOS.swift
+- JotApp.swift → JotApp+macOS.swift / JotApp+iOS.swift
 - ContentView.swift → ContentView+macOS.swift / ContentView+iOS.swift
 - TodoRichTextEditor.swift → Split into protocol + implementations
 - ImagePickerControl.swift → Split into protocol + implementations
@@ -69,14 +69,14 @@ These files have distinct macOS and iOS versions.
 
 | Current File | New Location | Status | Target Membership | Changes Needed |
 |-------------|--------------|--------|-------------------|----------------|
-| `NotyApp.swift` | `Shared/App/NotyAppProtocol.swift` | 🟡 Split | Both | Extract shared init logic |
-| | `macOS/App/NotyApp+macOS.swift` | 🔴 New | macOS | Window configuration |
-| | `iOS/App/NotyApp+iOS.swift` | 🔴 New | iOS | Scene configuration |
+| `JotApp.swift` | `Shared/App/JotAppProtocol.swift` | 🟡 Split | Both | Extract shared init logic |
+| | `macOS/App/JotApp+macOS.swift` | 🔴 New | macOS | Window configuration |
+| | `iOS/App/JotApp+iOS.swift` | 🔴 New | iOS | Scene configuration |
 | `ContentView.swift` | `macOS/App/ContentView+macOS.swift` | 🔴 Keep | macOS | Overlay navigation |
 | | `iOS/App/ContentView+iOS.swift` | 🔴 New | iOS | TabView/NavigationStack |
 
 **Safety Checklist:**
-- [ ] NotyAppProtocol compiles for both targets
+- [ ] JotAppProtocol compiles for both targets
 - [ ] macOS version builds and runs
 - [ ] iOS version builds and runs
 - [ ] Environment objects propagate correctly
@@ -296,7 +296,7 @@ extension PlatformImage {
 
 #### Step 1.1: Create Backup
 ```bash
-cd /Users/mohebanwari/development/Noty
+cd /Users/mohebanwari/development/Jot
 git add .
 git commit -m "Pre-iOS migration checkpoint"
 git tag v1.0-macos-only
@@ -310,7 +310,7 @@ git checkout -b ios-migration
 
 #### Step 1.2: Create Directory Structure
 ```bash
-cd Noty
+cd Jot
 mkdir -p Shared/Models
 mkdir -p Shared/Views/Components/PlatformSpecific
 mkdir -p Shared/Views/Screens
@@ -334,20 +334,20 @@ mkdir -p iOS/Resources
 
 #### Step 2.1: Copy Models to Shared/
 ```bash
-cp Noty/Models/*.swift Noty/Shared/Models/
-cp -r Noty/Models/SwiftData Noty/Shared/Models/
+cp Jot/Models/*.swift Jot/Shared/Models/
+cp -r Jot/Models/SwiftData Jot/Shared/Models/
 ```
 
 #### Step 2.2: Update Xcode Target Membership
 1. Open Xcode
 2. Select each file in `Shared/Models/`
 3. In File Inspector, check:
-   - ✅ Noty (macOS)
-   - ✅ Noty iOS (when created)
+   - ✅ Jot (macOS)
+   - ✅ Jot iOS (when created)
 
 #### Step 2.3: Test Build
 ```bash
-xcodebuild -project Noty.xcodeproj -scheme Noty -destination 'platform=macOS' build
+xcodebuild -project Jot.xcodeproj -scheme Jot -destination 'platform=macOS' build
 ```
 
 **Safety Checkpoint:**
@@ -359,8 +359,8 @@ xcodebuild -project Noty.xcodeproj -scheme Noty -destination 'platform=macOS' bu
 **If Build Fails:**
 ```bash
 # Rollback
-rm -rf Noty/Shared/Models
-git checkout Noty/Models/
+rm -rf Jot/Shared/Models
+git checkout Jot/Models/
 ```
 
 ---
@@ -369,7 +369,7 @@ git checkout Noty/Models/
 
 #### Step 3.1: Copy Utils to Shared/
 ```bash
-cp Noty/Utils/*.swift Noty/Shared/Utils/
+cp Jot/Utils/*.swift Jot/Shared/Utils/
 ```
 
 #### Step 3.2: Update Platform-Specific Utils
@@ -402,7 +402,7 @@ class HapticManager {
 
 #### Step 3.3: Test Build
 ```bash
-xcodebuild -project Noty.xcodeproj -scheme Noty build
+xcodebuild -project Jot.xcodeproj -scheme Jot build
 ```
 
 **Safety Checkpoint:**
@@ -417,9 +417,9 @@ xcodebuild -project Noty.xcodeproj -scheme Noty build
 
 #### Step 4.1: Copy Shared Components
 ```bash
-cp Noty/Views/Components/BottomBar.swift Noty/Shared/Views/Components/
-cp Noty/Views/Components/FloatingSearch.swift Noty/Shared/Views/Components/
-cp Noty/Views/Components/NoteCard.swift Noty/Shared/Views/Components/
+cp Jot/Views/Components/BottomBar.swift Jot/Shared/Views/Components/
+cp Jot/Views/Components/FloatingSearch.swift Jot/Shared/Views/Components/
+cp Jot/Views/Components/NoteCard.swift Jot/Shared/Views/Components/
 # ... continue for all 🟢 files
 ```
 
@@ -470,7 +470,7 @@ struct TodoRichTextEditorIOS: UIViewRepresentable {
 
 #### Step 4.3: Test Build
 ```bash
-xcodebuild -project Noty.xcodeproj -scheme Noty build
+xcodebuild -project Jot.xcodeproj -scheme Jot build
 ```
 
 **Safety Checkpoint:**
@@ -486,8 +486,8 @@ xcodebuild -project Noty.xcodeproj -scheme Noty build
 #### Step 5.1: Add iOS Target in Xcode
 1. File → New → Target
 2. iOS → App
-3. Product Name: "Noty iOS"
-4. Bundle ID: `com.mohebanwari.Noty.iOS`
+3. Product Name: "Jot iOS"
+4. Bundle ID: `com.mohebanwari.Jot.iOS`
 5. Minimum Deployment: iOS 26.0
 
 #### Step 5.2: Configure Target Membership
@@ -496,14 +496,14 @@ Go through each file in Shared/ and add to both targets.
 **Bulk Operation:**
 1. Select all files in `Shared/`
 2. File Inspector → Target Membership
-3. Check both ✅ Noty and ✅ Noty iOS
+3. Check both ✅ Jot and ✅ Jot iOS
 
 #### Step 5.3: Create iOS App Entry
 ```swift
-// iOS/App/NotyApp+iOS.swift
+// iOS/App/JotApp+iOS.swift
 #if os(iOS)
 @main
-struct NotyApp: App {
+struct JotApp: App {
     @StateObject private var notesManager: SimpleSwiftDataManager
     @StateObject private var themeManager = ThemeManager()
 
@@ -531,10 +531,10 @@ struct NotyApp: App {
 #### Step 5.4: Build Both Targets
 ```bash
 # macOS
-xcodebuild -project Noty.xcodeproj -scheme Noty -destination 'platform=macOS' build
+xcodebuild -project Jot.xcodeproj -scheme Jot -destination 'platform=macOS' build
 
 # iOS
-xcodebuild -project Noty.xcodeproj -scheme "Noty iOS" -destination 'platform=iOS Simulator,name=iPhone 16 Pro' build
+xcodebuild -project Jot.xcodeproj -scheme "Jot iOS" -destination 'platform=iOS Simulator,name=iPhone 16 Pro' build
 ```
 
 **Safety Checkpoint:**
@@ -598,10 +598,10 @@ Before deleting old files:
 
 ```bash
 # Remove old directory structure
-rm -rf Noty/App
-rm -rf Noty/Models
-rm -rf Noty/Views
-rm -rf Noty/Utils
+rm -rf Jot/App
+rm -rf Jot/Models
+rm -rf Jot/Views
+rm -rf Jot/Utils
 ```
 
 ### Step 2: Update .gitignore
@@ -679,17 +679,17 @@ git tag v2.0-cross-platform
 
 ```bash
 # Full clean
-xcodebuild clean -project Noty.xcodeproj -scheme Noty
+xcodebuild clean -project Jot.xcodeproj -scheme Jot
 rm -rf ~/Library/Developer/Xcode/DerivedData/*
 
 # Reset to checkpoint
 git reset --hard v1.0-macos-only
 
 # Check target membership
-xcodebuild -project Noty.xcodeproj -list
+xcodebuild -project Jot.xcodeproj -list
 
 # View build settings
-xcodebuild -project Noty.xcodeproj -scheme Noty -showBuildSettings
+xcodebuild -project Jot.xcodeproj -scheme Jot -showBuildSettings
 ```
 
 ---
@@ -737,7 +737,7 @@ Recommended migration order for maximum safety:
 1. TodoRichTextEditor.swift → Split
 2. ImagePickerControl.swift → Split
 3. ImageAttachmentView.swift → Adapt
-4. NotyApp.swift → Split
+4. JotApp.swift → Split
 5. ContentView.swift → Split
 
 **Checkpoint:** Build & test both platforms

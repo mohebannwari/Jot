@@ -1,4 +1,4 @@
-# 🚀 Noty - Performance Testing & Optimization Report
+# 🚀 Jot - Performance Testing & Optimization Report
 
 ## Build Performance Analysis
 
@@ -147,7 +147,7 @@ Effect Transitions: Smooth with .bouncy animations
 - **Code Quality:** **A** (Well-structured, maintainable)
 
 ### 🚀 Ready for Distribution
-The Noty app demonstrates **exceptional performance** across all metrics:
+The Jot app demonstrates **exceptional performance** across all metrics:
 - Memory usage is 72% below the target threshold
 - Render times are 39% faster than baseline
 - Build performance is optimal for development workflow

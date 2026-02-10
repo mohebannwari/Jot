@@ -1,6 +1,6 @@
-# Context Engineering Guide for Noty
+# Context Engineering Guide for Jot
 
-Welcome to context engineering with Noty! This guide explains how to use the context engineering framework to build features systematically with AI assistance.
+Welcome to context engineering with Jot! This guide explains how to use the context engineering framework to build features systematically with AI assistance.
 
 ## What is Context Engineering?
 
@@ -174,8 +174,8 @@ Reference relevant code patterns:
 - `examples/glass_effects_pattern.swift` - For glass styling
 
 **Existing implementations:**
-- `Noty/Views/Components/NoteCard.swift` - Similar card layout
-- `Noty/Models/NotesManager.swift` - Similar CRUD pattern
+- `Jot/Views/Components/NoteCard.swift` - Similar card layout
+- `Jot/Models/NotesManager.swift` - Similar CRUD pattern
 ```
 
 ### DOCUMENTATION Section
@@ -190,7 +190,7 @@ Include all relevant resources:
 - SwiftUI async/await patterns: (link)
 
 **Figma designs:**
-- https://www.figma.com/design/BhVLOWG63LckTVCuO3q0Tv/Noty
+- https://www.figma.com/design/BhVLOWG63LckTVCuO3q0Tv/Jot
 - Component: Web Preview Card
 
 **Related docs:**
@@ -232,7 +232,7 @@ Capture important details:
 
 ## Using Examples Effectively
 
-The `examples/` directory is critical for success. It contains representative patterns from Noty:
+The `examples/` directory is critical for success. It contains representative patterns from Jot:
 
 ### Available Examples
 
@@ -360,7 +360,7 @@ The `.claude/commands/` directory defines custom commands:
 
 ## Design System Integration
 
-Noty uses Apple's Liquid Glass design system (iOS 26+/macOS 26+).
+Jot uses Apple's Liquid Glass design system (iOS 26+/macOS 26+).
 
 ### Glass Effects
 
@@ -438,23 +438,23 @@ Every PRP includes validation commands that must pass:
 
 ### Build Validation
 ```bash
-xcodebuild -project Noty.xcodeproj -scheme Noty -configuration Debug build
+xcodebuild -project Jot.xcodeproj -scheme Jot -configuration Debug build
 ```
 
 ### Test Validation
 ```bash
-xcodebuild -project Noty.xcodeproj -scheme Noty -destination 'platform=macOS' test
+xcodebuild -project Jot.xcodeproj -scheme Jot -destination 'platform=macOS' test
 ```
 
 ### Specific Test
 ```bash
-xcodebuild -project Noty.xcodeproj -scheme Noty -destination 'platform=macOS' \
-  -only-testing:NotyTests/FeatureTests test
+xcodebuild -project Jot.xcodeproj -scheme Jot -destination 'platform=macOS' \
+  -only-testing:JotTests/FeatureTests test
 ```
 
 ### Clean Build
 ```bash
-xcodebuild -project Noty.xcodeproj -scheme Noty clean
+xcodebuild -project Jot.xcodeproj -scheme Jot clean
 ```
 
 AI assistants run these automatically and fix issues until all pass.

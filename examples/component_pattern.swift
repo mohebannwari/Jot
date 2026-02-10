@@ -1,11 +1,11 @@
 //
 //  component_pattern.swift
-//  Noty Examples
+//  Jot Examples
 //
-//  Simplified pattern extracted from: Noty/Views/Components/NoteCard.swift
+//  Simplified pattern extracted from: Jot/Views/Components/NoteCard.swift
 //
 //  This demonstrates the standard component structure for SwiftUI views
-//  in the Noty app, including state management, liquid glass effects,
+//  in the Jot app, including state management, liquid glass effects,
 //  and interactive animations.
 //
 
@@ -13,7 +13,7 @@ import SwiftUI
 
 // MARK: - Component Structure Pattern
 
-/// Example component following Noty's established structure:
+/// Example component following Jot's established structure:
 /// 1. Properties (props from parent + environment objects)
 /// 2. State (local component state)
 /// 3. Computed properties (complex logic extracted from body)
@@ -27,7 +27,7 @@ struct ExampleCard: View {
     let onTap: () -> Void
     
     // Environment objects for shared state
-    // These are injected at app level in NotyApp.swift
+    // These are injected at app level in JotApp.swift
     @EnvironmentObject private var notesManager: NotesManager
     @EnvironmentObject private var themeManager: ThemeManager
     

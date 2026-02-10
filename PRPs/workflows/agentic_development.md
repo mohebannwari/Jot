@@ -43,14 +43,14 @@ Every task must have clear validation:
 
 ```bash
 # Build validation
-xcodebuild -project Noty.xcodeproj -scheme Noty -configuration Debug build
+xcodebuild -project Jot.xcodeproj -scheme Jot -configuration Debug build
 
 # Test validation
-xcodebuild -project Noty.xcodeproj -scheme Noty -destination 'platform=macOS' test
+xcodebuild -project Jot.xcodeproj -scheme Jot -destination 'platform=macOS' test
 
 # Specific test
-xcodebuild -project Noty.xcodeproj -scheme Noty -destination 'platform=macOS' \
-  -only-testing:NotyTests/FeatureTests test
+xcodebuild -project Jot.xcodeproj -scheme Jot -destination 'platform=macOS' \
+  -only-testing:JotTests/FeatureTests test
 ```
 
 **Validation Types:**
