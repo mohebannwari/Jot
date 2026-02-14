@@ -146,7 +146,7 @@ private struct SubtleHoverScale: ViewModifier {
 
 extension View {
     /// Adds a self-contained subtle scale-up on hover.
-    func subtleHoverScale(_ scale: CGFloat = 1.02) -> some View {
+    func subtleHoverScale(_ scale: CGFloat = 1.01) -> some View {
         modifier(SubtleHoverScale(scale: scale))
     }
 }
@@ -170,5 +170,55 @@ extension View {
         } else {
             self
         }
+    }
+}
+
+// MARK: - Shimmer Effect
+
+struct ShimmerModifier: ViewModifier {
+    let isActive: Bool
+    @State private var phase: CGFloat = 0
+    @Environment(\.colorScheme) private var colorScheme
+
+    func body(content: Content) -> some View {
+        content
+            .overlay {
+                if isActive {
+                    GeometryReader { geo in
+                        LinearGradient(
+                            stops: [
+                                .init(color: .clear, location: 0),
+                                .init(color: shimmerColor.opacity(0.8), location: 0.5),
+                                .init(color: .clear, location: 1)
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                        .frame(width: geo.size.width)
+                        .blur(radius: 10)
+                        .offset(x: -geo.size.width + (phase * 2 * geo.size.width))
+                        .mask(content)
+                    }
+                    .allowsHitTesting(false)
+                    .onAppear {
+                        withAnimation(
+                            .linear(duration: 3.5)
+                            .repeatForever(autoreverses: false)
+                        ) {
+                            phase = 1
+                        }
+                    }
+                }
+            }
+    }
+
+    private var shimmerColor: Color {
+        colorScheme == .dark ? .black : .white
+    }
+}
+
+extension View {
+    func shimmering(active: Bool = true) -> some View {
+        modifier(ShimmerModifier(isActive: active))
     }
 }

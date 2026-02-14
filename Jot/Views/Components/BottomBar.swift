@@ -49,7 +49,7 @@ struct BottomBar: View {
             }
             .frame(height: 40)
             .fixedSize(horizontal: true, vertical: false)
-            .scaleEffect(isHoveringNewNote ? 1.05 : 1.0)
+            .scaleEffect(isHoveringNewNote ? 1.03 : 1.0)
             .shadow(
                 color: Color.black.opacity(isHoveringNewNote ? 0.08 : 0.06),
                 radius: isHoveringNewNote ? 12 : 8,
@@ -73,7 +73,7 @@ struct BottomBar: View {
                 .foregroundColor(Color("PrimaryTextColor"))
                 .frame(width: 40, height: 40)
                 .liquidGlass(in: Circle())
-                .scaleEffect(isHoveringTheme ? 1.1 : 1.0)
+                .scaleEffect(isHoveringTheme ? 1.05 : 1.0)
                 .shadow(
                     color: Color.black.opacity(isHoveringTheme ? 0.08 : 0.06),
                     radius: isHoveringTheme ? 12 : 8,

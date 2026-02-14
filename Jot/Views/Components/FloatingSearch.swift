@@ -153,7 +153,7 @@ struct FloatingSearch: View {
                     }
 
                 Button(action: trailingAction) {
-                    Image("IconArrowLeftX")
+                    Image("IconCircleX")
                         .renderingMode(.template)
                         .resizable()
                         .scaledToFit()
@@ -161,6 +161,7 @@ struct FloatingSearch: View {
                         .frame(width: 20, height: 20)
                 }
                 .buttonStyle(.plain)
+                .subtleHoverScale(1.06)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 12)
@@ -194,7 +195,7 @@ struct FloatingSearch: View {
                         Button {
                             applyRecentQuery(query)
                         } label: {
-                            HStack(spacing: 12) {
+                            HStack(spacing: 8) {
                                 Image("IconNoteText")
                                     .renderingMode(.template)
                                     .resizable()
@@ -239,9 +240,9 @@ struct FloatingSearch: View {
         .padding(.vertical, 8)
     }
 
-    private func folderName(for folderID: UUID?) -> String? {
+    private func folder(for folderID: UUID?) -> Folder? {
         guard let folderID else { return nil }
-        return folders.first(where: { $0.id == folderID })?.name
+        return folders.first(where: { $0.id == folderID })
     }
 
     private func resultRow(_ result: SearchHit, index: Int) -> some View {
@@ -252,8 +253,8 @@ struct FloatingSearch: View {
         return Button(action: {
             selectResult(result)
         }) {
-            VStack(spacing: 0) {
-                HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 8) {
                     Image(result.isFolderResult ? "IconFolder2" : "IconNoteText")
                         .renderingMode(.template)
                         .resizable()
@@ -263,7 +264,7 @@ struct FloatingSearch: View {
 
                     Text(result.title)
                         .font(FontManager.heading(size: 15, weight: .medium))
-                        .tracking(-0.5)
+                        .tracking(-0.4)
                         .foregroundColor(Color("PrimaryTextColor"))
                         .lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -272,36 +273,30 @@ struct FloatingSearch: View {
                 .padding(.top, 8)
                 .padding(.bottom, belongsToFolder ? 2 : 8)
 
-                if let note = result.note, let name = folderName(for: note.folderID) {
+                if let note = result.note, let folder = folder(for: note.folderID) {
                     HStack(spacing: 4) {
-                        Image("IconArrowCornerDownRight")
-                            .renderingMode(.template)
-                            .resizable()
-                            .scaledToFit()
-                            .foregroundColor(Color("SecondaryTextColor"))
-                            .frame(width: 15, height: 15)
-                            .offset(y: -0.5)
-
                         Image("IconFolder2")
                             .renderingMode(.template)
                             .resizable()
                             .scaledToFit()
-                            .foregroundColor(Color("SecondaryTextColor"))
+                            .foregroundColor(.white)
                             .frame(width: 15, height: 15)
 
-                        Text(name)
-                            .font(FontManager.heading(size: 10, weight: .medium))
-                            .foregroundColor(Color("SecondaryTextColor").opacity(0.7))
+                        Text(folder.name)
+                            .font(FontManager.heading(size: 11, weight: .medium))
+                            .tracking(-0.2)
+                            .foregroundColor(.white)
                             .lineLimit(1)
-                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .padding(.leading, 24)
-                    .padding(.trailing, 8)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(folder.folderColor, in: Capsule())
+                    .padding(.leading, 36)
                     .padding(.bottom, 8)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .scaleEffect(isHovered || isSelected ? 1.02 : 1)
+            .scaleEffect(isHovered || isSelected ? 1.01 : 1)
             .animation(.jotHover, value: isHovered)
             .animation(.jotHover, value: isSelected)
         }

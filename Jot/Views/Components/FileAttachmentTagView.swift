@@ -43,7 +43,7 @@ struct FileAttachmentTagView: View {
             .frame(width: 20, height: 20)
 
             Text(label.lowercased())
-                .font(FontManager.metadata(size: 10, weight: .medium))
+                .font(FontManager.metadata(size: 11, weight: .medium))
                 .foregroundStyle(foregroundColor)
         }
         .padding(.horizontal, 8)

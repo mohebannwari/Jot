@@ -1098,13 +1098,15 @@ struct TodoRichTextEditor: View {
             }
             
             /// Create an inline image attachment tag from a filename
-            private func makeImageAttachment(filename: String) -> NSMutableAttributedString {
+            private func makeImageAttachment(filename: String, imageNumber: Int) -> NSMutableAttributedString {
                 NSLog("🖼️ makeImageAttachment: START with filename: %@", filename)
 
                 func fallbackAttributedString() -> NSMutableAttributedString {
                     NSLog("🖼️ makeImageAttachment: Falling back to text placeholder for %@", filename)
                     return NSMutableAttributedString(string: "[Image: \(filename)]")
                 }
+
+                let tagLabel = "image\(max(imageNumber, 1))"
 
                 if ImageStorageManager.shared.getImageURL(for: filename) == nil {
                     NSLog("🖼️ makeImageAttachment: WARNING - no stored file found for %@", filename)
@@ -1114,7 +1116,7 @@ struct TodoRichTextEditor: View {
                 let displaySize: CGSize
 
 #if os(macOS)
-                let tagView = ImageAttachmentTagView()
+                let tagView = ImageAttachmentTagView(label: tagLabel)
                     .environment(\.colorScheme, currentColorScheme)
                 let renderer = ImageRenderer(content: tagView)
                 let scale = NSScreen.main?.backingScaleFactor ?? 2.0
@@ -1139,7 +1141,7 @@ struct TodoRichTextEditor: View {
                 attachment.attachmentCell = NSTextAttachmentCell(imageCell: renderedImage)
 
 #else
-                let tagView = ImageAttachmentTagView()
+                let tagView = ImageAttachmentTagView(label: tagLabel)
                     .environment(\.colorScheme, currentColorScheme)
                 let renderer = ImageRenderer(content: tagView)
                 let scale = UIScreen.main.scale
@@ -1177,9 +1179,10 @@ struct TodoRichTextEditor: View {
 #endif
 
                 NSLog(
-                    "🖼️ makeImageAttachment: Created inline tag for %@ with size %@",
+                    "🖼️ makeImageAttachment: Created inline tag for %@ with size %@ and label %@",
                     filename,
-                    sizeDescription
+                    sizeDescription,
+                    tagLabel
                 )
 
                 return attributed
@@ -2098,7 +2101,7 @@ struct TodoRichTextEditor: View {
                 }()
                 let glowColor = isDark
                     ? NSColor(white: 1.0, alpha: 0.45)
-                    : NSColor(calibratedRed: 0.95, green: 0.85, blue: 0.55, alpha: 0.5)
+                    : NSColor(white: 0.0, alpha: 0.50)
 
                 // -- Outer Glow View (no visible background) --
                 let glowView = NSView(frame: matchRect)
@@ -2881,7 +2884,8 @@ struct TodoRichTextEditor: View {
                 }
 
                 NSLog("📝 insertImage: Creating inline image tag attachment")
-                let attachment = makeImageAttachment(filename: filename)
+                let nextNumber = nextImageNumber(in: textView.textStorage)
+                let attachment = makeImageAttachment(filename: filename, imageNumber: nextNumber)
                 composed.append(attachment)
 
                 if needsTrailingSpace(after: selectionRange, in: nsString) {
@@ -2956,6 +2960,73 @@ struct TodoRichTextEditor: View {
                 return !CharacterSet.whitespacesAndNewlines.contains(scalar)
             }
 
+            private func nextImageNumber(in textStorage: NSTextStorage?) -> Int {
+                guard let textStorage else { return 1 }
+                return max(1, imageAttachmentCount(in: textStorage) + 1)
+            }
+
+            private func imageAttachmentCount(in attributedString: NSAttributedString) -> Int {
+                let fullRange = NSRange(location: 0, length: attributedString.length)
+                guard fullRange.length > 0 else { return 0 }
+
+                var count = 0
+                attributedString.enumerateAttributes(in: fullRange, options: []) { attributes, _, _ in
+                    if attributes[.imageFilename] != nil
+                        || attributes[.attachment] is NoteImageAttachment
+                    {
+                        count += 1
+                    }
+                }
+                return count
+            }
+
+            private func renumberImageAttachments() {
+                guard let textView = textView,
+                    let textStorage = textView.textStorage
+                else { return }
+
+                let fullRange = NSRange(location: 0, length: textStorage.length)
+                guard fullRange.length > 0 else { return }
+
+                var replacements: [(range: NSRange, filename: String, number: Int)] = []
+                var counter = 0
+
+                textStorage.enumerateAttributes(in: fullRange, options: []) { attributes, range, _ in
+                    if let filename = attributes[.imageFilename] as? String {
+                        counter += 1
+                        replacements.append((range: range, filename: filename, number: counter))
+                    } else if let attachment = attributes[.attachment] as? NoteImageAttachment {
+                        counter += 1
+                        replacements.append(
+                            (range: range, filename: attachment.storedFilename, number: counter)
+                        )
+                    }
+                }
+
+                guard !replacements.isEmpty else { return }
+
+                let originalSelection = textView.selectedRange()
+                textStorage.beginEditing()
+                for replacement in replacements.reversed() {
+                    let updatedAttachment = makeImageAttachment(
+                        filename: replacement.filename,
+                        imageNumber: replacement.number
+                    )
+                    textStorage.replaceCharacters(in: replacement.range, with: updatedAttachment)
+                }
+                textStorage.endEditing()
+
+                let maxLocation = textStorage.length
+                let clampedLocation = min(originalSelection.location, maxLocation)
+                let clampedLength = min(
+                    originalSelection.length,
+                    max(0, maxLocation - clampedLocation)
+                )
+                textView.setSelectedRange(
+                    NSRange(location: clampedLocation, length: clampedLength)
+                )
+            }
+
             private func replaceSelection(with attributed: NSAttributedString) {
                 guard let textView = textView else { return }
 #if os(macOS)
@@ -3001,6 +3072,7 @@ struct TodoRichTextEditor: View {
             private func syncText() {
                 guard let textView = textView else { return }
                 isUpdating = true
+                renumberImageAttachments()
                 styleTodoParagraphs()
                 lastSerialized = serialize()
                 textBinding.wrappedValue = lastSerialized
@@ -3241,6 +3313,7 @@ struct TodoRichTextEditor: View {
                 let result = NSMutableAttributedString()
                 var index = text.startIndex
                 var lastWasWebClip = false
+                var imageCounter = 0
 
                 while index < text.endIndex {
                     if text[index...].hasPrefix("[x]") || text[index...].hasPrefix("[ ]") {
@@ -3394,7 +3467,11 @@ struct TodoRichTextEditor: View {
                                     result.append(leadingSpace)
                                 }
 
-                                let attachment = makeImageAttachment(filename: filename)
+                                imageCounter += 1
+                                let attachment = makeImageAttachment(
+                                    filename: filename,
+                                    imageNumber: imageCounter
+                                )
                                 result.append(attachment)
 
                                 let shouldAddTrailingSpace: Bool
@@ -3654,6 +3731,20 @@ struct TodoRichTextEditor: View {
                 return true
             }
             return super.performDragOperation(sender)
+        }
+
+        override func performKeyEquivalent(with event: NSEvent) -> Bool {
+            if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+               event.charactersIgnoringModifiers == "z" {
+                undoManager?.undo()
+                return true
+            }
+            if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == [.command, .shift],
+               event.charactersIgnoringModifiers == "z" {
+                undoManager?.redo()
+                return true
+            }
+            return super.performKeyEquivalent(with: event)
         }
 
         override func insertNewline(_ sender: Any?) {
@@ -4644,7 +4735,8 @@ struct TodoRichTextEditor: View {
                 }
 
                 NSLog("📝 insertImage: Creating inline image tag attachment")
-                let attachment = makeImageAttachment(filename: filename)
+                let nextNumber = nextImageNumber(in: textView.textStorage)
+                let attachment = makeImageAttachment(filename: filename, imageNumber: nextNumber)
                 composed.append(attachment)
 
                 if needsTrailingSpace(after: currentRange, in: nsString) {
@@ -4655,6 +4747,41 @@ struct TodoRichTextEditor: View {
                 replaceSelection(with: composed)
                 syncText()
                 NSLog("📝 insertImage: Completed")
+            }
+
+            private func makeImageAttachment(filename: String, imageNumber: Int)
+                -> NSMutableAttributedString
+            {
+                func fallbackAttributedString() -> NSMutableAttributedString {
+                    return NSMutableAttributedString(string: "[Image: \(filename)]")
+                }
+
+                let tagLabel = "image\(max(imageNumber, 1))"
+                let tagView = ImageAttachmentTagView(label: tagLabel)
+                    .environment(\.colorScheme, currentColorScheme)
+                let renderer = ImageRenderer(content: tagView)
+                renderer.scale = UIScreen.main.scale
+                renderer.isOpaque = false
+
+                guard let uiImage = renderer.uiImage else {
+                    NSLog("🖼️ makeImageAttachment: FAILED to render tag UIImage")
+                    return fallbackAttributedString()
+                }
+
+                let attachment = NoteImageAttachment(filename: filename)
+                attachment.image = uiImage
+                attachment.bounds = CGRect(
+                    x: 0,
+                    y: Self.imageTagVerticalOffset(for: uiImage.size.height),
+                    width: uiImage.size.width,
+                    height: uiImage.size.height
+                )
+
+                let attributed = NSMutableAttributedString(attachment: attachment)
+                let attachmentRange = NSRange(location: 0, length: attributed.length)
+                attributed.addAttribute(.imageFilename, value: filename, range: attachmentRange)
+
+                return attributed
             }
 
             private func makeFileAttachment(metadata: FileAttachmentMetadata)
@@ -4734,6 +4861,71 @@ struct TodoRichTextEditor: View {
                 return !CharacterSet.whitespacesAndNewlines.contains(scalar)
             }
 
+            private func nextImageNumber(in textStorage: NSTextStorage?) -> Int {
+                guard let textStorage else { return 1 }
+                return max(1, imageAttachmentCount(in: textStorage) + 1)
+            }
+
+            private func imageAttachmentCount(in attributedString: NSAttributedString) -> Int {
+                let fullRange = NSRange(location: 0, length: attributedString.length)
+                guard fullRange.length > 0 else { return 0 }
+
+                var count = 0
+                attributedString.enumerateAttributes(in: fullRange, options: []) { attributes, _, _ in
+                    if attributes[.imageFilename] != nil
+                        || attributes[.attachment] is NoteImageAttachment
+                    {
+                        count += 1
+                    }
+                }
+                return count
+            }
+
+            private func renumberImageAttachments() {
+                guard let textView = textView,
+                    let textStorage = textView.textStorage
+                else { return }
+
+                let fullRange = NSRange(location: 0, length: textStorage.length)
+                guard fullRange.length > 0 else { return }
+
+                var replacements: [(range: NSRange, filename: String, number: Int)] = []
+                var counter = 0
+
+                textStorage.enumerateAttributes(in: fullRange, options: []) { attributes, range, _ in
+                    if let filename = attributes[.imageFilename] as? String {
+                        counter += 1
+                        replacements.append((range: range, filename: filename, number: counter))
+                    } else if let attachment = attributes[.attachment] as? NoteImageAttachment {
+                        counter += 1
+                        replacements.append(
+                            (range: range, filename: attachment.storedFilename, number: counter)
+                        )
+                    }
+                }
+
+                guard !replacements.isEmpty else { return }
+
+                let originalSelection = textView.selectedRange
+                textStorage.beginEditing()
+                for replacement in replacements.reversed() {
+                    let updatedAttachment = makeImageAttachment(
+                        filename: replacement.filename,
+                        imageNumber: replacement.number
+                    )
+                    textStorage.replaceCharacters(in: replacement.range, with: updatedAttachment)
+                }
+                textStorage.endEditing()
+
+                let maxLocation = textStorage.length
+                let clampedLocation = min(originalSelection.location, maxLocation)
+                let clampedLength = min(
+                    originalSelection.length,
+                    max(0, maxLocation - clampedLocation)
+                )
+                textView.selectedRange = NSRange(location: clampedLocation, length: clampedLength)
+            }
+
             private func replaceSelection(with attributed: NSAttributedString) {
                 guard let textView = textView else { return }
                 let storageLength = textView.textStorage?.length ?? textView.attributedText?.length ?? 0
@@ -4766,6 +4958,7 @@ struct TodoRichTextEditor: View {
             private func syncText() {
                 guard let textView = textView else { return }
                 isUpdating = true
+                renumberImageAttachments()
                 applyParagraphStyling()
                 lastSerialized = serialize()
                 textBinding.wrappedValue = lastSerialized
@@ -4966,6 +5159,7 @@ struct TodoRichTextEditor: View {
             private func deserialize(_ text: String) -> NSAttributedString {
                 let result = NSMutableAttributedString()
                 var index = text.startIndex
+                var imageCounter = 0
                 while index < text.endIndex {
                     if text[index...].hasPrefix("[x]") || text[index...].hasPrefix("[ ]") {
                         let isChecked = text[index...].hasPrefix("[x]")
@@ -5069,7 +5263,11 @@ struct TodoRichTextEditor: View {
                                     result.append(leadingSpace)
                                 }
 
-                                let attachment = makeImageAttachment(filename: filename)
+                                imageCounter += 1
+                                let attachment = makeImageAttachment(
+                                    filename: filename,
+                                    imageNumber: imageCounter
+                                )
                                 result.append(attachment)
 
                                 let shouldAddTrailingSpace: Bool

@@ -12,5 +12,32 @@
     <string>Jot needs access to the microphone so you can record voice notes.</string>
     <key>NSSpeechRecognitionUsageDescription</key>
     <string>Jot uses speech recognition to transcribe your voice notes into text.</string>
+    <key>UTExportedTypeDeclarations</key>
+    <array>
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>com.jot.note-drag-item</string>
+            <key>UTTypeDescription</key>
+            <string>Jot Note Drag Item</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+            </array>
+            <key>UTTypeTagSpecifications</key>
+            <dict/>
+        </dict>
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>com.jot.note-drag-payload</string>
+            <key>UTTypeDescription</key>
+            <string>Jot Note Drag Payload</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+            </array>
+            <key>UTTypeTagSpecifications</key>
+            <dict/>
+        </dict>
+    </array>
 </dict>
 </plist>

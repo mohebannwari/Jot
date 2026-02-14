@@ -20,11 +20,11 @@ struct WebClipView: View {
                 .renderingMode(.template)
                 .resizable()
                 .scaledToFit()
-                .frame(width: 20, height: 20)
+                .frame(width: 15, height: 15)
                 .foregroundStyle(foregroundColor)
 
             Text(cleanedDomain)
-                .font(FontManager.metadata(size: 12, weight: .medium))
+                .font(FontManager.metadata(size: 11, weight: .medium))
                 .foregroundStyle(foregroundColor)
                 .lineLimit(1)
                 .textCase(.lowercase)

@@ -69,6 +69,9 @@ struct NoteDetailView: View {
     @FocusState var isSearchOnPageFocused: Bool
 
     // MARK: - Scroll / toolbar state
+    @FocusState private var titleFocused: Bool
+    @State private var localEditorFocusID: UUID?
+
     @State private var showStickyHeader = false
     @State private var headerRevealProgress: CGFloat = 0
     @State private var titleOffset: CGFloat = 0
@@ -178,7 +181,7 @@ struct NoteDetailView: View {
                         }
                         TodoRichTextEditor(
                             text: $editedContent,
-                            focusRequestID: focusRequestID,
+                            focusRequestID: localEditorFocusID ?? focusRequestID,
                             onToolbarAction: handleEditToolAction,
                             onCommandMenuSelection: handleCommandMenuSelection
                         )
@@ -267,7 +270,7 @@ struct NoteDetailView: View {
                     }
                 })
                     .padding(.leading, 22)
-                    .padding(.bottom, 22)
+                    .padding(.bottom, 56)
                     .transition(.opacity.combined(with: .scale(scale: 0.94)))
                     .zIndex(40)
             }
@@ -309,7 +312,13 @@ struct NoteDetailView: View {
             persistIfNeeded()
             glassElementsVisible = false
         }
-        .onChange(of: editedTitle) { _, _ in
+        .onChange(of: editedTitle) { _, newTitle in
+            if newTitle.contains("\n") {
+                editedTitle = newTitle.replacingOccurrences(of: "\n", with: "")
+                titleFocused = false
+                localEditorFocusID = UUID()
+                return
+            }
             scheduleAutosave()
         }
         .onChange(of: editedContent) { newValue in
@@ -415,6 +424,7 @@ struct NoteDetailView: View {
         let hasMinimalTitle =
             editedTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || editedTitle == "Untitled" || editedTitle == "Note Title"
+            || editedTitle == "New Note"
         let hasMinimalContent = editedContent.trimmingCharacters(in: .whitespacesAndNewlines)
             .isEmpty
         return hasMinimalTitle && hasMinimalContent
@@ -429,6 +439,7 @@ struct NoteDetailView: View {
             .textFieldStyle(.plain)
             .lineLimit(nil)
             .fixedSize(horizontal: false, vertical: true)
+            .focused($titleFocused)
             .padding(.top, 4)
     }
 

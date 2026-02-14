@@ -745,7 +745,7 @@ private struct ToolButton: View {
                 }
             }
             .foregroundColor(iconColor)
-            .scaleEffect(isSelected ? 1.1 : (isHovered ? 1.05 : 1.0))
+            .scaleEffect(isSelected ? 1.05 : (isHovered ? 1.03 : 1.0))
             .animation(.bouncy(duration: 0.2), value: isSelected)
             .animation(.bouncy(duration: 0.2), value: isHovered)
             .frame(width: 20, height: 20)

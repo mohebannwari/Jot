@@ -8,7 +8,13 @@
 import SwiftUI
 
 struct ImageAttachmentTagView: View {
+    let label: String
+
     @Environment(\.colorScheme) private var colorScheme
+
+    init(label: String = "image") {
+        self.label = label
+    }
 
     var body: some View {
         HStack(spacing: 4) {
@@ -16,10 +22,10 @@ struct ImageAttachmentTagView: View {
                 .renderingMode(.template)
                 .resizable()
                 .scaledToFit()
-                .frame(width: 20, height: 20)
+                .frame(width: 15, height: 15)
                 .foregroundStyle(foregroundColor)
-            Text("image")
-                .font(FontManager.metadata(size: 12, weight: .medium))
+            Text(label)
+                .font(FontManager.metadata(size: 11, weight: .medium))
                 .foregroundStyle(foregroundColor)
                 .textCase(.lowercase)
         }
@@ -28,7 +34,7 @@ struct ImageAttachmentTagView: View {
         .frame(minWidth: 54, minHeight: 20)
         .background(backgroundColor, in: Capsule())
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Image attachment")
+        .accessibilityLabel("\(label) attachment")
     }
 
     private var foregroundColor: Color {
@@ -38,6 +44,6 @@ struct ImageAttachmentTagView: View {
     private var backgroundColor: Color {
         colorScheme == .dark
             ? Color.white.opacity(0.15)
-            : Color("SurfaceTranslucentColor")
+            : Color.black.opacity(0.09)
     }
 }

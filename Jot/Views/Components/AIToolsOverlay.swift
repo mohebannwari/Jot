@@ -74,7 +74,7 @@ struct AIToolsOverlay: View {
         Button {
             state = .expanded
         } label: {
-            toolIcon("IconAppleIntelligenceIcon")
+            toolIcon("IconAppleIntelligenceIcon", size: 22)
         }
         .buttonStyle(.plain)
         .macPointingHandCursor()
@@ -163,7 +163,7 @@ struct AIToolsOverlay: View {
                     .foregroundColor(Color("SecondaryTextColor"))
                     .frame(width: 15, height: 15)
                 Text("Edit Content")
-                    .font(FontManager.heading(size: 10, weight: .semibold))
+                    .font(FontManager.heading(size: 11, weight: .semibold))
                     .foregroundColor(Color("PrimaryTextColor"))
             }
             .padding(.horizontal, 8)
@@ -206,13 +206,14 @@ struct AIToolsOverlay: View {
 
     // MARK: - Shared Helpers
 
-    private func toolIcon(_ assetName: String) -> some View {
-        Image(assetName)
+    private func toolIcon(_ assetName: String, size: CGFloat? = nil) -> some View {
+        let dim = size ?? iconSize
+        return Image(assetName)
             .renderingMode(.template)
             .resizable()
             .scaledToFit()
             .foregroundColor(Color("SecondaryTextColor"))
-            .frame(width: iconSize, height: iconSize)
+            .frame(width: dim, height: dim)
     }
 
     // MARK: - Theme Colors

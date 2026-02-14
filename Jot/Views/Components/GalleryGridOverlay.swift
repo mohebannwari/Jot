@@ -40,7 +40,10 @@ struct GalleryGridOverlay: View {
                         ForEach(Array(items.enumerated()), id: \.element.id) { index, element in
                             let animation = transformAnimation(for: index, totalCount: items.count)
                             let isSelected = selectedItem?.id == element.id
-                            GalleryGridTile(image: element.image)
+                            GalleryGridTile(
+                                image: element.image,
+                                imageNumber: index + 1
+                            )
                                 .matchedGeometryEffect(
                                     id: element.id,
                                     in: lightboxNamespace,
@@ -340,6 +343,7 @@ struct GalleryGridOverlay: View {
 
 private struct GalleryGridTile: View {
     let image: PlatformImage
+    let imageNumber: Int
     @Environment(\.colorScheme) private var colorScheme
 
     private let tileShape = RoundedRectangle(cornerRadius: 24, style: .continuous)
@@ -355,6 +359,12 @@ private struct GalleryGridTile: View {
                     tileShape
                         .stroke(borderColor, lineWidth: 1)
                 )
+                .overlay(alignment: .topTrailing) {
+                    imageNumberBadge
+                        .padding(.top, 12)
+                        .padding(.trailing, 12)
+                        .allowsHitTesting(false)
+                }
                 .shadow(color: Color.black.opacity(0.12), radius: 24, x: 0, y: 12)
         }
         .aspectRatio(1, contentMode: .fit)
@@ -364,6 +374,32 @@ private struct GalleryGridTile: View {
         colorScheme == .dark
             ? Color.white.opacity(0.18)
             : Color.black.opacity(0.12)
+    }
+
+    private var badgeFill: Color {
+        colorScheme == .dark ? Color.black : Color.white
+    }
+
+    private var badgeText: Color {
+        colorScheme == .dark ? Color.white : Color.black
+    }
+
+    private var badgeStroke: Color {
+        colorScheme == .dark ? Color.white.opacity(0.20) : Color.black.opacity(0.14)
+    }
+
+    private var imageNumberBadge: some View {
+        Text("\(imageNumber)")
+            .font(FontManager.metadata(size: 11, weight: .semibold))
+            .foregroundStyle(badgeText)
+            .monospacedDigit()
+            .lineLimit(1)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .frame(minWidth: 24, minHeight: 24)
+            .background(Capsule().fill(badgeFill))
+            .overlay(Capsule().stroke(badgeStroke, lineWidth: 0.6))
+            .shadow(color: Color.black.opacity(0.16), radius: 6, x: 0, y: 3)
     }
 
     private var platformImage: Image {

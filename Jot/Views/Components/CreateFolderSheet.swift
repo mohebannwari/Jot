@@ -83,7 +83,7 @@ struct CreateFolderSheet: View {
                         .frame(width: 20, height: 20)
                 }
                 .buttonStyle(.plain)
-                .subtleHoverScale(1.12)
+                .subtleHoverScale(1.06)
             }
         }
         .padding(12)
@@ -145,9 +145,9 @@ struct CreateFolderSheet: View {
             }
         }
         .buttonStyle(.plain)
-        .scaleEffect(isSelected ? 1.08 : 1.0)
+        .scaleEffect(isSelected ? 1.04 : 1.0)
         .animation(.jotBounce, value: isSelected)
-        .subtleHoverScale(1.08)
+        .subtleHoverScale(1.04)
     }
 
     private var customColorButton: some View {

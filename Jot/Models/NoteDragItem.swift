@@ -18,3 +18,16 @@ struct NoteDragItem: Codable, Hashable, Transferable {
 extension UTType {
     static let jotNoteDragItem = UTType(exportedAs: "com.jot.note-drag-item")
 }
+
+// Helper for transferring multiple note drag items
+struct TransferablePayload: Codable, Transferable {
+    let items: [NoteDragItem]
+
+    static var transferRepresentation: some TransferRepresentation {
+        CodableRepresentation(contentType: .jotNoteDragPayload)
+    }
+}
+
+extension UTType {
+    static let jotNoteDragPayload = UTType(exportedAs: "com.jot.note-drag-payload")
+}

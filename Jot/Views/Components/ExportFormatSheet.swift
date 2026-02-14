@@ -158,7 +158,7 @@ struct FormatButton: View {
                     if isSelected {
                         Circle()
                             .fill(Color.accentColor)
-                            .frame(width: 12, height: 12)
+                            .frame(width: 15, height: 15)
                     }
                 }
             }

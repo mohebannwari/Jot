@@ -52,7 +52,7 @@ struct TagPill: View {
                 .frame(height: 36)
         )
         .contentShape(Capsule())
-        .scaleEffect((visible ? 1 : 0.92) * (isPressed ? 0.96 : 1.0) * (isHovered ? 1.02 : 1.0))
+        .scaleEffect((visible ? 1 : 0.92) * (isPressed ? 0.96 : 1.0) * (isHovered ? 1.01 : 1.0))
         .opacity(visible ? 1 : 0)
         .animation(.jotBounce, value: isHovered)
         .animation(.bouncy(duration: 0.2), value: isPressed)

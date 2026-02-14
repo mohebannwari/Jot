@@ -24,8 +24,6 @@ struct GalleryPreviewOverlay: View {
     private let imageShape = RoundedRectangle(cornerRadius: 8, style: .continuous)
     private let tileSize: CGFloat = 40
     private let offsetAmount: CGFloat = 8
-    private let baseBorderWidth: CGFloat = 1.5
-    private let imageBorderWidth: CGFloat = 1.5
     private let hoverSpread: CGFloat = 4
 
     var body: some View {
@@ -52,7 +50,7 @@ struct GalleryPreviewOverlay: View {
 
     private var baseLayer: some View {
         baseShape
-            .fill(Color.clear)
+            .fill(colorScheme == .dark ? Color(red: 0.267, green: 0.251, blue: 0.235) : Color.white)
             .background(
                 baseShape
                     .fill(Color.clear)
@@ -60,24 +58,14 @@ struct GalleryPreviewOverlay: View {
             )
             .frame(width: tileSize, height: tileSize)
             .clipShape(baseShape)
-            .overlay {
-                baseShape
-                    .inset(by: -baseBorderWidth / 2)
-                    .stroke(baseStrokeColor, lineWidth: baseBorderWidth)
-            }
             .rotationEffect(baseRotation)
-            .shadow(color: Color.black.opacity(0.06), radius: 8, x: 0, y: 4)
+            .shadow(color: Color.black.opacity(colorScheme == .dark ? 0.06 : 0.12), radius: colorScheme == .dark ? 8 : 10, x: 0, y: colorScheme == .dark ? 4 : 5)
     }
 
     private var imageLayer: some View {
         imageView
             .frame(width: tileSize, height: tileSize)
             .clipShape(imageShape)
-            .overlay {
-                imageShape
-                    .inset(by: -imageBorderWidth / 2)
-                    .stroke(imageStrokeColor, lineWidth: imageBorderWidth)
-            }
             .rotationEffect(imageRotation)
             .shadow(color: Color.black.opacity(0.12), radius: 12, x: 0, y: 6)
     }
@@ -137,14 +125,6 @@ struct GalleryPreviewOverlay: View {
 
     private var imageRotation: Angle {
         isHovering ? .degrees(5) : .degrees(0)
-    }
-
-    private var baseStrokeColor: Color {
-        colorScheme == .dark ? Color.white.opacity(0.2) : Color.black.opacity(0.08)
-    }
-
-    private var imageStrokeColor: Color {
-        colorScheme == .dark ? Color.white.opacity(0.35) : Color.black.opacity(0.12)
     }
 
     private var containerYOffset: CGFloat {

@@ -66,7 +66,7 @@ struct ContentView: View {
     @State private var expandedFolderIDs: Set<UUID> = []
     @State private var showAllNotesFolderIDs: Set<UUID> = []
     @State private var sidebarSectionFilter: SidebarSectionFilter = .all
-    @State private var sidebarWidth: CGFloat = 295
+    @State private var sidebarWidth: CGFloat = 296
     @State private var sidebarDragStartWidth: CGFloat?
     @State private var detailFocusRequestID = UUID()
     @State private var hasAppliedInitialLaunchSelection = false
@@ -97,12 +97,12 @@ struct ContentView: View {
     // Window corner radius from JotApp containerShape
     private let windowCornerRadius: CGFloat = 16
     private let windowContentPadding: CGFloat = 8
-    private let sidebarDesignColumnWidth: CGFloat = 295
+    private let sidebarDesignColumnWidth: CGFloat = 296
     private let sidebarMenuTop: CGFloat = 30
     private let sidebarNotesTop: CGFloat = 146
-    private let sidebarSectionSpacing: CGFloat = 20
+    private let sidebarSectionSpacing: CGFloat = 16
     private let sidebarChromeSpacing: CGFloat = 12
-    private let sidebarMinWidth: CGFloat = 295
+    private let sidebarMinWidth: CGFloat = 296
     private let sidebarMaxWidth: CGFloat = 560
     private let minimumDetailWidth: CGFloat = 520
     private let sidebarResizeHandleWidth: CGFloat = 24
@@ -118,7 +118,7 @@ struct ContentView: View {
     private let sidebarTopBarTrafficLightGap: CGFloat = 12
     private let sidebarRowHoverInset: CGFloat = 0
     #if os(macOS)
-    private let floatingSidebarWidth: CGFloat = 275
+    private let floatingSidebarWidth: CGFloat = 276
     private let floatingSidebarCornerRadius: CGFloat = 16
     private let floatingSidebarEdgeInset: CGFloat = 10
     private let floatingSidebarHoverTriggerWidth: CGFloat = 20
@@ -505,7 +505,12 @@ struct ContentView: View {
                         onMoveNotesToFolder: moveNotesToFolder,
                         onTogglePinForNotes: setPinState,
                         onExportNotes: presentExport,
-                        onArchiveNotes: archiveNotes
+                        onArchiveNotes: archiveNotes,
+                        onRenameNote: { note, newTitle in
+                            var updatedNote = note
+                            updatedNote.title = newTitle
+                            notesManager.updateNote(updatedNote)
+                        }
                     )
                 }
 
@@ -531,9 +536,17 @@ struct ContentView: View {
                             createAndOpenNewNote(inFolder: folderID)
                         },
                         onRenameFolder: promptEditFolder,
+                        onCommitRenameFolder: { folder, newName in
+                            notesManager.updateFolder(id: folder.id, name: newName, colorHex: folder.colorHex)
+                        },
+                        onRenameNote: { note, newTitle in
+                            var updatedNote = note
+                            updatedNote.title = newTitle
+                            notesManager.updateNote(updatedNote)
+                        },
                         onDeleteFolder: deleteFolder,
-                        onDropNoteIntoFolder: { noteID, folderID in
-                            moveNote(noteID: noteID, toFolderID: folderID)
+                        onDropNotesIntoFolder: { noteIDs, folderID in
+                            batchMoveNotes(noteIDs, toFolderID: folderID)
                         }
                     )
                 }
@@ -556,6 +569,11 @@ struct ContentView: View {
                         onArchiveNotes: archiveNotes,
                         onDropNoteToUnfiled: { noteID in
                             moveNote(noteID: noteID, toFolderID: nil)
+                        },
+                        onRenameNote: { note, newTitle in
+                            var updatedNote = note
+                            updatedNote.title = newTitle
+                            notesManager.updateNote(updatedNote)
                         }
                     )
                 }
@@ -578,6 +596,11 @@ struct ContentView: View {
                         onArchiveNotes: archiveNotes,
                         onDropNoteToUnfiled: { noteID in
                             moveNote(noteID: noteID, toFolderID: nil)
+                        },
+                        onRenameNote: { note, newTitle in
+                            var updatedNote = note
+                            updatedNote.title = newTitle
+                            notesManager.updateNote(updatedNote)
                         }
                     )
                 }
@@ -600,6 +623,11 @@ struct ContentView: View {
                         onArchiveNotes: archiveNotes,
                         onDropNoteToUnfiled: { noteID in
                             moveNote(noteID: noteID, toFolderID: nil)
+                        },
+                        onRenameNote: { note, newTitle in
+                            var updatedNote = note
+                            updatedNote.title = newTitle
+                            notesManager.updateNote(updatedNote)
                         }
                     )
                 }
@@ -622,6 +650,11 @@ struct ContentView: View {
                         onArchiveNotes: archiveNotes,
                         onDropNoteToUnfiled: { noteID in
                             moveNote(noteID: noteID, toFolderID: nil)
+                        },
+                        onRenameNote: { note, newTitle in
+                            var updatedNote = note
+                            updatedNote.title = newTitle
+                            notesManager.updateNote(updatedNote)
                         }
                     )
                 }
@@ -644,6 +677,11 @@ struct ContentView: View {
                         onArchiveNotes: archiveNotes,
                         onDropNoteToUnfiled: { noteID in
                             moveNote(noteID: noteID, toFolderID: nil)
+                        },
+                        onRenameNote: { note, newTitle in
+                            var updatedNote = note
+                            updatedNote.title = newTitle
+                            notesManager.updateNote(updatedNote)
                         }
                     )
                 }
@@ -729,14 +767,14 @@ struct ContentView: View {
                     .scaleEffect(x: flipIcon ? -1 : 1, y: 1)
 
                 Text(label)
-                    .font(FontManager.heading(size: 13, weight: .medium))
+                    .font(FontManager.heading(size: 15, weight: .medium))
                     .foregroundColor(Color("PrimaryTextColor"))
                     .tracking(-0.4)
                     .lineLimit(1)
 
                 Spacer(minLength: 0)
             }
-            .scaleEffect(hoveredSidebarMenuLabel == label ? 1.02 : 1.0)
+            .scaleEffect(hoveredSidebarMenuLabel == label ? 1.01 : 1.0)
             .padding(.leading, sidebarItemLeadingPadding)
             .padding(.trailing, sidebarItemTrailingPadding)
             .padding(.vertical, sidebarItemVPadding)
@@ -781,7 +819,7 @@ struct ContentView: View {
                         } label: {
                             Label(
                                 filter.label,
-                                systemImage: sidebarSectionFilter == filter ? "checkmark" : "line.3.horizontal.decrease"
+                                systemImage: sidebarSectionFilter == filter ? "checkmark" : ""
                             )
                         }
                     }
@@ -791,7 +829,7 @@ struct ContentView: View {
                 }
                 .buttonStyle(.plain)
                 .macPointingHandCursor()
-                .subtleHoverScale(1.12)
+                .subtleHoverScale(1.06)
             }
         }
         .padding(.leading, sidebarItemLeadingPadding)
@@ -812,7 +850,7 @@ struct ContentView: View {
         .macPointingHandCursor()
         .disabled(disabled)
         .opacity(disabled ? 0.5 : 1)
-        .subtleHoverScale(1.12)
+        .subtleHoverScale(1.06)
     }
 
     private var sidebarArchiveList: some View {
@@ -1100,7 +1138,7 @@ struct ContentView: View {
         .macPointingHandCursor()
         .disabled(disabled)
         .opacity(disabled ? 0.5 : 1)
-        .subtleHoverScale(1.12)
+        .subtleHoverScale(1.06)
     }
 
     // MARK: - Actions
@@ -1197,7 +1235,7 @@ struct ContentView: View {
         if withHaptic {
             HapticManager.shared.noteInteraction()
         }
-        let note = notesManager.addNote(title: "New Note", content: "", folderID: folderID)
+        let note = notesManager.addNote(title: "", content: "", folderID: folderID)
 
         if let folderID {
             expandedFolderIDs.insert(folderID)
@@ -1238,6 +1276,12 @@ struct ContentView: View {
         }
 
         return true
+    }
+
+    private func batchMoveNotes(_ noteIDs: Set<UUID>, toFolderID: UUID?) -> Bool {
+        guard !noteIDs.isEmpty else { return false }
+        let count = notesManager.moveNotes(ids: noteIDs, toFolderID: toFolderID)
+        return count > 0
     }
 
     private func moveNotesToFolder(_ noteIDs: Set<UUID>, _ folderID: UUID?) {
@@ -1472,6 +1516,12 @@ struct ContentView: View {
             synchronizeDetailPaneWithSelection()
 
         case .clearSelection:
+            if isSettingsPresented {
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    isSettingsPresented = false
+                }
+                return
+            }
             selectedNoteIDs.removeAll()
             selectionAnchorID = nil
             synchronizeDetailPaneWithSelection()
@@ -1750,17 +1800,18 @@ struct NotesSection: View {
     let onExportNotes: (Set<UUID>) -> Void
     var onArchiveNotes: ((Set<UUID>) -> Void)? = nil
     var onDropNoteToUnfiled: ((UUID) -> Bool)? = nil
+    var onRenameNote: ((Note, String) -> Void)? = nil
 
     @State private var isDropTargeted = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 0) {
             Text(title)
-                .font(FontManager.heading(size: 10, weight: .medium))
+                .font(FontManager.heading(size: 13, weight: .medium))
                 .foregroundColor(Color("SecondaryTextColor"))
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.leading, 10)
-                .padding(.trailing, 8)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 8)
 
             // Notes list
             ForEach(notes, id: \.id) { note in
@@ -1779,7 +1830,17 @@ struct NotesSection: View {
                         onMoveNotesToFolder(contextSelection(for: note), folderID)
                     },
                     onExport: { onExportNotes(contextSelection(for: note)) },
-                    onArchive: onArchiveNotes != nil ? { onArchiveNotes?(contextSelection(for: note)) } : nil
+                    onArchive: onArchiveNotes != nil ? { onArchiveNotes?(contextSelection(for: note)) } : nil,
+                    onRename: { newTitle in
+                        onRenameNote?(note, newTitle)
+                    },
+                    getDragItems: {
+                        if selectedNoteIDs.contains(note.id) {
+                            return selectedNoteIDs.map { NoteDragItem(noteID: $0) }
+                        } else {
+                            return [NoteDragItem(noteID: note.id)]
+                        }
+                    }
                 )
             }
         }
@@ -1788,12 +1849,13 @@ struct NotesSection: View {
                 .fill(isDropTargeted ? Color("SurfaceTranslucentColor") : Color.clear)
         )
         .if(onDropNoteToUnfiled != nil) { view in
-            view.dropDestination(for: NoteDragItem.self) { items, _ in
-                guard let payload = items.first,
+            view.dropDestination(for: TransferablePayload.self) { payloads, _ in
+                let items = payloads.flatMap { $0.items }
+                guard let first = items.first,
                       let onDropNoteToUnfiled else {
                     return false
                 }
-                return onDropNoteToUnfiled(payload.noteID)
+                return onDropNoteToUnfiled(first.noteID)
             } isTargeted: { targeted in
                 isDropTargeted = targeted
             }
@@ -1826,25 +1888,29 @@ struct NoteListCard: View {
     let onMoveToFolder: (UUID?) -> Void
     let onExport: () -> Void
     var onArchive: (() -> Void)? = nil
+    var onRename: ((String) -> Void)? = nil
+    var getDragItems: (() -> [NoteDragItem])? = nil
     var cornerRadius: CGFloat = 10
     @State private var isHovered = false
+    @State private var isRenaming = false
+    @State private var renamingTitle = ""
+    @FocusState private var isFieldFocused: Bool
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         Button {
-            onTap(Self.selectionInteractionFromCurrentEvent())
+            if !isRenaming {
+                onTap(Self.selectionInteractionFromCurrentEvent())
+            }
         } label: {
             HStack(spacing: 8) {
                 if let icon = leadingIconAssetName {
                     let isLeadingIconVisible = !showLeadingIconOnHoverOnly || isHovered
                     let isShowingHoverVariant = isHovered && hoverLeadingIconAssetName != nil
-                    let showDot = isActiveNote && !isShowingHoverVariant
+                    let effectiveIcon = (isShowingHoverVariant ? hoverLeadingIconAssetName : icon) ?? icon
                     Group {
-                        if showDot {
-                            Circle()
-                                .fill(Color(red: 0.992, green: 0.729, blue: 0.455))
-                                .frame(width: 4, height: 4)
-                        } else if let onLeadingIconTap, isLeadingIconVisible {
-                            Image(icon)
+                        if let onLeadingIconTap, isLeadingIconVisible {
+                            Image(effectiveIcon)
                                 .renderingMode(.template)
                                 .resizable()
                                 .scaledToFit()
@@ -1858,7 +1924,7 @@ struct NoteListCard: View {
                                 .opacity(isLeadingIconVisible ? 1 : 0)
                                 .allowsHitTesting(isLeadingIconVisible)
                         } else {
-                            Image(icon)
+                            Image(effectiveIcon)
                                 .renderingMode(.template)
                                 .resizable()
                                 .scaledToFit()
@@ -1868,42 +1934,79 @@ struct NoteListCard: View {
                         }
                     }
                     .animation(.easeInOut(duration: 0.12), value: isLeadingIconVisible)
-                    .animation(.easeInOut(duration: 0.12), value: isActiveNote)
-                } else if isActiveNote {
-                    Circle()
-                        .fill(Color(red: 0.992, green: 0.729, blue: 0.455))
-                        .frame(width: 4, height: 4)
                 }
 
-                Text(note.title)
-                    .font(FontManager.heading(size: 13, weight: .medium))
-                    .foregroundColor(Color("PrimaryTextColor"))
-                    .tracking(-0.4)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                if isRenaming {
+                    TextField("Note Title", text: $renamingTitle)
+                        .font(FontManager.heading(size: 15, weight: .medium))
+                        .foregroundColor(Color("PrimaryTextColor"))
+                        .textFieldStyle(.plain)
+                        .focused($isFieldFocused)
+                        .onSubmit {
+                            commitRename()
+                        }
+                        .onExitCommand {
+                            cancelRename()
+                        }
+                } else {
+                    Text(note.title)
+                        .font(FontManager.heading(size: 15, weight: .medium))
+                        .foregroundColor(Color("PrimaryTextColor"))
+                        .tracking(-0.4)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .onTapGesture(count: 2) {
+                            startRename()
+                        }
+                }
 
                 Text(Self.dateFormatter.string(from: note.date))
-                    .font(FontManager.heading(size: 10, weight: .medium))
+                    .font(FontManager.metadata(size: 11, weight: .medium))
                     .foregroundColor(Color("SecondaryTextColor"))
             }
-            .scaleEffect(isHovered ? 1.02 : 1.0)
+            .scaleEffect(isHovered ? 1.01 : 1.0)
             .animation(.jotHover, value: isHovered)
-            .padding(.leading, 10)
-            .padding(.trailing, 8)
-            .padding(.vertical, 8)
+            .padding(8)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill((isSelected && !isActiveNote) ? Color("SurfaceTranslucentColor") : Color.clear)
-            )
+            .background {
+                if isActiveNote {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(colorScheme == .light ? Color.white : Color(red: 0.047, green: 0.039, blue: 0.035))
+                } else if isSelected {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(Color("SurfaceTranslucentColor"))
+                }
+            }
+            .shadow(color: isActiveNote ? .black.opacity(0.06) : .clear, radius: 3, x: 0, y: 1)
+            .shadow(color: isActiveNote ? .black.opacity(0.03) : .clear, radius: 1, x: 0, y: 0)
             .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         }
         .buttonStyle(.plain)
         .onHover { hovering in
             isHovered = hovering
         }
-        .draggable(NoteDragItem(noteID: note.id))
+        .contentShape(.dragPreview, RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .draggable(
+            TransferablePayload(items: getDragItems?() ?? [NoteDragItem(noteID: note.id)])
+        ) {
+            HStack(spacing: 8) {
+                Text(note.title)
+                    .font(.system(size: 13, weight: .medium))
+                    .lineLimit(1)
+                    .foregroundStyle(.primary)
+                Text(Self.dateFormatter.string(from: note.date))
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(Color(nsColor: .controlBackgroundColor))
+            )
+            .contentShape(.dragPreview, RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        }
         .contextMenu {
             if note.folderID == nil {
                 Button {
@@ -1990,6 +2093,24 @@ struct NoteListCard: View {
         }
     }
 
+    private func startRename() {
+        renamingTitle = note.title
+        isRenaming = true
+        isFieldFocused = true
+    }
+
+    private func commitRename() {
+        let trimmed = renamingTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            onRename?(trimmed)
+        }
+        isRenaming = false
+    }
+
+    private func cancelRename() {
+        isRenaming = false
+    }
+
     private static let dateFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "dd.MM.yyyy"
@@ -2023,9 +2144,10 @@ struct PinnedNotesSection: View {
     let onTogglePinForNotes: (Set<UUID>, Bool) -> Void
     let onExportNotes: (Set<UUID>) -> Void
     var onArchiveNotes: ((Set<UUID>) -> Void)? = nil
+    var onRenameNote: ((Note, String) -> Void)? = nil
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 0) {
             ForEach(notes, id: \.id) { note in
                 NoteListCard(
                     note: note,
@@ -2050,7 +2172,17 @@ struct PinnedNotesSection: View {
                         onMoveNotesToFolder(contextSelection(for: note), folderID)
                     },
                     onExport: { onExportNotes(contextSelection(for: note)) },
-                    onArchive: onArchiveNotes != nil ? { onArchiveNotes?(contextSelection(for: note)) } : nil
+                    onArchive: onArchiveNotes != nil ? { onArchiveNotes?(contextSelection(for: note)) } : nil,
+                    onRename: { newTitle in
+                        onRenameNote?(note, newTitle)
+                    },
+                    getDragItems: {
+                        if selectedNoteIDs.contains(note.id) {
+                            return selectedNoteIDs.map { NoteDragItem(noteID: $0) }
+                        } else {
+                            return [NoteDragItem(noteID: note.id)]
+                        }
+                    }
                 )
             }
         }
@@ -2090,7 +2222,20 @@ struct PinnedNoteChip: View {
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .draggable(NoteDragItem(noteID: note.id))
+        .contentShape(.dragPreview, Capsule())
+        .draggable(TransferablePayload(items: [NoteDragItem(noteID: note.id)])) {
+            Text(note.title)
+                .font(.system(size: 13, weight: .medium))
+                .lineLimit(1)
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(
+                    Capsule()
+                        .fill(Color(nsColor: .controlBackgroundColor))
+                )
+                .contentShape(.dragPreview, Capsule())
+        }
         #if os(macOS)
         .glassEffect(.regular.interactive(true), in: Capsule())
         #else

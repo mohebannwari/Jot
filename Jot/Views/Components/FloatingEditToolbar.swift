@@ -96,7 +96,7 @@ struct FloatingEditToolbar: View {
                 GeometryReader { geometry in
                     let toolbarFrame = geometry.frame(in: .global)
                     let buttonCenterX = tooltipFrame.midX - toolbarFrame.minX
-                    let yOffset = tooltipFrame.minY - toolbarFrame.minY - 26
+                    let yOffset = tooltipFrame.minY - toolbarFrame.minY - 16
                     
                     Text(tool.name)
                         .font(FontManager.heading(size: 11, weight: .medium))
@@ -104,11 +104,7 @@ struct FloatingEditToolbar: View {
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
                         .fixedSize()
-                        .background(
-                            Capsule()
-                                .fill(Color("CardBackgroundColor"))
-                                .shadow(color: Color.black.opacity(0.06), radius: 8, x: 0, y: 4)
-                        )
+                        .liquidGlass(in: Capsule())
                         .position(x: buttonCenterX, y: yOffset)
                         .allowsHitTesting(false)
                         .transition(.scale(scale: 0.9, anchor: .bottom).combined(with: .opacity))
@@ -546,7 +542,7 @@ private struct FloatingToolButton: View {
                 }
             }
             .foregroundColor(iconColor)
-            .scaleEffect(isSelected ? 1.1 : (isHovered ? 1.05 : 1.0))
+            .scaleEffect(isSelected ? 1.05 : (isHovered ? 1.03 : 1.0))
             .animation(.bouncy(duration: 0.2), value: isSelected)
             .animation(.bouncy(duration: 0.2), value: isHovered)
             .frame(width: 20, height: 20)

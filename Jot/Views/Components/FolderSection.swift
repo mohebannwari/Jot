@@ -22,22 +22,31 @@ struct FolderSection: View {
     var onArchiveNotes: ((Set<UUID>) -> Void)? = nil
     let onCreateNoteInFolder: (UUID) -> Void
     let onRenameFolder: (Folder) -> Void
+    var onCommitRenameFolder: ((Folder, String) -> Void)? = nil
+    var onRenameNote: ((Note, String) -> Void)? = nil
     let onDeleteFolder: (Folder) -> Void
-    let onDropNoteIntoFolder: (UUID, UUID) -> Bool
+    let onDropNotesIntoFolder: (Set<UUID>, UUID) -> Bool
 
+    @Environment(\.colorScheme) private var colorScheme
     @State private var hoveredFolderID: UUID?
     @State private var dropTargetFolderID: UUID?
+    @State private var renamingFolderID: UUID?
+    @State private var renamingName: String = ""
+    @FocusState private var isRenaming: Bool
     private let rowHoverHorizontalInset: CGFloat = 0
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 0) {
             ForEach(folders, id: \.id) { folder in
+                let isExpanded = expandedFolderIDs.contains(folder.id)
                 VStack(alignment: .leading, spacing: 4) {
                     folderRow(folder)
 
-                    if expandedFolderIDs.contains(folder.id) {
-                        folderNotesList(folder)
-                    }
+                    folderNotesList(folder)
+                        .frame(height: isExpanded ? nil : 0, alignment: .top)
+                        .clipped()
+                        .opacity(isExpanded ? 1 : 0)
+                        .allowsHitTesting(isExpanded)
                 }
             }
         }
@@ -49,6 +58,7 @@ struct FolderSection: View {
         let isDropTarget = dropTargetFolderID == folder.id
         let shouldShowActions = isHovered
         let leadingAsset = isExpanded ? "IconFolderOpen" : "IconFolder2"
+        let isRenamingThisFolder = renamingFolderID == folder.id
 
         return HStack(spacing: 8) {
             Image(leadingAsset)
@@ -58,12 +68,39 @@ struct FolderSection: View {
                 .foregroundColor(folder.folderColor)
                 .frame(width: 20, height: 20)
 
-            Text(folder.name)
-                .font(FontManager.heading(size: 13, weight: .medium))
-                .foregroundColor(Color("PrimaryTextColor"))
-                .tracking(-0.4)
-                .lineLimit(1)
-                .truncationMode(.tail)
+            if isRenamingThisFolder {
+                TextField("Folder Name", text: $renamingName)
+                    .font(FontManager.heading(size: 15, weight: .medium))
+                    .foregroundColor(Color("PrimaryTextColor"))
+                    .textFieldStyle(.plain)
+                    .focused($isRenaming)
+                    .onSubmit {
+                        commitRename(folder)
+                    }
+                    .onExitCommand {
+                        cancelRename()
+                    }
+            } else {
+                Text(folder.name)
+                    .font(FontManager.heading(size: 15, weight: .medium))
+                    .foregroundColor(Color("PrimaryTextColor"))
+                    .tracking(-0.4)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .onTapGesture(count: 2) {
+                        startRename(folder)
+                    }
+            }
+
+            let noteCount = (notesByFolder[folder.id] ?? []).count
+            if noteCount > 0 {
+                Circle()
+                    .fill(Color("SecondaryTextColor"))
+                    .frame(width: 2, height: 2)
+                Text("\(noteCount)")
+                    .font(FontManager.metadata(size: 11, weight: .medium))
+                    .foregroundColor(Color("SecondaryTextColor"))
+            }
 
             Spacer(minLength: 8)
 
@@ -90,7 +127,7 @@ struct FolderSection: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .subtleHoverScale(1.12)
+                .subtleHoverScale(1.06)
 
                 Button {
                     HapticManager.shared.buttonTap()
@@ -105,16 +142,14 @@ struct FolderSection: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .subtleHoverScale(1.12)
+                .subtleHoverScale(1.06)
             }
             .opacity(shouldShowActions ? 1 : 0)
             .allowsHitTesting(shouldShowActions)
         }
-        .scaleEffect(isHovered ? 1.02 : 1.0)
+        .scaleEffect(isHovered ? 1.01 : 1.0)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.leading, 10)
-        .padding(.trailing, 8)
-        .padding(.vertical, 8)
+        .padding(8)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(rowBackgroundColor(isDropTarget: isDropTarget, isHovered: isHovered))
@@ -124,7 +159,7 @@ struct FolderSection: View {
         .animation(.jotHover, value: isHovered)
         .onTapGesture {
             HapticManager.shared.buttonTap()
-            withAnimation(.jotSpring) {
+            withAnimation(.jotSmoothFast) {
                 toggleFolderExpansion(folder.id)
             }
         }
@@ -150,11 +185,13 @@ struct FolderSection: View {
                 Label("Delete Folder", image: "delete")
             }
         }
-        .dropDestination(for: NoteDragItem.self) { items, _ in
-            guard let item = items.first else { return false }
-            let success = onDropNoteIntoFolder(item.noteID, folder.id)
+        .dropDestination(for: TransferablePayload.self) { payloads, _ in
+            let items = payloads.flatMap { $0.items }
+            guard !items.isEmpty else { return false }
+            let noteIDs = Set(items.map { $0.noteID })
+            let success = onDropNotesIntoFolder(noteIDs, folder.id)
             if success {
-                withAnimation(.jotSpring) {
+                withAnimation(.jotSmoothFast) {
                     expandedFolderIDs.insert(folder.id)
                 }
             }
@@ -174,13 +211,7 @@ struct FolderSection: View {
         let shouldLimit = notes.count > 5 && !showsAll
         let visibleNotes = shouldLimit ? Array(notes.prefix(5)) : notes
 
-        let containerShape = UnevenRoundedRectangle(
-            topLeadingRadius: 4,
-            bottomLeadingRadius: 12,
-            bottomTrailingRadius: 12,
-            topTrailingRadius: 12,
-            style: .continuous
-        )
+        let containerShape = RoundedRectangle(cornerRadius: 12, style: .continuous)
 
         return Group {
             if !notes.isEmpty {
@@ -205,6 +236,16 @@ struct FolderSection: View {
                             },
                             onExport: { onExportNotes(contextSelection(for: note)) },
                             onArchive: onArchiveNotes != nil ? { onArchiveNotes?(contextSelection(for: note)) } : nil,
+                            onRename: { newTitle in
+                                onRenameNote?(note, newTitle)
+                            },
+                            getDragItems: {
+                                if selectedNoteIDs.contains(note.id) {
+                                    return selectedNoteIDs.map { NoteDragItem(noteID: $0) }
+                                } else {
+                                    return [NoteDragItem(noteID: note.id)]
+                                }
+                            },
                             cornerRadius: 8
                         )
                     }
@@ -222,7 +263,7 @@ struct FolderSection: View {
                         .buttonStyle(.plain)
                         .padding(.leading, 8)
                         .padding(.top, 2)
-                        .subtleHoverScale(1.04)
+                        .subtleHoverScale(1.02)
                     }
                 }
                 .padding(4)
@@ -238,7 +279,6 @@ struct FolderSection: View {
                 .padding(.leading, 36)
             }
         }
-        .transition(.opacity.combined(with: .move(edge: .top)))
     }
 
     private func rowBackgroundColor(isDropTarget: Bool, isHovered: Bool) -> Color {
@@ -269,5 +309,25 @@ struct FolderSection: View {
             return selectedNoteIDs
         }
         return [note.id]
+    }
+
+    private func startRename(_ folder: Folder) {
+        renamingName = folder.name
+        renamingFolderID = folder.id
+        isRenaming = true
+    }
+
+    private func commitRename(_ folder: Folder) {
+        let trimmed = renamingName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            onCommitRenameFolder?(folder, trimmed)
+        }
+        renamingFolderID = nil
+        isRenaming = false
+    }
+
+    private func cancelRename() {
+        renamingFolderID = nil
+        isRenaming = false
     }
 }

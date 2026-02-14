@@ -8,41 +8,34 @@
         {
           "blend-mode-specializations" : [
             {
-              "appearance" : "dark",
-              "value" : "normal"
-            },
-            {
               "appearance" : "tinted",
               "value" : "normal"
             }
           ],
-          "fill-specializations" : [
+          "glass-specializations" : [
+            {
+              "value" : true
+            },
             {
               "appearance" : "dark",
-              "value" : {
-                "solid" : "srgb:1.00000,1.00000,1.00000,1.00000"
-              }
+              "value" : true
             },
             {
               "appearance" : "tinted",
-              "value" : {
-                "solid" : "extended-srgb:0.00000,0.53333,1.00000,1.00000"
-              }
+              "value" : true
             }
           ],
-          "glass" : true,
-          "image-name" : "iOS – App Icon 2.png",
-          "name" : "iOS – App Icon 2"
+          "image-name" : "iOS – App Icon.png",
+          "name" : "iOS – App Icon",
+          "position" : {
+            "scale" : 2.2,
+            "translation-in-points" : [
+              -43.48281015911439,
+              28.648677755915287
+            ]
+          }
         }
       ],
-      "lighting" : "individual",
-      "position" : {
-        "scale" : 2,
-        "translation-in-points" : [
-          0,
-          0
-        ]
-      },
       "shadow" : {
         "kind" : "neutral",
         "opacity" : 0.5

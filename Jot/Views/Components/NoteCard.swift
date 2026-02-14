@@ -27,7 +27,7 @@ struct NoteCard: View {
                             .foregroundColor(Color("TertiaryTextColor"))
                         
                         Text(dateFormatter.string(from: note.date))
-                            .font(FontManager.metadata(size: 10, weight: .medium))
+                            .font(FontManager.metadata(size: 11, weight: .medium))
                             .foregroundColor(Color("TertiaryTextColor"))
                     }
                     .padding(.horizontal, 6) 
@@ -169,7 +169,7 @@ struct NoteCard: View {
             )
         }
         .buttonStyle(.plain)
-        .scaleEffect(isHovering ? 1.02 : 1.0)
+        .scaleEffect(isHovering ? 1.01 : 1.0)
         .onHover { hovering in
             withAnimation(.bouncy(duration: 0.3)) {
                 isHovering = hovering
