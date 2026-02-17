@@ -9,16 +9,11 @@
 import Combine
 import SwiftUI
 
-#if os(macOS)
-    import AppKit
-    import QuartzCore
-    import CoreImage
-    import UniformTypeIdentifiers
-    import QuickLook
-#else
-    import UIKit
-    import UniformTypeIdentifiers
-#endif
+import AppKit
+import QuartzCore
+import CoreImage
+import UniformTypeIdentifiers
+import QuickLook
 
 extension NSAttributedString.Key {
     fileprivate static let webClipTitle = NSAttributedString.Key("WebClipTitle")
@@ -79,7 +74,146 @@ extension Notification.Name {
     static let textSelectionChanged = Notification.Name("TextSelectionChanged")
 }
 
-#if os(macOS)
+// MARK: - Typing Animation Layout Manager
+
+/// Custom layout manager that animates newly-typed glyphs floating up from below.
+/// Each character rises from an initial Y offset with an opacity fade, driven by
+/// a high-frequency timer that suspends when no animations are active.
+fileprivate final class TypingAnimationLayoutManager: NSLayoutManager {
+
+    // MARK: Animation Parameters
+
+    private let animationDuration: CFTimeInterval = 0.32
+    private let initialYOffset: CGFloat = 8.0
+    private let staggerDelay: CFTimeInterval = 0.06
+
+    // MARK: State
+
+    /// Maps character index to its animation start time.
+    private var activeAnimations: [Int: CFTimeInterval] = [:]
+
+    /// Timer that fires during active animations to drive redraw.
+    private var animationTimer: Timer?
+
+    /// The text view whose display we invalidate each frame.
+    weak var animatingTextView: NSTextView?
+
+    // MARK: Public API
+
+    /// Register characters in a range for animation.
+    /// - Parameters:
+    ///   - range: The character range to animate.
+    ///   - stagger: If true, each character gets an incremental delay (paste wave).
+    func animateCharacters(in range: NSRange, stagger: Bool) {
+        let now = CACurrentMediaTime()
+        for i in 0..<range.length {
+            let charIndex = range.location + i
+            let delay = stagger ? Double(i) * staggerDelay : 0.0
+            activeAnimations[charIndex] = now + delay
+        }
+        startTimerIfNeeded()
+    }
+
+    /// Immediately cancel all running animations.
+    func clearAllAnimations() {
+        activeAnimations.removeAll()
+        animationTimer?.invalidate()
+        animationTimer = nil
+    }
+
+    // MARK: Easing
+
+    /// Cubic ease-out: fast arrival, gentle settle. No overshoot.
+    private func easeOut(_ t: Double) -> Double {
+        let p = 1.0 - t
+        return 1.0 - p * p * p
+    }
+
+    // MARK: Timer
+
+    private func startTimerIfNeeded() {
+        guard animationTimer == nil else { return }
+        animationTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 120.0, repeats: true) {
+            [weak self] _ in
+            guard let self else { return }
+            self.animatingTextView?.needsDisplay = true
+
+            // Prune completed animations (keep if end time is still in the future)
+            let now = CACurrentMediaTime()
+            self.activeAnimations = self.activeAnimations.filter {
+                now < $0.value + self.animationDuration
+            }
+
+            if self.activeAnimations.isEmpty {
+                self.animationTimer?.invalidate()
+                self.animationTimer = nil
+            }
+        }
+    }
+
+    // MARK: Drawing Override
+
+    override func drawGlyphs(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
+        guard !activeAnimations.isEmpty,
+            let context = NSGraphicsContext.current?.cgContext
+        else {
+            super.drawGlyphs(forGlyphRange: glyphsToShow, at: origin)
+            return
+        }
+
+        let now = CACurrentMediaTime()
+        var currentIndex = glyphsToShow.location
+        let endIndex = NSMaxRange(glyphsToShow)
+
+        while currentIndex < endIndex {
+            let charIndex = characterIndexForGlyph(at: currentIndex)
+
+            if let startTime = activeAnimations[charIndex], now >= startTime {
+                let elapsed = now - startTime
+                let progress = min(elapsed / animationDuration, 1.0)
+
+                if progress < 1.0 {
+                    let easedProgress = easeOut(progress)
+                    let yOffset = initialYOffset * CGFloat(1.0 - easedProgress)
+                    let alpha = CGFloat(easedProgress)
+
+                    context.saveGState()
+                    context.translateBy(x: 0, y: yOffset)
+                    context.setAlpha(alpha)
+                    super.drawGlyphs(
+                        forGlyphRange: NSRange(location: currentIndex, length: 1), at: origin)
+                    context.restoreGState()
+                } else {
+                    activeAnimations.removeValue(forKey: charIndex)
+                    super.drawGlyphs(
+                        forGlyphRange: NSRange(location: currentIndex, length: 1), at: origin)
+                }
+                currentIndex += 1
+            } else if activeAnimations[charIndex] != nil {
+                // Start time is in the future (staggered), draw invisible
+                context.saveGState()
+                context.setAlpha(0)
+                super.drawGlyphs(
+                    forGlyphRange: NSRange(location: currentIndex, length: 1), at: origin)
+                context.restoreGState()
+                currentIndex += 1
+            } else {
+                // Batch consecutive non-animating glyphs for performance
+                var runEnd = currentIndex + 1
+                while runEnd < endIndex {
+                    let nextCharIndex = characterIndexForGlyph(at: runEnd)
+                    if activeAnimations[nextCharIndex] != nil { break }
+                    runEnd += 1
+                }
+                super.drawGlyphs(
+                    forGlyphRange: NSRange(location: currentIndex, length: runEnd - currentIndex),
+                    at: origin)
+                currentIndex = runEnd
+            }
+        }
+    }
+}
+
 /// Dedicated attachment type so that we never lose the stored filename during round-trips.
 private final class NoteImageAttachment: NSTextAttachment {
     let storedFilename: String
@@ -205,68 +339,6 @@ private final class ImagePreviewView: NSImageView {
     private let imageView = NSImageView()
 }
 
-#else
-/// Dedicated attachment type so that we never lose the stored filename during round-trips.
-private final class NoteImageAttachment: NSTextAttachment {
-    let storedFilename: String
-
-    init(filename: String) {
-        self.storedFilename = filename
-        super.init(data: nil, ofType: nil)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("NoteImageAttachment does not support init(coder:)")
-    }
-
-    override func copy(with zone: NSZone? = nil) -> Any {
-        let copy = NoteImageAttachment(filename: storedFilename)
-        copy.image = self.image
-        copy.bounds = self.bounds
-        copy.fileWrapper = self.fileWrapper
-        copy.contents = self.contents
-        copy.attachmentCell = self.attachmentCell
-        return copy
-    }
-}
-
-/// Attachment type that captures metadata for non-image files.
-private final class NoteFileAttachment: NSTextAttachment {
-    let storedFilename: String
-    let originalFilename: String
-    let typeIdentifier: String
-    let displayLabel: String
-
-    init(storedFilename: String, originalFilename: String, typeIdentifier: String, displayLabel: String) {
-        self.storedFilename = storedFilename
-        self.originalFilename = originalFilename
-        self.typeIdentifier = typeIdentifier
-        self.displayLabel = displayLabel
-        super.init(data: nil, ofType: nil)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("NoteFileAttachment does not support init(coder:)")
-    }
-
-    override func copy(with zone: NSZone? = nil) -> Any {
-        let copy = NoteFileAttachment(
-            storedFilename: storedFilename,
-            originalFilename: originalFilename,
-            typeIdentifier: typeIdentifier,
-            displayLabel: displayLabel
-        )
-        copy.image = self.image
-        copy.bounds = self.bounds
-        copy.fileWrapper = self.fileWrapper
-        copy.contents = self.contents
-        copy.attachmentCell = self.attachmentCell
-        return copy
-    }
-}
-#endif
 
 struct TodoRichTextEditor: View {
     @Binding var text: String
@@ -298,21 +370,11 @@ struct TodoRichTextEditor: View {
     private let commandMenuTools = TodoRichTextEditor.commandMenuActions
 
     // Static accessor for command menu showing flag (used by keyboard handlers)
-    #if os(macOS)
     static var isCommandMenuShowing: Bool {
         get { InlineNSTextView.isCommandMenuShowing }
         set { InlineNSTextView.isCommandMenuShowing = newValue }
     }
-    #else
-    static var isCommandMenuShowing: Bool {
-        get { DynamicHeightTextView.isCommandMenuShowing }
-        set { DynamicHeightTextView.isCommandMenuShowing = newValue }
-    }
-    #endif
 
-    #if os(iOS)
-        @State private var keyboardInset: CGFloat = 0
-    #endif
 
     init(
         text: Binding<String>,
@@ -330,32 +392,19 @@ struct TodoRichTextEditor: View {
     }
 
     private var bottomInset: CGFloat {
-        #if os(iOS)
-            return baseBottomInset + keyboardInset
-        #else
             return baseBottomInset
-        #endif
     }
 
     var body: some View {
         let _ = print(
             "DEBUG: TodoRichTextEditor body computed - text value: '\(text.prefix(100))...'")
         return Group {
-            #if os(macOS)
                 TodoEditorRepresentable(
                     text: $text,
                     colorScheme: colorScheme,
                     bottomInset: bottomInset,
                     focusRequestID: focusRequestID
                 )
-            #else
-                TodoEditorRepresentable(
-                    text: $text,
-                    colorScheme: colorScheme,
-                    bottomInset: bottomInset,
-                    focusRequestID: focusRequestID
-                )
-            #endif
         }
         .frame(maxWidth: .infinity)  // Natural height based on content
         .background(Color.clear)
@@ -438,11 +487,7 @@ struct TodoRichTextEditor: View {
                     showCommandMenu = true
                 }
 
-                #if os(macOS)
                     InlineNSTextView.isCommandMenuShowing = true
-                #else
-                    DynamicHeightTextView.isCommandMenuShowing = true
-                #endif
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("HideCommandMenu")))
@@ -452,11 +497,7 @@ struct TodoRichTextEditor: View {
             }
             commandSlashLocation = -1
 
-            #if os(macOS)
                 InlineNSTextView.isCommandMenuShowing = false
-            #else
-                DynamicHeightTextView.isCommandMenuShowing = false
-            #endif
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("CommandMenuNavigateUp")))
         { _ in
@@ -479,21 +520,6 @@ struct TodoRichTextEditor: View {
                 }
             }
         }
-        #if os(iOS)
-            .onReceive(
-                NotificationCenter.default.publisher(
-                    for: UIResponder.keyboardWillChangeFrameNotification)
-            ) { notification in
-                handleKeyboardChange(notification)
-            }
-            .onReceive(
-                NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)
-            ) { _ in
-                withAnimation(.easeOut(duration: 0.25)) {
-                    keyboardInset = 0
-                }
-            }
-        #endif
     }
 
     // MARK: - Command Menu Handlers
@@ -503,11 +529,7 @@ struct TodoRichTextEditor: View {
             showCommandMenu = false
         }
 
-        #if os(macOS)
             InlineNSTextView.isCommandMenuShowing = false
-        #else
-            DynamicHeightTextView.isCommandMenuShowing = false
-        #endif
 
         NotificationCenter.default.post(
             name: .applyCommandMenuTool,
@@ -529,57 +551,10 @@ struct TodoRichTextEditor: View {
         return CGPoint(x: clampedX, y: clampedY)
     }
 
-    #if os(iOS)
-        private func handleKeyboardChange(_ notification: Notification) {
-            guard
-                let endFrame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey]
-                    as? CGRect,
-                let window = keyWindow
-            else { return }
-
-            let keyboardHeight = max(0, window.frame.maxY - endFrame.minY)
-            let safeArea = window.safeAreaInsets.bottom
-            let effectiveInset = max(0, keyboardHeight - safeArea)
-
-            let duration =
-                notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double
-                ?? 0.25
-            let curveRaw =
-                notification.userInfo?[UIResponder.keyboardAnimationCurveUserInfoKey] as? UInt
-                ?? UIView.AnimationCurve.easeOut.rawValue
-            let curve = UIView.AnimationCurve(rawValue: Int(curveRaw)) ?? .easeOut
-
-            let animation: Animation
-            switch curve {
-            case .easeInOut:
-                animation = .easeInOut(duration: duration)
-            case .easeIn:
-                animation = .easeIn(duration: duration)
-            case .easeOut:
-                animation = .easeOut(duration: duration)
-            case .linear:
-                animation = .linear(duration: duration)
-            @unknown default:
-                animation = .easeOut(duration: duration)
-            }
-
-            withAnimation(animation) {
-                keyboardInset = effectiveInset
-            }
-        }
-
-        private var keyWindow: UIWindow? {
-            UIApplication.shared.connectedScenes
-                .compactMap { $0 as? UIWindowScene }
-                .flatMap { $0.windows }
-                .first(where: { $0.isKeyWindow })
-        }
-    #endif
 }
 
 // MARK: - Representable Implementations
 
-#if os(macOS)
 
     struct TodoEditorRepresentable: NSViewRepresentable {
         @Binding var text: String
@@ -631,6 +606,12 @@ struct TodoRichTextEditor: View {
                 container.heightTracksTextView = false
                 container.lineFragmentPadding = 0
                 container.containerSize = NSSize(width: 600, height: unlimitedDimension)
+
+                // Install custom layout manager for typing animation
+                let typingLayoutManager = TypingAnimationLayoutManager()
+                container.replaceLayoutManager(typingLayoutManager)
+                typingLayoutManager.animatingTextView = textView
+                context.coordinator.typingAnimationManager = typingLayoutManager
             }
 
             // CRITICAL FIX: Use the passed colorScheme directly, not resolved from view
@@ -788,7 +769,11 @@ struct TodoRichTextEditor: View {
             private var isUpdating = false
             private var textBinding: Binding<String>
             private var lastHandledFocusRequestID: UUID?
-#if os(macOS)
+
+            // Typing animation state
+            fileprivate weak var typingAnimationManager: TypingAnimationLayoutManager?
+            private var pendingAnimationLocation: Int?
+            private var pendingAnimationLength: Int?
             private struct HiddenAttachmentState {
                 let attachment: NSTextAttachment
                 weak var textView: NSTextView?
@@ -825,7 +810,6 @@ struct TodoRichTextEditor: View {
                 cache.countLimit = 32
                 return cache
             }()
-#endif
 
             // NSTextViewDelegate method to handle selection changes
             func textViewDidChangeSelection(_ notification: Notification) {
@@ -996,7 +980,6 @@ struct TodoRichTextEditor: View {
                     ? "Open link to view the full preview."
                     : description!.trimmingCharacters(in: .whitespacesAndNewlines)
 
-                #if os(macOS)
                     // Create the view without artificial width constraints - let it size to content
                     let cardView = WebClipView(
                         title: fallbackTitle,
@@ -1042,44 +1025,6 @@ struct TodoRichTextEditor: View {
                         height: displaySize.height
                     )
                     let attributed = NSMutableAttributedString(attachment: attachment)
-                #else
-                    // Create the view without artificial width constraints - let it size to content
-                    let cardView = WebClipView(
-                        title: fallbackTitle,
-                        domain: resolvedDomain,
-                        url: linkValue
-                    )
-                    .fixedSize()  // Size to fit content naturally
-                    .environment(\.colorScheme, currentColorScheme)
-
-                    let renderer = ImageRenderer(content: cardView)
-                    // Use device scale for sharp rendering (2x or 3x depending on device)
-                    let displayScale = UIScreen.main.scale
-                    renderer.scale = displayScale
-                    renderer.isOpaque = false
-
-                    let attachment = NSTextAttachment()
-
-                    guard let uiImage = renderer.uiImage else {
-                        let attributed = NSMutableAttributedString(
-                            string: "[WebClip: \(fallbackTitle)]")
-                        return attributed
-                    }
-
-                    // CRITICAL: UIImage already handles scale internally via its scale property
-                    // We just need to ensure the attachment bounds match the visual size
-                    let displaySize = uiImage.size
-
-                    attachment.image = uiImage
-
-                    attachment.bounds = CGRect(
-                        x: 0,
-                        y: Self.imageTagVerticalOffset(for: displaySize.height),
-                        width: displaySize.width,
-                        height: displaySize.height
-                    )
-                    let attributed = NSMutableAttributedString(attachment: attachment)
-                #endif
 
                 let attachmentRange = NSRange(location: 0, length: attributed.length)
                 attributed.addAttribute(.link, value: linkValue, range: attachmentRange)
@@ -1115,7 +1060,6 @@ struct TodoRichTextEditor: View {
                 let attachment: NoteImageAttachment
                 let displaySize: CGSize
 
-#if os(macOS)
                 let tagView = ImageAttachmentTagView(label: tagLabel)
                     .environment(\.colorScheme, currentColorScheme)
                 let renderer = ImageRenderer(content: tagView)
@@ -1140,24 +1084,6 @@ struct TodoRichTextEditor: View {
                 attachment.image = renderedImage
                 attachment.attachmentCell = NSTextAttachmentCell(imageCell: renderedImage)
 
-#else
-                let tagView = ImageAttachmentTagView(label: tagLabel)
-                    .environment(\.colorScheme, currentColorScheme)
-                let renderer = ImageRenderer(content: tagView)
-                let scale = UIScreen.main.scale
-                renderer.scale = scale
-                renderer.isOpaque = false
-
-                guard let uiImage = renderer.uiImage else {
-                    NSLog("🖼️ makeImageAttachment: FAILED to render tag UIImage")
-                    return fallbackAttributedString()
-                }
-
-                displaySize = uiImage.size
-                attachment = NoteImageAttachment(filename: filename)
-                attachment.image = uiImage
-
-#endif
 
                 attachment.bounds = CGRect(
                     x: 0,
@@ -1171,12 +1097,8 @@ struct TodoRichTextEditor: View {
                 attributed.addAttribute(.imageFilename, value: filename, range: attachmentRange)
 
                 let sizeDescription: String
-#if os(macOS)
                 sizeDescription = NSStringFromSize(
                     NSSize(width: displaySize.width, height: displaySize.height))
-#else
-                sizeDescription = NSStringFromCGSize(displaySize)
-#endif
 
                 NSLog(
                     "🖼️ makeImageAttachment: Created inline tag for %@ with size %@ and label %@",
@@ -1259,7 +1181,6 @@ struct TodoRichTextEditor: View {
                 return attributed
             }
 
-#if os(macOS)
             private func ensurePreviewInfrastructure(for textView: NSTextView) {
                 if previewHostView == nil {
                     previewHostView = textView.enclosingScrollView?.contentView
@@ -1807,7 +1728,6 @@ struct TodoRichTextEditor: View {
                 }
                 return true
             }
-#endif
 
             init(text: Binding<String>, colorScheme: ColorScheme, focusRequestID: UUID?) {
                 self.textBinding = text
@@ -1816,13 +1736,13 @@ struct TodoRichTextEditor: View {
             }
 
             deinit {
+                typingAnimationManager?.clearAllAnimations()
                 observers.forEach { NotificationCenter.default.removeObserver($0) }
                 observers.removeAll()
             }
 
             func configure(with textView: NSTextView) {
                 self.textView = textView
-#if os(macOS)
                 let newHost = textView.enclosingScrollView?.contentView
                 if previewHostView !== newHost {
                     imagePreviewView?.removeFromSuperview()
@@ -1846,7 +1766,6 @@ struct TodoRichTextEditor: View {
                     }
                     observers.append(observer)
                 }
-#endif
 
                 // Prevent layout shifts when gaining focus
                 NotificationCenter.default.addObserver(
@@ -2210,7 +2129,6 @@ struct TodoRichTextEditor: View {
                 }
             }
 
-#if os(macOS)
             func canHandleFileDrop(_ info: NSDraggingInfo, in textView: NSTextView) -> Bool {
                 guard let urls = fileURLs(from: info) else {
                     return false
@@ -2289,7 +2207,6 @@ struct TodoRichTextEditor: View {
                     ext
                 )
             }
-#endif
 
             func handleAttachmentClick(at point: CGPoint, in textView: NSTextView) -> Bool {
                 guard let layoutManager = textView.layoutManager,
@@ -2370,6 +2287,7 @@ struct TodoRichTextEditor: View {
                 print("DEBUG: ApplyInitialText called with text: '\(text.prefix(100))...'")
                 print("DEBUG: Current color scheme: \(currentColorScheme)")
 
+                typingAnimationManager?.clearAllAnimations()
                 isUpdating = true
 
                 // Set the textView's base text color first
@@ -2500,6 +2418,7 @@ struct TodoRichTextEditor: View {
                 // Store current selection before updating
                 let selectedRange = textView.selectedRange()
 
+                typingAnimationManager?.clearAllAnimations()
                 isUpdating = true
 
                 // Set the textView's base text color
@@ -2549,6 +2468,20 @@ struct TodoRichTextEditor: View {
                 }
 
                 print("DEBUG: textDidChange - text changed to: '\(textView.string.prefix(100))...'")
+
+                // Trigger typing animation for newly inserted characters
+                if let location = pendingAnimationLocation,
+                    let length = pendingAnimationLength,
+                    length > 0
+                {
+                    let stagger = length > 1
+                    typingAnimationManager?.animateCharacters(
+                        in: NSRange(location: location, length: length),
+                        stagger: stagger
+                    )
+                    pendingAnimationLocation = nil
+                    pendingAnimationLength = nil
+                }
 
                 // Ensure typing attributes are preserved after Writing Tools operations
                 DispatchQueue.main.async {
@@ -2610,6 +2543,16 @@ struct TodoRichTextEditor: View {
                     insertTodo()
                     return false
                 }
+
+                // Record pending animation for newly inserted text
+                if !isUpdating, let replacement = replacementString, !replacement.isEmpty {
+                    pendingAnimationLocation = affectedCharRange.location
+                    pendingAnimationLength = replacement.count
+                } else {
+                    pendingAnimationLocation = nil
+                    pendingAnimationLength = nil
+                }
+
                 return true
             }
 
@@ -3029,9 +2972,7 @@ struct TodoRichTextEditor: View {
 
             private func replaceSelection(with attributed: NSAttributedString) {
                 guard let textView = textView else { return }
-#if os(macOS)
                 hideImagePreview()
-#endif
                 var range = textView.selectedRange()
                 let storageLength = textView.textStorage?.length ?? 0
 
@@ -4016,1471 +3957,6 @@ struct TodoRichTextEditor: View {
         }
     }
 
-#else
-
-    struct TodoEditorRepresentable: UIViewRepresentable {
-        @Binding var text: String
-        let colorScheme: ColorScheme
-        let bottomInset: CGFloat
-        let focusRequestID: UUID?
-
-        // A custom text view that correctly reports its intrinsic content size
-        // for proper dynamic height sizing in SwiftUI.
-        final class DynamicHeightTextView: UITextView {
-            // Static flag to track command menu visibility for keyboard event handling
-            static var isCommandMenuShowing = false
-
-            override var intrinsicContentSize: CGSize {
-                // Return a size that fits the content. fall back to a reasonable width if undefined.
-                let fixedWidth = frame.size.width > 0 ? frame.size.width : 600
-                let size = sizeThatFits(CGSize(width: fixedWidth, height: .greatestFiniteMagnitude))
-                let lineHeight = font?.lineHeight ?? 24
-                let minimumHeight = lineHeight + textContainerInset.top + textContainerInset.bottom
-                let result = CGSize(width: fixedWidth, height: max(size.height, minimumHeight))
-                return result
-            }
-            
-            // MARK: - Context Menu Implementation for iOS
-            
-            override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
-                // Allow standard text editing actions
-                if action == #selector(cut(_:)) || action == #selector(copy(_:)) || action == #selector(paste(_:)) || action == #selector(selectAll(_:)) {
-                    return super.canPerformAction(action, withSender: sender)
-                }
-                
-                // Allow our custom actions
-                if action == #selector(toggleBold(_:)) || action == #selector(toggleItalic(_:)) || action == #selector(toggleUnderline(_:)) || action == #selector(insertTodo(_:)) || action == #selector(insertBulletList(_:)) {
-                    return true
-                }
-                
-                return false
-            }
-            
-            override func menuItems(for menu: UIMenu) -> [UIMenuElement] {
-                var items: [UIMenuElement] = []
-                
-                // Standard text editing actions
-                if canPerformAction(#selector(cut(_:)), withSender: nil) {
-                    items.append(UIAction(title: "Cut", image: UIImage(systemName: "scissors")) { _ in
-                        self.cut(self)
-                    })
-                }
-                
-                if canPerformAction(#selector(copy(_:)), withSender: nil) {
-                    items.append(UIAction(title: "Copy", image: UIImage(systemName: "doc.on.doc")) { _ in
-                        self.copy(self)
-                    })
-                }
-                
-                if canPerformAction(#selector(paste(_:)), withSender: nil) {
-                    items.append(UIAction(title: "Paste", image: UIImage(systemName: "doc.on.clipboard")) { _ in
-                        self.paste(self)
-                    })
-                }
-                
-                if !items.isEmpty {
-                    items.append(UIMenuElement.separator())
-                }
-                
-                // Text formatting actions
-                items.append(UIAction(title: "Bold", image: UIImage(systemName: "bold")) { _ in
-                    self.toggleBold(self)
-                })
-                
-                items.append(UIAction(title: "Italic", image: UIImage(systemName: "italic")) { _ in
-                    self.toggleItalic(self)
-                })
-                
-                items.append(UIAction(title: "Underline", image: UIImage(systemName: "underline")) { _ in
-                    self.toggleUnderline(self)
-                })
-                
-                items.append(UIMenuElement.separator())
-                
-                // Special formatting actions
-                items.append(UIAction(title: "Insert Todo", image: UIImage(systemName: "checkmark.circle")) { _ in
-                    self.insertTodo(self)
-                })
-                
-                items.append(UIAction(title: "Insert Bullet List", image: UIImage(systemName: "list.bullet")) { _ in
-                    self.insertBulletList(self)
-                })
-                
-                items.append(UIMenuElement.separator())
-                
-                // Select all
-                if canPerformAction(#selector(selectAll(_:)), withSender: nil) {
-                    items.append(UIAction(title: "Select All", image: UIImage(systemName: "textformat.abc")) { _ in
-                        self.selectAll(self)
-                    })
-                }
-                
-                return items
-            }
-            
-            // MARK: - Context Menu Actions
-            
-            @objc private func toggleBold(_ sender: Any?) {
-                NotificationCenter.default.post(name: .applyEditTool, object: nil, userInfo: ["tool": "bold"])
-            }
-            
-            @objc private func toggleItalic(_ sender: Any?) {
-                NotificationCenter.default.post(name: .applyEditTool, object: nil, userInfo: ["tool": "italic"])
-            }
-            
-            @objc private func toggleUnderline(_ sender: Any?) {
-                NotificationCenter.default.post(name: .applyEditTool, object: nil, userInfo: ["tool": "underline"])
-            }
-            
-            @objc private func insertTodo(_ sender: Any?) {
-                NotificationCenter.default.post(name: Notification.Name("TodoToolbarAction"), object: nil)
-            }
-            
-            @objc private func insertBulletList(_ sender: Any?) {
-                NotificationCenter.default.post(name: .applyEditTool, object: nil, userInfo: ["tool": "bulletList"])
-            }
-        }
-
-        func makeUIView(context: Context) -> UITextView {
-            let textView = DynamicHeightTextView()
-            textView.delegate = context.coordinator
-            textView.isEditable = true
-            textView.isSelectable = true
-            textView.isScrollEnabled = false  // Disable internal scrolling - let parent scroll view handle it
-            textView.alwaysBounceVertical = false
-            textView.backgroundColor = .clear
-            // Use Charter for body text as per design requirements
-            textView.font = FontManager.bodyUI(size: 16, weight: .regular)
-            // Don't set textColor here - it will be set properly based on color scheme below
-            textView.tintColor = UIColor(named: "AccentColor") ?? .systemBlue
-            textView.textContainerInset = UIEdgeInsets(top: 8, left: 0, bottom: 8, right: 0)
-            textView.textContainer.lineFragmentPadding = 0
-            // Remove all insets since text editor is now part of unified scroll view
-            textView.contentInset = UIEdgeInsets.zero
-            textView.scrollIndicatorInsets = UIEdgeInsets.zero
-            textView.linkTextAttributes = [
-                .underlineStyle: 0
-            ]
-            // Allow the text view to size naturally based on content - handled by DynamicHeightTextView now
-            //            textView.setContentHuggingPriority(.required, for: .vertical)
-            //            textView.setContentCompressionResistancePriority(.required, for: .vertical)
-            let initialScheme = resolvedColorScheme(for: textView)
-
-            // Set initial text color based on color scheme
-            let initialTextColor: UIColor
-            if initialScheme == .dark {
-                initialTextColor = UIColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0)  // White for dark mode
-            } else {
-                initialTextColor = UIColor(red: 0.102, green: 0.102, blue: 0.102, alpha: 1.0)  // Dark gray for light mode
-            }
-            textView.textColor = initialTextColor
-            textView.typingAttributes = Coordinator.baseTypingAttributes(for: initialScheme)
-
-            // Enable Writing Tools when text is selected (without standalone button)
-            if #available(iOS 18.0, *) {
-                textView.writingToolsBehavior = .complete
-            }
-
-            context.coordinator.updateColorScheme(initialScheme)
-            context.coordinator.configure(with: textView)
-            context.coordinator.applyInitialText(text)
-            return textView
-        }
-
-        func updateUIView(_ uiView: UITextView, context: Context) {
-            // Only update color scheme if it has changed to reduce glitching
-            let resolvedScheme = resolvedColorScheme(for: uiView)
-            // Note: We'll update colors every time for now to ensure consistency
-            let currentTextColor: UIColor
-            if resolvedScheme == .dark {
-                currentTextColor = UIColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0)  // White for dark mode
-            } else {
-                currentTextColor = UIColor(red: 0.102, green: 0.102, blue: 0.102, alpha: 1.0)  // Dark gray for light mode
-            }
-            uiView.textColor = currentTextColor
-            uiView.typingAttributes = Coordinator.baseTypingAttributes(for: resolvedScheme)
-            uiView.linkTextAttributes = [
-                .underlineStyle: 0
-            ]
-            context.coordinator.updateColorScheme(resolvedScheme)
-
-            // Only update text if it has actually changed
-            context.coordinator.updateIfNeeded(with: text)
-            context.coordinator.requestFocusIfNeeded(focusRequestID)
-        }
-
-        // Report dynamic size to SwiftUI so the editor grows with its content (no minHeight)
-        func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context)
-            -> CGSize
-        {
-            let paddingAdjustment: CGFloat = 0  // outer SwiftUI padding handles margins
-            let targetWidth = (proposal.width ?? UIScreen.main.bounds.width) - paddingAdjustment
-            let fitting = uiView.sizeThatFits(
-                CGSize(width: max(0, targetWidth), height: .greatestFiniteMagnitude))
-            let lineHeight = uiView.font?.lineHeight ?? 24
-            let minHeight =
-                lineHeight + uiView.textContainerInset.top + uiView.textContainerInset.bottom
-            let result = CGSize(width: targetWidth, height: max(fitting.height, minHeight))
-            return result
-        }
-
-        func makeCoordinator() -> Coordinator {
-            Coordinator(
-                text: $text,
-                colorScheme: colorScheme,
-                focusRequestID: focusRequestID
-            )
-        }
-
-        private func resolvedColorScheme(for view: UIView) -> ColorScheme {
-            if view.traitCollection.userInterfaceStyle == .dark {
-                return .dark
-            }
-            if view.traitCollection.userInterfaceStyle == .light {
-                return .light
-            }
-            return colorScheme
-        }
-
-        @MainActor final class Coordinator: NSObject, UITextViewDelegate {
-            private weak var textView: UITextView?
-            private var observers: [NSObjectProtocol] = []
-            private var lastSerialized = ""
-            private var isUpdating = false
-            private var textBinding: Binding<String>
-            private var currentColorScheme: ColorScheme
-            private var lastHandledFocusRequestID: UUID?
-            private struct FileAttachmentMetadata {
-                let storedFilename: String
-                let originalFilename: String
-                let typeIdentifier: String
-                let displayLabel: String
-            }
-
-            // Use Charter for body text as per design requirements
-            private static var textFont: UIFont { FontManager.bodyUI(size: 16, weight: .regular) }
-            private static let baseLineHeight: CGFloat = 24
-            private static let todoLineHeight: CGFloat = 24
-            private static let checkboxIconSize: CGFloat = 18
-            private static let baseBaselineOffset: CGFloat = 0.0
-            private static let todoBaselineOffset: CGFloat = {
-                return 0.0
-            }()
-            private static var checkboxAttachmentYOffset: CGFloat {
-                let checkboxHeight: CGFloat = 18
-                let offset = (textFont.capHeight - checkboxHeight) / 2
-                return offset
-            }
-            private static let checkboxBaselineOffset: CGFloat = {
-                return 0.0
-            }()
-
-            init(text: Binding<String>, colorScheme: ColorScheme, focusRequestID: UUID?) {
-                self.textBinding = text
-                self.currentColorScheme = colorScheme
-                self.lastHandledFocusRequestID = focusRequestID
-            }
-
-            deinit {
-                observers.forEach { NotificationCenter.default.removeObserver($0) }
-                observers.removeAll()
-            }
-
-            func configure(with textView: UITextView) {
-                self.textView = textView
-
-                let insertTodo = NotificationCenter.default.addObserver(
-                    forName: .insertTodoInEditor, object: nil, queue: .main
-                ) { [weak self] _ in
-                    Task { @MainActor [weak self] in
-                        self?.insertTodo()
-                    }
-                }
-
-                let insertLink = NotificationCenter.default.addObserver(
-                    forName: .insertWebClipInEditor, object: nil, queue: .main
-                ) { [weak self] notification in
-                    guard let url = notification.object as? String else { return }
-                    Task { @MainActor [weak self] in
-                        self?.insertWebClip(url: url)
-                    }
-                }
-
-                let insertVoiceTranscript = NotificationCenter.default.addObserver(
-                    forName: .insertVoiceTranscriptInEditor, object: nil, queue: .main
-                ) { [weak self] notification in
-                    NSLog("📝 Coordinator: Received insertVoiceTranscriptInEditor notification")
-                    // We're on main queue (specified in observer), use assumeIsolated for synchronous execution
-                    // This prevents race condition with view dismissal that occurred with Task wrapper
-                    MainActor.assumeIsolated {
-                        guard let self = self else {
-                            NSLog("⚠️ Coordinator deallocated before transcript insertion")
-                            return
-                        }
-                        guard let transcript = notification.object as? String else {
-                            NSLog("📝 Coordinator: No transcript in notification object")
-                            return
-                        }
-                        NSLog("📝 Coordinator: Got transcript: %@", transcript)
-                        self.insertVoiceTranscript(transcript: transcript)
-                        NSLog("📝 Coordinator: Transcript insertion completed")
-                    }
-                }
-
-                let applyCommandMenuTool = NotificationCenter.default.addObserver(
-                    forName: .applyCommandMenuTool, object: nil, queue: .main
-                ) { [weak self] notification in
-                    Task { @MainActor [weak self] in
-                        self?.handleCommandMenuToolApplication(notification)
-                    }
-                }
-
-                observers = [insertTodo, insertLink, insertVoiceTranscript, insertImage, applyCommandMenuTool]
-
-                let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
-                tap.cancelsTouchesInView = false
-                textView.addGestureRecognizer(tap)
-            }
-
-            func requestFocusIfNeeded(_ focusRequestID: UUID?) {
-                guard let focusRequestID else { return }
-                guard lastHandledFocusRequestID != focusRequestID else { return }
-                lastHandledFocusRequestID = focusRequestID
-                guard let textView else { return }
-
-                DispatchQueue.main.async {
-                    _ = textView.becomeFirstResponder()
-                }
-            }
-
-            func updateColorScheme(_ scheme: ColorScheme) {
-                currentColorScheme = scheme
-            }
-
-            func applyInitialText(_ text: String) {
-                guard let textView = textView else { return }
-                isUpdating = true
-                textView.attributedText = deserialize(text)
-                textView.typingAttributes = Self.baseTypingAttributes(for: currentColorScheme)
-
-                // Ensure all text has proper color - critical for existing notes
-                ensureTextColor()
-
-                lastSerialized = serialize()
-                isUpdating = false
-            }
-
-            // Ensures all text has the correct foreground color attribute
-            private func ensureTextColor() {
-                guard let textView = textView else { return }
-                let mutableText = NSMutableAttributedString(
-                    attributedString: textView.attributedText ?? NSAttributedString())
-                let fullRange = NSRange(location: 0, length: mutableText.length)
-
-                // Get the correct text color for current scheme
-                let textColor: UIColor
-                if currentColorScheme == .dark {
-                    textColor = UIColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0)
-                } else {
-                    textColor = UIColor(red: 0.102, green: 0.102, blue: 0.102, alpha: 1.0)
-                }
-
-                // Unconditionally apply text color to all text ranges
-                // This ensures existing content always has the correct color for the current scheme
-                mutableText.enumerateAttributes(in: fullRange, options: []) {
-                    attributes, range, _ in
-                    // Skip attachments - they don't need text color
-                    if attributes[.attachment] == nil {
-                        mutableText.addAttribute(.foregroundColor, value: textColor, range: range)
-                    }
-                }
-
-                textView.attributedText = mutableText
-            }
-
-            func updateIfNeeded(with text: String) {
-                guard !isUpdating, text != lastSerialized, let textView else { return }
-                isUpdating = true
-                textView.attributedText = deserialize(text)
-
-                // Force typing attributes immediately and again after a brief delay
-                // to ensure Writing Tools respects our formatting
-                textView.typingAttributes = Self.baseTypingAttributes(for: currentColorScheme)
-                DispatchQueue.main.async {
-                    textView.typingAttributes = Self.baseTypingAttributes(
-                        for: self.currentColorScheme)
-                }
-
-                lastSerialized = serialize()
-                isUpdating = false
-            }
-
-            func textViewDidChange(_ textView: UITextView) {
-                // Ensure typing attributes are preserved after Writing Tools operations
-                DispatchQueue.main.async {
-                    // Fix any inconsistent fonts first
-                    self.fixInconsistentFonts()
-                    textView.typingAttributes = Self.baseTypingAttributes(
-                        for: self.currentColorScheme)
-
-                    // Apply consistent formatting to any new text that might have been inserted
-                    // without proper attributes (e.g., from Writing Tools)
-                    let selectedRange = textView.selectedRange
-                    if selectedRange.length == 0 && selectedRange.location > 0 {
-                        // Check if the character before cursor has proper font attributes
-                        let beforeRange = NSRange(location: selectedRange.location - 1, length: 1)
-                        if beforeRange.location >= 0,
-                            beforeRange.location + beforeRange.length
-                                <= textView.attributedText.length
-                        {
-                            let attributes = textView.attributedText.attributes(
-                                at: beforeRange.location, effectiveRange: nil)
-                            let currentFont = attributes[.font] as? UIFont
-                            let expectedFont =
-                                Self.baseTypingAttributes(for: self.currentColorScheme)[.font]
-                                as? UIFont
-
-                            // If font doesn't match, apply correct attributes to recent text
-                            if currentFont?.fontName != expectedFont?.fontName
-                                || currentFont?.pointSize != expectedFont?.pointSize
-                            {
-                                let mutableText = NSMutableAttributedString(
-                                    attributedString: textView.attributedText)
-                                mutableText.addAttributes(
-                                    Self.baseTypingAttributes(for: self.currentColorScheme),
-                                    range: beforeRange
-                                )
-                                textView.attributedText = mutableText
-                            }
-                        }
-                    }
-                }
-
-                syncText()
-
-                // Tell the layout system that the size has changed
-                textView.invalidateIntrinsicContentSize()
-            }
-
-            // Selection change handling
-            func textViewDidChangeSelection(_ textView: UITextView) {
-                // Ensure layout stability when selection changes to prevent attachment shifting
-                if let textView = self.textView, let textContainer = textView.textContainer {
-                    textView.layoutManager?.ensureLayout(for: textContainer)
-                }
-                
-                // Post notification about selection change for floating toolbar
-                let selectedRange = textView.selectedRange
-                
-                // Only show floating toolbar if there's actual text selected (not just cursor)
-                if selectedRange.length > 0 {
-                    // Calculate selection rectangle in text view's local coordinate space (same as CommandMenu)
-                    if let layoutManager = textView.layoutManager,
-                       let textContainer = textView.textContainer {
-                        
-                        // Get the glyph range for the selection
-                        let glyphRange = layoutManager.glyphRange(forCharacterRange: selectedRange, actualCharacterRange: nil)
-                        
-                        // Get the bounding rect for the selection in the text container
-                        let selectionRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
-                        
-                        // Get scroll view's content offset to adjust for scroll position
-                        let contentOffset = textView.contentOffset
-                        
-                        // Convert selection rect to visible coordinates
-                        // selectionRect is in text container space, adjust for inset and scroll
-                        let selectionX = selectionRect.origin.x + textView.textContainerInset.left
-                        let selectionYInContainer = selectionRect.origin.y + textView.textContainerInset.top
-                        
-                        // Adjust Y position relative to content offset (accounts for scroll)
-                        let selectionY = selectionYInContainer - contentOffset.y
-                        let selectionWidth = selectionRect.width
-                        let selectionHeight = selectionRect.height
-
-                        // Post notification with selection info - let the view calculate toolbar position
-                        let info: [String: Any] = [
-                            "hasSelection": true,
-                            "selectionX": selectionX,
-                            "selectionY": selectionY,
-                            "selectionWidth": selectionWidth,
-                            "selectionHeight": selectionHeight,
-                            "visibleWidth": visibleRect.width,
-                            "visibleHeight": visibleRect.height
-                        ]
-                        NotificationCenter.default.post(
-                            name: .textSelectionChanged,
-                            object: nil,
-                            userInfo: info
-                        )
-                    }
-                } else {
-                    // No selection - hide floating toolbar
-                    let info: [String: Any] = ["hasSelection": false]
-                    NotificationCenter.default.post(
-                        name: .textSelectionChanged,
-                        object: nil,
-                        userInfo: info
-                    )
-                }
-            }
-
-            func textView(
-                _ textView: UITextView, shouldChangeTextIn range: NSRange,
-                replacementText text: String
-            ) -> Bool {
-                // Check for "/" to trigger command menu
-                if text == "/" {
-                    // Show command menu at cursor position
-                    showCommandMenuAtCursor(textView: textView, insertLocation: range.location)
-                    return true  // Allow the "/" to be typed
-                }
-
-                // Check for Enter key in todo paragraph
-                if text == "\n", isInTodoParagraph(range: range) {
-                    insertTodo()
-                    return false
-                }
-                return true
-            }
-
-            // MARK: - Command Menu Handling
-
-            /// Shows the command menu at the current cursor position
-            /// Positions menu close to cursor with viewport bounds awareness
-            private func showCommandMenuAtCursor(textView: UITextView, insertLocation: Int) {
-                // Get the rect for the cursor position to place the menu
-                guard let layoutManager = textView.layoutManager,
-                    let textContainer = textView.textContainer
-                else { return }
-
-                // Calculate the glyph range for the insertion point
-                let glyphIndex = layoutManager.glyphIndexForCharacter(at: insertLocation)
-                let glyphRect = layoutManager.boundingRect(
-                    forGlyphRange: NSRange(location: glyphIndex, length: 1), in: textContainer)
-
-                // Convert to text view's coordinate space
-                let cursorX = glyphRect.origin.x + textView.textContainerInset.left
-                let cursorY = glyphRect.origin.y + textView.textContainerInset.top
-                let cursorHeight = glyphRect.height
-
-                // Menu dimensions
-                let menuGap: CGFloat = 4
-                let safetyMargin: CGFloat = 20
-                let menuHeight = TodoRichTextEditor.commandMenuTotalHeight
-                let menuWidth = TodoRichTextEditor.commandMenuTotalWidth
-
-                // For UITextView, get the visible rect relative to content offset
-                // UITextView doesn't have visibleRect, so we use bounds
-                let visibleRect = textView.bounds
-
-                // Check if there's enough space below the cursor in the visible area
-                let cursorBottomY = cursorY + cursorHeight
-                let spaceBelow = visibleRect.maxY - cursorBottomY
-                let shouldShowAbove = spaceBelow < (menuHeight + menuGap + safetyMargin)
-
-                // Position menu above or below cursor depending on available space
-                var xPosition = cursorX
-                var yPosition: CGFloat
-                if shouldShowAbove {
-                    // Position above cursor
-                    yPosition = cursorY - menuHeight - menuGap
-                } else {
-                    // Position below cursor (default)
-                    yPosition = cursorY + cursorHeight + menuGap
-                }
-
-                // Clamp X within visible bounds to avoid clipping
-                let minX = visibleRect.minX + safetyMargin
-                let maxX = visibleRect.maxX - menuWidth - safetyMargin
-                if minX <= maxX {
-                    xPosition = min(max(xPosition, minX), maxX)
-                } else {
-                    xPosition = max(
-                        visibleRect.minX + menuGap,
-                        visibleRect.maxX - menuWidth - menuGap
-                    )
-                }
-
-                // Clamp Y to keep menu fully visible
-                let minY = visibleRect.minY + safetyMargin
-                let maxY = visibleRect.maxY - menuHeight - safetyMargin
-                if minY <= maxY {
-                    yPosition = min(max(yPosition, minY), maxY)
-                } else {
-                    yPosition = max(
-                        visibleRect.minY + menuGap,
-                        visibleRect.maxY - menuHeight - menuGap
-                    )
-                }
-
-                let menuPosition = CGPoint(x: xPosition, y: yPosition)
-
-                // Only need extra space when menu shows below cursor AND there's not enough space
-                let needsExtraSpace = !shouldShowAbove && spaceBelow < (menuHeight + menuGap + safetyMargin)
-
-                print("🔴 POSTING ShowCommandMenu notification - position: \(menuPosition), slashLocation: \(insertLocation), needsSpace: \(needsExtraSpace)")
-
-                // Post notification to show menu
-                NotificationCenter.default.post(
-                    name: .showCommandMenu,
-                    object: [
-                        "position": menuPosition,
-                        "slashLocation": insertLocation,
-                        "needsSpace": needsExtraSpace
-                    ]
-                )
-            }
-
-            /// Handles command menu tool application
-            private func handleCommandMenuToolApplication(_ notification: Notification) {
-                guard let info = notification.object as? [String: Any],
-                    let tool = info["tool"] as? EditTool,
-                    let slashLocation = info["slashLocation"] as? Int,
-                    let textView = textView,
-                    let textStorage = textView.textStorage
-                else { return }
-
-                // Remove the "/" character that triggered the menu
-                if slashLocation >= 0 && slashLocation < textStorage.length {
-                    let slashRange = NSRange(location: slashLocation, length: 1)
-                    textStorage.replaceCharacters(in: slashRange, with: "")
-                    // Position cursor at the location where "/" was removed
-                    textView.selectedRange = NSRange(location: slashLocation, length: 0)
-                }
-
-                // Apply the selected tool
-                // Special handling for todo checkbox to use proper attachment instead of text
-                if tool == .todo {
-                    insertTodo()
-                } else {
-                    formatter.applyFormatting(to: textView, tool: tool)
-                }
-
-                // Sync the text back
-                syncText()
-            }
-
-            // MARK: - Todo Handling
-
-            private func insertTodo() {
-                guard let textView = textView else { return }
-                let attachment = TodoCheckboxAttachment(isChecked: false)
-                attachment.bounds = CGRect(
-                    x: 0, y: Self.checkboxAttachmentYOffset, width: Self.checkboxIconSize,
-                    height: Self.checkboxIconSize)
-                attachment.image = image(isChecked: false)
-
-                let attributed = NSMutableAttributedString(attachment: attachment)
-                attributed.addAttribute(
-                    .baselineOffset, value: Self.checkboxBaselineOffset,
-                    range: NSRange(location: 0, length: attributed.length))
-                // Add comfortable spacing between checkbox and text (2 spaces)
-                let space = NSAttributedString(
-                    string: "  ", attributes: Self.baseTypingAttributes(for: currentColorScheme))
-                let newline = NSAttributedString(
-                    string: "\n", attributes: Self.baseTypingAttributes(for: currentColorScheme))
-
-                let composed = NSMutableAttributedString()
-                if textView.selectedRange.location != 0 {
-                    composed.append(newline)
-                }
-                composed.append(attributed)
-                composed.append(space)
-
-                replaceSelection(with: composed)
-                syncText()
-            }
-
-            private func insertWebClip(url: String) {
-                guard let textView = textView else { return }
-                // Add extra line break after web clip to prevent overlapping with content below
-                let formatted = NSAttributedString(
-                    string:
-                        "\n[[webclip|||\(url.trimmingCharacters(in: .whitespacesAndNewlines))]]\n\n",
-                    attributes: Self.baseTypingAttributes(for: currentColorScheme))
-                replaceSelection(with: formatted)
-                syncText()
-            }
-
-            private func insertVoiceTranscript(transcript: String) {
-                guard let textView = textView else { return }
-                let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmed.isEmpty else { return }
-
-                // Add proper spacing and formatting
-                let formatted = NSAttributedString(
-                    string: trimmed + " ",
-                    attributes: Self.baseTypingAttributes(for: currentColorScheme))
-                replaceSelection(with: formatted)
-                syncText()
-            }
-            
-            private func insertImage(filename: String) {
-                NSLog("📝 insertImage: Called with filename: %@", filename)
-                guard let textView = textView else {
-                    NSLog("📝 insertImage: textView is nil")
-                    return
-                }
-
-                let currentRange = textView.selectedRange
-                let storageString = textView.attributedText?.string ?? ""
-                let nsString = storageString as NSString
-                let baseAttributes = Self.baseTypingAttributes(for: currentColorScheme)
-
-                let composed = NSMutableAttributedString()
-
-                if needsLeadingSpace(before: currentRange, in: nsString) {
-                    let leadingSpace = NSAttributedString(string: " ", attributes: baseAttributes)
-                    composed.append(leadingSpace)
-                }
-
-                NSLog("📝 insertImage: Creating inline image tag attachment")
-                let nextNumber = nextImageNumber(in: textView.textStorage)
-                let attachment = makeImageAttachment(filename: filename, imageNumber: nextNumber)
-                composed.append(attachment)
-
-                if needsTrailingSpace(after: currentRange, in: nsString) {
-                    let trailingSpace = NSAttributedString(string: " ", attributes: baseAttributes)
-                    composed.append(trailingSpace)
-                }
-
-                replaceSelection(with: composed)
-                syncText()
-                NSLog("📝 insertImage: Completed")
-            }
-
-            private func makeImageAttachment(filename: String, imageNumber: Int)
-                -> NSMutableAttributedString
-            {
-                func fallbackAttributedString() -> NSMutableAttributedString {
-                    return NSMutableAttributedString(string: "[Image: \(filename)]")
-                }
-
-                let tagLabel = "image\(max(imageNumber, 1))"
-                let tagView = ImageAttachmentTagView(label: tagLabel)
-                    .environment(\.colorScheme, currentColorScheme)
-                let renderer = ImageRenderer(content: tagView)
-                renderer.scale = UIScreen.main.scale
-                renderer.isOpaque = false
-
-                guard let uiImage = renderer.uiImage else {
-                    NSLog("🖼️ makeImageAttachment: FAILED to render tag UIImage")
-                    return fallbackAttributedString()
-                }
-
-                let attachment = NoteImageAttachment(filename: filename)
-                attachment.image = uiImage
-                attachment.bounds = CGRect(
-                    x: 0,
-                    y: Self.imageTagVerticalOffset(for: uiImage.size.height),
-                    width: uiImage.size.width,
-                    height: uiImage.size.height
-                )
-
-                let attributed = NSMutableAttributedString(attachment: attachment)
-                let attachmentRange = NSRange(location: 0, length: attributed.length)
-                attributed.addAttribute(.imageFilename, value: filename, range: attachmentRange)
-
-                return attributed
-            }
-
-            private func makeFileAttachment(metadata: FileAttachmentMetadata)
-                -> NSMutableAttributedString
-            {
-                func fallbackAttributedString() -> NSMutableAttributedString {
-                    return NSMutableAttributedString(
-                        string: "[File: \(metadata.displayLabel)]"
-                    )
-                }
-
-                let tagView = FileAttachmentTagView(label: metadata.displayLabel)
-                    .environment(\.colorScheme, currentColorScheme)
-                let renderer = ImageRenderer(content: tagView)
-                renderer.scale = UIScreen.main.scale
-                renderer.isOpaque = false
-
-                guard let uiImage = renderer.uiImage else {
-                    NSLog("📄 makeFileAttachment: FAILED to render tag UIImage")
-                    return fallbackAttributedString()
-                }
-
-                let attachment = NoteFileAttachment(
-                    storedFilename: metadata.storedFilename,
-                    originalFilename: metadata.originalFilename,
-                    typeIdentifier: metadata.typeIdentifier,
-                    displayLabel: metadata.displayLabel
-                )
-                attachment.image = uiImage
-                attachment.bounds = CGRect(
-                    x: 0,
-                    y: Self.imageTagVerticalOffset(for: uiImage.size.height),
-                    width: uiImage.size.width,
-                    height: uiImage.size.height
-                )
-
-                let attributed = NSMutableAttributedString(attachment: attachment)
-                let attachmentRange = NSRange(location: 0, length: attributed.length)
-                attributed.addAttribute(
-                    .fileStoredFilename,
-                    value: metadata.storedFilename,
-                    range: attachmentRange
-                )
-                attributed.addAttribute(
-                    .fileOriginalFilename,
-                    value: metadata.originalFilename,
-                    range: attachmentRange
-                )
-                attributed.addAttribute(
-                    .fileTypeIdentifier,
-                    value: metadata.typeIdentifier,
-                    range: attachmentRange
-                )
-                attributed.addAttribute(
-                    .fileDisplayLabel,
-                    value: metadata.displayLabel,
-                    range: attachmentRange
-                )
-
-                return attributed
-            }
-
-            private func needsLeadingSpace(before range: NSRange, in text: NSString) -> Bool {
-                guard range.location > 0 else { return false }
-                let previousCharacter = text.character(at: range.location - 1)
-                guard let scalar = UnicodeScalar(previousCharacter) else { return false }
-                return !CharacterSet.whitespacesAndNewlines.contains(scalar)
-            }
-
-            private func needsTrailingSpace(after range: NSRange, in text: NSString) -> Bool {
-                let endIndex = range.location + range.length
-                if endIndex >= text.length {
-                    return true
-                }
-                let nextCharacter = text.character(at: endIndex)
-                guard let scalar = UnicodeScalar(nextCharacter) else { return false }
-                return !CharacterSet.whitespacesAndNewlines.contains(scalar)
-            }
-
-            private func nextImageNumber(in textStorage: NSTextStorage?) -> Int {
-                guard let textStorage else { return 1 }
-                return max(1, imageAttachmentCount(in: textStorage) + 1)
-            }
-
-            private func imageAttachmentCount(in attributedString: NSAttributedString) -> Int {
-                let fullRange = NSRange(location: 0, length: attributedString.length)
-                guard fullRange.length > 0 else { return 0 }
-
-                var count = 0
-                attributedString.enumerateAttributes(in: fullRange, options: []) { attributes, _, _ in
-                    if attributes[.imageFilename] != nil
-                        || attributes[.attachment] is NoteImageAttachment
-                    {
-                        count += 1
-                    }
-                }
-                return count
-            }
-
-            private func renumberImageAttachments() {
-                guard let textView = textView,
-                    let textStorage = textView.textStorage
-                else { return }
-
-                let fullRange = NSRange(location: 0, length: textStorage.length)
-                guard fullRange.length > 0 else { return }
-
-                var replacements: [(range: NSRange, filename: String, number: Int)] = []
-                var counter = 0
-
-                textStorage.enumerateAttributes(in: fullRange, options: []) { attributes, range, _ in
-                    if let filename = attributes[.imageFilename] as? String {
-                        counter += 1
-                        replacements.append((range: range, filename: filename, number: counter))
-                    } else if let attachment = attributes[.attachment] as? NoteImageAttachment {
-                        counter += 1
-                        replacements.append(
-                            (range: range, filename: attachment.storedFilename, number: counter)
-                        )
-                    }
-                }
-
-                guard !replacements.isEmpty else { return }
-
-                let originalSelection = textView.selectedRange
-                textStorage.beginEditing()
-                for replacement in replacements.reversed() {
-                    let updatedAttachment = makeImageAttachment(
-                        filename: replacement.filename,
-                        imageNumber: replacement.number
-                    )
-                    textStorage.replaceCharacters(in: replacement.range, with: updatedAttachment)
-                }
-                textStorage.endEditing()
-
-                let maxLocation = textStorage.length
-                let clampedLocation = min(originalSelection.location, maxLocation)
-                let clampedLength = min(
-                    originalSelection.length,
-                    max(0, maxLocation - clampedLocation)
-                )
-                textView.selectedRange = NSRange(location: clampedLocation, length: clampedLength)
-            }
-
-            private func replaceSelection(with attributed: NSAttributedString) {
-                guard let textView = textView else { return }
-                let storageLength = textView.textStorage?.length ?? textView.attributedText?.length ?? 0
-                var range = textView.selectedRange
-
-                if range.location == NSNotFound {
-                    range = NSRange(location: storageLength, length: 0)
-                    textView.selectedRange = range
-                } else {
-                    if range.location > storageLength {
-                        range.location = storageLength
-                        range.length = 0
-                        textView.selectedRange = range
-                    } else if range.location + range.length > storageLength {
-                        range.length = max(0, storageLength - range.location)
-                        textView.selectedRange = range
-                    }
-                }
-
-                isUpdating = true
-                let mutable = NSMutableAttributedString(
-                    attributedString: textView.attributedText ?? NSAttributedString())
-                mutable.replaceCharacters(in: range, with: attributed)
-                textView.attributedText = mutable
-                let cursor = NSRange(location: range.location + attributed.length, length: 0)
-                textView.selectedRange = cursor
-                isUpdating = false
-            }
-
-            private func syncText() {
-                guard let textView = textView else { return }
-                isUpdating = true
-                renumberImageAttachments()
-                applyParagraphStyling()
-                lastSerialized = serialize()
-                textBinding.wrappedValue = lastSerialized
-
-                // Always ensure typing attributes are correct after sync
-                textView.typingAttributes = Self.baseTypingAttributes(for: currentColorScheme)
-                isUpdating = false
-            }
-
-            /// Fixes any text that has inconsistent font formatting (e.g., from Writing Tools)
-            private func fixInconsistentFonts() {
-                guard let textView = textView else { return }
-
-                let expectedAttributes = Self.baseTypingAttributes(for: currentColorScheme)
-                guard let expectedFont = expectedAttributes[.font] as? UIFont,
-                    let expectedColor = expectedAttributes[.foregroundColor] as? UIColor
-                else { return }
-
-                let mutableText = NSMutableAttributedString(
-                    attributedString: textView.attributedText)
-                mutableText.enumerateAttributes(
-                    in: NSRange(location: 0, length: mutableText.length)
-                ) { attributes, range, _ in
-                    var needsFixing = false
-                    var fixedAttributes: [NSAttributedString.Key: Any] = attributes
-
-                    // Check font
-                    if let currentFont = attributes[.font] as? UIFont {
-                        if currentFont.fontName != expectedFont.fontName
-                            || currentFont.pointSize != expectedFont.pointSize
-                        {
-                            fixedAttributes[.font] = expectedFont
-                            needsFixing = true
-                        }
-                    } else {
-                        fixedAttributes[.font] = expectedFont
-                        needsFixing = true
-                    }
-
-                    // Check text color
-                    if let currentColor = attributes[.foregroundColor] as? UIColor {
-                        if !currentColor.isEqual(expectedColor) {
-                            fixedAttributes[.foregroundColor] = expectedColor
-                            needsFixing = true
-                        }
-                    } else {
-                        fixedAttributes[.foregroundColor] = expectedColor
-                        needsFixing = true
-                    }
-
-                    if needsFixing {
-                        mutableText.setAttributes(fixedAttributes, range: range)
-                    }
-                }
-
-                textView.attributedText = mutableText
-            }
-
-            private func applyParagraphStyling() {
-                guard let textView = textView else { return }
-                let mutable = NSMutableAttributedString(
-                    attributedString: textView.attributedText ?? NSAttributedString())
-                let fullRange = NSRange(location: 0, length: mutable.length)
-                mutable.removeAttribute(.paragraphStyle, range: fullRange)
-                mutable.removeAttribute(.baselineOffset, range: fullRange)
-
-                (mutable.string as NSString).enumerateSubstrings(
-                    in: fullRange, options: .byParagraphs
-                ) { _, range, _, _ in
-                    let attributes = self.paragraphAttributes(for: mutable, at: range)
-                    mutable.addAttribute(.paragraphStyle, value: attributes.style, range: range)
-                    mutable.addAttribute(.baselineOffset, value: attributes.baseline, range: range)
-
-                    if attributes.isTodo {
-                        mutable.enumerateAttribute(.attachment, in: range, options: []) {
-                            value, attachmentRange, _ in
-                            guard let attachment = value as? TodoCheckboxAttachment else { return }
-                            attachment.bounds = CGRect(
-                                x: 0, y: Self.checkboxAttachmentYOffset,
-                                width: Self.checkboxIconSize, height: Self.checkboxIconSize)
-                            mutable.addAttribute(
-                                .baselineOffset, value: Self.checkboxBaselineOffset,
-                                range: attachmentRange)
-                        }
-                    }
-                }
-
-                let selection = textView.selectedRange
-                textView.attributedText = mutable
-                textView.selectedRange = selection
-            }
-
-            private func paragraphAttributes(for attributed: NSAttributedString, at range: NSRange)
-                -> (style: NSParagraphStyle, baseline: CGFloat, isTodo: Bool)
-            {
-                var isTodo = false
-                var isWebClip = false
-
-                attributed.enumerateAttribute(
-                    .attachment,
-                    in: NSRange(location: range.location, length: min(1, range.length)), options: []
-                ) { value, _, _ in
-                    if let attachment = value as? TodoCheckboxAttachment {
-                        isTodo = true
-                        attachment.image = image(isChecked: attachment.isChecked)
-                    }
-                    // Check if it's a web clip attachment
-                    else if value is NSTextAttachment {
-                        if attributed.attribute(
-                            .webClipTitle, at: range.location, effectiveRange: nil) != nil
-                        {
-                            isWebClip = true
-                        }
-                    }
-                }
-
-                // Apply appropriate style based on content type
-                let style: NSParagraphStyle
-                if isWebClip {
-                    style = Self.webClipParagraphStyle()
-                } else {
-                    style = Self.paragraphStyle(isTodo: isTodo)
-                }
-
-                let baseline =
-                    (isTodo || isWebClip) ? Self.todoBaselineOffset : Self.baseBaselineOffset
-                return (style, baseline, isTodo)
-            }
-
-            private func isInTodoParagraph(range: NSRange) -> Bool {
-                guard let textView = textView else { return false }
-                let location = max(0, min(range.location, textView.attributedText.length))
-                let paragraphRange = (textView.text as NSString).paragraphRange(
-                    for: NSRange(location: location, length: 0))
-                var result = false
-                textView.attributedText.enumerateAttribute(
-                    .attachment,
-                    in: NSRange(
-                        location: paragraphRange.location, length: min(1, paragraphRange.length)),
-                    options: []
-                ) { value, _, _ in
-                    if let attachment = value as? TodoCheckboxAttachment {
-                        result = true
-                        attachment.image = image(isChecked: attachment.isChecked)
-                    }
-                }
-                return result
-            }
-
-            private func serialize() -> String {
-                guard let textView = textView else { return "" }
-                let result = NSMutableString()
-                let fullRange = NSRange(location: 0, length: textView.attributedText.length)
-                textView.attributedText.enumerateAttributes(in: fullRange, options: []) {
-                    attributes, range, _ in
-                    if let attachment = attributes[.attachment] as? TodoCheckboxAttachment {
-                        result.append(attachment.isChecked ? "[x]" : "[ ]")
-                    } else if let storedFilename = attributes[.fileStoredFilename] as? String {
-                        let typeIdentifierRaw = (attributes[.fileTypeIdentifier] as? String) ?? "public.data"
-                        let originalNameRaw = (attributes[.fileOriginalFilename] as? String) ?? storedFilename
-                        let typeIdentifier = AttachmentMarkup.sanitizedComponent(typeIdentifierRaw)
-                        let originalName = AttachmentMarkup.sanitizedComponent(originalNameRaw)
-                        result.append("[[file|\(typeIdentifier)|\(storedFilename)|\(originalName)]]")
-                    } else if let attachment = attributes[.attachment] as? NSTextAttachment {
-                        // Image attachment serialization with fallback
-                        // Primary: Use the robust custom attribute
-                        if let filename = attributes[.imageFilename] as? String {
-                            result.append("[[image|||\(filename)]]")
-                        }
-                        // Secondary: Try NoteImageAttachment which stores filename directly
-                        else if let noteAttachment = attachment as? NoteImageAttachment {
-                            result.append("[[image|||\(noteAttachment.storedFilename)]]")
-                            NSLog("Serialization: Recovered filename %@ from NoteImageAttachment", noteAttachment.storedFilename)
-                        }
-                        // Tertiary: Fallback to fileWrapper
-                        else if let fileWrapper = attachment.fileWrapper,
-                                let filename = fileWrapper.preferredFilename ?? fileWrapper.filename,
-                                !filename.isEmpty,
-                                filename.hasSuffix(".jpg")
-                        {
-                            result.append("[[image|||\(filename)]]")
-                            NSLog("Serialization: Recovered filename %@ from fileWrapper", filename)
-                        }
-                        // If all fail, data is lost - log this critical error
-                        else {
-                            result.append(
-                                (textView.attributedText.string as NSString).substring(with: range))
-                            NSLog("⚠️ Serialization CRITICAL: Could not find filename for image attachment. Data may be lost.")
-                        }
-                    } else {
-                        result.append(
-                            (textView.attributedText.string as NSString).substring(with: range))
-                    }
-                }
-                return result as String
-            }
-
-            private func deserialize(_ text: String) -> NSAttributedString {
-                let result = NSMutableAttributedString()
-                var index = text.startIndex
-                var imageCounter = 0
-                while index < text.endIndex {
-                    if text[index...].hasPrefix("[x]") || text[index...].hasPrefix("[ ]") {
-                        let isChecked = text[index...].hasPrefix("[x]")
-                        let attachment = TodoCheckboxAttachment(isChecked: isChecked)
-                        attachment.bounds = CGRect(
-                            x: 0, y: Self.checkboxAttachmentYOffset, width: Self.checkboxIconSize,
-                            height: Self.checkboxIconSize)
-                        attachment.image = image(isChecked: isChecked)
-                        let att = NSMutableAttributedString(attachment: attachment)
-                        att.addAttribute(
-                            .baselineOffset, value: Self.checkboxBaselineOffset,
-                            range: NSRange(location: 0, length: att.length))
-                        result.append(att)
-                        index = text.index(index, offsetBy: 3)
-                        continue
-                    } else if text[index...].hasPrefix(AttachmentMarkup.fileMarkupPrefix) {
-                        if let endIndex = text[index...].range(of: "]]" )?.upperBound {
-                            let fileText = String(text[index..<endIndex])
-                            if let regex = AttachmentMarkup.fileRegex,
-                               let match = regex.firstMatch(
-                                   in: fileText,
-                                   options: [],
-                                   range: NSRange(location: 0, length: fileText.utf16.count)
-                               )
-                            {
-                                let rawType = Self.string(from: match, at: 1, in: fileText)
-                                let storedFilename = Self.string(from: match, at: 2, in: fileText)
-                                let rawOriginal = Self.string(from: match, at: 3, in: fileText)
-
-                                let typeIdentifier = rawType.isEmpty ? "public.data" : rawType
-                                let originalName = rawOriginal.isEmpty ? storedFilename : rawOriginal
-
-                                let storedFile = FileAttachmentStorageManager.StoredFile(
-                                    storedFilename: storedFilename,
-                                    originalFilename: originalName,
-                                    typeIdentifier: typeIdentifier
-                                )
-
-                                let metadata = FileAttachmentMetadata(
-                                    storedFilename: storedFile.storedFilename,
-                                    originalFilename: storedFile.originalFilename,
-                                    typeIdentifier: storedFile.typeIdentifier,
-                                    displayLabel: AttachmentMarkup.displayLabel(for: storedFile)
-                                )
-
-                                let baseAttributes = Self.baseTypingAttributes(for: currentColorScheme)
-                                if result.length > 0,
-                                   let lastScalar = result.string.unicodeScalars.last,
-                                   !CharacterSet.whitespacesAndNewlines.contains(lastScalar)
-                                {
-                                    let leadingSpace = NSAttributedString(
-                                        string: " ", attributes: baseAttributes)
-                                    result.append(leadingSpace)
-                                }
-
-                                let attachment = makeFileAttachment(metadata: metadata)
-                                result.append(attachment)
-
-                                let shouldAddTrailingSpace: Bool
-                                if endIndex < text.endIndex {
-                                    let nextCharacter = text[endIndex]
-                                    shouldAddTrailingSpace = !nextCharacter.isWhitespace
-                                } else {
-                                    shouldAddTrailingSpace = true
-                                }
-
-                                if shouldAddTrailingSpace {
-                                    let trailingSpace = NSAttributedString(
-                                        string: " ", attributes: baseAttributes)
-                                    result.append(trailingSpace)
-                                }
-
-                                index = endIndex
-                                continue
-                            }
-                        }
-                    } else if text[index...].hasPrefix(AttachmentMarkup.imageMarkupPrefix) {
-                        // Image attachment deserialization
-                        NSLog("📝 deserialize: Found image markup prefix")
-                        if let endIndex = text[index...].range(of: "]]")?.upperBound {
-                            let imageText = String(text[index..<endIndex])
-                            NSLog("📝 deserialize: Markup text: %@", imageText)
-                            if let regex = AttachmentMarkup.imageRegex,
-                                let match = regex.firstMatch(
-                                    in: imageText,
-                                    options: [],
-                                    range: NSRange(location: 0, length: imageText.utf16.count)
-                                )
-                            {
-                                let filename = Self.string(from: match, at: 1, in: imageText)
-                                NSLog("📝 deserialize: Extracted filename: %@", filename)
-                                
-                                let baseAttributes = Self.baseTypingAttributes(
-                                    for: currentColorScheme)
-                                if result.length > 0,
-                                    let lastScalar = result.string.unicodeScalars.last,
-                                    !CharacterSet.whitespacesAndNewlines.contains(lastScalar)
-                                {
-                                    let leadingSpace = NSAttributedString(
-                                        string: " ", attributes: baseAttributes)
-                                    result.append(leadingSpace)
-                                }
-
-                                imageCounter += 1
-                                let attachment = makeImageAttachment(
-                                    filename: filename,
-                                    imageNumber: imageCounter
-                                )
-                                result.append(attachment)
-
-                                let shouldAddTrailingSpace: Bool
-                                if endIndex < text.endIndex {
-                                    let nextCharacter = text[endIndex]
-                                    shouldAddTrailingSpace = !nextCharacter.isWhitespace
-                                } else {
-                                    shouldAddTrailingSpace = true
-                                }
-
-                                if shouldAddTrailingSpace {
-                                    let trailingSpace = NSAttributedString(
-                                        string: " ", attributes: baseAttributes)
-                                    result.append(trailingSpace)
-                                }
-
-                                index = endIndex
-                                continue
-                            }
-                        }
-                    }
-                    result.append(
-                        NSAttributedString(
-                            string: String(text[index]),
-                            attributes: Self.baseTypingAttributes(for: currentColorScheme)))
-                    index = text.index(after: index)
-                }
-                return result
-            }
-
-            private func image(isChecked: Bool) -> UIImage? {
-                // Detect dark mode
-                let isDark = textView?.traitCollection.userInterfaceStyle == .dark
-
-                // Use SF Symbols for perfect alignment and consistency
-                let symbolName = isChecked ? "checkmark.circle.fill" : "circle"
-                let config = UIImage.SymbolConfiguration(pointSize: 20, weight: .regular)
-                let image = UIImage(systemName: symbolName, withConfiguration: config)
-
-                // Apply appropriate color based on state and color scheme
-                if isChecked {
-                    // Checked state: vibrant blue background with white checkmark
-                    // Using bright saturated blue (0, 122, 255) - iOS system blue at 100% vibrance
-                    return image?.withTintColor(
-                        UIColor(red: 0 / 255, green: 122 / 255, blue: 255 / 255, alpha: 1.0),
-                        renderingMode: .alwaysOriginal
-                    )
-                } else {
-                    // Unchecked state: adapt to color scheme
-                    let uncheckedColor: UIColor
-                    if isDark {
-                        // White/light gray circle in dark mode for visibility
-                        uncheckedColor = UIColor(white: 0.85, alpha: 1.0)
-                    } else {
-                        // Dark gray circle in light mode
-                        uncheckedColor = UIColor(white: 0.3, alpha: 1.0)
-                    }
-                    return image?.withTintColor(uncheckedColor, renderingMode: .alwaysOriginal)
-                }
-            }
-
-            @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
-                guard let textView = textView else { return }
-                let location = gesture.location(in: textView)
-                let manager = textView.layoutManager
-                var point = location
-                point.x -= textView.textContainerInset.left
-                point.y -= textView.textContainerInset.top
-
-                let index = manager.characterIndex(
-                    for: point, in: textView.textContainer,
-                    fractionOfDistanceBetweenInsertionPoints: nil)
-                if index >= textView.attributedText.length { return }
-
-                let glyphRange = NSRange(location: index, length: 1)
-                let glyphRect = manager.boundingRect(
-                    forGlyphRange: glyphRange, in: textView.textContainer)
-                var tapRect = glyphRect
-                tapRect.origin.x += textView.textContainerInset.left
-                tapRect.origin.y += textView.textContainerInset.top
-                tapRect.size.width = max(24, tapRect.size.width)
-                tapRect.size.height = max(24, tapRect.size.height)
-
-                if !tapRect.contains(location) { return }
-
-                let attributes = textView.attributedText.attributes(at: index, effectiveRange: nil)
-                if attributes[.webClipTitle] != nil {
-                    // Fixed dimensions for web clip tap detection
-                    let attachmentRect = CGRect(
-                        x: tapRect.origin.x,
-                        y: tapRect.maxY - 60,
-                        width: 250,
-                        height: 60
-                    )
-                    let closeRect = CGRect(
-                        x: attachmentRect.maxX - 26,
-                        y: attachmentRect.maxY - 26,
-                        width: 20,
-                        height: 20
-                    )
-
-                    if closeRect.contains(location), let linkValue = attributes[.link] as? String {
-                        deleteWebClipAttachment(url: linkValue)
-                        return
-                    }
-
-                    if let linkValue = attributes[.link] as? String,
-                        let url = URL(string: linkValue)
-                    {
-                        UIApplication.shared.open(url)
-                        return
-                    }
-                }
-
-                if let attachment = attributes[.attachment] as? TodoCheckboxAttachment {
-                    attachment.isChecked.toggle()
-                    attachment.image = image(isChecked: attachment.isChecked)
-                    textView.setNeedsDisplay()
-                    syncText()
-                }
-            }
-
-            static func baseTypingAttributes(for colorScheme: ColorScheme? = nil)
-                -> [NSAttributedString.Key: Any]
-            {
-                let textColor: UIColor
-                if let scheme = colorScheme {
-                    // Use the actual PrimaryTextColor values from the asset catalog
-                    if scheme == .dark {
-                        textColor = UIColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0)  // White for dark mode
-                    } else {
-                        textColor = UIColor(red: 0.102, green: 0.102, blue: 0.102, alpha: 1.0)  // Dark gray for light mode
-                    }
-                } else {
-                    textColor = UIColor.label
-                }
-
-                return [
-                    .font: textFont,
-                    .foregroundColor: textColor,
-                    .paragraphStyle: paragraphStyle(isTodo: false),
-                    .underlineStyle: 0,
-                        // .baselineOffset: baseBaselineOffset,
-                ]
-            }
-
-            private static func paragraphStyle(isTodo: Bool) -> NSParagraphStyle {
-                let style = NSMutableParagraphStyle()
-                style.lineHeightMultiple = 1.2
-                let minimum = isTodo ? todoLineHeight : baseLineHeight
-                style.minimumLineHeight = minimum
-                style.maximumLineHeight = minimum + 4
-                style.paragraphSpacing = isTodo ? 10 : 8
-                style.firstLineHeadIndent = 0
-                style.headIndent = isTodo ? 28 : 0
-                return style
-            }
-
-            // Paragraph style for web clip attachments with extra spacing to prevent overlap
-            private static func webClipParagraphStyle() -> NSParagraphStyle {
-                let style = NSMutableParagraphStyle()
-                style.lineHeightMultiple = 1.0
-                // NO minimum/maximum line height - let attachment determine its own space
-                // This prevents empty clickable space above/below
-                style.minimumLineHeight = 0
-                style.maximumLineHeight = 0
-                // No paragraph spacing - web clips are now inline with horizontal spacing
-                style.paragraphSpacing = 0
-                style.paragraphSpacingBefore = 0
-                return style
-            }
-            
-            private static func imageTagVerticalOffset(for height: CGFloat) -> CGFloat {
-                let offset = (textFont.capHeight - height) / 2
-                return offset
-            }
-
-            private static func baselineOffset(forLineHeight lineHeight: CGFloat, font: UIFont)
-                -> CGFloat
-            {
-                let metrics = font.lineHeight
-                let delta = max(0, lineHeight - metrics)
-                return delta / 2
-            }
-
-            // MARK: - Writing Tools Support (iOS 18+)
-            @available(iOS 18.0, *)
-            func textViewWritingToolsWillBegin(_ textView: UITextView) {
-                // Store text before Writing Tools starts
-                textBeforeWritingTools = textView.text ?? ""
-            }
-
-            @available(iOS 18.0, *)
-            func textViewWritingToolsDidEnd(_ textView: UITextView) {
-                // Writing Tools finished - textViewDidChange will handle summary detection
-            }
-        }
-    }
-
-    private final class TodoCheckboxAttachment: NSTextAttachment {
-        var isChecked: Bool
-
-        init(isChecked: Bool) {
-            self.isChecked = isChecked
-            super.init(data: nil, ofType: nil)
-        }
-
-        required init?(coder: NSCoder) {
-            self.isChecked = false
-            super.init(coder: coder)
-        }
-    }
-#endif
 
 // MARK: - Notifications
 
