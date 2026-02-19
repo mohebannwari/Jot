@@ -6,7 +6,6 @@
 //
 
 import SwiftUI
-#if os(macOS)
 import AppKit
 
 /// Makes the hosting NSWindow transparent so liquid glass is the sole background layer.
@@ -23,7 +22,6 @@ struct WindowTransparencyView: NSViewRepresentable {
 
     func updateNSView(_ nsView: NSView, context: Context) {}
 }
-#endif
 
 enum SidebarSectionFilter: String, CaseIterable, Identifiable {
     case all
@@ -44,7 +42,7 @@ enum SidebarSectionFilter: String, CaseIterable, Identifiable {
         case .thisMonth: return "This Month"
         case .thisYear: return "This Year"
         case .older: return "Older"
-        case .folders: return "Folders"
+        case .folders: return "Notebooks"
         }
     }
 }
@@ -64,9 +62,10 @@ struct ContentView: View {
     @State private var isSearchPresented = false
     @State private var isSettingsPresented = false
     @State private var expandedFolderIDs: Set<UUID> = []
+    @State private var isPinnedSectionExpanded: Bool = true
     @State private var showAllNotesFolderIDs: Set<UUID> = []
     @State private var sidebarSectionFilter: SidebarSectionFilter = .all
-    @State private var sidebarWidth: CGFloat = 296
+    @State private var sidebarWidth: CGFloat = 276
     @State private var sidebarDragStartWidth: CGFloat?
     @State private var detailFocusRequestID = UUID()
     @State private var hasAppliedInitialLaunchSelection = false
@@ -76,6 +75,7 @@ struct ContentView: View {
     @State private var isCreateFolderAlertPresented = false
     @State private var pendingFolderCreationIntent: FolderCreationIntent = .standalone
     @State private var pendingFolderToEdit: Folder?
+    @State private var createFolderButtonFrame: CGRect = .zero
 
     @State private var isBatchDeleteConfirmationPresented = false
     @State private var pendingDeleteNoteIDs: Set<UUID> = []
@@ -86,23 +86,22 @@ struct ContentView: View {
     @State private var notesPendingExport: [Note] = []
     @State private var isShowingArchive = false
     @State private var hoveredSidebarMenuLabel: String?
-    #if os(macOS)
     @State private var trafficLightMetrics = TrafficLightMetrics.fallback
     @State private var isFloatingSidebarVisible = false
     @State private var floatingSidebarDismissWorkItem: DispatchWorkItem?
-    #endif
+
 
     @Environment(\.colorScheme) private var colorScheme
 
     // Window corner radius from JotApp containerShape
     private let windowCornerRadius: CGFloat = 16
     private let windowContentPadding: CGFloat = 8
-    private let sidebarDesignColumnWidth: CGFloat = 296
+    private let sidebarDesignColumnWidth: CGFloat = 276
     private let sidebarMenuTop: CGFloat = 30
     private let sidebarNotesTop: CGFloat = 146
     private let sidebarSectionSpacing: CGFloat = 16
     private let sidebarChromeSpacing: CGFloat = 12
-    private let sidebarMinWidth: CGFloat = 296
+    private let sidebarMinWidth: CGFloat = 276
     private let sidebarMaxWidth: CGFloat = 560
     private let minimumDetailWidth: CGFloat = 520
     private let sidebarResizeHandleWidth: CGFloat = 24
@@ -117,16 +116,12 @@ struct ContentView: View {
     private let sidebarTopBarButtonSize: CGFloat = 20
     private let sidebarTopBarTrafficLightGap: CGFloat = 12
     private let sidebarRowHoverInset: CGFloat = 0
-    #if os(macOS)
     private let floatingSidebarWidth: CGFloat = 276
     private let floatingSidebarCornerRadius: CGFloat = 16
-    private let floatingSidebarEdgeInset: CGFloat = 10
+    private let floatingSidebarEdgeInset: CGFloat = 8
     private let floatingSidebarHoverTriggerWidth: CGFloat = 20
     private let floatingSidebarDismissDelay: TimeInterval = 0.3
-    #endif
-    private var sidebarItemLeadingPadding: CGFloat {
-        max(0, 18 - windowContentPadding)
-    }
+    private let sidebarItemLeadingPadding: CGFloat = 8
     private let sidebarItemTrailingPadding: CGFloat = 8
     private let sidebarItemVPadding: CGFloat = 8
     private let sidebarMenuItemHeight: CGFloat = 32
@@ -140,15 +135,10 @@ struct ContentView: View {
     private var sidebarResizeHandleTopInset: CGFloat {
         sidebarNotesTop + 16
     }
-    #if os(macOS)
     /// Icon leading derived from the actual traffic light zoom button position.
     private var iconLeading: CGFloat { trafficLightMetrics.iconLeading }
     /// Icon top derived from the actual traffic light zoom button position.
     private var iconTop: CGFloat { trafficLightMetrics.iconTop }
-    #else
-    private let iconLeading: CGFloat = 78
-    private let iconTop: CGFloat = 4
-    #endif
 
     private enum FolderCreationIntent {
         case standalone
@@ -159,7 +149,7 @@ struct ContentView: View {
         GeometryReader { geometry in
             let effectivePadding: CGFloat = isSidebarVisible ? windowContentPadding : 0
             let availableWidth = geometry.size.width - (effectivePadding * 2)
-            let sidebarDetailGap: CGFloat = isSidebarVisible ? 10 : 0
+            let sidebarDetailGap: CGFloat = isSidebarVisible ? windowContentPadding : 0
             let resolvedSidebarWidth = clampedSidebarWidth(sidebarWidth, totalWidth: availableWidth)
             let expandedSidebarWidth = selectedNote == nil ? availableWidth : resolvedSidebarWidth
             let visibleSidebarWidth = isSidebarVisible ? expandedSidebarWidth : 0
@@ -206,12 +196,12 @@ struct ContentView: View {
                                         .padding(.bottom, 18)
                                 }
                                 .padding(.leading, sidebarDetailGap)
+                                .disabled(isCreateFolderAlertPresented || pendingFolderToEdit != nil)
                         }
                     }
                 }
                 .padding(effectivePadding)
                 .animation(sidebarVisibilityAnimation, value: isSidebarVisible)
-    #if os(macOS)
                 .overlay(alignment: .topLeading) {
                     if !isSidebarVisible {
                         floatingSidebarOverlay
@@ -225,7 +215,6 @@ struct ContentView: View {
                 .overlay(alignment: .topLeading) {
                     globalSearchShortcutActivator
                 }
-    #endif
 
                 appCenteredSearchOverlay()
                     .zIndex(3)
@@ -233,16 +222,14 @@ struct ContentView: View {
                 appWindowSettingsOverlay()
                     .zIndex(4)
             }
+            .coordinateSpace(name: "contentArea")
         }
         .background {
             Color.clear
                 .ignoresSafeArea()
                 .liquidGlass(in: Rectangle())
         }
-        #if os(macOS)
         .background(WindowTransparencyView())
-        #endif
-        #if os(macOS)
         .background(
             TrafficLightAligner(
                 metrics: $trafficLightMetrics,
@@ -250,7 +237,6 @@ struct ContentView: View {
                 iconHeight: sidebarTopBarButtonSize
             )
         )
-        #endif
         .onAppear {
             searchEngine.setNotes(notesManager.notes)
             searchEngine.setFolders(notesManager.folders)
@@ -272,9 +258,9 @@ struct ContentView: View {
         .onChange(of: isShowingArchive) { _, showing in
             if showing {
                 notesManager.loadArchivedNotes()
+                notesManager.loadArchivedFolders()
             }
         }
-#if os(macOS)
         .onChange(of: isSidebarVisible) { _, newValue in
             if newValue {
                 floatingSidebarDismissWorkItem?.cancel()
@@ -291,7 +277,6 @@ struct ContentView: View {
                 }
             }
         }
-#endif
         .onReceive(NotificationCenter.default.publisher(for: .noteSelectionCommandTriggered)) { notification in
             guard
                 let rawAction = notification.userInfo?["action"] as? String,
@@ -304,33 +289,47 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .openSettings)) { _ in
             presentSettings()
         }
-        .sheet(isPresented: $isBatchExportSheetPresented) {
-            ExportFormatSheet(isPresented: $isBatchExportSheetPresented, notes: notesPendingExport) {
-                exportNotes,
-                format in
-                Task { @MainActor in
-                    let success: Bool
-
-                    if exportNotes.count == 1, let singleNote = exportNotes.first {
-                        success = await NoteExportService.shared.exportNote(singleNote, format: format)
-                    } else {
-                        let filename = "Jot Export \(Date().formatted(date: .numeric, time: .omitted))"
-                        success = await NoteExportService.shared.exportNotes(
-                            exportNotes,
-                            format: format,
-                            filename: filename
-                        )
-                    }
-
-                    if success {
-                        HapticManager.shared.strong()
-                    } else {
-                        HapticManager.shared.medium()
-                    }
-                }
-            }
+        .onReceive(NotificationCenter.default.publisher(for: .exportSingleNote)) { notification in
+            guard let noteID = notification.userInfo?["noteID"] as? UUID,
+                  let note = notesManager.notes.first(where: { $0.id == noteID }) else { return }
+            notesPendingExport = [note]
+            withAnimation(.jotSpring) { isBatchExportSheetPresented = true }
         }
         .overlay {
+            if isBatchExportSheetPresented {
+                ZStack {
+                    Color.black.opacity(0.001)
+                        .ignoresSafeArea()
+                        .onTapGesture {
+                            withAnimation(.jotSpring) { isBatchExportSheetPresented = false }
+                        }
+                    ExportFormatSheet(isPresented: $isBatchExportSheetPresented, notes: notesPendingExport) {
+                        exportNotes, format in
+                        Task { @MainActor in
+                            // Delay to allow the sheet to dismiss before presenting the save panel
+                            try? await Task.sleep(nanoseconds: 500_000_000)
+                            
+                            let success: Bool
+                            if exportNotes.count == 1, let singleNote = exportNotes.first {
+                                success = await NoteExportService.shared.exportNote(singleNote, format: format)
+                            } else {
+                                let filename = "Jot Export \(Date().formatted(date: .numeric, time: .omitted))"
+                                success = await NoteExportService.shared.exportNotes(
+                                    exportNotes,
+                                    format: format,
+                                    filename: filename
+                                )
+                            }
+                            if success {
+                                HapticManager.shared.strong()
+                            } else {
+                                HapticManager.shared.medium()
+                            }
+                        }
+                    }
+                }
+                .transition(.opacity.combined(with: .scale(scale: 0.95)))
+            }
             if isCreateFolderAlertPresented {
                 folderSheetOverlay {
                     CreateFolderSheet(
@@ -379,6 +378,7 @@ struct ContentView: View {
                 .transition(.opacity)
             }
         }
+        .animation(.jotSpring, value: isBatchExportSheetPresented)
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: isCreateFolderAlertPresented)
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: pendingFolderToEdit != nil)
         .alert("Delete Selected Notes?", isPresented: $isBatchDeleteConfirmationPresented) {
@@ -393,7 +393,7 @@ struct ContentView: View {
             Text("This will permanently delete \(pendingDeleteNoteIDs.count) notes.")
         }
         .alert("Move Selected Notes", isPresented: $isBatchMoveAlertPresented) {
-            TextField("Folder name", text: $batchMoveFolderName)
+            TextField("Notebook name", text: $batchMoveFolderName)
             Button("Cancel", role: .cancel) {
                 resetPendingMoveSelection()
             }
@@ -401,11 +401,9 @@ struct ContentView: View {
                 confirmMoveSelectedNotesByName()
             }
         } message: {
-            Text("Enter a folder name. If it does not exist, it will be created.")
+            Text("Enter a notebook name. If it does not exist, it will be created.")
         }
-#if os(macOS)
         .ignoresSafeArea(.container, edges: .top)
-#endif
     }
 
     // MARK: - Sidebar
@@ -454,6 +452,14 @@ struct ContentView: View {
                     sidebarNotesList
                 }
                 .scrollIndicators(.never)
+                .padding(.top, 4)
+                .padding(.bottom, 4)
+
+                // Settings -- sits below scroll, content clips naturally
+                sidebarMenuItem(assetName: "IconSettingsGear1", label: "Settings") {
+                    presentSettings()
+                }
+                .padding(.bottom, sidebarSettingsBottomPadding)
             }
             .padding(.top, sidebarMenuTop)
             .frame(width: sidebarDesignColumnWidth, alignment: .leading)
@@ -463,7 +469,7 @@ struct ContentView: View {
                     HapticManager.shared.buttonTap()
                     promptCreateFolder()
                 } label: {
-                    Label("Create New Folder...", image: "IconFolderAddRight")
+                    Label("Create New Notebook...", image: "IconFolderAddRight")
                 }
             }
             .onTapGesture {
@@ -471,16 +477,6 @@ struct ContentView: View {
                     isSearchPresented = false
                 }
             }
-
-            // Settings -- pinned to bottom of sidebar
-            VStack {
-                Spacer()
-                sidebarMenuItem(assetName: "IconSettingsGear1", label: "Settings") {
-                    presentSettings()
-                }
-            }
-            .frame(width: sidebarDesignColumnWidth, alignment: .leading)
-            .padding(.bottom, sidebarSettingsBottomPadding)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
@@ -510,7 +506,8 @@ struct ContentView: View {
                             var updatedNote = note
                             updatedNote.title = newTitle
                             notesManager.updateNote(updatedNote)
-                        }
+                        },
+                        isExpanded: $isPinnedSectionExpanded
                     )
                 }
 
@@ -543,6 +540,9 @@ struct ContentView: View {
                             var updatedNote = note
                             updatedNote.title = newTitle
                             notesManager.updateNote(updatedNote)
+                        },
+                        onArchiveFolder: { folder in
+                            notesManager.archiveFolder(folder)
                         },
                         onDeleteFolder: deleteFolder,
                         onDropNotesIntoFolder: { noteIDs, folderID in
@@ -811,6 +811,16 @@ struct ContentView: View {
                 sidebarBareIcon(assetName: "IconFolderAddRight") {
                     promptCreateFolder()
                 }
+                .background(
+                    GeometryReader { geo in
+                        Color.clear.onAppear {
+                            createFolderButtonFrame = geo.frame(in: .named("contentArea"))
+                        }
+                        .onChange(of: geo.frame(in: .named("contentArea"))) { _, newFrame in
+                            createFolderButtonFrame = newFrame
+                        }
+                    }
+                )
 
                 Menu {
                     ForEach(SidebarSectionFilter.allCases) { filter in
@@ -855,8 +865,8 @@ struct ContentView: View {
 
     private var sidebarArchiveList: some View {
         VStack(alignment: .leading, spacing: 2) {
-            if notesManager.archivedNotes.isEmpty {
-                Text("No archived notes")
+            if notesManager.archivedFolders.isEmpty && notesManager.archivedNotes.isEmpty {
+                Text("No archived items")
                     .font(FontManager.metadata(size: 11, weight: .regular))
                     .foregroundColor(Color("SecondaryTextColor"))
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -864,20 +874,97 @@ struct ContentView: View {
                     .padding(.trailing, sidebarItemTrailingPadding)
                     .padding(.top, 12)
             } else {
-                ForEach(notesManager.archivedNotes, id: \.id) { note in
-                    NoteListCard(
-                        note: note,
-                        isSelected: selectedNoteIDs.contains(note.id),
-                        isActiveNote: note.id == selectedNote?.id,
-                        onTap: { interaction in handleNoteTap(note, interaction) },
-                        onTogglePin: { _ in },
-                        onDelete: { requestDeleteNotes([note.id]) },
-                        folders: [],
-                        onCreateFolderWithNote: { },
-                        onMoveToFolder: { _ in },
-                        onExport: { presentExport([note.id]) },
-                        onArchive: { unarchiveNotes([note.id]) }
-                    )
+                if !notesManager.archivedFolders.isEmpty {
+                    Text("Folders")
+                        .font(FontManager.heading(size: 13, weight: .medium))
+                        .foregroundColor(Color("SecondaryTextColor"))
+                        .padding(.horizontal, sidebarItemLeadingPadding)
+                        .padding(.top, 12)
+                        .padding(.bottom, 4)
+                    
+                    ForEach(notesManager.archivedFolders, id: \.id) { folder in
+                        HStack(spacing: 8) {
+                            Image("IconFolder2")
+                                .renderingMode(.template)
+                                .resizable()
+                                .scaledToFit()
+                                .foregroundColor(folder.folderColor)
+                                .frame(width: 20, height: 20)
+                            
+                            Text(folder.name)
+                                .font(FontManager.heading(size: 15, weight: .medium))
+                                .foregroundColor(Color("PrimaryTextColor"))
+                                .lineLimit(1)
+                            
+                            Spacer()
+                            
+                            Button {
+                                HapticManager.shared.buttonTap()
+                                withAnimation(.easeInOut(duration: 0.25)) {
+                                    notesManager.unarchiveFolder(folder)
+                                }
+                            } label: {
+                                Image("IconStepBack")
+                                    .renderingMode(.template)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 15, height: 15)
+                                    .foregroundColor(Color("SecondaryTextColor"))
+                            }
+                            .buttonStyle(.plain)
+                            .subtleHoverScale(1.06)
+                            .help("Unarchive Folder")
+                        }
+                        .padding(8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(Color.clear)
+                        )
+                        .padding(.horizontal, sidebarRowHoverInset)
+                        .contextMenu {
+                            Button {
+                                notesManager.unarchiveFolder(folder)
+                            } label: {
+                                Label {
+                                    Text("Unarchive Folder")
+                                } icon: {
+                                    Image("IconStepBack")
+                                        .renderingMode(.template)
+                                        .resizable()
+                                        .scaledToFit()
+                                        .frame(width: 20, height: 20)
+                                }
+                            }
+                            
+                            Button(role: .destructive) {
+                                deleteFolder(folder)
+                            } label: {
+                                Label("Delete Folder", image: "delete")
+                            }
+                        }
+                    }
+                }
+                
+                if !notesManager.archivedNotes.isEmpty {
+                    if !notesManager.archivedFolders.isEmpty {
+                        Text("Notes")
+                            .font(FontManager.heading(size: 13, weight: .medium))
+                            .foregroundColor(Color("SecondaryTextColor"))
+                            .padding(.horizontal, sidebarItemLeadingPadding)
+                            .padding(.top, 16)
+                            .padding(.bottom, 4)
+                    }
+                    
+                    ForEach(notesManager.archivedNotes, id: \.id) { note in
+                        ArchivedNoteRow(
+                            note: note,
+                            isSelected: selectedNoteIDs.contains(note.id),
+                            isActive: note.id == selectedNote?.id,
+                            onTap: { handleNoteTap(note, .plain) },
+                            onUnarchive: { unarchiveNotes([note.id]) },
+                            onDelete: { requestDeleteNotes([note.id]) }
+                        )
+                    }
                 }
             }
         }
@@ -886,6 +973,7 @@ struct ContentView: View {
         .padding(.bottom, 24)
         .onAppear {
             notesManager.loadArchivedNotes()
+            notesManager.loadArchivedFolders()
         }
     }
 
@@ -907,7 +995,7 @@ struct ContentView: View {
     private func appCenteredSearchOverlay() -> some View {
         ZStack {
             if isSearchPresented {
-                Color.black.opacity(0.15)
+                Color.black.opacity(0.001)
                     .ignoresSafeArea()
                     .transition(.opacity)
                     .onTapGesture {
@@ -936,7 +1024,7 @@ struct ContentView: View {
     private func appWindowSettingsOverlay() -> some View {
         ZStack {
             Color.black
-                .opacity(isSettingsPresented ? (colorScheme == .dark ? 0.28 : 0.15) : 0)
+                .opacity(isSettingsPresented ? 0.001 : 0)
                 .allowsHitTesting(isSettingsPresented)
                 .onTapGesture {
                     if isSettingsPresented {
@@ -953,7 +1041,6 @@ struct ContentView: View {
         .animation(.easeInOut(duration: 0.18), value: isSettingsPresented)
     }
 
-#if os(macOS)
     private var globalSearchShortcutActivator: some View {
         Group {
             // Cmd+F -> in-note search
@@ -979,6 +1066,18 @@ struct ContentView: View {
             .buttonStyle(.plain)
             .keyboardShortcut("k", modifiers: [.command])
             .opacity(0.001)
+
+            // Cmd+. -> toggle sidebar
+            Button {
+                withAnimation(sidebarVisibilityAnimation) {
+                    isSidebarVisible.toggle()
+                }
+            } label: {
+                Color.clear.frame(width: 1, height: 1)
+            }
+            .buttonStyle(.plain)
+            .keyboardShortcut(".", modifiers: [.command])
+            .opacity(0.001)
         }
         .accessibilityHidden(true)
     }
@@ -1002,6 +1101,14 @@ struct ContentView: View {
             sidebarTopBarIcon(assetName: "IconNoteText") {
                 createAndOpenNewNote()
             }
+            .opacity(isFloatingSidebarVisible ? 0 : 1)
+            .allowsHitTesting(!isFloatingSidebarVisible)
+
+            sidebarTopBarIcon(assetName: "IconMagnifyingGlass") {
+                presentSearch()
+            }
+            .opacity(isFloatingSidebarVisible ? 0 : 1)
+            .allowsHitTesting(!isFloatingSidebarVisible)
         }
         .padding(.leading, iconLeading)
         .padding(.top, iconTop)
@@ -1024,13 +1131,13 @@ struct ContentView: View {
                 sidebarNotesList
             }
             .scrollIndicators(.never)
-
-            Spacer(minLength: 0)
+            .padding(.top, 4)
+            .padding(.bottom, 4)
 
             sidebarMenuItem(assetName: "IconSettingsGear1", label: "Settings") {
                 presentSettings()
             }
-            .padding(.bottom, 2)
+            .padding(.bottom, sidebarSettingsBottomPadding)
         }
         .padding(.horizontal, 8)
         .frame(width: floatingSidebarWidth)
@@ -1099,7 +1206,6 @@ struct ContentView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + floatingSidebarDismissDelay, execute: work)
         }
     }
-#endif
 
     // MARK: - Detail Pane
 
@@ -1112,7 +1218,6 @@ struct ContentView: View {
         ) { updated in
             saveUpdatedNote(updated)
         }
-        .id(note.id)
     }
 
     private func sidebarAssetIcon(assetName: String, tint: Color) -> some View {
@@ -1464,13 +1569,15 @@ struct ContentView: View {
         @ViewBuilder content: () -> Content,
         onDismiss: @escaping () -> Void
     ) -> some View {
-        ZStack {
-            Color.black.opacity(0.3)
+        ZStack(alignment: .topLeading) {
+            Color.black.opacity(0.001)
                 .ignoresSafeArea()
                 .onTapGesture { onDismiss() }
 
             content()
-                .transition(.scale(scale: 0.9, anchor: .center).combined(with: .opacity))
+                .padding(.top, createFolderButtonFrame.maxY + 8)
+                .padding(.leading, createFolderButtonFrame.minX - 4)
+                .transition(.scale(scale: 0.9, anchor: .topLeading).combined(with: .opacity))
         }
     }
 
@@ -1670,70 +1777,14 @@ struct ContentView: View {
         notesManager.folders
     }
 
-    private var notesByFolderID: [UUID: [Note]] {
-        Dictionary(grouping: displayedNotes.filter { $0.folderID != nil }) { $0.folderID! }
-            .mapValues { notes in
-                notes.sorted { $0.date > $1.date }
-            }
-    }
-
-    private var unfiledNotes: [Note] {
-        displayedNotes.filter { $0.folderID == nil }
-    }
-
-    private var pinnedNotes: [Note] {
-        unfiledNotes.filter { $0.isPinned }
-    }
-
-    private var todayNotes: [Note] {
-        let today = Calendar.current.startOfDay(for: Date())
-        return unfiledNotes.filter { note in
-            !note.isPinned && Calendar.current.isDate(note.date, inSameDayAs: today)
-        }
-    }
-
-    private var thisMonthNotes: [Note] {
-        let today = Calendar.current.startOfDay(for: Date())
-        let calendar = Calendar.current
-        let currentMonth = calendar.component(.month, from: Date())
-        let currentYear = calendar.component(.year, from: Date())
-
-        return unfiledNotes.filter { note in
-            let noteMonth = calendar.component(.month, from: note.date)
-            let noteYear = calendar.component(.year, from: note.date)
-            let noteDay = calendar.startOfDay(for: note.date)
-
-            return !note.isPinned &&
-                   noteMonth == currentMonth &&
-                   noteYear == currentYear &&
-                   noteDay < today
-        }
-    }
-
-    private var thisYearNotes: [Note] {
-        let calendar = Calendar.current
-        let currentMonth = calendar.component(.month, from: Date())
-        let currentYear = calendar.component(.year, from: Date())
-
-        return unfiledNotes.filter { note in
-            let noteMonth = calendar.component(.month, from: note.date)
-            let noteYear = calendar.component(.year, from: note.date)
-
-            return !note.isPinned &&
-                   noteYear == currentYear &&
-                   noteMonth < currentMonth
-        }
-    }
-
-    private var olderNotes: [Note] {
-        let calendar = Calendar.current
-        let currentYear = calendar.component(.year, from: Date())
-
-        return unfiledNotes.filter { note in
-            let noteYear = calendar.component(.year, from: note.date)
-            return !note.isPinned && noteYear < currentYear
-        }
-    }
+    // These forward to the manager's pre-computed collections — O(1), no recomputation on each render.
+    private var notesByFolderID: [UUID: [Note]] { notesManager.notesByFolderID }
+    private var unfiledNotes: [Note] { notesManager.unfiledNotes }
+    private var pinnedNotes: [Note] { notesManager.pinnedNotes }
+    private var todayNotes: [Note] { notesManager.todayNotes }
+    private var thisMonthNotes: [Note] { notesManager.thisMonthNotes }
+    private var thisYearNotes: [Note] { notesManager.thisYearNotes }
+    private var olderNotes: [Note] { notesManager.olderNotes }
 
     private var hasVisibleUnfiledSections: Bool {
         !todayNotes.isEmpty || !thisMonthNotes.isEmpty || !thisYearNotes.isEmpty || !olderNotes.isEmpty
@@ -1876,6 +1927,7 @@ struct NoteListCard: View {
     var isSelected: Bool = false
     var isActiveNote: Bool = false
     var activeIconTint: Color = Color("SecondaryTextColor")
+    var isInsideFolder: Bool = false
     var leadingIconAssetName: String? = nil
     var hoverLeadingIconAssetName: String? = nil
     var showLeadingIconOnHoverOnly: Bool = false
@@ -1907,33 +1959,34 @@ struct NoteListCard: View {
                 if let icon = leadingIconAssetName {
                     let isLeadingIconVisible = !showLeadingIconOnHoverOnly || isHovered
                     let isShowingHoverVariant = isHovered && hoverLeadingIconAssetName != nil
-                    let effectiveIcon = (isShowingHoverVariant ? hoverLeadingIconAssetName : icon) ?? icon
-                    Group {
-                        if let onLeadingIconTap, isLeadingIconVisible {
-                            Image(effectiveIcon)
+                    ZStack {
+                        Image(icon)
+                            .renderingMode(.template)
+                            .resizable()
+                            .scaledToFit()
+                            .foregroundColor(Color("SecondaryTextColor"))
+                            .frame(width: 20, height: 20)
+                            .opacity(isLeadingIconVisible && !isShowingHoverVariant ? 1 : 0)
+
+                        if let hoverIcon = hoverLeadingIconAssetName {
+                            Image(hoverIcon)
                                 .renderingMode(.template)
                                 .resizable()
                                 .scaledToFit()
                                 .foregroundColor(Color("SecondaryTextColor"))
                                 .frame(width: 20, height: 20)
-                                .contentShape(Rectangle())
-                                .onTapGesture {
-                                    onLeadingIconTap()
-                                }
-                                .macPointingHandCursor()
-                                .opacity(isLeadingIconVisible ? 1 : 0)
-                                .allowsHitTesting(isLeadingIconVisible)
-                        } else {
-                            Image(effectiveIcon)
-                                .renderingMode(.template)
-                                .resizable()
-                                .scaledToFit()
-                                .foregroundColor(Color("SecondaryTextColor"))
-                                .frame(width: 20, height: 20)
-                                .opacity(isLeadingIconVisible ? 1 : 0)
+                                .opacity(isLeadingIconVisible && isShowingHoverVariant ? 1 : 0)
                         }
                     }
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        onLeadingIconTap?()
+                    }
+                    .macPointingHandCursor()
+                    .allowsHitTesting(isLeadingIconVisible && onLeadingIconTap != nil)
                     .animation(.easeInOut(duration: 0.12), value: isLeadingIconVisible)
+                    .animation(.easeInOut(duration: 0.1), value: isShowingHoverVariant)
                 }
 
                 if isRenaming {
@@ -2015,10 +2068,15 @@ struct NoteListCard: View {
                         onTogglePin(!note.isPinned)
                     }
                 } label: {
-                    Label(
-                        note.isPinned ? "Unpin Note" : "Pin Note",
-                        image: note.isPinned ? "IconUnpin" : "IconThumbtack"
-                    )
+                    Label {
+                        Text(note.isPinned ? "Unpin Note" : "Pin Note")
+                    } icon: {
+                        Image(note.isPinned ? "IconUnpin" : "IconThumbtack")
+                            .renderingMode(.template)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 20, height: 20)
+                    }
                 }
             }
 
@@ -2026,7 +2084,15 @@ struct NoteListCard: View {
                 HapticManager.shared.buttonTap()
                 onCreateFolderWithNote()
             } label: {
-                Label("Create New Folder With Note...", image: "IconFolderAddRight")
+                Label {
+                    Text("Create New Notebook With Note...")
+                } icon: {
+                    Image("IconFolderAddRight")
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 20, height: 20)
+                }
             }
 
             Menu {
@@ -2039,10 +2105,25 @@ struct NoteListCard: View {
                             HapticManager.shared.buttonTap()
                             onMoveToFolder(folder.id)
                         } label: {
-                            if note.folderID == folder.id {
-                                Label(folder.name, systemImage: "checkmark")
-                            } else {
-                                Label(folder.name, image: "IconFolder2")
+                                                    if note.folderID == folder.id {
+                                                        Label {
+                                                            Text(folder.name)
+                                                        } icon: {
+                                                            Image(systemName: "checkmark")
+                                                                .renderingMode(.template)
+                                                                .resizable()
+                                                                .scaledToFit()
+                                                                .frame(width: 20, height: 20)
+                                                        }
+                                                    } else {                                Label {
+                                    Text(folder.name)
+                                } icon: {
+                                    Image("IconFolder2")
+                                        .renderingMode(.template)
+                                        .resizable()
+                                        .scaledToFit()
+                                        .frame(width: 20, height: 20)
+                                }
                             }
                         }
                     }
@@ -2055,18 +2136,42 @@ struct NoteListCard: View {
                         HapticManager.shared.buttonTap()
                         onMoveToFolder(nil)
                     } label: {
-                        Label("Remove from Folder", image: "IconFolderOpen")
+                        Label {
+                            Text("Remove from Notebook")
+                        } icon: {
+                            Image("IconFolderOpen")
+                                .renderingMode(.template)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 20, height: 20)
+                        }
                     }
                 }
             } label: {
-                Label("Move to Folder", image: "IconFolder2")
+                Label {
+                    Text("Move to Notebook")
+                } icon: {
+                    Image("IconFolder2")
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 20, height: 20)
+                }
             }
 
             Button {
                 HapticManager.shared.buttonTap()
                 onExport()
             } label: {
-                Label("Export Note...", image: "export note")
+                Label {
+                    Text("Export Note...")
+                } icon: {
+                    Image("export note")
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 20, height: 20)
+                }
             }
 
             Divider()
@@ -2078,7 +2183,15 @@ struct NoteListCard: View {
                         onArchive()
                     }
                 } label: {
-                    Label(note.isArchived ? "Unarchive" : "Archive", image: "IconArchive1")
+                    Label {
+                        Text(note.isArchived ? "Unarchive" : "Archive")
+                    } icon: {
+                        Image("IconArchive1")
+                            .renderingMode(.template)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 20, height: 20)
+                    }
                 }
             }
 
@@ -2088,7 +2201,15 @@ struct NoteListCard: View {
                     onDelete()
                 }
             } label: {
-                Label("Delete", image: "delete")
+                Label {
+                    Text("Delete")
+                } icon: {
+                    Image("delete")
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 20, height: 20)
+                }
             }
         }
     }
@@ -2118,7 +2239,6 @@ struct NoteListCard: View {
     }()
 
     private static func selectionInteractionFromCurrentEvent() -> NoteSelectionInteraction {
-        #if os(macOS)
         let modifiers = NSApp.currentEvent?.modifierFlags ?? []
         if modifiers.contains(.shift) {
             return .shiftRange
@@ -2126,7 +2246,6 @@ struct NoteListCard: View {
         if modifiers.contains(.command) {
             return .commandToggle
         }
-        #endif
         return .plain
     }
 }
@@ -2145,47 +2264,96 @@ struct PinnedNotesSection: View {
     let onExportNotes: (Set<UUID>) -> Void
     var onArchiveNotes: ((Set<UUID>) -> Void)? = nil
     var onRenameNote: ((Note, String) -> Void)? = nil
+    @Binding var isExpanded: Bool
+    @Environment(\.colorScheme) private var colorScheme
+
+    private let containerShape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+    /// Saturated golden yellow -- the "folder color" equivalent for the pinned section.
+    private static let pinnedBaseColor = Color(.sRGB, red: 0.98, green: 0.80, blue: 0.08, opacity: 1.0)
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            ForEach(notes, id: \.id) { note in
-                NoteListCard(
-                    note: note,
-                    isSelected: selectedNoteIDs.contains(note.id),
-                    isActiveNote: note.id == activeNoteID,
-                    leadingIconAssetName: "IconThumbtack",
-                    hoverLeadingIconAssetName: "IconUnpin",
-                    onLeadingIconTap: {
-                        HapticManager.shared.buttonTap()
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            onTogglePinForNotes(contextSelection(for: note), false)
+        VStack(alignment: .leading, spacing: 4) {
+            // Header
+            HStack(spacing: 8) {
+                Image("IconThumbtack")
+                    .resizable()
+                    .renderingMode(.template)
+                    .frame(width: 15, height: 15)
+                    .foregroundColor(Color("PinnedIconColor"))
+
+                Text("Pinned notes")
+                    .font(FontManager.heading(size: 12, weight: .medium))
+                    .foregroundColor(Color("SecondaryTextColor"))
+
+                Circle()
+                    .fill(Color("SecondaryTextColor"))
+                    .frame(width: 2, height: 2)
+
+                Text("\(notes.count)")
+                    .font(FontManager.metadata(size: 11, weight: .medium))
+                    .foregroundColor(Color("SecondaryTextColor"))
+
+                Spacer(minLength: 0)
+
+                Image(isExpanded ? "IconChevronTopSmall" : "IconChevronDownSmall")
+                    .resizable()
+                    .renderingMode(.template)
+                    .frame(width: 15, height: 15)
+                    .foregroundColor(Color("PinnedIconColor"))
+            }
+            .padding(4)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                HapticManager.shared.buttonTap()
+                withAnimation(.jotSmoothFast) {
+                    isExpanded.toggle()
+                }
+            }
+
+            // Notes
+            if isExpanded {
+                ForEach(notes, id: \.id) { note in
+                    NoteListCard(
+                        note: note,
+                        isSelected: selectedNoteIDs.contains(note.id),
+                        isActiveNote: note.id == activeNoteID,
+                        isInsideFolder: true,
+                        onTap: { interaction in onNoteTap(note, interaction) },
+                        onTogglePin: { shouldPin in
+                            onTogglePinForNotes(contextSelection(for: note), shouldPin)
+                        },
+                        onDelete: { onDeleteNotes(contextSelection(for: note)) },
+                        folders: folders,
+                        onCreateFolderWithNote: { onCreateFolderWithNotes(contextSelection(for: note)) },
+                        onMoveToFolder: { folderID in
+                            onMoveNotesToFolder(contextSelection(for: note), folderID)
+                        },
+                        onExport: { onExportNotes(contextSelection(for: note)) },
+                        onArchive: onArchiveNotes != nil ? { onArchiveNotes?(contextSelection(for: note)) } : nil,
+                        onRename: { newTitle in
+                            onRenameNote?(note, newTitle)
+                        },
+                        getDragItems: {
+                            if selectedNoteIDs.contains(note.id) {
+                                return selectedNoteIDs.map { NoteDragItem(noteID: $0) }
+                            } else {
+                                return [NoteDragItem(noteID: note.id)]
+                            }
                         }
-                    },
-                    onTap: { interaction in onNoteTap(note, interaction) },
-                    onTogglePin: { shouldPin in
-                        onTogglePinForNotes(contextSelection(for: note), shouldPin)
-                    },
-                    onDelete: { onDeleteNotes(contextSelection(for: note)) },
-                    folders: folders,
-                    onCreateFolderWithNote: { onCreateFolderWithNotes(contextSelection(for: note)) },
-                    onMoveToFolder: { folderID in
-                        onMoveNotesToFolder(contextSelection(for: note), folderID)
-                    },
-                    onExport: { onExportNotes(contextSelection(for: note)) },
-                    onArchive: onArchiveNotes != nil ? { onArchiveNotes?(contextSelection(for: note)) } : nil,
-                    onRename: { newTitle in
-                        onRenameNote?(note, newTitle)
-                    },
-                    getDragItems: {
-                        if selectedNoteIDs.contains(note.id) {
-                            return selectedNoteIDs.map { NoteDragItem(noteID: $0) }
-                        } else {
-                            return [NoteDragItem(noteID: note.id)]
-                        }
-                    }
-                )
+                    )
+                }
             }
         }
+        .padding(4)
+        .background(
+            containerShape
+                .fill(Self.pinnedBaseColor.solidFolderTint(for: colorScheme))
+        )
+        .overlay(
+            containerShape
+                .stroke(Color.primary.opacity(0.2), lineWidth: 1)
+        )
+        .clipShape(containerShape)
     }
 
     private func contextSelection(for note: Note) -> Set<UUID> {
@@ -2236,11 +2404,7 @@ struct PinnedNoteChip: View {
                 )
                 .contentShape(.dragPreview, Capsule())
         }
-        #if os(macOS)
         .glassEffect(.regular.interactive(true), in: Capsule())
-        #else
-        .background(.ultraThinMaterial, in: Capsule())
-        #endif
         .overlay(
             Capsule()
                 .strokeBorder(Color("BorderSubtleColor"), lineWidth: isSelected ? 1 : 0)
@@ -2256,7 +2420,7 @@ struct PinnedNoteChip: View {
                 HapticManager.shared.buttonTap()
                 onCreateFolderWithNote()
             } label: {
-                Label("Create New Folder With Note...", image: "IconFolderAddRight")
+                Label("Create New Notebook With Note...", image: "IconFolderAddRight")
             }
 
             Menu {
@@ -2281,11 +2445,11 @@ struct PinnedNoteChip: View {
                         HapticManager.shared.buttonTap()
                         onMoveToFolder(nil)
                     } label: {
-                        Label("Remove from Folder", image: "IconFolderOpen")
+                        Label("Remove from Notebook", image: "IconFolderOpen")
                     }
                 }
             } label: {
-                Label("Move to Folder", image: "IconFolder2")
+                Label("Move to Notebook", image: "IconFolder2")
             }
 
             Button {
@@ -2320,7 +2484,6 @@ struct PinnedNoteChip: View {
     }
 
     private static func selectionInteractionFromCurrentEvent() -> NoteSelectionInteraction {
-        #if os(macOS)
         let modifiers = NSApp.currentEvent?.modifierFlags ?? []
         if modifiers.contains(.shift) {
             return .shiftRange
@@ -2328,7 +2491,6 @@ struct PinnedNoteChip: View {
         if modifiers.contains(.command) {
             return .commandToggle
         }
-        #endif
         return .plain
     }
 }

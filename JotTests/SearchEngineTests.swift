@@ -24,7 +24,7 @@ final class SearchEngineTests: XCTestCase {
         n2.date = Date(timeIntervalSinceNow: -60)
         engine.query = "hello"
         engine.setNotes([n1, n2])
-        XCTAssertEqual(engine.results.first?.note.id, n1.id)
+        XCTAssertEqual(engine.results.first?.note?.id, n1.id)
     }
 
     @MainActor
@@ -34,7 +34,7 @@ final class SearchEngineTests: XCTestCase {
         engine.query = "swift"
         engine.setNotes([n])
         XCTAssertEqual(engine.results.count, 1)
-        XCTAssertEqual(engine.results.first?.note.id, n.id)
+        XCTAssertEqual(engine.results.first?.note?.id, n.id)
     }
 
     @MainActor
@@ -43,7 +43,7 @@ final class SearchEngineTests: XCTestCase {
         let n = Note(title: "MatchMe", content: "")
         engine.query = "match"
         engine.setNotes([n]) // triggers performSearch immediately
-        XCTAssertEqual(engine.results.first?.note.id, n.id)
+        XCTAssertEqual(engine.results.first?.note?.id, n.id)
     }
 
     @MainActor

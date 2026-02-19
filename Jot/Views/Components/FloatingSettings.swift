@@ -56,6 +56,7 @@ struct FloatingSettings: View {
         .frame(width: panelWidth, height: panelHeight, alignment: .topLeading)
         .liquidGlass(in: RoundedRectangle(cornerRadius: panelCornerRadius, style: .continuous))
         .clipShape(RoundedRectangle(cornerRadius: panelCornerRadius, style: .continuous))
+        .shadow(color: .black.opacity(0.12), radius: 24, x: 0, y: 12)
         .contentShape(RoundedRectangle(cornerRadius: panelCornerRadius, style: .continuous))
         .simultaneousGesture(TapGesture().onEnded { })
         .onChange(of: isPresented) { _, presented in
