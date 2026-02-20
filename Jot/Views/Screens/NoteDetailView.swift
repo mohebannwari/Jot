@@ -10,11 +10,7 @@
 
 import SwiftUI
 
-#if os(macOS)
 import AppKit
-#else
-import UIKit
-#endif
 
 struct NoteDetailView: View {
     let note: Note
@@ -49,7 +45,7 @@ struct NoteDetailView: View {
     @Namespace private var glassNamespace
 
     // MARK: - Gallery state (accessed by +Gallery extension)
-    @State var galleryPreviewImage: PlatformImage?
+    @State var galleryPreviewImage: NSImage?
     @State var lastGalleryFilename: String?
     @State var galleryItems: [GalleryGridOverlay.Item] = []
     @State var showGalleryGrid = false
@@ -153,12 +149,25 @@ struct NoteDetailView: View {
             ScrollViewReader { proxy in
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text(noteDateString)
-                            .font(FontManager.metadata(size: 11, weight: .medium))
-                            .foregroundColor(Color("SecondaryTextColor"))
-                            .kerning(-0.25)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.bottom, 0)
+                        HStack(spacing: 6) {
+                            Text(noteDateString)
+                                .font(FontManager.metadata(size: 11, weight: .medium))
+                                .foregroundColor(Color("SecondaryTextColor"))
+                                .kerning(-0.25)
+
+                            if note.isArchived {
+                                Circle()
+                                    .fill(Color("SecondaryTextColor"))
+                                    .frame(width: 2, height: 2)
+
+                                Text("Archived")
+                                    .font(FontManager.metadata(size: 11, weight: .medium))
+                                    .foregroundColor(Color("SecondaryTextColor"))
+                                    .kerning(-0.25)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.bottom, 0)
 
                         titleField
                             .background(
@@ -328,6 +337,23 @@ struct NoteDetailView: View {
         .onChange(of: editedTags) { _, _ in
             scheduleAutosave()
         }
+        .onChange(of: note.id) { _, _ in
+            // Note switched — save old, reset state for new note (avoids full view destroy/recreate)
+            autosaveWorkItem?.cancel()
+            persistIfNeeded()
+            editedTitle = note.title
+            editedContent = note.content
+            editedTags = note.tags
+            lastSavedSnapshot = DraftSnapshot(title: note.title, content: note.content, tags: note.tags)
+            galleryPreviewImage = nil
+            lastGalleryFilename = nil
+            galleryItems = []
+            showGalleryGrid = false
+            showVoiceRecorderOverlay = false
+            showLinkInputOverlay = false
+            showImagePicker = false
+            updateGalleryPreview(for: note.content)
+        }
         .onReceive(NotificationCenter.default.publisher(for: .noteToolsBarAction))
         { notification in
             if let rawValue = notification.object as? String,
@@ -408,9 +434,7 @@ struct NoteDetailView: View {
                     showImagePicker = false
                 }
             )
-            #if os(macOS)
-                .frame(minWidth: 800, minHeight: 600)
-            #endif
+            .frame(minWidth: 800, minHeight: 600)
         }
     }
 
@@ -440,6 +464,11 @@ struct NoteDetailView: View {
             .lineLimit(nil)
             .fixedSize(horizontal: false, vertical: true)
             .focused($titleFocused)
+            .onKeyPress(.return) {
+                titleFocused = false
+                localEditorFocusID = UUID()
+                return .handled
+            }
             .padding(.top, 4)
     }
 
@@ -461,9 +490,7 @@ struct NoteDetailView: View {
                         .lineLimit(1)
                         .focused($isAddingTagFocused)
                         .onSubmit(addTag)
-                        #if os(macOS)
                         .onExitCommand { cancelTagInput() }
-                        #endif
                         .transition(.opacity)
                         .onAppear {
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
@@ -549,11 +576,9 @@ struct NoteDetailView: View {
             Spacer()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        #if os(macOS)
         .onExitCommand {
             if isAddingTag { cancelTagInput() }
         }
-        #endif
     }
 
     // MARK: - Header Styling Helpers
@@ -687,11 +712,9 @@ struct NoteDetailView: View {
         .padding(.vertical, 10)
         .liquidGlass(in: Capsule())
         .frame(maxWidth: 200)
-        #if os(macOS)
         .onExitCommand {
             hideLinkInputOverlay()
         }
-        #endif
     }
 
     // MARK: - Search on Page Overlay
@@ -749,11 +772,9 @@ struct NoteDetailView: View {
         .padding(.vertical, 10)
         .liquidGlass(in: Capsule())
         .frame(maxWidth: 240)
-        #if os(macOS)
         .onExitCommand {
             dismissSearchOnPage()
         }
-        #endif
     }
 
     // MARK: - Helpers
