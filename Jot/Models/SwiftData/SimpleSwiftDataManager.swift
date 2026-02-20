@@ -7,9 +7,21 @@ import OSLog
 @MainActor
 final class SimpleSwiftDataManager: ObservableObject {
 
-    @Published var notes: [Note] = []
+    @Published var notes: [Note] = [] {
+        didSet { recomputeDerivedNotes() }
+    }
     @Published var archivedNotes: [Note] = []
     @Published var folders: [Folder] = []
+    @Published var archivedFolders: [Folder] = []
+
+    // Sidebar groupings — recomputed only when notes change, not on every UI state change
+    @Published private(set) var notesByFolderID: [UUID: [Note]] = [:]
+    @Published private(set) var unfiledNotes: [Note] = []
+    @Published private(set) var pinnedNotes: [Note] = []
+    @Published private(set) var todayNotes: [Note] = []
+    @Published private(set) var thisMonthNotes: [Note] = []
+    @Published private(set) var thisYearNotes: [Note] = []
+    @Published private(set) var olderNotes: [Note] = []
     @Published private(set) var hasLoadedInitialNotes = false
     @Published private(set) var hasCompletedMigrationCheck = false
 
@@ -44,6 +56,9 @@ final class SimpleSwiftDataManager: ObservableObject {
         // Configure background context for performance
         backgroundContext.autosaveEnabled = false
 
+        // Cleanup any leftover performance test notes
+        cleanupPerformanceNotes()
+
         // Load initial data with deterministic readiness sequencing
         hasLoadedInitialNotes = false
         hasCompletedMigrationCheck = false
@@ -58,6 +73,26 @@ final class SimpleSwiftDataManager: ObservableObject {
             }
 
             self.loadNotes(isInitialLoad: true)
+        }
+    }
+
+    private func cleanupPerformanceNotes() {
+        do {
+            let descriptor = FetchDescriptor<NoteEntity>(
+                predicate: #Predicate<NoteEntity> { $0.title.contains("Performance Note") }
+            )
+            let entities = try modelContext.fetch(descriptor)
+            
+            guard !entities.isEmpty else { return }
+            
+            logger.info("Found \(entities.count) performance notes to cleanup")
+            for entity in entities {
+                modelContext.delete(entity)
+            }
+            try modelContext.save()
+            logger.info("Successfully removed performance notes")
+        } catch {
+            logger.error("Failed to cleanup performance notes: \(error)")
         }
     }
 
@@ -127,9 +162,47 @@ final class SimpleSwiftDataManager: ObservableObject {
         }
     }
 
+    // Recomputes all derived note collections in a single pass over notes.
+    // Called only when notes array changes — not on every UI render.
+    private func recomputeDerivedNotes() {
+        let calendar = Calendar.current
+        let now = Date()
+        let todayStart = calendar.startOfDay(for: now)
+        let currentMonth = calendar.component(.month, from: now)
+        let currentYear = calendar.component(.year, from: now)
+
+        notesByFolderID = Dictionary(
+            grouping: notes.filter { $0.folderID != nil },
+            by: { $0.folderID! }
+        ).mapValues { $0.sorted { $0.date > $1.date } }
+
+        let unfiled = notes.filter { $0.folderID == nil }
+        unfiledNotes = unfiled
+        pinnedNotes = unfiled.filter { $0.isPinned }
+
+        let unpinned = unfiled.filter { !$0.isPinned }
+        todayNotes = unpinned.filter { calendar.isDate($0.date, inSameDayAs: now) }
+        thisMonthNotes = unpinned.filter { note in
+            let noteDay = calendar.startOfDay(for: note.date)
+            let noteMonth = calendar.component(.month, from: note.date)
+            let noteYear = calendar.component(.year, from: note.date)
+            return noteMonth == currentMonth && noteYear == currentYear && noteDay < todayStart
+        }
+        thisYearNotes = unpinned.filter { note in
+            let noteMonth = calendar.component(.month, from: note.date)
+            let noteYear = calendar.component(.year, from: note.date)
+            return noteYear == currentYear && noteMonth < currentMonth
+        }
+        olderNotes = unpinned.filter { note in
+            calendar.component(.year, from: note.date) < currentYear
+        }
+    }
+
     private func loadFolders() {
         do {
-            let descriptor = FetchDescriptor<FolderEntity>(
+            let predicate = #Predicate<FolderEntity> { $0.isArchived == false }
+            var descriptor = FetchDescriptor<FolderEntity>(
+                predicate: predicate,
                 sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
             )
             let folderEntities = try modelContext.fetch(descriptor)
@@ -137,6 +210,68 @@ final class SimpleSwiftDataManager: ObservableObject {
         } catch {
             logger.error("Failed to load folders: \(error)")
             folders = []
+        }
+    }
+    
+    func loadArchivedFolders() {
+        do {
+            let predicate = #Predicate<FolderEntity> { $0.isArchived == true }
+            var descriptor = FetchDescriptor<FolderEntity>(
+                predicate: predicate,
+                sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+            )
+            let folderEntities = try modelContext.fetch(descriptor)
+            archivedFolders = folderEntities.map { $0.toFolder() }
+            logger.info("Loaded \(folderEntities.count) archived folders")
+        } catch {
+            logger.error("Failed to load archived folders: \(error)")
+            archivedFolders = []
+        }
+    }
+
+    func archiveFolder(_ folder: Folder) {
+        do {
+            let predicate = #Predicate<FolderEntity> { $0.id == folder.id }
+            let descriptor = FetchDescriptor(predicate: predicate)
+            let entities = try modelContext.fetch(descriptor)
+            guard let entity = entities.first else {
+                logger.warning("Folder with ID \(folder.id) not found for archiving")
+                return
+            }
+            
+            entity.isArchived = true
+            entity.modifiedAt = Date()
+            try modelContext.save()
+            
+            folders.removeAll { $0.id == folder.id }
+            loadArchivedFolders()
+            
+            logger.info("Archived folder: \(folder.name)")
+        } catch {
+            logger.error("Failed to archive folder: \(error)")
+        }
+    }
+    
+    func unarchiveFolder(_ folder: Folder) {
+        do {
+            let predicate = #Predicate<FolderEntity> { $0.id == folder.id }
+            let descriptor = FetchDescriptor(predicate: predicate)
+            let entities = try modelContext.fetch(descriptor)
+            guard let entity = entities.first else {
+                logger.warning("Folder with ID \(folder.id) not found for unarchiving")
+                return
+            }
+            
+            entity.isArchived = false
+            entity.modifiedAt = Date()
+            try modelContext.save()
+            
+            archivedFolders.removeAll { $0.id == folder.id }
+            loadFolders()
+            
+            logger.info("Unarchived folder: \(folder.name)")
+        } catch {
+            logger.error("Failed to unarchive folder: \(error)")
         }
     }
 
@@ -466,6 +601,7 @@ final class SimpleSwiftDataManager: ObservableObject {
             try modelContext.save()
 
             folders.removeAll { $0.id == id }
+            archivedFolders.removeAll { $0.id == id }
             for index in notes.indices where notes[index].folderID == id {
                 notes[index].folderID = nil
             }
@@ -718,6 +854,9 @@ final class SimpleSwiftDataManager: ObservableObject {
         batchContext.autosaveEnabled = false
 
         for note in notes {
+            // Filter out performance test notes during migration
+            if note.title.contains("Performance Note") { continue }
+
             let noteEntity = NoteEntity(from: note)
             noteEntity.setTags(note.tags, in: batchContext)
             batchContext.insert(noteEntity)
