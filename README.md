@@ -1,57 +1,37 @@
 # Jot
 
-A beautiful note-taking application for macOS built with SwiftUI and Apple's Liquid Glass design system (iOS 26+/macOS 26+).
+A note-taking application for macOS built with SwiftUI and Apple's Liquid Glass design system (macOS 26+).
 
-## Context Engineering Framework
+## Features
 
-This project uses **context engineering** for systematic AI-assisted development. This ensures all features follow established patterns, apply the design system correctly, and include comprehensive tests.
+- **Liquid Glass UI** - Native Apple design language with morphing animations and backdrop blur
+- **Rich Text Editor** - Formatting toolbar with bold, italic, strikethrough, and more
+- **Folders** - Organize notes into collapsible folder sections
+- **Pinning** - Pin important notes to keep them at the top
+- **Archive** - Archive notes without deleting them
+- **Search** - Real-time full-text search with animated glass interface
+- **Image Attachments** - Inline image display with gallery preview
+- **Voice Recording** - Audio capture with waveform visualization and speech transcription
+- **AI Tools** - Note summarization and AI-powered enhancements
+- **Web Clips** - Save web content with metadata into notes
+- **Export** - Export notes to PDF, Markdown, or HTML
+- **Themes** - Light and dark mode toggle
 
-### Quick Start
+## Requirements
 
-1. **Describe your feature** - Copy `INITIAL.md` and fill in requirements
-2. **Generate a PRP** - Run `/generate-prp your-feature.md`
-3. **Execute implementation** - Run `/execute-prp PRPs/your-feature-name.md`
+- macOS 26+ (Tahoe)
+- Xcode 16+ with macOS 26 SDK
 
-See `CONTEXT_ENGINEERING.md` for the complete guide.
+## Getting Started
 
-### Key Resources
+1. Clone the repository
+2. Open `Jot.xcodeproj` in Xcode
+3. Select the macOS target and build
 
-- **`CONTEXT_ENGINEERING.md`** - Complete framework guide
-- **`INITIAL_EXAMPLE.md`** - Example feature request
-- **`examples/`** - Code patterns to follow
-  - `component_pattern.swift` - UI component structure
-  - `manager_pattern.swift` - State management
-  - `glass_effects_pattern.swift` - Liquid Glass effects
-  - `view_architecture.swift` - Screen composition
-  - `testing_pattern.swift` - Testing patterns
-- **`PRPs/templates/`** - PRP templates
-- **`PRPs/workflows/`** - Development workflows
-  - `agentic_development.md` - Task decomposition
-  - `validation_loops.md` - Self-correcting validation
-  - `context_gathering.md` - Context collection
-
-### Custom Commands
-
-- **`/generate-prp`** - Generate comprehensive Product Requirements Prompt
-- **`/execute-prp`** - Execute PRP to implement feature
-
-## Design Reference
-
-- **Figma**: https://www.figma.com/design/BhVLOWG63LckTVCuO3q0Tv/Jot?node-id=0-1&p=f&t=Exr6XkLRSkF2tndZ-0
-- **Design System**: Apple Liquid Glass (iOS 26+/macOS 26+)
-
-## Documentation
-
-### Project Guidelines
-- **`CLAUDE.md`** - Architecture, patterns, and conventions
-- **`AGENTS.md`** - Repository structure and commands
-- **`LIQUID_GLASS_GUIDE.md`** - Liquid Glass implementation guide
-- **`FIGMA.md`** - Design file usage notes
-
-### Build & Test
+## Build & Test
 
 ```bash
-# Build the app
+# Build
 xcodebuild -project Jot.xcodeproj -scheme Jot -configuration Debug build
 
 # Run tests
@@ -61,55 +41,87 @@ xcodebuild -project Jot.xcodeproj -scheme Jot -destination 'platform=macOS' test
 xcodebuild -project Jot.xcodeproj -scheme Jot clean
 ```
 
-### Project Structure
+## Project Structure
 
 ```
 Jot/
-├── App/                    # App lifecycle and entry point
-│   ├── JotApp.swift      # Main app struct
-│   └── ContentView.swift  # Root view
-├── Models/                 # Data layer and business logic
-│   ├── Note.swift         # Core Note model
-│   ├── NotesManager.swift # Note persistence and CRUD
-│   └── SearchEngine.swift # Search functionality
+├── App/                        # App lifecycle and entry point
+│   ├── JotApp.swift
+│   └── ContentView.swift
+├── Models/                     # Data layer and business logic
+│   ├── Note.swift              # Core note model
+│   ├── Folder.swift            # Folder model
+│   ├── NotesManager.swift      # Note persistence and CRUD
+│   ├── SearchEngine.swift      # Full-text search
+│   ├── AudioRecorder.swift     # Voice recording
+│   ├── Transcriber.swift       # Speech-to-text transcription
+│   └── SwiftData/              # SwiftData persistence layer
+│       ├── NoteEntity.swift
+│       ├── FolderEntity.swift
+│       └── TagEntity.swift
 ├── Views/
-│   ├── Components/        # Reusable UI components
-│   └── Screens/          # Full-screen views
-├── Utils/                 # Utilities and extensions
-│   ├── ThemeManager.swift # Theme management
-│   └── GlassEffects.swift # Liquid Glass implementation
-└── Resources/             # Assets and design tokens
-    └── Assets.xcassets/   # Color sets and images
+│   ├── Components/             # Reusable UI components
+│   │   ├── NoteCard.swift
+│   │   ├── FolderSection.swift
+│   │   ├── NoteToolsBar.swift
+│   │   ├── EditToolbar.swift
+│   │   ├── FloatingSearch.swift
+│   │   ├── AIToolsOverlay.swift
+│   │   ├── ImageAttachmentView.swift
+│   │   ├── TodoRichTextEditor.swift
+│   │   ├── ExportFormatSheet.swift
+│   │   └── ...
+│   └── Screens/                # Full-screen views
+│       ├── CanvasView.swift     # Main notes canvas
+│       └── NoteDetailView.swift # Note editing view
+├── Utils/                      # Utilities and extensions
+│   ├── ThemeManager.swift
+│   ├── GlassEffects.swift
+│   ├── NoteExportService.swift
+│   ├── ImageStorageManager.swift
+│   ├── TextFormattingManager.swift
+│   └── ...
+└── Resources/                  # Assets and design tokens
+    └── Assets.xcassets/
 ```
 
 ## Technology Stack
 
-- **SwiftUI** (iOS 26+/macOS 26+)
-- **Apple Liquid Glass** design system
-- **JSON persistence** for notes
-- **XCTest** for testing
+- **SwiftUI** (macOS 26+)
+- **SwiftData** - Persistent storage
+- **AVFoundation** - Audio recording
+- **Speech** - Voice transcription
+- **Liquid Glass** - Apple's design system (macOS Tahoe)
+- **XCTest** - Unit testing
 
-## Getting Started
+## Design Reference
 
-1. Clone the repository
-2. Open `Jot.xcodeproj` in Xcode
-3. Build and run on macOS target (iOS 26+/macOS 26+ required)
-4. Review `CONTEXT_ENGINEERING.md` to understand the development workflow
+- **Figma**: https://www.figma.com/design/BhVLOWG63LckTVCuO3q0Tv/Jot?node-id=0-1&p=f&t=Exr6XkLRSkF2tndZ-0
+- **Guide**: `LIQUID_GLASS_GUIDE.md`
 
-## Contributing
+## Development Workflow
 
-When adding features:
+This project uses a context engineering framework for AI-assisted development. Features are specified via Product Requirements Prompts (PRPs).
 
-1. Create an INITIAL.md describing the feature
-2. Generate a PRP with `/generate-prp`
-3. Review the generated PRP for completeness
-4. Execute with `/execute-prp`
-5. Verify all validation gates pass
-6. Submit PR with PRP reference
+```
+1. Describe your feature in INITIAL.md
+2. Generate a PRP: /generate-prp INITIAL.md
+3. Execute: /execute-prp PRPs/your-feature.md
+```
 
-See `CONTEXT_ENGINEERING.md` for detailed workflow.
+See `CONTEXT_ENGINEERING.md` for the complete guide.
+
+## Documentation
+
+| File | Description |
+|------|-------------|
+| `CLAUDE.md` | Architecture, patterns, and AI instructions |
+| `AGENTS.md` | Repository structure and commands |
+| `LIQUID_GLASS_GUIDE.md` | Liquid Glass implementation guide |
+| `CONTEXT_ENGINEERING.md` | AI-assisted development workflow |
+| `CHANGELOG.md` | Version history |
+| `PROJECT_STATUS.md` | Current state and known issues |
 
 ## License
 
 [Add license information]
-
