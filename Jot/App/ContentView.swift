@@ -62,6 +62,8 @@ struct ContentView: View {
     @State private var isSearchPresented = false
     @State private var isSettingsPresented = false
     @State private var expandedFolderIDs: Set<UUID> = []
+    @State private var expandedArchivedFolderIDs: Set<UUID> = []
+    @State private var hoveredArchivedFolderID: UUID?
     @State private var isPinnedSectionExpanded: Bool = true
     @State private var showAllNotesFolderIDs: Set<UUID> = []
     @State private var sidebarSectionFilter: SidebarSectionFilter = .all
@@ -469,7 +471,15 @@ struct ContentView: View {
                     HapticManager.shared.buttonTap()
                     promptCreateFolder()
                 } label: {
-                    Label("Create New Notebook...", image: "IconFolderAddRight")
+                    Label {
+                        Text("Create New Notebook...")
+                    } icon: {
+                        Image("IconFolderAddRight")
+                            .renderingMode(.template)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 20, height: 20)
+                    }
                 }
             }
             .onTapGesture {
@@ -883,63 +893,115 @@ struct ContentView: View {
                         .padding(.bottom, 4)
                     
                     ForEach(notesManager.archivedFolders, id: \.id) { folder in
-                        HStack(spacing: 8) {
-                            Image("IconFolder2")
-                                .renderingMode(.template)
-                                .resizable()
-                                .scaledToFit()
-                                .foregroundColor(folder.folderColor)
-                                .frame(width: 20, height: 20)
-                            
-                            Text(folder.name)
-                                .font(FontManager.heading(size: 15, weight: .medium))
-                                .foregroundColor(Color("PrimaryTextColor"))
-                                .lineLimit(1)
-                            
-                            Spacer()
-                            
-                            Button {
-                                HapticManager.shared.buttonTap()
-                                withAnimation(.easeInOut(duration: 0.25)) {
-                                    notesManager.unarchiveFolder(folder)
-                                }
-                            } label: {
-                                Image("IconStepBack")
+                        let isExpanded = expandedArchivedFolderIDs.contains(folder.id)
+                        let isHovered = hoveredArchivedFolderID == folder.id
+                        let notes = notesByFolderID[folder.id] ?? []
+                        let leadingAsset = notes.isEmpty ? "IconFolderAddRight" : (isExpanded ? "IconFolderOpen" : "IconFolder2")
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(spacing: 8) {
+                                Image(leadingAsset)
                                     .renderingMode(.template)
                                     .resizable()
                                     .scaledToFit()
-                                    .frame(width: 15, height: 15)
-                                    .foregroundColor(Color("SecondaryTextColor"))
-                            }
-                            .buttonStyle(.plain)
-                            .subtleHoverScale(1.06)
-                            .help("Unarchive Folder")
-                        }
-                        .padding(8)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(Color.clear)
-                        )
-                        .padding(.horizontal, sidebarRowHoverInset)
-                        .contextMenu {
-                            Button {
-                                notesManager.unarchiveFolder(folder)
-                            } label: {
-                                Label {
-                                    Text("Unarchive Folder")
-                                } icon: {
+                                    .foregroundColor(folder.folderColor)
+                                    .frame(width: 20, height: 20)
+
+                                Text(folder.name)
+                                    .font(FontManager.heading(size: 15, weight: .medium))
+                                    .foregroundColor(Color("PrimaryTextColor"))
+                                    .tracking(-0.4)
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+
+                                if !notes.isEmpty {
+                                    Circle()
+                                        .fill(Color("SecondaryTextColor"))
+                                        .frame(width: 2, height: 2)
+                                    Text("\(notes.count)")
+                                        .font(FontManager.metadata(size: 11, weight: .medium))
+                                        .foregroundColor(Color("SecondaryTextColor"))
+                                }
+
+                                Spacer(minLength: 8)
+
+                                Button {
+                                    HapticManager.shared.buttonTap()
+                                    withAnimation(.easeInOut(duration: 0.25)) {
+                                        notesManager.unarchiveFolder(folder)
+                                    }
+                                } label: {
                                     Image("IconStepBack")
                                         .renderingMode(.template)
                                         .resizable()
                                         .scaledToFit()
-                                        .frame(width: 20, height: 20)
+                                        .frame(width: 15, height: 15)
+                                        .foregroundColor(Color("SecondaryTextColor"))
+                                }
+                                .buttonStyle(.plain)
+                                .subtleHoverScale(1.06)
+                                .help("Unarchive Folder")
+                                .opacity(isHovered ? 1 : 0)
+                                .allowsHitTesting(isHovered)
+                            }
+                            .scaleEffect(isHovered ? 1.01 : 1.0)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(8)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(Color.clear)
+                            )
+                            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .animation(.jotHover, value: isHovered)
+                            .onTapGesture {
+                                HapticManager.shared.buttonTap()
+                                withAnimation(.jotSmoothFast) {
+                                    if expandedArchivedFolderIDs.contains(folder.id) {
+                                        expandedArchivedFolderIDs.remove(folder.id)
+                                    } else {
+                                        expandedArchivedFolderIDs.insert(folder.id)
+                                    }
                                 }
                             }
-                            
-                            Button(role: .destructive) {
-                                deleteFolder(folder)
-                            } label: {
-                                Label("Delete Folder", image: "delete")
+                            .onHover { hovering in
+                                if hovering {
+                                    hoveredArchivedFolderID = folder.id
+                                } else if hoveredArchivedFolderID == folder.id {
+                                    hoveredArchivedFolderID = nil
+                                }
+                            }
+                            .contextMenu {
+                                Button {
+                                    notesManager.unarchiveFolder(folder)
+                                } label: {
+                                    Label {
+                                        Text("Unarchive Folder")
+                                    } icon: {
+                                        Image("IconStepBack")
+                                            .renderingMode(.template)
+                                            .resizable()
+                                            .scaledToFit()
+                                            .frame(width: 20, height: 20)
+                                    }
+                                }
+
+                                Button(role: .destructive) {
+                                    deleteFolder(folder)
+                                } label: {
+                                    Label {
+                                        Text("Delete Folder")
+                                    } icon: {
+                                        Image("delete")
+                                            .renderingMode(.template)
+                                            .resizable()
+                                            .scaledToFit()
+                                            .frame(width: 20, height: 20)
+                                    }
+                                }
+                            }
+
+                            if isExpanded && !notes.isEmpty {
+                                archivedFolderNotesList(folder: folder, notes: notes)
                             }
                         }
                     }
@@ -1596,10 +1658,40 @@ struct ContentView: View {
         pendingFolderToEdit = nil
     }
 
+    @ViewBuilder
+    private func archivedFolderNotesList(folder: Folder, notes: [Note]) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(notes, id: \.id) { note in
+                ArchivedNoteRow(
+                    note: note,
+                    isSelected: selectedNoteIDs.contains(note.id),
+                    isActive: note.id == selectedNote?.id,
+                    onTap: { handleNoteTap(note, .plain) },
+                    onUnarchive: { },
+                    onDelete: { requestDeleteNotes([note.id]) },
+                    cornerRadius: 8,
+                    inFolderContext: true
+                )
+            }
+        }
+        .padding(4)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(folder.folderColor.solidFolderTint(for: colorScheme))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.primary.opacity(0.2), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .padding(.leading, 36)
+    }
+
     private func deleteFolder(_ folder: Folder) {
         HapticManager.shared.buttonTap()
         notesManager.deleteFolder(id: folder.id)
         expandedFolderIDs.remove(folder.id)
+        expandedArchivedFolderIDs.remove(folder.id)
         showAllNotesFolderIDs.remove(folder.id)
 
         if let selectedID = selectedNote?.id,
@@ -2413,14 +2505,30 @@ struct PinnedNoteChip: View {
             Button {
                 onUnpin()
             } label: {
-                Label("Unpin Note", image: "IconUnpin")
+                Label {
+                    Text("Unpin Note")
+                } icon: {
+                    Image("IconUnpin")
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 20, height: 20)
+                }
             }
 
             Button {
                 HapticManager.shared.buttonTap()
                 onCreateFolderWithNote()
             } label: {
-                Label("Create New Notebook With Note...", image: "IconFolderAddRight")
+                Label {
+                    Text("Create New Notebook With Note...")
+                } icon: {
+                    Image("IconFolderAddRight")
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 20, height: 20)
+                }
             }
 
             Menu {
@@ -2433,7 +2541,15 @@ struct PinnedNoteChip: View {
                             HapticManager.shared.buttonTap()
                             onMoveToFolder(folder.id)
                         } label: {
-                            Label(folder.name, image: "IconFolder2")
+                            Label {
+                                Text(folder.name)
+                            } icon: {
+                                Image("IconFolder2")
+                                    .renderingMode(.template)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 20, height: 20)
+                            }
                         }
                     }
                 }
@@ -2445,18 +2561,42 @@ struct PinnedNoteChip: View {
                         HapticManager.shared.buttonTap()
                         onMoveToFolder(nil)
                     } label: {
-                        Label("Remove from Notebook", image: "IconFolderOpen")
+                        Label {
+                            Text("Remove from Notebook")
+                        } icon: {
+                            Image("IconFolderOpen")
+                                .renderingMode(.template)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 20, height: 20)
+                        }
                     }
                 }
             } label: {
-                Label("Move to Notebook", image: "IconFolder2")
+                Label {
+                    Text("Move to Notebook")
+                } icon: {
+                    Image("IconFolder2")
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 20, height: 20)
+                }
             }
 
             Button {
                 HapticManager.shared.buttonTap()
                 onExport()
             } label: {
-                Label("Export Note...", image: "export note")
+                Label {
+                    Text("Export Note...")
+                } icon: {
+                    Image("export note")
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 20, height: 20)
+                }
             }
 
             Divider()
@@ -2468,7 +2608,15 @@ struct PinnedNoteChip: View {
                         onArchive()
                     }
                 } label: {
-                    Label("Archive", image: "IconArchive1")
+                    Label {
+                        Text("Archive")
+                    } icon: {
+                        Image("IconArchive1")
+                            .renderingMode(.template)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 20, height: 20)
+                    }
                 }
             }
 
@@ -2478,7 +2626,15 @@ struct PinnedNoteChip: View {
                     onDelete()
                 }
             } label: {
-                Label("Delete", image: "delete")
+                Label {
+                    Text("Delete")
+                } icon: {
+                    Image("delete")
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 20, height: 20)
+                }
             }
         }
     }
