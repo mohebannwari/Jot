@@ -24,6 +24,7 @@ struct FolderSection: View {
     let onRenameFolder: (Folder) -> Void
     var onCommitRenameFolder: ((Folder, String) -> Void)? = nil
     var onRenameNote: ((Note, String) -> Void)? = nil
+    var onArchiveFolder: ((Folder) -> Void)? = nil
     let onDeleteFolder: (Folder) -> Void
     let onDropNotesIntoFolder: (Set<UUID>, UUID) -> Bool
 
@@ -42,11 +43,9 @@ struct FolderSection: View {
                 VStack(alignment: .leading, spacing: 4) {
                     folderRow(folder)
 
-                    folderNotesList(folder)
-                        .frame(height: isExpanded ? nil : 0, alignment: .top)
-                        .clipped()
-                        .opacity(isExpanded ? 1 : 0)
-                        .allowsHitTesting(isExpanded)
+                    if isExpanded {
+                        folderNotesList(folder)
+                    }
                 }
             }
         }
@@ -57,8 +56,9 @@ struct FolderSection: View {
         let isHovered = hoveredFolderID == folder.id
         let isDropTarget = dropTargetFolderID == folder.id
         let shouldShowActions = isHovered
-        let leadingAsset = isExpanded ? "IconFolderOpen" : "IconFolder2"
         let isRenamingThisFolder = renamingFolderID == folder.id
+        let noteCount = (notesByFolder[folder.id] ?? []).count
+        let leadingAsset = noteCount == 0 ? "IconFolderAddRight" : (isExpanded ? "IconFolderOpen" : "IconFolder2")
 
         return HStack(spacing: 8) {
             Image(leadingAsset)
@@ -69,7 +69,7 @@ struct FolderSection: View {
                 .frame(width: 20, height: 20)
 
             if isRenamingThisFolder {
-                TextField("Folder Name", text: $renamingName)
+                TextField("Notebook Name", text: $renamingName)
                     .font(FontManager.heading(size: 15, weight: .medium))
                     .foregroundColor(Color("PrimaryTextColor"))
                     .textFieldStyle(.plain)
@@ -92,7 +92,6 @@ struct FolderSection: View {
                     }
             }
 
-            let noteCount = (notesByFolder[folder.id] ?? []).count
             if noteCount > 0 {
                 Circle()
                     .fill(Color("SecondaryTextColor"))
@@ -110,14 +109,47 @@ struct FolderSection: View {
                         HapticManager.shared.buttonTap()
                         onRenameFolder(folder)
                     } label: {
-                        Label("Edit Folder", image: "rename note")
+                        Label {
+                            Text("Edit Folder")
+                        } icon: {
+                            Image("rename note")
+                                .renderingMode(.template)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 20, height: 20)
+                        }
+                    }
+                    
+                    if let onArchiveFolder {
+                        Button {
+                            HapticManager.shared.buttonTap()
+                            onArchiveFolder(folder)
+                        } label: {
+                            Label {
+                                Text("Archive Folder")
+                            } icon: {
+                                Image("IconArchive1")
+                                    .renderingMode(.template)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 20, height: 20)
+                            }
+                        }
                     }
 
                     Button(role: .destructive) {
                         HapticManager.shared.buttonTap()
                         onDeleteFolder(folder)
                     } label: {
-                        Label("Delete Folder", image: "delete")
+                        Label {
+                            Text("Delete Folder")
+                        } icon: {
+                            Image("delete")
+                                .renderingMode(.template)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 20, height: 20)
+                        }
                     }
                 } label: {
                     Image(systemName: "ellipsis")
@@ -175,14 +207,47 @@ struct FolderSection: View {
                 HapticManager.shared.buttonTap()
                 onRenameFolder(folder)
             } label: {
-                Label("Edit Folder", image: "rename note")
+                Label {
+                    Text("Edit Folder")
+                } icon: {
+                    Image("rename note")
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 20, height: 20)
+                }
+            }
+            
+            if let onArchiveFolder {
+                Button {
+                    HapticManager.shared.buttonTap()
+                    onArchiveFolder(folder)
+                } label: {
+                    Label {
+                        Text("Archive Folder")
+                    } icon: {
+                        Image("IconArchive1")
+                            .renderingMode(.template)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 20, height: 20)
+                    }
+                }
             }
 
             Button(role: .destructive) {
                 HapticManager.shared.buttonTap()
                 onDeleteFolder(folder)
             } label: {
-                Label("Delete Folder", image: "delete")
+                Label {
+                    Text("Delete Folder")
+                } icon: {
+                    Image("delete")
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 20, height: 20)
+                }
             }
         }
         .dropDestination(for: TransferablePayload.self) { payloads, _ in
@@ -222,6 +287,7 @@ struct FolderSection: View {
                             isSelected: selectedNoteIDs.contains(note.id),
                             isActiveNote: note.id == activeNoteID,
                             activeIconTint: folder.folderColor,
+                            isInsideFolder: true,
                             onTap: { interaction in onOpenNote(note, interaction) },
                             onTogglePin: { shouldPin in
                                 onTogglePinForNotes(contextSelection(for: note), shouldPin)
@@ -269,11 +335,11 @@ struct FolderSection: View {
                 .padding(4)
                 .background(
                     containerShape
-                        .fill(folder.folderColor.opacity(0.20))
+                        .fill(folder.folderColor.solidFolderTint(for: colorScheme))
                 )
                 .overlay(
                     containerShape
-                        .stroke(Color.primary.opacity(0.09), lineWidth: 0.5)
+                        .stroke(Color.primary.opacity(0.2), lineWidth: 1)
                 )
                 .clipShape(containerShape)
                 .padding(.leading, 36)

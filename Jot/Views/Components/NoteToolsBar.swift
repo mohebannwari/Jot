@@ -49,7 +49,7 @@ struct NoteToolsBar: View {
                 .renderingMode(.template)
                 .resizable()
                 .scaledToFit()
-                .foregroundColor(Color("SecondaryTextColor"))
+                .foregroundColor(Color("IconSecondaryColor"))
                 .frame(width: iconSize, height: iconSize)
                 .contentShape(Rectangle())
         }
@@ -84,7 +84,7 @@ private struct ShareToolButton: NSViewRepresentable {
         button.isBordered = false
         button.image = NSImage(named: "IconShareOs")
         button.image?.isTemplate = true
-        button.contentTintColor = NSColor(named: "SecondaryTextColor")
+        button.contentTintColor = NSColor(named: "IconSecondaryColor")
         button.imageScaling = .scaleProportionallyUpOrDown
         button.setFrameSize(NSSize(width: iconSize, height: iconSize))
         button.target = context.coordinator

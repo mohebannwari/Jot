@@ -11,6 +11,7 @@ final class SimpleSwiftDataManager: ObservableObject {
         didSet { recomputeDerivedNotes() }
     }
     @Published var archivedNotes: [Note] = []
+    @Published var deletedNotes: [Note] = []
     @Published var folders: [Folder] = []
     @Published var archivedFolders: [Folder] = []
 
@@ -99,7 +100,7 @@ final class SimpleSwiftDataManager: ObservableObject {
     // MARK: - Basic Operations
 
     private func fetchNotesFromStore(limit: Int? = nil) throws -> [Note] {
-        let predicate = #Predicate<NoteEntity> { $0.isArchived == false }
+        let predicate = #Predicate<NoteEntity> { $0.isArchived == false && $0.isDeleted == false }
         var descriptor = FetchDescriptor<NoteEntity>(
             predicate: predicate,
             sortBy: [SortDescriptor(\.modifiedAt, order: .reverse)]
@@ -122,7 +123,7 @@ final class SimpleSwiftDataManager: ObservableObject {
                     operation: .fetch,
                     recordCount: 0
                 ) {
-                    let predicate = #Predicate<NoteEntity> { $0.isArchived == false }
+                    let predicate = #Predicate<NoteEntity> { $0.isArchived == false && $0.isDeleted == false }
                     var descriptor = FetchDescriptor<NoteEntity>(
                         predicate: predicate,
                         sortBy: [SortDescriptor(\.modifiedAt, order: .reverse)]
@@ -147,7 +148,7 @@ final class SimpleSwiftDataManager: ObservableObject {
 
     func loadArchivedNotes() {
         do {
-            let predicate = #Predicate<NoteEntity> { $0.isArchived == true }
+            let predicate = #Predicate<NoteEntity> { $0.isArchived == true && $0.isDeleted == false }
             var descriptor = FetchDescriptor<NoteEntity>(
                 predicate: predicate,
                 sortBy: [SortDescriptor(\.modifiedAt, order: .reverse)]
@@ -339,53 +340,12 @@ final class SimpleSwiftDataManager: ObservableObject {
     }
 
     func deleteNote(id: UUID) {
-        do {
-            let predicate = #Predicate<NoteEntity> { $0.id == id }
-            let descriptor = FetchDescriptor(predicate: predicate)
-            let entities = try modelContext.fetch(descriptor)
-
-            guard let noteEntity = entities.first else {
-                logger.warning("Note with ID \(id) not found for deletion")
-                return
-            }
-
-            modelContext.delete(noteEntity)
-            try modelContext.save()
-
-            notes.removeAll { $0.id == id }
-            logger.info("Deleted note with ID: \(id)")
-
-        } catch {
-            logger.error("Failed to delete note: \(error)")
-        }
+        moveToTrash(ids: [id])
     }
 
     @discardableResult
     func deleteNotes(ids: Set<UUID>) -> Int {
-        guard !ids.isEmpty else { return 0 }
-
-        do {
-            let descriptor = FetchDescriptor<NoteEntity>()
-            let entities = try modelContext.fetch(descriptor)
-            let toDelete = entities.filter { ids.contains($0.id) }
-
-            guard !toDelete.isEmpty else {
-                logger.warning("No matching notes found for batch delete")
-                return 0
-            }
-
-            for entity in toDelete {
-                modelContext.delete(entity)
-            }
-
-            try modelContext.save()
-            notes.removeAll { ids.contains($0.id) }
-            logger.info("Deleted \(toDelete.count) notes in batch")
-            return toDelete.count
-        } catch {
-            logger.error("Failed to batch delete notes: \(error)")
-            return 0
-        }
+        moveToTrash(ids: ids)
     }
 
     // MARK: - Archive Operations
@@ -448,6 +408,158 @@ final class SimpleSwiftDataManager: ObservableObject {
         } catch {
             logger.error("Failed to batch unarchive notes: \(error)")
             return 0
+        }
+    }
+
+    // MARK: - Trash Operations
+
+    func loadDeletedNotes() {
+        do {
+            let predicate = #Predicate<NoteEntity> { $0.isDeleted == true }
+            var descriptor = FetchDescriptor<NoteEntity>(
+                predicate: predicate,
+                sortBy: [SortDescriptor(\.modifiedAt, order: .reverse)]
+            )
+            descriptor.fetchLimit = maxLoadLimit
+            let fetched = try modelContext.fetch(descriptor).map { $0.toNote() }
+            deletedNotes = fetched
+            logger.info("Loaded \(fetched.count) deleted notes")
+        } catch {
+            logger.error("Failed to load deleted notes: \(error)")
+            deletedNotes = []
+        }
+    }
+
+    @discardableResult
+    func moveToTrash(ids: Set<UUID>) -> Int {
+        guard !ids.isEmpty else { return 0 }
+
+        do {
+            let descriptor = FetchDescriptor<NoteEntity>()
+            let entities = try modelContext.fetch(descriptor)
+            let toTrash = entities.filter { ids.contains($0.id) && !$0.isDeleted }
+
+            guard !toTrash.isEmpty else {
+                logger.warning("No matching notes found for move to trash")
+                return 0
+            }
+
+            let now = Date()
+            for entity in toTrash {
+                entity.isDeleted = true
+                entity.deletedDate = now
+                entity.modifiedAt = now
+            }
+
+            try modelContext.save()
+            notes.removeAll { ids.contains($0.id) }
+            archivedNotes.removeAll { ids.contains($0.id) }
+            loadDeletedNotes()
+            logger.info("Moved \(toTrash.count) notes to trash")
+            return toTrash.count
+        } catch {
+            logger.error("Failed to move notes to trash: \(error)")
+            return 0
+        }
+    }
+
+    @discardableResult
+    func restoreFromTrash(ids: Set<UUID>) -> Int {
+        guard !ids.isEmpty else { return 0 }
+
+        do {
+            let predicate = #Predicate<NoteEntity> { $0.isDeleted == true }
+            let descriptor = FetchDescriptor<NoteEntity>(predicate: predicate)
+            let entities = try modelContext.fetch(descriptor)
+            let toRestore = entities.filter { ids.contains($0.id) }
+
+            guard !toRestore.isEmpty else {
+                logger.warning("No matching deleted notes found for restore")
+                return 0
+            }
+
+            for entity in toRestore {
+                entity.isDeleted = false
+                entity.deletedDate = nil
+                entity.modifiedAt = Date()
+            }
+
+            try modelContext.save()
+            deletedNotes.removeAll { ids.contains($0.id) }
+            loadNotes()
+            logger.info("Restored \(toRestore.count) notes from trash")
+            return toRestore.count
+        } catch {
+            logger.error("Failed to restore notes from trash: \(error)")
+            return 0
+        }
+    }
+
+    @discardableResult
+    func permanentlyDeleteNotes(ids: Set<UUID>) -> Int {
+        guard !ids.isEmpty else { return 0 }
+
+        do {
+            let predicate = #Predicate<NoteEntity> { $0.isDeleted == true }
+            let descriptor = FetchDescriptor<NoteEntity>(predicate: predicate)
+            let entities = try modelContext.fetch(descriptor)
+            let toDelete = entities.filter { ids.contains($0.id) }
+
+            guard !toDelete.isEmpty else {
+                logger.warning("No matching deleted notes found for permanent delete")
+                return 0
+            }
+
+            for entity in toDelete {
+                modelContext.delete(entity)
+            }
+
+            try modelContext.save()
+            deletedNotes.removeAll { ids.contains($0.id) }
+            logger.info("Permanently deleted \(toDelete.count) notes")
+            return toDelete.count
+        } catch {
+            logger.error("Failed to permanently delete notes: \(error)")
+            return 0
+        }
+    }
+
+    func emptyTrash() {
+        do {
+            let predicate = #Predicate<NoteEntity> { $0.isDeleted == true }
+            let descriptor = FetchDescriptor<NoteEntity>(predicate: predicate)
+            let entities = try modelContext.fetch(descriptor)
+
+            for entity in entities {
+                modelContext.delete(entity)
+            }
+
+            try modelContext.save()
+            deletedNotes.removeAll()
+            logger.info("Emptied trash (\(entities.count) notes)")
+        } catch {
+            logger.error("Failed to empty trash: \(error)")
+        }
+    }
+
+    func restoreAllFromTrash() {
+        do {
+            let predicate = #Predicate<NoteEntity> { $0.isDeleted == true }
+            let descriptor = FetchDescriptor<NoteEntity>(predicate: predicate)
+            let entities = try modelContext.fetch(descriptor)
+
+            for entity in entities {
+                entity.isDeleted = false
+                entity.deletedDate = nil
+                entity.modifiedAt = Date()
+            }
+
+            try modelContext.save()
+            deletedNotes.removeAll()
+            loadNotes()
+            logger.info("Restored all \(entities.count) notes from trash")
+        } catch {
+            logger.error("Failed to restore all from trash: \(error)")
         }
     }
 

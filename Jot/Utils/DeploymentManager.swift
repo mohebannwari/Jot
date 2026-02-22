@@ -99,7 +99,7 @@ final class DeploymentManager: ObservableObject {
             buildNumber: buildInfo.buildNumber,
             releaseDate: Date(),
             features: [
-                "Enhanced performance with iOS 26+ optimizations",
+                "Enhanced performance with macOS 26+ optimizations",
                 "Improved Liquid Glass effects",
                 "Advanced SwiftData integration",
                 "Comprehensive backup system",

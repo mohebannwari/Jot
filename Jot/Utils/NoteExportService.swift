@@ -9,11 +9,7 @@
 import Foundation
 import PDFKit
 import UniformTypeIdentifiers
-#if os(macOS)
 import AppKit
-#else
-import UIKit
-#endif
 
 /// Enum representing available export formats for notes
 enum NoteExportFormat: String, CaseIterable, Identifiable {
@@ -36,6 +32,14 @@ enum NoteExportFormat: String, CaseIterable, Identifiable {
         case .pdf: return "doc"
         case .markdown: return "doc.text"
         case .html: return "globe"
+        }
+    }
+
+    var iconAssetName: String {
+        switch self {
+        case .pdf: return "IconFilePdf"
+        case .markdown: return "IconMarkdown"
+        case .html: return "IconWebsite"
         }
     }
 }
@@ -80,7 +84,6 @@ final class NoteExportService {
     // MARK: - PDF Export
 
     private func exportToPDF(notes: [Note], filename: String) async -> Bool {
-        #if os(macOS)
         // Create PDF data
         let pdfData = NSMutableData()
 
@@ -196,10 +199,6 @@ final class NoteExportService {
         pdfContext.closePDF()
 
         return saveFile(data: pdfData as Data, filename: filename, fileExtension: "pdf")
-        #else
-        NSLog("NoteExportService: PDF export not supported on iOS")
-        return false
-        #endif
     }
 
     // MARK: - Markdown Export
@@ -391,7 +390,6 @@ final class NoteExportService {
     /// Save file using NSSavePanel
     /// CRITICAL: This must be called from a synchronous context to allow runModal() to work
     private nonisolated func saveFile(data: Data, filename: String, fileExtension: String) -> Bool {
-        #if os(macOS)
         // runModal() MUST run on the main thread in a synchronous context
         // We use DispatchQueue.main.sync to escape the async context
         var result = false
@@ -406,13 +404,8 @@ final class NoteExportService {
         }
 
         return result
-        #else
-        NSLog("NoteExportService: File saving not supported on iOS")
-        return false
-        #endif
     }
 
-    #if os(macOS)
     /// Helper to run save panel on main thread
     private nonisolated func saveFileOnMainThread(data: Data, filename: String, fileExtension: String) -> Bool {
         NSLog("NoteExportService: Starting save file dialog for %@.%@", filename, fileExtension)
@@ -449,7 +442,6 @@ final class NoteExportService {
             return false
         }
     }
-    #endif
 
     /// Sanitize filename by removing invalid characters
     private func sanitizeFilename(_ filename: String) -> String {

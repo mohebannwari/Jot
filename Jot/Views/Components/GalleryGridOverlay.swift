@@ -7,16 +7,12 @@
 
 import SwiftUI
 
-#if os(macOS)
 import AppKit
-#else
-import UIKit
-#endif
 
 struct GalleryGridOverlay: View {
     struct Item: Identifiable {
         let id: String
-        let image: PlatformImage
+        let image: NSImage
     }
 
     let items: [Item]
@@ -105,11 +101,7 @@ struct GalleryGridOverlay: View {
 
     private var backgroundLayer: some View {
         ZStack {
-#if os(macOS)
             BackdropBlurView(material: .hudWindow, blendingMode: .withinWindow)
-#else
-            BackdropBlurView(style: .systemUltraThinMaterialDark)
-#endif
             Color.black.opacity(colorScheme == .dark ? 0.08 : 0.06)
         }
         .ignoresSafeArea()
@@ -149,7 +141,7 @@ struct GalleryGridOverlay: View {
             .contentShape(surfaceShape)
             .background(surfaceShape.fill(Color.clear))
             .if(available26) { view in
-                if #available(iOS 26.0, macOS 26.0, *) {
+                if #available(macOS 26.0, *) {
                     AnyView(
                         view
                             .glassEffect(.regular.interactive(true), in: surfaceShape)
@@ -171,9 +163,7 @@ struct GalleryGridOverlay: View {
         }
         .buttonStyle(.plain)
         .padding(.bottom, 32)
-#if os(macOS)
         .keyboardShortcut(.cancelAction)
-#endif
     }
 
     private var closeSymbolColor: Color {
@@ -205,8 +195,7 @@ struct GalleryGridOverlay: View {
         .animation(.spring(response: 0.36, dampingFraction: 0.82), value: selectedItem?.id)
     }
 
-    private func lightboxImage(for image: PlatformImage) -> some View {
-#if os(macOS)
+    private func lightboxImage(for image: NSImage) -> some View {
         return Image(nsImage: image)
             .resizable()
             .aspectRatio(imageAspectRatio(for: image), contentMode: .fit)
@@ -215,19 +204,9 @@ struct GalleryGridOverlay: View {
                 RoundedRectangle(cornerRadius: 32, style: .continuous)
                     .stroke(lightboxStrokeColor, lineWidth: 1)
             )
-#else
-        return Image(uiImage: image)
-            .resizable()
-            .aspectRatio(imageAspectRatio(for: image), contentMode: .fit)
-            .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 32, style: .continuous)
-                    .stroke(lightboxStrokeColor, lineWidth: 1)
-            )
-#endif
     }
 
-    private func fittedSize(for image: PlatformImage, in available: CGSize) -> CGSize {
+    private func fittedSize(for image: NSImage, in available: CGSize) -> CGSize {
         let aspect = imageAspectRatio(for: image)
         let maxWidth = available.width * 0.82
         let maxHeight = available.height * 0.82
@@ -247,16 +226,10 @@ struct GalleryGridOverlay: View {
         return CGSize(width: width, height: height)
     }
 
-    private func imageAspectRatio(for image: PlatformImage) -> CGFloat {
-#if os(macOS)
+    private func imageAspectRatio(for image: NSImage) -> CGFloat {
         let size = image.size
         guard size.height > 0 else { return 1 }
         return max(CGFloat(size.width / size.height), 0.1)
-#else
-        let size = image.size
-        guard size.height > 0 else { return 1 }
-        return max(size.width / size.height, 0.1)
-#endif
     }
 
     private func gridColumns(for width: CGFloat) -> [GridItem] {
@@ -334,7 +307,7 @@ struct GalleryGridOverlay: View {
     }
 
     private var available26: Bool {
-        if #available(iOS 26.0, macOS 26.0, *) {
+        if #available(macOS 26.0, *) {
             return true
         }
         return false
@@ -342,7 +315,7 @@ struct GalleryGridOverlay: View {
 }
 
 private struct GalleryGridTile: View {
-    let image: PlatformImage
+    let image: NSImage
     let imageNumber: Int
     @Environment(\.colorScheme) private var colorScheme
 
@@ -403,11 +376,7 @@ private struct GalleryGridTile: View {
     }
 
     private var platformImage: Image {
-#if os(macOS)
         Image(nsImage: image)
-#else
-        Image(uiImage: image)
-#endif
     }
 }
 

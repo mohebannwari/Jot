@@ -2,13 +2,185 @@
 //  NoteDetailView+Actions.swift
 //  Jot
 //
-//  Voice recording, image selection, link insertion, and overlay
-//  management extracted from NoteDetailView.
+//  Voice recording, image selection, link insertion, overlay
+//  management, and Apple Intelligence handlers.
 //
 
 import SwiftUI
 
 extension NoteDetailView {
+
+    // MARK: - Apple Intelligence
+
+    @MainActor
+    func handleAITool(_ tool: AITool) async {
+        let content = editedContent
+        guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        withAnimation(.jotSpring) {
+            aiPanelState = .loading(tool)
+            aiIsProcessing = true
+        }
+        do {
+            switch tool {
+            case .summary:
+                let result = try await AppleIntelligenceService.shared.summarize(text: content)
+                withAnimation(.jotSpring) {
+                    aiSummaryText = result
+                    aiPanelState = .none
+                }
+            case .keyPoints:
+                let points = try await AppleIntelligenceService.shared.keyPoints(text: content)
+                withAnimation(.jotSpring) {
+                    aiKeyPointsItems = points
+                    aiPanelState = .none
+                }
+            case .proofread:
+                let textToProofread = capturedSelectionText.isEmpty ? content : capturedSelectionText
+                let rawAnnotations = try await AppleIntelligenceService.shared.proofread(text: textToProofread)
+                let nsContent = content as NSString  // filter against full document for overlay positioning
+                let annotations = rawAnnotations.filter {
+                    nsContent.range(of: $0.original, options: .literal).location != NSNotFound
+                }
+                currentProofreadIndex = 0
+                withAnimation(.jotSpring) { aiPanelState = .proofread(annotations) }
+                NotificationCenter.default.post(name: .aiProofreadClearOverlays, object: nil)
+                if !annotations.isEmpty {
+                    NotificationCenter.default.post(
+                        name: .aiProofreadShowAnnotations,
+                        object: annotations,
+                        userInfo: ["activeIndex": 0]
+                    )
+                }
+            case .editContent:
+                break  // handled by .aiEditSubmit notification
+            }
+        } catch {
+            withAnimation(.jotSpring) {
+                aiPanelState = .error(error.localizedDescription)
+            }
+        }
+        aiIsProcessing = false
+    }
+
+    @MainActor
+    func handleAIEdit(instruction: String) async {
+        let sourceText = capturedSelectionText.isEmpty ? editedContent : capturedSelectionText
+        guard !sourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+
+        // Resolve panel position before showing the panel so it never appears at (0,0)
+        if capturedSelectionWindowRect != .zero {
+            // FloatingToolbarPositioner reads the real window bounds from NSApp.keyWindow on macOS;
+            // the visibleWidth/Height params are only fallbacks for non-macOS paths.
+            let result = FloatingToolbarPositioner.calculatePosition(
+                selectionWindowX: capturedSelectionWindowRect.minX,
+                selectionWindowY: capturedSelectionWindowRect.minY,
+                selectionWidth: capturedSelectionWindowRect.width,
+                selectionHeight: capturedSelectionWindowRect.height,
+                visibleWidth: 0,
+                visibleHeight: 0,
+                toolbarWidth: 320,
+                toolbarHeight: 160
+            )
+            editContentPanelPosition = result.origin
+        }
+
+        withAnimation(.jotSpring) {
+            aiPanelState = .loading(.editContent)
+            showEditContentPanel = true
+            aiIsProcessing = true
+        }
+
+        do {
+            let revised = try await AppleIntelligenceService.shared.editContent(
+                text: sourceText, instruction: instruction)
+            withAnimation(.jotSpring) {
+                aiPanelState = .editPreview(
+                    revised: revised,
+                    originalRange: capturedSelectionRange,
+                    originalText: sourceText,
+                    instruction: instruction
+                )
+            }
+        } catch {
+            withAnimation(.jotSpring) {
+                aiPanelState = .error(error.localizedDescription)
+                showEditContentPanel = false
+            }
+        }
+        aiIsProcessing = false
+    }
+
+    /// Apply the revised text from an editPreview state, replacing the captured range or full content.
+    func applyEditContentReplacement() {
+        guard case .editPreview(let revised, let range, _, _) = aiPanelState else { return }
+
+        if range.location != NSNotFound,
+           let swiftRange = Range(range, in: editedContent)
+        {
+            editedContent.replaceSubrange(swiftRange, with: revised)
+        } else {
+            editedContent = revised
+        }
+
+        scheduleAutosave()
+        withAnimation(.jotSpring) {
+            showEditContentPanel = false
+            aiPanelState = .none
+        }
+    }
+
+    /// Applies all remaining proofread suggestions to the note text, then clears overlays.
+    func replaceAllSuggestions() {
+        guard case .proofread(let annotations) = aiPanelState, !annotations.isEmpty else { return }
+
+        var text = editedContent
+
+        // Sort by first-occurrence position descending so replacements don't shift earlier indices
+        let sorted: [(annotation: ProofreadAnnotation, location: Int)] = annotations.compactMap { ann in
+            let range = (text as NSString).range(of: ann.original, options: .literal)
+            guard range.location != NSNotFound else { return nil }
+            return (ann, range.location)
+        }.sorted { $0.location > $1.location }
+
+        for entry in sorted {
+            let ns = text as NSString
+            let range = ns.range(of: entry.annotation.original, options: .literal)
+            if range.location != NSNotFound {
+                text = ns.replacingCharacters(in: range, with: entry.annotation.replacement)
+            }
+        }
+
+        editedContent = text
+        scheduleAutosave()
+        NotificationCenter.default.post(name: .aiProofreadClearOverlays, object: nil)
+        withAnimation(.jotSpring) { aiPanelState = .proofread([]) }
+    }
+
+    func navigateToNextProofreadSuggestion() {
+        guard case .proofread(let annotations) = aiPanelState, !annotations.isEmpty else { return }
+        currentProofreadIndex = (currentProofreadIndex + 1) % annotations.count
+        NotificationCenter.default.post(
+            name: .aiProofreadShowAnnotations,
+            object: annotations,
+            userInfo: ["activeIndex": currentProofreadIndex]
+        )
+    }
+
+    func navigateToPrevProofreadSuggestion() {
+        guard case .proofread(let annotations) = aiPanelState, !annotations.isEmpty else { return }
+        currentProofreadIndex = (currentProofreadIndex - 1 + annotations.count) % annotations.count
+        NotificationCenter.default.post(
+            name: .aiProofreadShowAnnotations,
+            object: annotations,
+            userInfo: ["activeIndex": currentProofreadIndex]
+        )
+    }
+
+    /// Re-runs the same instruction from an editPreview state.
+    func redoEditContent() {
+        guard case .editPreview(_, _, _, let instruction) = aiPanelState else { return }
+        Task { await handleAIEdit(instruction: instruction) }
+    }
 
     // MARK: - Voice Recording
 

@@ -160,6 +160,40 @@ extension Folder {
     }
 }
 
+// MARK: - Solid Folder Tint
+
+extension Color {
+    /// Returns a fully opaque tint derived from this color, suitable for folder
+    /// section backgrounds. Light mode blends 78 % toward white; dark mode blends
+    /// 75 % toward a warm near-black base.
+    func solidFolderTint(for colorScheme: ColorScheme) -> Color {
+        let ns = NSColor(self).usingColorSpace(.sRGB)
+            ?? NSColor(self).usingColorSpace(.deviceRGB)
+            ?? NSColor(red: 0.5, green: 0.5, blue: 0.5, alpha: 1)
+
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        ns.getRed(&r, green: &g, blue: &b, alpha: &a)
+
+        switch colorScheme {
+        case .dark:
+            let baseR: CGFloat = 0.08, baseG: CGFloat = 0.06, baseB: CGFloat = 0.05
+            let t: CGFloat = 0.73
+            return Color(
+                red:   r * (1 - t) + baseR * t,
+                green: g * (1 - t) + baseG * t,
+                blue:  b * (1 - t) + baseB * t
+            )
+        default:
+            let t: CGFloat = 0.75
+            return Color(
+                red:   r * (1 - t) + 1.0 * t,
+                green: g * (1 - t) + 1.0 * t,
+                blue:  b * (1 - t) + 1.0 * t
+            )
+        }
+    }
+}
+
 // MARK: - Conditional View Modifier
 
 extension View {
@@ -178,42 +212,43 @@ extension View {
 struct ShimmerModifier: ViewModifier {
     let isActive: Bool
     @State private var phase: CGFloat = 0
-    @Environment(\.colorScheme) private var colorScheme
 
     func body(content: Content) -> some View {
-        content
-            .overlay {
-                if isActive {
+        if isActive {
+            content
+                .opacity(0.35)
+                .overlay {
                     GeometryReader { geo in
-                        LinearGradient(
-                            stops: [
-                                .init(color: .clear, location: 0),
-                                .init(color: shimmerColor.opacity(0.8), location: 0.5),
-                                .init(color: .clear, location: 1)
-                            ],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                        .frame(width: geo.size.width)
-                        .blur(radius: 10)
-                        .offset(x: -geo.size.width + (phase * 2 * geo.size.width))
-                        .mask(content)
+                        content
+                            .opacity(1)
+                            .mask {
+                                LinearGradient(
+                                    stops: [
+                                        .init(color: .clear, location: 0),
+                                        .init(color: .white, location: 0.4),
+                                        .init(color: .white, location: 0.6),
+                                        .init(color: .clear, location: 1)
+                                    ],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                                .frame(width: geo.size.width * 0.6)
+                                .offset(x: -geo.size.width + (phase * 2.5 * geo.size.width))
+                            }
                     }
                     .allowsHitTesting(false)
                     .onAppear {
                         withAnimation(
-                            .linear(duration: 3.5)
+                            .linear(duration: 2.5)
                             .repeatForever(autoreverses: false)
                         ) {
                             phase = 1
                         }
                     }
                 }
-            }
-    }
-
-    private var shimmerColor: Color {
-        colorScheme == .dark ? .black : .white
+        } else {
+            content
+        }
     }
 }
 
@@ -221,4 +256,25 @@ extension View {
     func shimmering(active: Bool = true) -> some View {
         modifier(ShimmerModifier(isActive: active))
     }
+}
+
+// MARK: - AI Notification Names
+
+extension Notification.Name {
+    static let aiToolAction = Notification.Name("AIToolAction")
+    static let aiEditSubmit = Notification.Name("AIEditSubmit")
+
+    // Edit Content selection capture
+    // Posted by AIToolsOverlay when "Edit Content" is tapped — triggers Coordinator to read selection
+    static let aiEditRequestSelection = Notification.Name("AIEditRequestSelection")
+    // Posted by Coordinator; userInfo: ["nsRange": NSRange, "selectedText": String, "windowRect": CGRect]
+    static let aiEditCaptureSelection = Notification.Name("AIEditCaptureSelection")
+
+    // Proofread overlay management
+    // Posted to remove all proofread pill views and underlines from the editor
+    static let aiProofreadClearOverlays = Notification.Name("AIProofreadClearOverlays")
+    // Posted by AIToolsOverlay/NoteDetailView+Actions with object: [ProofreadAnnotation]
+    static let aiProofreadShowAnnotations = Notification.Name("AIProofreadShowAnnotations")
+    // Posted by ProofreadPillView; userInfo: ["original": String, "replacement": String]
+    static let aiProofreadApplySuggestion = Notification.Name("AIProofreadApplySuggestion")
 }

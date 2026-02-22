@@ -8,11 +8,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import PhotosUI
-#if os(macOS)
 import AppKit
-#else
-import UIKit
-#endif
 
 public struct ImagePickerControl: View {
     let onImageSelected: (URL) -> Void
@@ -61,11 +57,7 @@ public struct ImagePickerControl: View {
     }
 }
 
-// MARK: - Platform-Specific Image Picker
-
-#if os(macOS)
-
-// MARK: - Native macOS Photo Picker with Multiple Selection
+// MARK: - Photo Picker with Multiple Selection
 struct ImagePicker: View {
     let onImagesSelected: ([URL]) -> Void
     let onDismiss: () -> Void
@@ -180,98 +172,3 @@ private struct PhotoPickerRepresentable: NSViewControllerRepresentable {
         }
     }
 }
-
-#else
-
-// MARK: - iOS Photo Picker with Multiple Selection
-struct ImagePicker: UIViewControllerRepresentable {
-    let onImagesSelected: ([URL]) -> Void
-    let onDismiss: () -> Void
-    
-    func makeUIViewController(context: Context) -> PHPickerViewController {
-        var config = PHPickerConfiguration(photoLibrary: .shared())
-        config.filter = .images
-        config.selectionLimit = 10 // Allow multiple selection on iOS too
-        config.preferredAssetRepresentationMode = .current
-        
-        let picker = PHPickerViewController(configuration: config)
-        picker.delegate = context.coordinator
-        return picker
-    }
-    
-    func updateUIViewController(_ uiViewController: PHPickerViewController, context: Context) {
-        // No updates needed
-    }
-    
-    func makeCoordinator() -> Coordinator {
-        Coordinator(onImagesSelected: onImagesSelected, onDismiss: onDismiss)
-    }
-    
-    class Coordinator: NSObject, PHPickerViewControllerDelegate {
-        let onImagesSelected: ([URL]) -> Void
-        let onDismiss: () -> Void
-        
-        init(onImagesSelected: @escaping ([URL]) -> Void, onDismiss: @escaping () -> Void) {
-            self.onImagesSelected = onImagesSelected
-            self.onDismiss = onDismiss
-        }
-        
-        func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
-            // Dismiss first on iOS (works properly)
-            picker.dismiss(animated: true)
-            onDismiss()
-            
-            guard !results.isEmpty else {
-                NSLog("ImagePicker: No images selected")
-                return
-            }
-            
-            NSLog("ImagePicker: User selected \(results.count) image(s)")
-            
-            // Load all selected images
-            let dispatchGroup = DispatchGroup()
-            var loadedURLs: [URL] = []
-            
-            for result in results {
-                dispatchGroup.enter()
-                
-                result.itemProvider.loadFileRepresentation(forTypeIdentifier: UTType.image.identifier) { url, error in
-                    defer { dispatchGroup.leave() }
-                    
-                    if let error = error {
-                        NSLog("ImagePicker: Error loading image: %@", error.localizedDescription)
-                        return
-                    }
-                    
-                    guard let url = url else {
-                        NSLog("ImagePicker: No URL returned from picker")
-                        return
-                    }
-                    
-                    // Copy to temporary location since the original URL may be cleaned up
-                    let tempURL = FileManager.default.temporaryDirectory
-                        .appendingPathComponent(UUID().uuidString)
-                        .appendingPathExtension(url.pathExtension)
-                    
-                    do {
-                        try FileManager.default.copyItem(at: url, to: tempURL)
-                        NSLog("ImagePicker: Copied image to temporary URL: %@", tempURL.path)
-                        loadedURLs.append(tempURL)
-                    } catch {
-                        NSLog("ImagePicker: Failed to copy image: %@", error.localizedDescription)
-                    }
-                }
-            }
-            
-            // Wait for all images to load
-            dispatchGroup.notify(queue: .main) {
-                NSLog("ImagePicker: Finished loading \(loadedURLs.count) image(s)")
-                if !loadedURLs.isEmpty {
-                    self.onImagesSelected(loadedURLs)
-                }
-            }
-        }
-    }
-}
-
-#endif

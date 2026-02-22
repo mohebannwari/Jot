@@ -2,13 +2,12 @@
 //  ExportFormatSheet.swift
 //  Jot
 //
-//  Export format selection sheet with Liquid Glass UI
+//  Export format selection sheet — three horizontal pills, liquid glass container.
 //
 
 import SwiftUI
 
 struct ExportFormatSheet: View {
-    @Environment(\.dismiss) private var dismiss
     @Binding var isPresented: Bool
     let notes: [Note]
     var onExport: (([Note], NoteExportFormat) -> Void)?
@@ -16,172 +15,132 @@ struct ExportFormatSheet: View {
     @State private var selectedFormat: NoteExportFormat = .pdf
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Header
-            VStack(spacing: 8) {
-                Text("Export Note\(notes.count > 1 ? "s" : "")")
-                    .font(FontManager.heading(size: 20, weight: .semibold))
-                    .foregroundColor(Color("PrimaryTextColor"))
+        VStack(spacing: 16) {
+            formatRow
+            buttonSection
+        }
+        .padding(12)
+        .liquidGlass(in: RoundedRectangle(cornerRadius: 32, style: .continuous))
+        .shadow(color: Color.black.opacity(0.12), radius: 24, x: 0, y: 8)
+        .shadow(color: Color.black.opacity(0.06), radius: 6, x: 0, y: 2)
+        .frame(width: 357)
+    }
 
-                if notes.count > 1 {
-                    Text("\(notes.count) notes selected")
-                        .font(FontManager.body(size: 14, weight: .regular))
-                        .foregroundColor(Color("SecondaryTextColor"))
+    // MARK: - Format Row
+
+    private var formatRow: some View {
+        HStack(spacing: 4) {
+            ForEach(NoteExportFormat.allCases) { format in
+                FormatPillButton(
+                    format: format,
+                    isSelected: selectedFormat == format
+                ) {
+                    HapticManager.shared.buttonTap()
+                    withAnimation(.jotBounce) {
+                        selectedFormat = format
+                    }
                 }
             }
-            .padding(.top, 24)
-            .padding(.bottom, 20)
+        }
+    }
 
-            // Format Selection
-            VStack(spacing: 12) {
-                ForEach(NoteExportFormat.allCases) { format in
-                    FormatButton(
-                        format: format,
-                        isSelected: selectedFormat == format,
-                        action: {
-                            HapticManager.shared.buttonTap()
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                selectedFormat = format
-                            }
-                        }
-                    )
-                }
-            }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 24)
+    // MARK: - Buttons
 
-            // Export Button
+    private var buttonSection: some View {
+        VStack(spacing: 8) {
             Button {
                 handleExport()
             } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "square.and.arrow.down")
-                        .font(FontManager.icon(weight: .semibold))
-
-                    Text("Export")
-                        .font(FontManager.heading(size: 16, weight: .semibold))
-                }
-                .foregroundColor(Color("PrimaryTextColor"))
-                .frame(maxWidth: .infinity)
-                .frame(height: 48)
-                .tintedLiquidGlass(
-                    in: RoundedRectangle(cornerRadius: 16),
-                    tint: Color("SurfaceTranslucentColor")
-                )
+                Text("Export")
+                    .font(FontManager.heading(size: 12, weight: .semibold))
+                    .tracking(-0.3)
+                    .foregroundColor(Color("ButtonPrimaryTextColor"))
+                    .frame(height: 44)
+                    .frame(maxWidth: .infinity)
+                    .background(Color("ButtonPrimaryBgColor"))
+                    .clipShape(Capsule())
             }
             .buttonStyle(.plain)
-            .padding(.horizontal, 24)
-            .padding(.bottom, 12)
+            .subtleHoverScale(1.02)
 
-            // Cancel Button
             Button {
                 HapticManager.shared.buttonTap()
                 isPresented = false
             } label: {
                 Text("Cancel")
-                    .font(FontManager.heading(size: 16, weight: .semibold))
-                    .foregroundColor(Color("SecondaryTextColor"))
+                    .font(FontManager.heading(size: 12, weight: .semibold))
+                    .tracking(-0.3)
+                    .foregroundColor(Color("PrimaryTextColor"))
+                    .frame(height: 36)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 48)
-                    .tintedLiquidGlass(
-                        in: RoundedRectangle(cornerRadius: 16),
-                        tint: Color("SurfaceTranslucentColor").opacity(0.5),
-                        strokeOpacity: 0.04
-                    )
             }
             .buttonStyle(.plain)
-            .padding(.horizontal, 24)
-            .padding(.bottom, 24)
+            .subtleHoverScale(1.02)
         }
-        .frame(width: 400)
-        .liquidGlass(in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .shadow(
-            color: Color.black.opacity(0.12),
-            radius: 24,
-            x: 0,
-            y: 12
-        )
     }
+
+    // MARK: - Helpers
 
     private func handleExport() {
         HapticManager.shared.buttonTap()
-
         isPresented = false
-
         let format = selectedFormat
         let exportNotes = notes
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
             onExport?(exportNotes, format)
         }
     }
 }
 
-// MARK: - Format Button Component
+// MARK: - Format Pill Button
 
-struct FormatButton: View {
+private struct FormatPillButton: View {
     let format: NoteExportFormat
     let isSelected: Bool
     let action: () -> Void
 
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                // Icon
-                Image(systemName: format.systemImage)
-                    .font(FontManager.icon())
-                    .foregroundColor(isSelected ? Color("PrimaryTextColor") : Color("SecondaryTextColor"))
-                    .frame(width: 20, height: 20)
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var isHovered = false
 
-                // Format Info
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(format.rawValue)
-                        .font(FontManager.heading(size: 16, weight: .semibold))
-                        .foregroundColor(Color("PrimaryTextColor"))
-
-                    Text(formatDescription(for: format))
-                        .font(FontManager.body(size: 13, weight: .regular))
-                        .foregroundColor(Color("SecondaryTextColor"))
-                }
-
-                Spacer()
-
-                // Selection Indicator
-                ZStack {
-                    Circle()
-                        .stroke(
-                            isSelected ? Color.accentColor : Color("TertiaryTextColor").opacity(0.3),
-                            lineWidth: 2
-                        )
-                        .frame(width: 20, height: 20)
-
-                    if isSelected {
-                        Circle()
-                            .fill(Color.accentColor)
-                            .frame(width: 15, height: 15)
-                    }
-                }
-            }
-            .padding(16)
-            .frame(maxWidth: .infinity)
-            .tintedLiquidGlass(
-                in: RoundedRectangle(cornerRadius: 16),
-                tint: isSelected ? Color.accentColor.opacity(0.08) : Color("SurfaceTranslucentColor"),
-                strokeOpacity: isSelected ? 0.2 : 0.06
-            )
-        }
-        .buttonStyle(.plain)
+    private var pillBackground: Color {
+        colorScheme == .light ? .white : Color("bg/secondary")
     }
 
-    private func formatDescription(for format: NoteExportFormat) -> String {
-        switch format {
-        case .pdf:
-            return "Portable Document Format with images"
-        case .markdown:
-            return "Plain text with markdown formatting"
-        case .html:
-            return "Web page with embedded images"
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                Image(format.iconAssetName)
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .foregroundColor(Color("IconSecondaryColor"))
+                    .frame(width: 20, height: 20)
+
+                Text(format.rawValue)
+                    .font(FontManager.heading(size: 13, weight: .medium))
+                    .tracking(-0.4)
+                    .foregroundColor(Color("PrimaryTextColor"))
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity)
+            .background(pillBackground)
+            .clipShape(Capsule())
+            .overlay(
+                Capsule()
+                    .strokeBorder(
+                        isSelected ? Color("SettingsSelectionOrange") : Color.clear,
+                        lineWidth: 2.5
+                    )
+                    .animation(.jotBounce, value: isSelected)
+            )
+            .shadow(color: Color.black.opacity(0.08), radius: 12, x: 0, y: 4)
+            .shadow(color: Color.black.opacity(0.04), radius: 3, x: 0, y: 1)
+            .scaleEffect(isHovered ? 1.04 : (isSelected ? 1.02 : 1.0))
+            .animation(.jotHover, value: isHovered)
+            .animation(.jotBounce, value: isSelected)
         }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
     }
 }
 
@@ -191,7 +150,8 @@ struct FormatButton: View {
     ExportFormatSheet(
         isPresented: .constant(true),
         notes: [
-            Note(title: "Sample Note", content: "This is a sample note with some content.")
+            Note(title: "Sample Note", content: "This is a sample note.")
         ]
     )
+    .padding(40)
 }

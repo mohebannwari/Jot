@@ -16,6 +16,8 @@ struct Note: Identifiable, Codable, Equatable {
     var isPinned: Bool = false
     var folderID: UUID?
     var isArchived: Bool = false
+    var isDeleted: Bool = false
+    var deletedDate: Date?
 
     init(
         title: String,
@@ -23,7 +25,9 @@ struct Note: Identifiable, Codable, Equatable {
         tags: [String] = [],
         isPinned: Bool = false,
         folderID: UUID? = nil,
-        isArchived: Bool = false
+        isArchived: Bool = false,
+        isDeleted: Bool = false,
+        deletedDate: Date? = nil
     ) {
         self.id = UUID()
         self.title = title
@@ -33,5 +37,7 @@ struct Note: Identifiable, Codable, Equatable {
         self.isPinned = isPinned
         self.folderID = folderID
         self.isArchived = isArchived
+        self.isDeleted = isDeleted
+        self.deletedDate = deletedDate
     }
 }

@@ -7,11 +7,7 @@
 
 import SwiftUI
 
-#if os(macOS)
 import AppKit
-#else
-import UIKit
-#endif
 
 extension NoteDetailView {
 
@@ -20,18 +16,45 @@ extension NoteDetailView {
         let currentIDs = galleryItems.map(\.id)
         let needsReload = filenames != currentIDs
 
-        let items: [GalleryGridOverlay.Item]
-        if needsReload {
-            items = filenames.compactMap { filename -> GalleryGridOverlay.Item? in
-                guard let loadedImage = loadGalleryImage(named: filename) else { return nil }
-                return GalleryGridOverlay.Item(id: filename, image: loadedImage)
-            }
-            galleryItems = items
-        } else {
-            items = galleryItems
+        guard needsReload else {
+            // Filenames unchanged — just check if preview needs updating
+            updatePreviewFromCurrentItems()
+            return
         }
 
-        guard let latestItem = items.last else {
+        guard !filenames.isEmpty else {
+            galleryItems = []
+            lastGalleryFilename = nil
+            if galleryPreviewImage != nil {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                    galleryPreviewImage = nil
+                }
+            }
+            if showGalleryGrid {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                    showGalleryGrid = false
+                }
+            }
+            return
+        }
+
+        // Load images off the main thread
+        Task.detached(priority: .userInitiated) {
+            let loaded = filenames.compactMap { filename -> GalleryGridOverlay.Item? in
+                guard let imageURL = ImageStorageManager.shared.getImageURL(for: filename),
+                      let image = NSImage(contentsOf: imageURL) else { return nil }
+                return GalleryGridOverlay.Item(id: filename, image: image)
+            }
+
+            await MainActor.run {
+                galleryItems = loaded
+                updatePreviewFromCurrentItems()
+            }
+        }
+    }
+
+    private func updatePreviewFromCurrentItems() {
+        guard let latestItem = galleryItems.last else {
             lastGalleryFilename = nil
             if galleryPreviewImage != nil {
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
@@ -68,15 +91,11 @@ extension NoteDetailView {
         }
     }
 
-    func loadGalleryImage(named filename: String) -> PlatformImage? {
+    func loadGalleryImage(named filename: String) -> NSImage? {
         guard let imageURL = ImageStorageManager.shared.getImageURL(for: filename) else {
             return nil
         }
 
-        #if os(macOS)
         return NSImage(contentsOf: imageURL)
-        #else
-        return UIImage(contentsOfFile: imageURL.path)
-        #endif
     }
 }

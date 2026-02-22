@@ -87,6 +87,7 @@ struct ContentView: View {
     @State private var isBatchExportSheetPresented = false
     @State private var notesPendingExport: [Note] = []
     @State private var isShowingArchive = false
+    @State private var isTrashPresented = false
     @State private var hoveredSidebarMenuLabel: String?
     @State private var trafficLightMetrics = TrafficLightMetrics.fallback
     @State private var isFloatingSidebarVisible = false
@@ -223,6 +224,9 @@ struct ContentView: View {
 
                 appWindowSettingsOverlay()
                     .zIndex(4)
+
+                appWindowTrashOverlay()
+                    .zIndex(5)
             }
             .coordinateSpace(name: "contentArea")
         }
@@ -242,6 +246,7 @@ struct ContentView: View {
         .onAppear {
             searchEngine.setNotes(notesManager.notes)
             searchEngine.setFolders(notesManager.folders)
+            notesManager.loadDeletedNotes()
             reconcileSelectionWithCurrentNotes()
         }
         .onChange(of: notesManager.notes) { notes in
@@ -456,6 +461,14 @@ struct ContentView: View {
                 .scrollIndicators(.never)
                 .padding(.top, 4)
                 .padding(.bottom, 4)
+
+                // Trash -- only visible when there are deleted notes
+                if !notesManager.deletedNotes.isEmpty {
+                    sidebarMenuItem(assetName: "delete", label: "Trash") {
+                        notesManager.loadDeletedNotes()
+                        isTrashPresented = true
+                    }
+                }
 
                 // Settings -- sits below scroll, content clips naturally
                 sidebarMenuItem(assetName: "IconSettingsGear1", label: "Settings") {
@@ -1101,6 +1114,28 @@ struct ContentView: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: windowCornerRadius, style: .continuous))
         .animation(.easeInOut(duration: 0.18), value: isSettingsPresented)
+    }
+
+    @ViewBuilder
+    private func appWindowTrashOverlay() -> some View {
+        ZStack {
+            Color.black
+                .opacity(isTrashPresented ? 0.001 : 0)
+                .allowsHitTesting(isTrashPresented)
+                .onTapGesture {
+                    if isTrashPresented {
+                        isTrashPresented = false
+                    }
+                }
+
+            TrashSheet(isPresented: $isTrashPresented)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                .opacity(isTrashPresented ? 1 : 0)
+                .scaleEffect(isTrashPresented ? 1 : 0.95)
+                .allowsHitTesting(isTrashPresented)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: windowCornerRadius, style: .continuous))
+        .animation(.easeInOut(duration: 0.18), value: isTrashPresented)
     }
 
     private var globalSearchShortcutActivator: some View {

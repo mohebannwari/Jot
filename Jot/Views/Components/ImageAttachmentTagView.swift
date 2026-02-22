@@ -18,7 +18,7 @@ struct ImageAttachmentTagView: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            Image("insert link")
+            Image("gallery")
                 .renderingMode(.template)
                 .resizable()
                 .scaledToFit()

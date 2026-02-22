@@ -7,14 +7,10 @@
 
 import SwiftUI
 
-#if os(macOS)
 import AppKit
-#else
-import UIKit
-#endif
 
 struct GalleryPreviewOverlay: View {
-    let image: PlatformImage
+    let image: NSImage
     var onTap: (() -> Void)? = nil
 
     @Environment(\.colorScheme) private var colorScheme
@@ -37,15 +33,9 @@ struct GalleryPreviewOverlay: View {
 
     @ViewBuilder
     private var imageView: some View {
-        #if os(macOS)
         Image(nsImage: image)
             .resizable()
             .scaledToFill()
-        #else
-        Image(uiImage: image)
-            .resizable()
-            .scaledToFill()
-        #endif
     }
 
     private var baseLayer: some View {
@@ -88,13 +78,11 @@ struct GalleryPreviewOverlay: View {
                 onTap?()
             }
             .macPointingHandCursor()
-#if os(macOS)
             .onHover { hovering in
                 withAnimation(.smooth(duration: 0.25)) {
                     isHovering = hovering
                 }
             }
-#endif
     }
 
     private var baseOffset: CGSize {

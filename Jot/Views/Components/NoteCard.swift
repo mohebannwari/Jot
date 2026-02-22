@@ -11,7 +11,6 @@ struct NoteCard: View {
     let note: Note
     let onTap: () -> Void
     @State private var isHovering = false
-    @State private var showExportSheet = false
     @EnvironmentObject private var notesManager: SimpleSwiftDataManager
     
     var body: some View {
@@ -41,19 +40,47 @@ struct NoteCard: View {
                         Button {
                             // Pin functionality
                         } label: {
-                            Label("Pin Note", image: "IconThumbtack")
+                            Label {
+                                Text("Pin Note")
+                            } icon: {
+                                Image("IconThumbtack")
+                                    .renderingMode(.template)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 20, height: 20)
+                            }
                         }
 
                         Button {
                             // Move to folder functionality
                         } label: {
-                            Label("Move to Folder", image: "IconFolder2")
+                            Label {
+                                Text("Move to Notebook")
+                            } icon: {
+                                Image("IconFolder2")
+                                    .renderingMode(.template)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 20, height: 20)
+                            }
                         }
 
                         Button {
-                            showExportSheet = true
+                            NotificationCenter.default.post(
+                                name: .exportSingleNote,
+                                object: nil,
+                                userInfo: ["noteID": note.id]
+                            )
                         } label: {
-                            Label("Export Note...", image: "export note")
+                            Label {
+                                Text("Export Note...")
+                            } icon: {
+                                Image("export note")
+                                    .renderingMode(.template)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 20, height: 20)
+                            }
                         }
 
                         Divider()
@@ -63,7 +90,15 @@ struct NoteCard: View {
                                 notesManager.deleteNote(id: note.id)
                             }
                         } label: {
-                            Label("Delete", image: "delete")
+                            Label {
+                                Text("Delete")
+                            } icon: {
+                                Image("delete")
+                                    .renderingMode(.template)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 20, height: 20)
+                            }
                         }
                     } label: {
                         Image(systemName: "ellipsis")
@@ -175,26 +210,6 @@ struct NoteCard: View {
                 isHovering = hovering
             }
         }
-        .sheet(isPresented: $showExportSheet) {
-            ExportFormatSheet(isPresented: $showExportSheet, notes: [note]) { exportNotes, format in
-                Task { @MainActor in
-                    let success: Bool
-
-                    if exportNotes.count == 1, let singleNote = exportNotes.first {
-                        success = await NoteExportService.shared.exportNote(singleNote, format: format)
-                    } else {
-                        let filename = "Jot Export \(Date().formatted(date: .numeric, time: .omitted))"
-                        success = await NoteExportService.shared.exportNotes(exportNotes, format: format, filename: filename)
-                    }
-
-                    if success {
-                        HapticManager.shared.strong()
-                    } else {
-                        HapticManager.shared.medium()
-                    }
-                }
-            }
-        }
     }
     
     private var dateFormatter: DateFormatter {
@@ -226,4 +241,8 @@ struct TagView: View {
         .background(.ultraThinMaterial, in: Capsule())
         .background(Color("TagBackgroundColor"), in: Capsule())
     }
+}
+
+extension Notification.Name {
+    static let exportSingleNote = Notification.Name("exportSingleNote")
 }

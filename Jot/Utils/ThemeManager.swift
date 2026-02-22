@@ -8,11 +8,7 @@
 import SwiftUI
 import Combine
 
-#if os(macOS)
 import AppKit
-#else
-import UIKit
-#endif
 
 enum AppTheme: String, CaseIterable {
     case system = "system"
@@ -109,20 +105,8 @@ final class ThemeManager: ObservableObject {
     }
 
     private func resolvedSystemTheme() -> AppTheme {
-        #if os(macOS)
         let appearance = NSApp?.effectiveAppearance ?? NSApplication.shared.effectiveAppearance
         let bestMatch = appearance.bestMatch(from: [.darkAqua, .aqua])
         return bestMatch == .darkAqua ? .dark : .light
-        #else
-        let style = UIScreen.main.traitCollection.userInterfaceStyle
-        switch style {
-        case .dark:
-            return .dark
-        case .light:
-            return .light
-        default:
-            return .light
-        }
-        #endif
     }
 }

@@ -348,8 +348,6 @@ struct TodoRichTextEditor: View {
     @Environment(\.colorScheme) private var colorScheme
     private let baseBottomInset: CGFloat = 0
 
-    @State private var showAISummary = false
-    @State private var aiSummaryText = ""
 
     // Command menu state (triggered by "/" character)
     @State private var showCommandMenu = false
@@ -382,9 +380,6 @@ struct TodoRichTextEditor: View {
         onToolbarAction: ((EditTool) -> Void)? = nil,
         onCommandMenuSelection: ((EditTool) -> Void)? = nil
     ) {
-        print(
-            "DEBUG: TodoRichTextEditor init called with text: '\(text.wrappedValue.prefix(100))...'"
-        )
         self._text = text
         self.focusRequestID = focusRequestID
         self.onToolbarAction = onToolbarAction
@@ -396,9 +391,7 @@ struct TodoRichTextEditor: View {
     }
 
     var body: some View {
-        let _ = print(
-            "DEBUG: TodoRichTextEditor body computed - text value: '\(text.prefix(100))...'")
-        return Group {
+        Group {
                 TodoEditorRepresentable(
                     text: $text,
                     colorScheme: colorScheme,
@@ -414,8 +407,7 @@ struct TodoRichTextEditor: View {
                     CommandMenu(
                         tools: commandMenuTools,
                         selectedIndex: $commandMenuSelectedIndex,
-                        onSelect: { tool in handleCommandMenuSelection(tool) },
-                        maxHeight: 280
+                        onSelect: { tool in handleCommandMenuSelection(tool) }
                     )
                     .offset(
                         x: clampedCommandMenuPosition(for: geometry.size).x,
@@ -431,27 +423,6 @@ struct TodoRichTextEditor: View {
                 }
             }
         }
-        .overlay(alignment: .topTrailing) {
-            if showAISummary {
-                AISummaryBox(
-                    summaryText: aiSummaryText,
-                    onDismiss: {
-                        withAnimation(.bouncy(duration: 0.3)) {
-                            showAISummary = false
-                        }
-                    }
-                )
-                .padding(.trailing, 16)
-                .padding(.top, 16)
-                .frame(maxWidth: 300)
-                .transition(
-                    .asymmetric(
-                        insertion: .opacity.combined(
-                            with: .scale(scale: 0.9, anchor: .topTrailing)),
-                        removal: .opacity.combined(with: .scale(scale: 0.95, anchor: .topTrailing))
-                    ))
-            }
-        }
         .onReceive(
             NotificationCenter.default.publisher(for: Notification.Name("TodoToolbarAction"))
         ) { _ in
@@ -461,16 +432,6 @@ struct TodoRichTextEditor: View {
             notification in
             if let url = notification.object as? String {
                 NotificationCenter.default.post(name: .insertWebClipInEditor, object: url)
-            }
-        }
-        .onReceive(
-            NotificationCenter.default.publisher(for: Notification.Name("ShowAISummary"))
-        ) { notification in
-            if let summary = notification.object as? String {
-                aiSummaryText = summary
-                withAnimation(.bouncy(duration: 0.4)) {
-                    showAISummary = true
-                }
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("ShowCommandMenu")))
@@ -614,18 +575,13 @@ struct TodoRichTextEditor: View {
                 context.coordinator.typingAnimationManager = typingLayoutManager
             }
 
-            // CRITICAL FIX: Use the passed colorScheme directly, not resolved from view
-            // The view's appearance might not be set correctly yet at init time
             let initialScheme = colorScheme
-            print("DEBUG: makeNSView - using passed colorScheme: \(initialScheme)")
-
             if let resolvedAppearance = appearance(for: initialScheme) {
                 textView.appearance = resolvedAppearance
             }
 
             let resolvedColor = resolvedTextColor(
                 for: initialScheme, appearance: textView.appearance)
-            print("DEBUG: makeNSView - resolved text color: \(resolvedColor)")
             textView.textColor = resolvedColor
             textView.typingAttributes = Coordinator.baseTypingAttributes(for: initialScheme)
             textView.defaultParagraphStyle = Coordinator.baseParagraphStyle()
@@ -633,8 +589,6 @@ struct TodoRichTextEditor: View {
             context.coordinator.updateColorScheme(initialScheme)
             context.coordinator.configure(with: textView)
 
-            // Apply initial text synchronously to ensure proper sizing calculation
-            print("DEBUG: makeNSView - about to apply initial text: '\(text)'")
             context.coordinator.applyInitialText(text)
 
             // Ensure layout is complete before returning
@@ -652,23 +606,22 @@ struct TodoRichTextEditor: View {
 
         func updateNSView(_ nsView: InlineNSTextView, context: Context) {
             let textView = nsView
-            // CRITICAL FIX: Use the passed colorScheme directly
             let resolvedScheme = colorScheme
 
-            // Update appearance and colors
-            if let resolvedAppearance = appearance(for: resolvedScheme) {
-                textView.appearance = resolvedAppearance
-
-                // Update text color with proper color scheme
-                let resolvedColor = resolvedTextColor(
-                    for: resolvedScheme, appearance: textView.appearance)
-                textView.textColor = resolvedColor
-                textView.typingAttributes = Coordinator.baseTypingAttributes(for: resolvedScheme)
-                textView.linkTextAttributes = [
-                    .underlineStyle: 0,
-                    .underlineColor: NSColor.clear,
-                ]
-                context.coordinator.updateColorScheme(resolvedScheme)
+            // Only update appearance/colors when the color scheme has actually changed
+            if context.coordinator.currentColorScheme != resolvedScheme {
+                if let resolvedAppearance = appearance(for: resolvedScheme) {
+                    textView.appearance = resolvedAppearance
+                    let resolvedColor = resolvedTextColor(
+                        for: resolvedScheme, appearance: textView.appearance)
+                    textView.textColor = resolvedColor
+                    textView.typingAttributes = Coordinator.baseTypingAttributes(for: resolvedScheme)
+                    textView.linkTextAttributes = [
+                        .underlineStyle: 0,
+                        .underlineColor: NSColor.clear,
+                    ]
+                    context.coordinator.updateColorScheme(resolvedScheme)
+                }
             }
 
             // Update container size only if needed
@@ -847,18 +800,13 @@ struct TodoRichTextEditor: View {
                         let selectionWidth = selectionRect.width
                         let selectionHeight = selectionRect.height
 
-                        // DEBUG LOGGING
-                        print("📍 [macOS] Selection Debug:")
-                        print("  - selectionRect: \(selectionRect)")
-                        print("  - textContainerOrigin: \(textView.textContainerOrigin)")
-                        print("  - visibleRect: \(visibleRect)")
-                        print("  - selectionYInContainer: \(selectionYInContainer)")
-                        print("  - selectionY (relative to visible): \(selectionY)")
-                        print("  - selectionHeight: \(selectionHeight)")
-
                         // Convert to window coordinates for proper positioning
                         let selectionRectInWindow = textView.convert(selectionRect, to: nil)
-                        print("  - selectionRectInWindow: \(selectionRectInWindow)")
+
+                        // Cache selection so Edit Content can use it even after focus shifts
+                        lastKnownSelectionRange = selectedRange
+                        lastKnownSelectionText = (textView.string as NSString).substring(with: selectedRange)
+                        lastKnownSelectionWindowRect = selectionRectInWindow
 
                         // Post notification with selection info - let the view calculate toolbar position
                         let info: [String: Any] = [
@@ -880,6 +828,14 @@ struct TodoRichTextEditor: View {
                     }
                 } else {
                     // No selection - hide floating toolbar
+                    // Clear cache only if user deliberately placed cursor (view still has focus).
+                    // When focus is lost (e.g. clicking AI tools button), preserve cache so the
+                    // selection is still available for the tool that caused the focus shift.
+                    if textView.window?.firstResponder == textView {
+                        lastKnownSelectionRange = NSRange(location: NSNotFound, length: 0)
+                        lastKnownSelectionText = ""
+                        lastKnownSelectionWindowRect = .zero
+                    }
                     let info: [String: Any] = ["hasSelection": false]
                     NotificationCenter.default.post(
                         name: .textSelectionChanged,
@@ -889,7 +845,17 @@ struct TodoRichTextEditor: View {
                 }
             }
             private var textBeforeWritingTools = ""
-            private var currentColorScheme: ColorScheme
+            var currentColorScheme: ColorScheme
+
+            // Proofread inline overlay tracking: (pill view, highlighted NSRange, original text color attributes)
+            private var proofreadPillViews: [(view: NSView, range: NSRange)] = []
+            private var proofreadHighlightedRanges: [NSRange] = []
+
+            // Last known non-empty selection — cached here so clicking the AI tools button
+            // (which clears the NSTextView selection) doesn't lose context for Edit Content.
+            private var lastKnownSelectionRange: NSRange = NSRange(location: NSNotFound, length: 0)
+            private var lastKnownSelectionText: String = ""
+            private var lastKnownSelectionWindowRect: CGRect = .zero
 
             // Use Charter for body text as per design requirements
             private static var textFont: NSFont { FontManager.bodyNS(size: 16, weight: .regular) }
@@ -1044,10 +1010,7 @@ struct TodoRichTextEditor: View {
             
             /// Create an inline image attachment tag from a filename
             private func makeImageAttachment(filename: String, imageNumber: Int) -> NSMutableAttributedString {
-                NSLog("🖼️ makeImageAttachment: START with filename: %@", filename)
-
                 func fallbackAttributedString() -> NSMutableAttributedString {
-                    NSLog("🖼️ makeImageAttachment: Falling back to text placeholder for %@", filename)
                     return NSMutableAttributedString(string: "[Image: \(filename)]")
                 }
 
@@ -1099,13 +1062,6 @@ struct TodoRichTextEditor: View {
                 let sizeDescription: String
                 sizeDescription = NSStringFromSize(
                     NSSize(width: displaySize.width, height: displaySize.height))
-
-                NSLog(
-                    "🖼️ makeImageAttachment: Created inline tag for %@ with size %@ and label %@",
-                    filename,
-                    sizeDescription,
-                    tagLabel
-                )
 
                 return attributed
             }
@@ -1692,13 +1648,6 @@ struct TodoRichTextEditor: View {
                     dx: textView.textContainerOrigin.x,
                     dy: textView.textContainerOrigin.y)
                 
-                // Debug logging
-                NSLog("🔍 glyphRect: \(glyphRect)")
-                NSLog("🔍 attachment.bounds: \(attachment.bounds)")
-                NSLog("🔍 visualTop (baseline + offset): \(visualTop)")
-                NSLog("🔍 drawingRect (final attachment rect): \(drawingRect)")
-                NSLog("🔍 rectInTextView (after container origin): \(rectInTextView)")
-
                 let detectionRect = rectInTextView.insetBy(
                     dx: -hoverHitTolerance,
                     dy: -hoverHitTolerance)
@@ -1839,29 +1788,13 @@ struct TodoRichTextEditor: View {
                 let applyTool = NotificationCenter.default.addObserver(
                     forName: .applyEditTool, object: nil, queue: .main
                 ) { [weak self] notification in
-                    print("📝 DEBUG: Received applyEditTool notification")
-                    print("📝 DEBUG: UserInfo: \(String(describing: notification.userInfo))")
-                    guard let raw = notification.userInfo?["tool"] as? String else {
-                        print("📝 DEBUG: Failed to get tool string from userInfo")
-                        return
-                    }
-                    print("📝 DEBUG: Tool string: \(raw)")
-                    guard let tool = EditTool(rawValue: raw) else {
-                        print("📝 DEBUG: Failed to convert '\(raw)' to EditTool")
-                        return
-                    }
-                    print("📝 DEBUG: Successfully converted to tool: \(tool)")
+                    guard let raw = notification.userInfo?["tool"] as? String else { return }
+                    guard let tool = EditTool(rawValue: raw) else { return }
                     Task { @MainActor [weak self] in
-                        guard let self = self else { return }
-                        guard let textView = self.textView else {
-                            print("📝 DEBUG: textView is nil")
-                            return
-                        }
-                        print("📝 DEBUG: Applying formatting for tool: \(tool)")
+                        guard let self = self, let textView = self.textView else { return }
                         self.formatter.applyFormatting(to: textView, tool: tool)
                         self.styleTodoParagraphs()
                         self.syncText()
-                        print("📝 DEBUG: Formatting applied successfully")
                     }
                 }
 
@@ -1922,10 +1855,178 @@ struct TodoRichTextEditor: View {
                     }
                 }
 
+                // MARK: Proofread show annotations
+                let proofreadShow = NotificationCenter.default.addObserver(
+                    forName: .aiProofreadShowAnnotations, object: nil, queue: .main
+                ) { [weak self] notification in
+                    guard let annotations = notification.object as? [ProofreadAnnotation] else { return }
+                    let activeIndex = notification.userInfo?["activeIndex"] as? Int ?? 0
+                    Task { @MainActor [weak self] in
+                        self?.applyProofreadAnnotations(annotations, activeIndex: activeIndex)
+                    }
+                }
+
+                // MARK: Proofread clear overlays
+                let proofreadClear = NotificationCenter.default.addObserver(
+                    forName: .aiProofreadClearOverlays, object: nil, queue: .main
+                ) { [weak self] _ in
+                    Task { @MainActor [weak self] in
+                        self?.clearProofreadOverlays()
+                    }
+                }
+
+                // MARK: Proofread apply suggestion
+                let proofreadApply = NotificationCenter.default.addObserver(
+                    forName: .aiProofreadApplySuggestion, object: nil, queue: .main
+                ) { [weak self] notification in
+                    guard let userInfo = notification.userInfo,
+                          let original = userInfo["original"] as? String,
+                          let replacement = userInfo["replacement"] as? String else { return }
+                    Task { @MainActor [weak self] in
+                        self?.applyProofreadSuggestion(original: original, replacement: replacement)
+                    }
+                }
+
+                // MARK: Edit Content — capture selection
+                let captureSelection = NotificationCenter.default.addObserver(
+                    forName: .aiEditRequestSelection, object: nil, queue: .main
+                ) { [weak self] _ in
+                    Task { @MainActor [weak self] in
+                        self?.captureSelectionForEditContent()
+                    }
+                }
+
                 observers = [
                     insertTodo, insertLink, insertVoiceTranscript, insertImage, applyTool, applyCommandMenuTool,
                     highlightSearch, clearSearch,
+                    proofreadShow, proofreadClear, proofreadApply, captureSelection,
                 ]
+            }
+
+            // MARK: - Proofread Overlay Helpers
+
+            private func applyProofreadAnnotations(_ annotations: [ProofreadAnnotation], activeIndex: Int = 0) {
+                guard let textView = self.textView,
+                      let storage = textView.textStorage,
+                      let layoutManager = textView.layoutManager,
+                      let textContainer = textView.textContainer else { return }
+
+                clearProofreadOverlays()
+
+                let fullString = storage.string as NSString
+
+                // First pass: resolve all annotation ranges
+                var resolved: [(annotation: ProofreadAnnotation, range: NSRange)] = []
+                for annotation in annotations {
+                    let found = fullString.range(
+                        of: annotation.original,
+                        options: .literal,
+                        range: NSRange(location: 0, length: fullString.length)
+                    )
+                    guard found.location != NSNotFound else { continue }
+                    resolved.append((annotation, found))
+                }
+
+                // Use the same explicit text colors the editor uses (from baseTypingAttributes)
+                let isDark = currentColorScheme == .dark
+                let baseColor: NSColor = isDark
+                    ? NSColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0)
+                    : NSColor(red: 0.102, green: 0.102, blue: 0.102, alpha: 1.0)
+                let dimAlpha: CGFloat = isDark ? 0.4 : 0.25
+                let dimColor = baseColor.withAlphaComponent(dimAlpha)
+
+                let fullRange = NSRange(location: 0, length: storage.length)
+                let clampedIndex = resolved.isEmpty ? 0 : min(activeIndex, resolved.count - 1)
+                storage.beginEditing()
+                storage.addAttribute(.foregroundColor, value: dimColor, range: fullRange)
+                if !resolved.isEmpty {
+                    storage.addAttribute(.foregroundColor, value: baseColor, range: resolved[clampedIndex].range)
+                }
+                storage.endEditing()
+
+                // Track all resolved ranges
+                for item in resolved {
+                    proofreadHighlightedRanges.append(item.range)
+                }
+
+                // Scroll the active annotation into view
+                if !resolved.isEmpty {
+                    textView.scrollRangeToVisible(resolved[clampedIndex].range)
+                }
+            }
+
+            private func clearProofreadOverlays() {
+                guard let textView = self.textView,
+                      let storage = textView.textStorage else {
+                    proofreadPillViews.forEach { $0.view.removeFromSuperview() }
+                    proofreadPillViews.removeAll()
+                    proofreadHighlightedRanges.removeAll()
+                    return
+                }
+
+                // Remove pill views
+                proofreadPillViews.forEach { $0.view.removeFromSuperview() }
+                proofreadPillViews.removeAll()
+
+                // Restore full text opacity
+                if storage.length > 0 {
+                    storage.beginEditing()
+                    storage.addAttribute(
+                        .foregroundColor,
+                        value: NSColor.labelColor,
+                        range: NSRange(location: 0, length: storage.length)
+                    )
+                    storage.endEditing()
+                }
+                proofreadHighlightedRanges.removeAll()
+            }
+
+            private func applyProofreadSuggestion(original: String, replacement: String) {
+                guard let textView = self.textView,
+                      let storage = textView.textStorage else { return }
+
+                let fullString = storage.string as NSString
+                let found = fullString.range(of: original, options: .literal, range: NSRange(location: 0, length: fullString.length))
+                guard found.location != NSNotFound else {
+                    clearProofreadOverlays()
+                    return
+                }
+
+                if textView.shouldChangeText(in: found, replacementString: replacement) {
+                    storage.replaceCharacters(in: found, with: replacement)
+                    textView.didChangeText()
+                }
+                syncText()
+                NotificationCenter.default.post(name: .aiProofreadClearOverlays, object: nil)
+            }
+
+            // MARK: - Edit Content Selection Capture
+
+            private func captureSelectionForEditContent() {
+                // Clicking the AI tools button clears the text view selection before this fires,
+                // so we use the last cached non-empty selection rather than reading the live selection.
+                guard lastKnownSelectionRange.length > 0 else {
+                    NotificationCenter.default.post(
+                        name: .aiEditCaptureSelection,
+                        object: nil,
+                        userInfo: [
+                            "nsRange": NSRange(location: NSNotFound, length: 0),
+                            "selectedText": "",
+                            "windowRect": CGRect.zero
+                        ]
+                    )
+                    return
+                }
+
+                NotificationCenter.default.post(
+                    name: .aiEditCaptureSelection,
+                    object: nil,
+                    userInfo: [
+                        "nsRange": lastKnownSelectionRange,
+                        "selectedText": lastKnownSelectionText,
+                        "windowRect": lastKnownSelectionWindowRect
+                    ]
+                )
             }
 
             // MARK: - Search Highlighting
@@ -2284,58 +2385,24 @@ struct TodoRichTextEditor: View {
                     return
                 }
 
-                print("DEBUG: ApplyInitialText called with text: '\(text.prefix(100))...'")
-                print("DEBUG: Current color scheme: \(currentColorScheme)")
-
                 typingAnimationManager?.clearAllAnimations()
                 isUpdating = true
 
-                // Set the textView's base text color first
-                let targetTextColor: NSColor
-                if currentColorScheme == .dark {
-                    targetTextColor = NSColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0)
-                } else {
-                    targetTextColor = NSColor(red: 0.102, green: 0.102, blue: 0.102, alpha: 1.0)
-                }
+                let targetTextColor: NSColor = currentColorScheme == .dark
+                    ? NSColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0)
+                    : NSColor(red: 0.102, green: 0.102, blue: 0.102, alpha: 1.0)
                 textView.textColor = targetTextColor
-                print("DEBUG: Set textView.textColor to: \(targetTextColor)")
 
-                // Ensure we deserialize the text properly
                 let attributedText = deserialize(text)
-                print("DEBUG: Deserialized text length: \(attributedText.length)")
-
-                // Check what color the deserialized text has
-                if attributedText.length > 0 {
-                    let attrs = attributedText.attributes(at: 0, effectiveRange: nil)
-                    print(
-                        "DEBUG: First char attributes - foregroundColor: \(attrs[.foregroundColor] ?? "nil")"
-                    )
-                }
-
-                // Set the attributed string
                 textStorage.setAttributedString(attributedText)
 
-                // Ensure proper typing attributes are set
                 textView.typingAttributes = Self.baseTypingAttributes(for: currentColorScheme)
-
-                // Apply paragraph styling
                 styleTodoParagraphs()
 
-                // Ensure all text has proper color - critical for existing notes
-                ensureTextColor()
+                // Cache the input directly — deserialize+serialize is a stable round-trip,
+                // so we avoid a redundant O(n) enumeration pass here.
+                lastSerialized = text
 
-                // Check color again after ensureTextColor
-                if textStorage.length > 0 {
-                    let attrs = textStorage.attributes(at: 0, effectiveRange: nil)
-                    print(
-                        "DEBUG: After ensureTextColor - foregroundColor: \(attrs[.foregroundColor] ?? "nil")"
-                    )
-                }
-
-                // Update serialized state
-                lastSerialized = serialize()
-
-                // Force layout and size recalculation
                 if let container = textView.textContainer,
                     let layoutManager = textView.layoutManager
                 {
@@ -2344,9 +2411,6 @@ struct TodoRichTextEditor: View {
                 textView.invalidateIntrinsicContentSize()
                 textView.needsDisplay = true
                 textView.needsLayout = true
-
-                print("DEBUG: Text view content after setup: '\(textView.string.prefix(100))...'")
-                print("DEBUG: Text view final textColor: \(textView.textColor ?? NSColor.clear)")
 
                 isUpdating = false
             }
@@ -2366,23 +2430,12 @@ struct TodoRichTextEditor: View {
                     textColor = NSColor(red: 0.102, green: 0.102, blue: 0.102, alpha: 1.0)
                 }
 
-                print(
-                    "DEBUG: ensureTextColor - applying color: \(textColor) for scheme: \(currentColorScheme)"
-                )
-
-                // Batch the text storage edits
                 textStorage.beginEditing()
-
-                // Remove any existing foreground color first, then apply new one
                 textStorage.removeAttribute(.foregroundColor, range: fullRange)
-
-                // Now apply the correct color to all non-attachment text
                 textStorage.enumerateAttributes(in: fullRange, options: []) {
                     attributes, range, _ in
-                    // Skip attachments - they don't need text color
                     if attributes[.attachment] == nil {
                         textStorage.addAttribute(.foregroundColor, value: textColor, range: range)
-                        print("DEBUG: Applied color to range: \(range)")
                     }
                 }
 
@@ -2400,59 +2453,27 @@ struct TodoRichTextEditor: View {
 
             func updateIfNeeded(with text: String) {
                 guard !isUpdating, let textView = textView, let textStorage = textView.textStorage
-                else {
-                    print(
-                        "DEBUG: UpdateIfNeeded - guard failed. isUpdating: \(isUpdating), textView: \(textView != nil), textStorage: \(textView?.textStorage != nil)"
-                    )
-                    return
-                }
+                else { return }
 
-                guard text != lastSerialized else {
-                    print("DEBUG: UpdateIfNeeded - text hasn't changed")
-                    return
-                }
+                guard text != lastSerialized else { return }
 
-                print("DEBUG: UpdateIfNeeded called with text: '\(text.prefix(100))...'")
-                print("DEBUG: Last serialized was: '\(lastSerialized.prefix(100))...'")
-
-                // Store current selection before updating
                 let selectedRange = textView.selectedRange()
 
                 typingAnimationManager?.clearAllAnimations()
                 isUpdating = true
 
-                // Set the textView's base text color
-                if currentColorScheme == .dark {
-                    textView.textColor = NSColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0)
-                } else {
-                    textView.textColor = NSColor(red: 0.102, green: 0.102, blue: 0.102, alpha: 1.0)
-                }
+                textView.textColor = currentColorScheme == .dark
+                    ? NSColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0)
+                    : NSColor(red: 0.102, green: 0.102, blue: 0.102, alpha: 1.0)
 
-                // Deserialize and set the new text
                 let attributedText = deserialize(text)
                 textStorage.setAttributedString(attributedText)
 
-                // Force typing attributes immediately and again after a brief delay
-                // to ensure Writing Tools respects our formatting
                 textView.typingAttributes = Self.baseTypingAttributes(for: currentColorScheme)
-                DispatchQueue.main.async {
-                    textView.typingAttributes = Self.baseTypingAttributes(
-                        for: self.currentColorScheme)
-                }
-
                 styleTodoParagraphs()
 
-                // Ensure text color is correct after updating
-                ensureTextColor()
-
-                lastSerialized = serialize()
-
-                // Restore selection after updating
+                lastSerialized = text
                 textView.setSelectedRange(selectedRange)
-
-                print(
-                    "DEBUG: UpdateIfNeeded complete. Text view now shows: '\(textView.string.prefix(100))...'"
-                )
 
                 isUpdating = false
             }
@@ -2460,14 +2481,7 @@ struct TodoRichTextEditor: View {
             func textDidChange(_ notification: Notification) {
                 guard let textView = notification.object as? NSTextView, textView == self.textView,
                     !isUpdating
-                else {
-                    print(
-                        "DEBUG: textDidChange - guard failed. Same textView: \(notification.object as? NSTextView == self.textView), isUpdating: \(isUpdating)"
-                    )
-                    return
-                }
-
-                print("DEBUG: textDidChange - text changed to: '\(textView.string.prefix(100))...'")
+                else { return }
 
                 // Trigger typing animation for newly inserted characters
                 if let location = pendingAnimationLocation,
@@ -2544,8 +2558,10 @@ struct TodoRichTextEditor: View {
                     return false
                 }
 
-                // Record pending animation for newly inserted text
-                if !isUpdating, let replacement = replacementString, !replacement.isEmpty {
+                // Record pending animation for newly inserted text.
+                // Skip animation entirely for paste operations — instant insertion feels right.
+                let isPasting = (textView as? InlineNSTextView)?.isPasting ?? false
+                if !isUpdating, !isPasting, let replacement = replacementString, !replacement.isEmpty {
                     pendingAnimationLocation = affectedCharRange.location
                     pendingAnimationLength = replacement.count
                 } else {
@@ -2641,8 +2657,6 @@ struct TodoRichTextEditor: View {
 
                 // Only need extra space when menu shows below cursor AND there's not enough space
                 let needsExtraSpace = !shouldShowAbove && spaceBelow < (menuHeight + menuGap + safetyMargin)
-
-                print("🔴 POSTING ShowCommandMenu notification - position: \(menuPosition), slashLocation: \(insertLocation), needsSpace: \(needsExtraSpace)")
 
                 // Post notification to show menu
                 NotificationCenter.default.post(
@@ -3073,14 +3087,9 @@ struct TodoRichTextEditor: View {
             private func styleTodoParagraphs() {
                 guard let textStorage = textView?.textStorage else { return }
                 let fullRange = NSRange(location: 0, length: textStorage.length)
-                textStorage.enumerateAttribute(.paragraphStyle, in: fullRange, options: []) {
-                    _, range, _ in
-                    textStorage.removeAttribute(.paragraphStyle, range: range)
-                }
-                textStorage.enumerateAttribute(.baselineOffset, in: fullRange, options: []) {
-                    _, range, _ in
-                    textStorage.removeAttribute(.baselineOffset, range: range)
-                }
+                textStorage.beginEditing()
+                textStorage.removeAttribute(.paragraphStyle, range: fullRange)
+                textStorage.removeAttribute(.baselineOffset, range: fullRange)
 
                 var paragraphRange = NSRange(location: 0, length: 0)
                 while paragraphRange.location < textStorage.length {
@@ -3151,6 +3160,7 @@ struct TodoRichTextEditor: View {
                         }
                     }
                 }
+                textStorage.endEditing()
             }
 
             private func isInTodoParagraph(range: NSRange) -> Bool {
@@ -3176,7 +3186,6 @@ struct TodoRichTextEditor: View {
                 guard let storage = textView?.textStorage else { return "" }
                 let fullRange = NSRange(location: 0, length: storage.length)
                 var output = ""
-                NSLog("📝 serialize: START - storage length: %ld", storage.length)
                 storage.enumerateAttributes(in: fullRange, options: []) { attributes, range, _ in
                     if let attachment = attributes[.attachment] as? NSTextAttachment,
                         let cell = attachment.attachmentCell as? TodoCheckboxAttachmentCell
@@ -3204,29 +3213,17 @@ struct TodoRichTextEditor: View {
                     } else if let attachment = attributes[.attachment] as? NSTextAttachment,
                         !(attachment.attachmentCell is TodoCheckboxAttachmentCell)
                     {
-                        // Image attachment serialization with fallback
-                        NSLog("📝 serialize: Found image attachment at range %@", NSStringFromRange(range))
-                        // Primary: Use the robust custom attribute
                         if let filename = attributes[.imageFilename] as? String {
-                            NSLog("📝 serialize: Using custom attribute filename: %@", filename)
                             output.append("[[image|||\(filename)]]")
-                        }
-                        // Secondary: Try NoteImageAttachment which stores filename directly
-                        else if let noteAttachment = attachment as? NoteImageAttachment {
+                        } else if let noteAttachment = attachment as? NoteImageAttachment {
                             output.append("[[image|||\(noteAttachment.storedFilename)]]")
-                            NSLog("Serialization: Recovered filename %@ from NoteImageAttachment", noteAttachment.storedFilename)
-                        }
-                        // Tertiary: Fallback to fileWrapper
-                        else if let fileWrapper = attachment.fileWrapper,
+                        } else if let fileWrapper = attachment.fileWrapper,
                                 let filename = fileWrapper.preferredFilename ?? fileWrapper.filename,
                                 !filename.isEmpty,
                                 filename.hasSuffix(".jpg")
                         {
                             output.append("[[image|||\(filename)]]")
-                            NSLog("Serialization: Recovered filename %@ from fileWrapper", filename)
-                        }
-                        // If all fail, data is lost - log this critical error
-                        else {
+                        } else {
                             output.append((storage.string as NSString).substring(with: range))
                             NSLog("⚠️ Serialization CRITICAL: Could not find filename for image attachment. Data may be lost.")
                         }
@@ -3234,17 +3231,10 @@ struct TodoRichTextEditor: View {
                         output.append((storage.string as NSString).substring(with: range))
                     }
                 }
-                NSLog("📝 serialize: END - output length: %ld, contains image markup: %@", output.count, output.contains("[[image|||") ? "YES" : "NO")
-                if output.contains("[[image|||") {
-                    NSLog("📝 serialize: Output preview: %@", String(output.prefix(500)))
-                }
                 return output
             }
 
             private func deserialize(_ text: String) -> NSAttributedString {
-                print("DEBUG: Deserializing text: '\(text)'")
-                NSLog("📝 deserialize: START - text length: %ld, contains image markup: %@", text.count, text.contains("[[image|||") ? "YES" : "NO")
-
                 // Handle empty text case
                 if text.isEmpty {
                     return NSAttributedString(
@@ -3381,11 +3371,8 @@ struct TodoRichTextEditor: View {
                             }
                         }
                     } else if text[index...].hasPrefix(AttachmentMarkup.imageMarkupPrefix) {
-                        // Image attachment deserialization
-                        NSLog("📝 deserialize: Found image markup prefix")
                         if let endIndex = text[index...].range(of: "]]")?.upperBound {
                             let imageText = String(text[index..<endIndex])
-                            NSLog("📝 deserialize: Markup text: %@", imageText)
                             if let regex = AttachmentMarkup.imageRegex,
                                 let match = regex.firstMatch(
                                     in: imageText,
@@ -3394,7 +3381,6 @@ struct TodoRichTextEditor: View {
                                 )
                             {
                                 let filename = Self.string(from: match, at: 1, in: imageText)
-                                NSLog("📝 deserialize: Extracted filename: %@", filename)
                                 
                                 // Ensure spacing around inline attachment
                                 let baseAttributes = Self.baseTypingAttributes(
@@ -3463,9 +3449,6 @@ struct TodoRichTextEditor: View {
                     index = text.index(after: index)
                     lastWasWebClip = false
                 }
-
-                print("DEBUG: Deserialized attributed string length: \(result.length)")
-                print("DEBUG: Deserialized plain text: '\(result.string)'")
 
                 return result
             }
@@ -3563,6 +3546,21 @@ struct TodoRichTextEditor: View {
 
         weak var actionDelegate: TodoEditorRepresentable.Coordinator?
         private var hoverTrackingArea: NSTrackingArea?
+
+        /// Set during paste operations so the coordinator can skip the typing animation.
+        var isPasting = false
+
+        override func paste(_ sender: Any?) {
+            isPasting = true
+            super.paste(sender)
+            isPasting = false
+        }
+
+        override func pasteAsPlainText(_ sender: Any?) {
+            isPasting = true
+            super.pasteAsPlainText(sender)
+            isPasting = false
+        }
 
         override var intrinsicContentSize: NSSize {
             guard let layoutManager = layoutManager,
@@ -3689,14 +3687,11 @@ struct TodoRichTextEditor: View {
         }
 
         override func insertNewline(_ sender: Any?) {
-            print("DEBUG: insertNewline called")
             if actionDelegate?.handleReturn(in: self) == true { return }
             super.insertNewline(sender)
         }
 
         override func keyDown(with event: NSEvent) {
-            print("DEBUG: keyDown called with key: \(event.characters ?? "nil")")
-
             // Only intercept keys if command menu is showing
             guard InlineNSTextView.isCommandMenuShowing else {
                 super.keyDown(with: event)

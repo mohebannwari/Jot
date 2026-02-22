@@ -524,7 +524,7 @@ private struct FloatingToolButton: View {
     private var iconColor: Color {
         isSelected
             ? Color("AccentColor")
-            : isHovered ? Color("PrimaryTextColor") : Color("SecondaryTextColor")
+            : isHovered ? Color("PrimaryTextColor") : Color("IconSecondaryColor")
     }
 
     var body: some View {

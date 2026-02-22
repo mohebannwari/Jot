@@ -86,15 +86,20 @@ struct AIToolsOverlay: View {
     private var expandedToolBar: some View {
         HStack(spacing: 12) {
             toolBarButton(icon: "IconBroomSparkle", tooltip: "Proofread") {
-                // Tool action placeholder
+                NotificationCenter.default.post(name: .aiEditRequestSelection, object: nil)
+                NotificationCenter.default.post(name: .aiToolAction, object: AITool.proofread)
+                state = .collapsed
             }
             toolBarButton(icon: "IconListSparkle", tooltip: "Key Points") {
-                // Tool action placeholder
+                NotificationCenter.default.post(name: .aiToolAction, object: AITool.keyPoints)
+                state = .collapsed
             }
             toolBarButton(icon: "IconSummary", tooltip: "Summarize") {
-                // Tool action placeholder
+                NotificationCenter.default.post(name: .aiToolAction, object: AITool.summary)
+                state = .collapsed
             }
             toolBarButton(icon: "IconArrowsAllSides2", tooltip: "Edit Content") {
+                NotificationCenter.default.post(name: .aiEditRequestSelection, object: nil)
                 state = .promptField
             }
         }
@@ -183,11 +188,31 @@ struct AIToolsOverlay: View {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(textAreaBackgroundColor)
             )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(Color.primary.opacity(0.2), lineWidth: 1)
+            )
+            .onKeyPress(.return) {
+                let trimmed = promptText.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { return .ignored }
+                NotificationCenter.default.post(name: .aiEditSubmit, object: trimmed)
+                promptText = ""
+                state = .collapsed
+                return .handled
+            }
+            .onKeyPress(.escape) {
+                state = .expanded
+                return .handled
+            }
     }
 
     private var promptEnterButton: some View {
         Button {
-            // Submit action placeholder
+            let trimmed = promptText.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return }
+            NotificationCenter.default.post(name: .aiEditSubmit, object: trimmed)
+            promptText = ""
+            state = .collapsed
         } label: {
             Text("Enter")
                 .font(FontManager.heading(size: 12, weight: .semibold))
@@ -212,7 +237,7 @@ struct AIToolsOverlay: View {
             .renderingMode(.template)
             .resizable()
             .scaledToFit()
-            .foregroundColor(Color("SecondaryTextColor"))
+            .foregroundColor(Color("IconSecondaryColor"))
             .frame(width: dim, height: dim)
     }
 
@@ -225,20 +250,14 @@ struct AIToolsOverlay: View {
     }
 
     private var textAreaBackgroundColor: Color {
-        colorScheme == .dark
-            ? Color.black
-            : Color.white
+        Color("SurfaceElevatedColor")
     }
 
     private var enterButtonBackgroundColor: Color {
-        colorScheme == .dark
-            ? Color.white
-            : Color(red: 0.102, green: 0.102, blue: 0.102)
+        Color("ButtonPrimaryBgColor")
     }
 
     private var enterButtonTextColor: Color {
-        colorScheme == .dark
-            ? Color.black
-            : Color.white
+        Color("ButtonPrimaryTextColor")
     }
 }

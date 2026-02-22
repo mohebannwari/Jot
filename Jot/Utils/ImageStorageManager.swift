@@ -7,11 +7,7 @@
 //
 
 import Foundation
-#if os(macOS)
 import AppKit
-#else
-import UIKit
-#endif
 
 /// Manages local storage and retrieval of images for note attachments
 @MainActor
@@ -51,17 +47,10 @@ public final class ImageStorageManager {
         }
         
         // Load image from URL
-        #if os(macOS)
         guard let image = NSImage(contentsOf: url) else {
             NSLog("ImageStorageManager: Failed to load NSImage from URL")
             return nil
         }
-        #else
-        guard let image = UIImage(contentsOfFile: url.path) else {
-            NSLog("ImageStorageManager: Failed to load UIImage from URL")
-            return nil
-        }
-        #endif
         
         // Resize if needed and compress
         let processedImage = await processImage(image)
@@ -220,23 +209,22 @@ public final class ImageStorageManager {
     }
     
     /// Process image: resize if needed and compress to JPEG
-    #if os(macOS)
     private func processImage(_ image: NSImage) async -> Data? {
         // Get image dimensions
         guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
             return nil
         }
-        
+
         let width = CGFloat(cgImage.width)
         let height = CGFloat(cgImage.height)
-        
+
         // Calculate new size if image is too large
         var newSize = NSSize(width: width, height: height)
         if width > maxImageWidth {
             let scale = maxImageWidth / width
             newSize = NSSize(width: maxImageWidth, height: height * scale)
         }
-        
+
         // Resize if needed
         let resizedImage: NSImage
         if newSize != NSSize(width: width, height: height) {
@@ -252,7 +240,7 @@ public final class ImageStorageManager {
         } else {
             resizedImage = image
         }
-        
+
         // Convert to JPEG data
         guard let tiffData = resizedImage.tiffRepresentation,
               let bitmapImage = NSBitmapImageRep(data: tiffData),
@@ -262,34 +250,8 @@ public final class ImageStorageManager {
               ) else {
             return nil
         }
-        
+
         return jpegData
     }
-    #else
-    private func processImage(_ image: UIImage) async -> Data? {
-        // Calculate new size if image is too large
-        let size = image.size
-        var newSize = size
-        
-        if size.width > maxImageWidth {
-            let scale = maxImageWidth / size.width
-            newSize = CGSize(width: maxImageWidth, height: size.height * scale)
-        }
-        
-        // Resize if needed
-        let resizedImage: UIImage
-        if newSize != size {
-            UIGraphicsBeginImageContextWithOptions(newSize, false, 1.0)
-            image.draw(in: CGRect(origin: .zero, size: newSize))
-            resizedImage = UIGraphicsGetImageFromCurrentImageContext() ?? image
-            UIGraphicsEndImageContext()
-        } else {
-            resizedImage = image
-        }
-        
-        // Convert to JPEG data
-        return resizedImage.jpegData(compressionQuality: compressionQuality)
-    }
-    #endif
 }
 

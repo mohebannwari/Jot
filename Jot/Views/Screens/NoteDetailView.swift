@@ -64,6 +64,23 @@ struct NoteDetailView: View {
     @State var searchOnPageCurrentIndex: Int = 0
     @FocusState var isSearchOnPageFocused: Bool
 
+    // MARK: - Apple Intelligence state
+    @State var aiPanelState: AIPanelState = .none   // loading / proofread / editPreview / error
+    @State var aiSummaryText: String? = nil          // independent — not cleared by other tools
+    @State var aiKeyPointsItems: [String]? = nil     // independent — not cleared by other tools
+    @State var aiIsProcessing: Bool = false
+    @State private var aiStateCache: [UUID: AIPanelState] = [:]
+    @State var currentProofreadIndex: Int = 0
+
+    // Selection capture for Edit Content
+    @State var capturedSelectionRange: NSRange = NSRange(location: NSNotFound, length: 0)
+    @State var capturedSelectionText: String = ""
+    @State var capturedSelectionWindowRect: CGRect = .zero
+
+    // Edit Content floating panel
+    @State var showEditContentPanel: Bool = false
+    @State var editContentPanelPosition: CGPoint = .zero
+
     // MARK: - Scroll / toolbar state
     @FocusState private var titleFocused: Bool
     @State private var localEditorFocusID: UUID?
@@ -188,6 +205,29 @@ struct NoteDetailView: View {
                         if FeatureFlags.tagsEnabled {
                             tagsRow
                         }
+                        if let summaryText = aiSummaryText {
+                            AIResultPanel(
+                                state: .summary(summaryText),
+                                onDismiss: { withAnimation(.jotSpring) { aiSummaryText = nil } }
+                            )
+                            .transition(.opacity.combined(with: .offset(y: -8)))
+                        }
+                        if let keyPointsItems = aiKeyPointsItems {
+                            AIResultPanel(
+                                state: .keyPoints(keyPointsItems),
+                                onDismiss: { withAnimation(.jotSpring) { aiKeyPointsItems = nil } }
+                            )
+                            .transition(.opacity.combined(with: .offset(y: -8)))
+                        }
+                        if shouldShowTopPanel {
+                            AIResultPanel(
+                                state: aiPanelState,
+                                onDismiss: {
+                                    withAnimation(.jotSpring) { aiPanelState = .none }
+                                }
+                            )
+                            .transition(.opacity.combined(with: .offset(y: -8)))
+                        }
                         TodoRichTextEditor(
                             text: $editedContent,
                             focusRequestID: localEditorFocusID ?? focusRequestID,
@@ -291,7 +331,7 @@ struct NoteDetailView: View {
         }
         .overlay {
             GeometryReader { geometry in
-                if showFloatingToolbar {
+                if showFloatingToolbar && !showEditContentPanel {
                     let parentFrame = geometry.frame(in: .global)
                     let localX = floatingToolbarOffset.x - parentFrame.minX
                     let localY = floatingToolbarOffset.y - parentFrame.minY
@@ -309,6 +349,38 @@ struct NoteDetailView: View {
                     .position(x: centerX, y: centerY)
                     .transition(.scale(scale: 0.9).combined(with: .opacity))
                     .zIndex(100)
+                }
+            }
+        }
+        .overlay {
+            GeometryReader { geometry in
+                if showEditContentPanel {
+                    // Reuse floatingToolbarOffset — it's already in the correct coordinate space
+                    // (same calculation path that correctly positions FloatingEditToolbar).
+                    let parentFrame = geometry.frame(in: .global)
+                    let localX = floatingToolbarOffset.x - parentFrame.minX
+                    let localY = floatingToolbarOffset.y - parentFrame.minY
+                    let estimatedWidth: CGFloat = 280
+                    let centerX = min(
+                        max(localX + estimatedWidth / 2, estimatedWidth / 2),
+                        geometry.size.width - estimatedWidth / 2
+                    )
+                    let centerY = localY - 20
+
+                    EditContentFloatingPanel(
+                        state: aiPanelState,
+                        onReplace: { applyEditContentReplacement() },
+                        onDismiss: {
+                            withAnimation(.jotSpring) {
+                                showEditContentPanel = false
+                                aiPanelState = .none
+                            }
+                        },
+                        onRedo: { redoEditContent() }
+                    )
+                    .position(x: centerX, y: centerY)
+                    .transition(.scale(scale: 0.9, anchor: .bottom).combined(with: .opacity))
+                    .zIndex(150)
                 }
             }
         }
@@ -337,21 +409,51 @@ struct NoteDetailView: View {
         .onChange(of: editedTags) { _, _ in
             scheduleAutosave()
         }
-        .onChange(of: note.id) { _, _ in
-            // Note switched — save old, reset state for new note (avoids full view destroy/recreate)
+        .onChange(of: note.id) { oldNoteID, newNoteID in
             autosaveWorkItem?.cancel()
             persistIfNeeded()
+
+            // Cache current state (don't cache editPreview — it's contextual to a selection)
+            if case .editPreview = aiPanelState {
+                aiStateCache[oldNoteID] = nil
+            } else {
+                aiStateCache[oldNoteID] = aiPanelState == .none ? nil : aiPanelState
+            }
+
+            // Tear down transient overlays
+            aiIsProcessing = false
+            showEditContentPanel = false
+            aiSummaryText = nil
+            aiKeyPointsItems = nil
+            currentProofreadIndex = 0
+            NotificationCenter.default.post(name: .aiProofreadClearOverlays, object: nil)
+
+            // Restore standard note fields
             editedTitle = note.title
             editedContent = note.content
             editedTags = note.tags
             lastSavedSnapshot = DraftSnapshot(title: note.title, content: note.content, tags: note.tags)
-            galleryPreviewImage = nil
-            lastGalleryFilename = nil
-            galleryItems = []
-            showGalleryGrid = false
-            showVoiceRecorderOverlay = false
-            showLinkInputOverlay = false
-            showImagePicker = false
+            galleryPreviewImage = nil; lastGalleryFilename = nil
+            galleryItems = []; showGalleryGrid = false
+            showVoiceRecorderOverlay = false; showLinkInputOverlay = false; showImagePicker = false
+            capturedSelectionRange = NSRange(location: NSNotFound, length: 0)
+            capturedSelectionText = ""; capturedSelectionWindowRect = .zero
+
+            // Restore cached AI state for new note
+            let newState = aiStateCache[newNoteID] ?? .none
+            aiPanelState = newState
+
+            // Re-apply proofread overlays if that was the cached state
+            if case .proofread(let annotations) = newState, !annotations.isEmpty {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    NotificationCenter.default.post(
+                        name: .aiProofreadShowAnnotations,
+                        object: annotations,
+                        userInfo: ["activeIndex": 0]
+                    )
+                }
+            }
+
             updateGalleryPreview(for: note.content)
         }
         .onReceive(NotificationCenter.default.publisher(for: .noteToolsBarAction))
@@ -360,6 +462,38 @@ struct NoteDetailView: View {
                let tool = EditTool(rawValue: rawValue)
             {
                 handleEditToolAction(tool)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .aiToolAction)) { notification in
+            guard let tool = notification.object as? AITool else { return }
+            Task { await handleAITool(tool) }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .aiEditSubmit)) { notification in
+            guard let instruction = notification.object as? String else { return }
+            Task { await handleAIEdit(instruction: instruction) }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .aiEditCaptureSelection)) { notification in
+            guard let userInfo = notification.userInfo else { return }
+            capturedSelectionRange = (userInfo["nsRange"] as? NSRange) ?? NSRange(location: NSNotFound, length: 0)
+            capturedSelectionText = (userInfo["selectedText"] as? String) ?? ""
+            capturedSelectionWindowRect = (userInfo["windowRect"] as? CGRect) ?? .zero
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .aiProofreadApplySuggestion)) { notification in
+            guard let userInfo = notification.userInfo,
+                  let original = userInfo["original"] as? String else { return }
+            if case .proofread(var annotations) = aiPanelState {
+                annotations.removeAll { $0.original == original }
+                currentProofreadIndex = annotations.isEmpty ? 0 : min(currentProofreadIndex, annotations.count - 1)
+                withAnimation(.jotSpring) { aiPanelState = .proofread(annotations) }
+                if !annotations.isEmpty {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                        NotificationCenter.default.post(
+                            name: .aiProofreadShowAnnotations,
+                            object: annotations,
+                            userInfo: ["activeIndex": currentProofreadIndex]
+                        )
+                    }
+                }
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .showInNoteSearch)) { _ in
@@ -442,6 +576,15 @@ struct NoteDetailView: View {
 
     private var noteDateString: String {
         Self.dateFormatter.string(from: note.date)
+    }
+
+    var shouldShowTopPanel: Bool {
+        switch aiPanelState {
+        case .error: return true
+        case .loading(let tool):
+            return tool == .summary || tool == .keyPoints
+        default: return false
+        }
     }
 
     private var isNewNote: Bool {
@@ -632,7 +775,21 @@ struct NoteDetailView: View {
 
     @ViewBuilder
     private var bottomOverlay: some View {
-        if showVoiceRecorderOverlay || showLinkInputOverlay || showSearchOnPageOverlay {
+        let proofreadAnnotations: [ProofreadAnnotation]? = {
+            if case .proofread(let a) = aiPanelState { return a }
+            return nil
+        }()
+        let showProofreadLoading: Bool = {
+            if case .loading(.proofread) = aiPanelState { return true }
+            return false
+        }()
+        let showProofreadSuggestions = !(proofreadAnnotations?.isEmpty ?? true)
+        let showProofreadSuccess = proofreadAnnotations?.isEmpty == true
+        let showAnyOverlay = showVoiceRecorderOverlay || showLinkInputOverlay
+            || showSearchOnPageOverlay || showProofreadLoading
+            || showProofreadSuggestions || showProofreadSuccess
+
+        if showAnyOverlay {
             VStack(spacing: 12) {
                 if showSearchOnPageOverlay {
                     HStack {
@@ -660,12 +817,167 @@ struct NoteDetailView: View {
                         Spacer()
                     }
                 }
+
+                if showProofreadLoading {
+                    HStack {
+                        Spacer()
+                        proofreadLoadingPill
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                        Spacer()
+                    }
+                }
+
+                if showProofreadSuggestions, let annotations = proofreadAnnotations {
+                    HStack {
+                        Spacer()
+                        proofreadSuggestionsBar(annotations: annotations)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                        Spacer()
+                    }
+                }
+
+                if showProofreadSuccess {
+                    HStack {
+                        Spacer()
+                        looksGoodPill
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                        Spacer()
+                    }
+                }
             }
             .padding(.horizontal, 24)
             .padding(.bottom, 18)
             .animation(.jotSpring, value: showVoiceRecorderOverlay)
             .animation(.jotSpring, value: showLinkInputOverlay)
             .animation(.jotSpring, value: showSearchOnPageOverlay)
+            .animation(.jotSpring, value: showProofreadLoading)
+            .animation(.jotSpring, value: showProofreadSuggestions)
+            .animation(.jotSpring, value: showProofreadSuccess)
+        }
+    }
+
+    private var proofreadLoadingPill: some View {
+        HStack(spacing: 8) {
+            Image("IconBroomSparkle")
+                .renderingMode(.template)
+                .resizable().scaledToFit()
+                .foregroundColor(Color("SecondaryTextColor"))
+                .frame(width: 14, height: 14)
+            Text("Proofreading...")
+                .font(FontManager.heading(size: 12, weight: .medium))
+                .foregroundColor(Color("PrimaryTextColor"))
+                .shimmering(active: true)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .liquidGlass(in: Capsule())
+    }
+
+    private func proofreadSuggestionsBar(annotations: [ProofreadAnnotation]) -> some View {
+        let count = annotations.count
+        let clampedIndex = count > 0 ? min(currentProofreadIndex, count - 1) : 0
+        let current = count > 0 ? annotations[clampedIndex] : nil
+
+        return VStack(alignment: .leading, spacing: 8) {
+            if let current {
+                HStack(spacing: 8) {
+                    Text(current.original)
+                        .strikethrough()
+                        .font(FontManager.body(size: 16, weight: .regular))
+                        .foregroundColor(Color("SecondaryTextColor"))
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color("SecondaryBackgroundColor"), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                    Text(current.replacement)
+                        .font(FontManager.body(size: 16, weight: .regular))
+                        .foregroundColor(Color("PrimaryTextColor"))
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color("SecondaryBackgroundColor"), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                }
+                .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack(spacing: 8) {
+                if count > 1 {
+                    Text("\(clampedIndex + 1)/\(count)")
+                        .font(FontManager.heading(size: 12, weight: .medium).monospacedDigit())
+                        .foregroundColor(Color("SecondaryTextColor"))
+                        .padding(.leading, 8)
+
+                    Button { navigateToPrevProofreadSuggestion() } label: {
+                        Image("IconChevronTopSmall")
+                            .renderingMode(.template)
+                            .resizable().scaledToFit()
+                            .frame(width: 16, height: 16)
+                    }
+                    .foregroundColor(Color("SecondaryTextColor"))
+                    .buttonStyle(.plain)
+                    .macPointingHandCursor()
+                    .subtleHoverScale(1.04)
+
+                    Button { navigateToNextProofreadSuggestion() } label: {
+                        Image("IconChevronDownSmall")
+                            .renderingMode(.template)
+                            .resizable().scaledToFit()
+                            .frame(width: 16, height: 16)
+                    }
+                    .foregroundColor(Color("SecondaryTextColor"))
+                    .buttonStyle(.plain)
+                    .macPointingHandCursor()
+                    .subtleHoverScale(1.04)
+                }
+
+                Spacer()
+
+                Button("Done") {
+                    NotificationCenter.default.post(name: .aiProofreadClearOverlays, object: nil)
+                    withAnimation(.jotSpring) { aiPanelState = .none }
+                }
+                .font(FontManager.heading(size: 12, weight: .regular))
+                .foregroundColor(Color("SecondaryTextColor"))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
+                .liquidGlass(in: Capsule())
+                .buttonStyle(.plain)
+                .macPointingHandCursor()
+                .subtleHoverScale(1.04)
+
+                Button("Replace All") {
+                    replaceAllSuggestions()
+                }
+                .font(FontManager.heading(size: 12, weight: .semibold))
+                .foregroundColor(.white)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
+                .background(Color.accentColor, in: Capsule())
+                .buttonStyle(.plain)
+                .macPointingHandCursor()
+                .subtleHoverScale(1.04)
+            }
+        }
+        .padding(8)
+        .frame(maxWidth: 360)
+        .liquidGlass(in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+
+    private var looksGoodPill: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundColor(.green)
+                .font(.system(size: 14))
+            Text("Looks good")
+                .font(FontManager.heading(size: 12, weight: .medium))
+                .foregroundColor(Color("PrimaryTextColor"))
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .liquidGlass(in: Capsule())
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                withAnimation(.jotSpring) { aiPanelState = .none }
+            }
         }
     }
 
@@ -797,7 +1109,7 @@ struct NoteDetailView: View {
         lastSavedSnapshot = snapshot
     }
 
-    private func scheduleAutosave() {
+    func scheduleAutosave() {
         autosaveWorkItem?.cancel()
         let workItem = DispatchWorkItem {
             persistIfNeeded()

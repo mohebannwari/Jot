@@ -26,7 +26,7 @@ struct CreateFolderSheet: View {
         self.onCreate = onCreate
         self.onCancel = onCancel
         self.editingFolder = editingFolder
-        _folderName = State(initialValue: editingFolder?.name ?? "New Folder")
+        _folderName = State(initialValue: editingFolder?.name ?? "New Notebook")
         _selectedColorHex = State(initialValue: editingFolder?.colorHex)
     }
 
@@ -36,7 +36,7 @@ struct CreateFolderSheet: View {
         ("yellow", "#facc15"),
         ("green", "#22c55e"),
         ("fuchsia", "#d946ef"),
-        ("blue", "#2563eb"),
+        ("blue", "#3b82f6"),
     ]
 
     private let circleSize: CGFloat = 40
@@ -63,7 +63,7 @@ struct CreateFolderSheet: View {
 
     private var nameInputRow: some View {
         HStack(spacing: 8) {
-            TextField("Folder name", text: $folderName)
+            TextField("Notebook name", text: $folderName)
                 .font(FontManager.heading(size: 15, weight: .medium))
                 .tracking(-0.5)
                 .foregroundColor(Color("PrimaryTextColor"))
@@ -102,12 +102,12 @@ struct CreateFolderSheet: View {
                     .renderingMode(.template)
                     .resizable()
                     .scaledToFit()
-                    .foregroundColor(Color("SecondaryTextColor"))
+                    .foregroundColor(Color("IconSecondaryColor"))
                     .frame(width: 20, height: 20)
 
-                Text("Choose folder color")
+                Text("Choose notebook color")
                     .font(FontManager.heading(size: 13, weight: .medium))
-                    .foregroundColor(Color("SecondaryTextColor"))
+                    .foregroundColor(Color("PrimaryTextColor"))
                     .tracking(-0.4)
             }
             .padding(.horizontal, 4)
@@ -175,7 +175,7 @@ struct CreateFolderSheet: View {
                     .overlay(
                         Image(systemName: "plus")
                             .font(.system(size: 15, weight: .medium))
-                            .foregroundColor(Color("SecondaryTextColor"))
+                            .foregroundColor(Color("IconSecondaryColor"))
                     )
             }
 
@@ -187,6 +187,7 @@ struct CreateFolderSheet: View {
         }
         .frame(width: circleSize, height: circleSize)
         .contentShape(Circle())
+        .subtleHoverScale(1.04)
         .onChange(of: customColor) { _, newColor in
             selectedColorHex = newColor.toHexString()
         }

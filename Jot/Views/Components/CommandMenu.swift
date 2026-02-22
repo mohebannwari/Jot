@@ -41,30 +41,16 @@ struct CommandMenu: View {
     // Callback when a tool is selected
     var onSelect: ((EditTool) -> Void)?
 
-    // Maximum height for the menu
-    var maxHeight: CGFloat = CommandMenuLayout.defaultMaxHeight
-
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(spacing: 0) {
-                    ForEach(Array(tools.enumerated()), id: \.element.rawValue) { index, tool in
-                        CommandMenuItem(
-                            tool: tool,
-                            isSelected: index == selectedIndex
-                        )
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            onSelect?(tool)
-                        }
-                        .id(index)
-                    }
-                }
-            }
-            .frame(height: CommandMenuLayout.idealHeight(for: tools.count, maxHeight: maxHeight))
-            .onChange(of: selectedIndex) { _, newIndex in
-                withAnimation(.smooth(duration: 0.2)) {
-                    proxy.scrollTo(newIndex, anchor: .center)
+        VStack(spacing: 0) {
+            ForEach(Array(tools.enumerated()), id: \.element.rawValue) { index, tool in
+                CommandMenuItem(
+                    tool: tool,
+                    isSelected: index == selectedIndex
+                )
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    onSelect?(tool)
                 }
             }
         }
@@ -225,8 +211,7 @@ struct CommandMenu_Previews: PreviewProvider {
                 selectedIndex: .constant(0),
                 onSelect: { tool in
                     print("Selected: \(tool.name)")
-                },
-                maxHeight: 280
+                }
             )
             .padding(40)
         }

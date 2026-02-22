@@ -12,11 +12,7 @@
 
 import SwiftUI
 
-#if os(macOS)
 import AppKit
-#else
-import UIKit
-#endif
 
 /// Centralized font manager providing consistent typography across the application
 struct FontManager {
@@ -45,7 +41,6 @@ struct FontManager {
         }
     }
     
-    #if os(macOS)
     /// NSFont version for AppKit components
     nonisolated static func bodyNS(size: CGFloat = 16, weight: Weight = .regular) -> NSFont {
         switch currentBodyFontStyle() {
@@ -67,27 +62,6 @@ struct FontManager {
             return NSFont.monospacedSystemFont(ofSize: size, weight: weight.toNSWeight())
         }
     }
-    #else
-    /// UIFont version for UIKit components
-    static func bodyUI(size: CGFloat = 16, weight: Weight = .regular) -> UIFont {
-        switch currentBodyFontStyle() {
-        case .default:
-            // Try Charter first, fall back to Georgia (similar serif), then system
-            if let charter = UIFont(name: "Charter-\(weight.toCharterName())", size: size) {
-                return charter
-            } else if let charter = UIFont(name: "Charter", size: size) {
-                return charter
-            } else if let georgia = UIFont(name: "Georgia", size: size) {
-                return georgia
-            }
-            return UIFont.systemFont(ofSize: size, weight: weight.toUIWeight())
-        case .system:
-            return UIFont.systemFont(ofSize: size, weight: weight.toUIWeight())
-        case .mono:
-            return UIFont.monospacedSystemFont(ofSize: size, weight: weight.toUIWeight())
-        }
-    }
-    #endif
     
     // MARK: - Heading Fonts (SF Pro Compact)
     
@@ -98,7 +72,6 @@ struct FontManager {
             .leading(.tight)
     }
     
-    #if os(macOS)
     /// NSFont version for AppKit headings
     static func headingNS(size: CGFloat = 24, weight: Weight = .medium) -> NSFont {
         // SF Pro Compact on macOS
@@ -108,25 +81,6 @@ struct FontManager {
         // Fallback to standard SF Pro with weight
         return NSFont.systemFont(ofSize: size, weight: weight.toNSWeight())
     }
-    #else
-    /// UIFont version for UIKit headings
-    static func headingUI(size: CGFloat = 24, weight: Weight = .medium) -> UIFont {
-        // SF Pro Compact on iOS
-        if let descriptor = UIFont.systemFont(ofSize: size, weight: weight.toUIWeight()).fontDescriptor
-            .withDesign(.default)?
-            .addingAttributes([
-                .featureSettings: [
-                    [
-                        UIFontDescriptor.FeatureKey.type: kNumberSpacingType,
-                        UIFontDescriptor.FeatureKey.selector: kProportionalNumbersSelector
-                    ]
-                ]
-            ]) {
-            return UIFont(descriptor: descriptor, size: size)
-        }
-        return UIFont.systemFont(ofSize: size, weight: weight.toUIWeight())
-    }
-    #endif
     
     // MARK: - Metadata Fonts (SF Mono)
     
@@ -143,17 +97,10 @@ struct FontManager {
         Font.system(size: size, weight: weight.toSwiftUIWeight(), design: .default)
     }
     
-    #if os(macOS)
     /// NSFont version for AppKit metadata
     static func metadataNS(size: CGFloat = 12, weight: Weight = .medium) -> NSFont {
         return NSFont.monospacedSystemFont(ofSize: size, weight: weight.toNSWeight())
     }
-    #else
-    /// UIFont version for UIKit metadata
-    static func metadataUI(size: CGFloat = 12, weight: Weight = .medium) -> UIFont {
-        return UIFont.monospacedSystemFont(ofSize: size, weight: weight.toUIWeight())
-    }
-    #endif
     
     // MARK: - Weight Enum
     
@@ -173,7 +120,6 @@ struct FontManager {
             }
         }
         
-        #if os(macOS)
         nonisolated func toNSWeight() -> NSFont.Weight {
             switch self {
             case .regular: return .regular
@@ -182,23 +128,13 @@ struct FontManager {
             case .bold: return .bold
             }
         }
-        
+
         nonisolated func toNSSymbolicTraits() -> NSFontDescriptor.SymbolicTraits {
             switch self {
             case .bold: return .bold
             default: return []
             }
         }
-        #else
-        nonisolated func toUIWeight() -> UIFont.Weight {
-            switch self {
-            case .regular: return .regular
-            case .medium: return .medium
-            case .semibold: return .semibold
-            case .bold: return .bold
-            }
-        }
-        #endif
         
         nonisolated func toCharterName() -> String {
             switch self {
