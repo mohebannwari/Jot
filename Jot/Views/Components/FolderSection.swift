@@ -58,7 +58,7 @@ struct FolderSection: View {
         let shouldShowActions = isHovered
         let isRenamingThisFolder = renamingFolderID == folder.id
         let noteCount = (notesByFolder[folder.id] ?? []).count
-        let leadingAsset = noteCount == 0 ? "IconFolderAddRight" : (isExpanded ? "IconFolderOpen" : "IconFolder2")
+        let leadingAsset = noteCount == 0 ? "IconFolder1" : (isExpanded ? "IconFolderOpen" : "IconFolder1")
 
         return HStack(spacing: 8) {
             Image(leadingAsset)
@@ -66,10 +66,10 @@ struct FolderSection: View {
                 .resizable()
                 .scaledToFit()
                 .foregroundColor(folder.folderColor)
-                .frame(width: 20, height: 20)
+                .frame(width: 18, height: 18)
 
             if isRenamingThisFolder {
-                TextField("Notebook Name", text: $renamingName)
+                TextField("Folder Name", text: $renamingName)
                     .font(FontManager.heading(size: 15, weight: .medium))
                     .foregroundColor(Color("PrimaryTextColor"))
                     .textFieldStyle(.plain)
@@ -112,14 +112,10 @@ struct FolderSection: View {
                         Label {
                             Text("Edit Folder")
                         } icon: {
-                            Image("rename note")
-                                .renderingMode(.template)
-                                .resizable()
-                                .scaledToFit()
-                                .frame(width: 20, height: 20)
+                            Image.menuIcon("rename note")
                         }
                     }
-                    
+
                     if let onArchiveFolder {
                         Button {
                             HapticManager.shared.buttonTap()
@@ -128,11 +124,7 @@ struct FolderSection: View {
                             Label {
                                 Text("Archive Folder")
                             } icon: {
-                                Image("IconArchive1")
-                                    .renderingMode(.template)
-                                    .resizable()
-                                    .scaledToFit()
-                                    .frame(width: 20, height: 20)
+                                Image.menuIcon("IconArchive1")
                             }
                         }
                     }
@@ -144,18 +136,14 @@ struct FolderSection: View {
                         Label {
                             Text("Delete Folder")
                         } icon: {
-                            Image("delete")
-                                .renderingMode(.template)
-                                .resizable()
-                                .scaledToFit()
-                                .frame(width: 20, height: 20)
+                            Image.menuIcon("delete")
                         }
                     }
                 } label: {
                     Image(systemName: "ellipsis")
-                        .font(FontManager.icon(weight: .medium))
+                        .font(FontManager.icon(size: 18, weight: .medium))
                         .foregroundColor(Color("SecondaryTextColor"))
-                        .frame(width: 20, height: 20)
+                        .frame(width: 18, height: 18)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -170,7 +158,7 @@ struct FolderSection: View {
                         .resizable()
                         .scaledToFit()
                         .foregroundColor(Color("SecondaryTextColor"))
-                        .frame(width: 20, height: 20)
+                        .frame(width: 18, height: 18)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -210,14 +198,10 @@ struct FolderSection: View {
                 Label {
                     Text("Edit Folder")
                 } icon: {
-                    Image("rename note")
-                        .renderingMode(.template)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 20, height: 20)
+                    Image.menuIcon("rename note")
                 }
             }
-            
+
             if let onArchiveFolder {
                 Button {
                     HapticManager.shared.buttonTap()
@@ -226,11 +210,7 @@ struct FolderSection: View {
                     Label {
                         Text("Archive Folder")
                     } icon: {
-                        Image("IconArchive1")
-                            .renderingMode(.template)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 20, height: 20)
+                        Image.menuIcon("IconArchive1")
                     }
                 }
             }
@@ -242,11 +222,7 @@ struct FolderSection: View {
                 Label {
                     Text("Delete Folder")
                 } icon: {
-                    Image("delete")
-                        .renderingMode(.template)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 20, height: 20)
+                    Image.menuIcon("delete")
                 }
             }
         }
@@ -275,8 +251,6 @@ struct FolderSection: View {
         let showsAll = showAllNotesFolderIDs.contains(folder.id)
         let shouldLimit = notes.count > 5 && !showsAll
         let visibleNotes = shouldLimit ? Array(notes.prefix(5)) : notes
-
-        let containerShape = RoundedRectangle(cornerRadius: 12, style: .continuous)
 
         return Group {
             if !notes.isEmpty {
@@ -312,7 +286,6 @@ struct FolderSection: View {
                                     return [NoteDragItem(noteID: note.id)]
                                 }
                             },
-                            cornerRadius: 8
                         )
                     }
 
@@ -332,17 +305,7 @@ struct FolderSection: View {
                         .subtleHoverScale(1.02)
                     }
                 }
-                .padding(4)
-                .background(
-                    containerShape
-                        .fill(folder.folderColor.solidFolderTint(for: colorScheme))
-                )
-                .overlay(
-                    containerShape
-                        .stroke(Color.primary.opacity(0.2), lineWidth: 1)
-                )
-                .clipShape(containerShape)
-                .padding(.leading, 36)
+                .padding(.leading, 26)
             }
         }
     }

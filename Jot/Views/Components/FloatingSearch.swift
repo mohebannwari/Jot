@@ -127,7 +127,7 @@ struct FloatingSearch: View {
                     .resizable()
                     .scaledToFit()
                     .foregroundColor(Color("SecondaryTextColor"))
-                    .frame(width: 20, height: 20)
+                    .frame(width: 18, height: 18)
 
                 TextField("Search", text: $searchText)
                     .font(FontManager.heading(size: 13, weight: .medium))
@@ -158,7 +158,7 @@ struct FloatingSearch: View {
                         .resizable()
                         .scaledToFit()
                         .foregroundColor(Color("SecondaryTextColor"))
-                        .frame(width: 20, height: 20)
+                        .frame(width: 18, height: 18)
                 }
                 .buttonStyle(.plain)
                 .subtleHoverScale(1.06)
@@ -201,7 +201,7 @@ struct FloatingSearch: View {
                                     .resizable()
                                     .scaledToFit()
                                     .foregroundColor(Color("SecondaryTextColor"))
-                                    .frame(width: 20, height: 20)
+                                    .frame(width: 18, height: 18)
 
                                 Text(query)
                                     .font(FontManager.heading(size: 15, weight: .medium))
@@ -255,12 +255,12 @@ struct FloatingSearch: View {
         }) {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 8) {
-                    Image(result.isFolderResult ? "IconFolder2" : "IconNoteText")
+                    Image(result.isFolderResult ? "IconFolder1" : "IconNoteText")
                         .renderingMode(.template)
                         .resizable()
                         .scaledToFit()
                         .foregroundColor(Color("SecondaryTextColor"))
-                        .frame(width: 20, height: 20)
+                        .frame(width: 18, height: 18)
 
                     Text(result.title)
                         .font(FontManager.heading(size: 15, weight: .medium))
@@ -275,12 +275,12 @@ struct FloatingSearch: View {
 
                 if let note = result.note, let folder = folder(for: note.folderID) {
                     HStack(spacing: 4) {
-                        Image("IconFolder2")
+                        Image("IconFolder1")
                             .renderingMode(.template)
                             .resizable()
                             .scaledToFit()
                             .foregroundColor(.white)
-                            .frame(width: 15, height: 15)
+                            .frame(width: 14, height: 14)
 
                         Text(folder.name)
                             .font(FontManager.heading(size: 11, weight: .medium))

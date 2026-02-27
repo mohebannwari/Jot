@@ -23,9 +23,13 @@ struct FontManager {
             userDefaults.string(forKey: ThemeManager.bodyFontStyleDefaultsKey) ?? BodyFontStyle.default.rawValue
         return BodyFontStyle(rawValue: rawValue) ?? .default
     }
-    
+
+    /// Optical size compensation so SF Pro and SF Mono visually match Charter at the same nominal size.
+    /// Charter has a larger x-height than system fonts; scaling up non-Charter variants equalises them.
+    static let opticalSizeCompensation: CGFloat = 16.0 / 15.0  // ≈ 1.067
+
     // MARK: - Body Text Fonts (Charter)
-    
+
     /// Primary body text font using Charter
     /// Use for: Note content, editor text, paragraph text
     static func body(size: CGFloat = 16, weight: Weight = .regular) -> Font {
@@ -35,12 +39,12 @@ struct FontManager {
             return Font.custom("Charter", size: size)
                 .weight(weight.toSwiftUIWeight())
         case .system:
-            return Font.system(size: size, weight: weight.toSwiftUIWeight(), design: .default)
+            return Font.system(size: size * opticalSizeCompensation, weight: weight.toSwiftUIWeight(), design: .default)
         case .mono:
-            return Font.system(size: size, weight: weight.toSwiftUIWeight(), design: .monospaced)
+            return Font.system(size: size * opticalSizeCompensation, weight: weight.toSwiftUIWeight(), design: .monospaced)
         }
     }
-    
+
     /// NSFont version for AppKit components
     nonisolated static func bodyNS(size: CGFloat = 16, weight: Weight = .regular) -> NSFont {
         switch currentBodyFontStyle() {
@@ -57,9 +61,9 @@ struct FontManager {
             }
             return NSFont.systemFont(ofSize: size, weight: weight.toNSWeight())
         case .system:
-            return NSFont.systemFont(ofSize: size, weight: weight.toNSWeight())
+            return NSFont.systemFont(ofSize: size * opticalSizeCompensation, weight: weight.toNSWeight())
         case .mono:
-            return NSFont.monospacedSystemFont(ofSize: size, weight: weight.toNSWeight())
+            return NSFont.monospacedSystemFont(ofSize: size * opticalSizeCompensation, weight: weight.toNSWeight())
         }
     }
     

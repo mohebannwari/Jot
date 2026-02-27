@@ -22,7 +22,7 @@ struct NoteCard: View {
                     // Date Badge - using SF Mono for metadata
                     HStack(spacing: 4) {
                         Image(systemName: "calendar")
-                            .font(FontManager.icon())
+                            .font(FontManager.icon(size: 18))
                             .foregroundColor(Color("TertiaryTextColor"))
                         
                         Text(dateFormatter.string(from: note.date))
@@ -43,11 +43,7 @@ struct NoteCard: View {
                             Label {
                                 Text("Pin Note")
                             } icon: {
-                                Image("IconThumbtack")
-                                    .renderingMode(.template)
-                                    .resizable()
-                                    .scaledToFit()
-                                    .frame(width: 20, height: 20)
+                                Image.menuIcon("IconThumbtack")
                             }
                         }
 
@@ -55,13 +51,9 @@ struct NoteCard: View {
                             // Move to folder functionality
                         } label: {
                             Label {
-                                Text("Move to Notebook")
+                                Text("Move to Folder")
                             } icon: {
-                                Image("IconFolder2")
-                                    .renderingMode(.template)
-                                    .resizable()
-                                    .scaledToFit()
-                                    .frame(width: 20, height: 20)
+                                Image.menuIcon("IconMoveFolder")
                             }
                         }
 
@@ -75,11 +67,7 @@ struct NoteCard: View {
                             Label {
                                 Text("Export Note...")
                             } icon: {
-                                Image("export note")
-                                    .renderingMode(.template)
-                                    .resizable()
-                                    .scaledToFit()
-                                    .frame(width: 20, height: 20)
+                                Image.menuIcon("export note")
                             }
                         }
 
@@ -93,18 +81,14 @@ struct NoteCard: View {
                             Label {
                                 Text("Delete")
                             } icon: {
-                                Image("delete")
-                                    .renderingMode(.template)
-                                    .resizable()
-                                    .scaledToFit()
-                                    .frame(width: 20, height: 20)
+                                Image.menuIcon("delete")
                             }
                         }
                     } label: {
                         Image(systemName: "ellipsis")
-                            .font(FontManager.icon())
+                            .font(FontManager.icon(size: 18))
                             .foregroundColor(Color("TertiaryTextColor"))
-                            .frame(width: 20, height: 20)
+                            .frame(width: 18, height: 18)
                             .tintedLiquidGlass(in: Circle(), tint: Color("SurfaceTranslucentColor"))
                     }
                     .buttonStyle(PlainButtonStyle())
@@ -122,14 +106,14 @@ struct NoteCard: View {
                     // Content with original gradient fade (stronger at bottom) - using Charter for body text
                     ZStack(alignment: .topLeading) {
                         // Base text
-                        Text(note.content)
+                        Text(note.content.strippingColorMarkup)
                             .font(FontManager.body(size: 14, weight: .regular))
                             .foregroundColor(Color("SecondaryTextColor"))
                             .multilineTextAlignment(.leading)
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                        
+
                         // Blurred overlay masked to intensify bottom fade
-                        Text(note.content)
+                        Text(note.content.strippingColorMarkup)
                             .font(FontManager.body(size: 14, weight: .regular))
                             .foregroundColor(Color("SecondaryTextColor"))
                             .multilineTextAlignment(.leading)
@@ -226,7 +210,7 @@ struct TagView: View {
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: "tag.fill")
-                .font(FontManager.icon())
+                .font(FontManager.icon(size: 18))
                 .foregroundColor(Color("TagTextColor"))
 
             Text(tag)

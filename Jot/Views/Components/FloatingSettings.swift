@@ -95,7 +95,7 @@ struct FloatingSettings: View {
                     .resizable()
                     .scaledToFit()
                     .foregroundColor(Color("SettingsIconSecondaryColor"))
-                    .frame(width: 20, height: 20)
+                    .frame(width: 18, height: 18)
 
                 Text(tab.title)
                     .font(FontManager.heading(size: 15, weight: .medium))
@@ -298,7 +298,7 @@ struct FloatingSettings: View {
                 bodyFontCard(
                     title: "System",
                     style: .system,
-                    previewFont: FontManager.heading(size: 20, weight: .medium)
+                    previewFont: Font.system(size: 20 * FontManager.opticalSizeCompensation, weight: .medium, design: .default)
                 )
 
                 Spacer()
@@ -306,7 +306,7 @@ struct FloatingSettings: View {
                 bodyFontCard(
                     title: "Mono",
                     style: .mono,
-                    previewFont: Font.system(size: 20, weight: .medium, design: .monospaced)
+                    previewFont: Font.system(size: 20 * FontManager.opticalSizeCompensation, weight: .medium, design: .monospaced)
                 )
             }
         }

@@ -4,6 +4,7 @@
   },
   "groups" : [
     {
+      "blur-material" : 1,
       "layers" : [
         {
           "blend-mode-specializations" : [
@@ -25,21 +26,48 @@
               "value" : true
             }
           ],
-          "image-name" : "iOS – App Icon.png",
-          "name" : "iOS – App Icon",
+          "image-name" : "IconFeather2.png",
+          "name" : "IconFeather2",
           "position" : {
-            "scale" : 2.2,
+            "scale" : 2,
             "translation-in-points" : [
-              -43.48281015911439,
-              28.648677755915287
+              37.671848507466706,
+              13.063624885653777
             ]
           }
         }
       ],
-      "shadow" : {
-        "kind" : "neutral",
-        "opacity" : 0.5
+      "lighting" : "individual",
+      "position" : {
+        "scale" : 1,
+        "translation-in-points" : [
+          -23.346263436078935,
+          15.026674063462217
+        ]
       },
+      "shadow-specializations" : [
+        {
+          "value" : {
+            "kind" : "layer-color",
+            "opacity" : 1
+          }
+        },
+        {
+          "appearance" : "dark",
+          "value" : {
+            "kind" : "neutral",
+            "opacity" : 0.5
+          }
+        },
+        {
+          "appearance" : "tinted",
+          "value" : {
+            "kind" : "layer-color",
+            "opacity" : 1
+          }
+        }
+      ],
+      "specular" : true,
       "translucency" : {
         "enabled" : true,
         "value" : 0.5

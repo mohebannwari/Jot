@@ -349,6 +349,23 @@ struct NoteDetailView: View {
                     .position(x: centerX, y: centerY)
                     .transition(.scale(scale: 0.9).combined(with: .opacity))
                     .zIndex(100)
+
+                    // Color picker pill — 8px to the right of the main toolbar
+                    let colorPillWidth: CGFloat = 186
+                    let colorPillGap: CGFloat = 8
+                    let colorPillCenterX = localX + toolbarWidth + colorPillGap + colorPillWidth / 2
+
+                    FloatingColorPicker(onColorSelected: { hex in
+                        TextFormattingManager.colorLog("POST notification applyTextColor hex=\(hex)")
+                        NotificationCenter.default.post(
+                            name: Notification.Name("applyTextColor"),
+                            object: nil,
+                            userInfo: ["hex": hex]
+                        )
+                    })
+                    .position(x: colorPillCenterX, y: centerY)
+                    .transition(.scale(scale: 0.9).combined(with: .opacity))
+                    .zIndex(100)
                 }
             }
         }
@@ -383,10 +400,16 @@ struct NoteDetailView: View {
                     .zIndex(150)
                 }
             }
+            .allowsHitTesting(showEditContentPanel)
         }
         .onAppear {
             updateGalleryPreview(for: editedContent)
             glassElementsVisible = true
+            if isNewNote {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                    titleFocused = true
+                }
+            }
         }
         .onDisappear {
             autosaveWorkItem?.cancel()
@@ -433,6 +456,11 @@ struct NoteDetailView: View {
             editedContent = note.content
             editedTags = note.tags
             lastSavedSnapshot = DraftSnapshot(title: note.title, content: note.content, tags: note.tags)
+            if isNewNote {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                    titleFocused = true
+                }
+            }
             galleryPreviewImage = nil; lastGalleryFilename = nil
             galleryItems = []; showGalleryGrid = false
             showVoiceRecorderOverlay = false; showLinkInputOverlay = false; showImagePicker = false
@@ -621,7 +649,7 @@ struct NoteDetailView: View {
         HStack(alignment: .top, spacing: 6) {
             HStack(spacing: 6) {
                 Image(systemName: "plus")
-                    .font(FontManager.icon(weight: .semibold))
+                    .font(FontManager.icon(size: 18, weight: .semibold))
                     .foregroundColor(
                         isAddingTag ? Color("AccentColor") : Color("SecondaryTextColor"))
 
@@ -862,7 +890,7 @@ struct NoteDetailView: View {
                 .renderingMode(.template)
                 .resizable().scaledToFit()
                 .foregroundColor(Color("SecondaryTextColor"))
-                .frame(width: 14, height: 14)
+                .frame(width: 18, height: 18)
             Text("Proofreading...")
                 .font(FontManager.heading(size: 12, weight: .medium))
                 .foregroundColor(Color("PrimaryTextColor"))
@@ -870,7 +898,6 @@ struct NoteDetailView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .liquidGlass(in: Capsule())
     }
 
     private func proofreadSuggestionsBar(annotations: [ProofreadAnnotation]) -> some View {
@@ -910,7 +937,7 @@ struct NoteDetailView: View {
                         Image("IconChevronTopSmall")
                             .renderingMode(.template)
                             .resizable().scaledToFit()
-                            .frame(width: 16, height: 16)
+                            .frame(width: 18, height: 18)
                     }
                     .foregroundColor(Color("SecondaryTextColor"))
                     .buttonStyle(.plain)
@@ -921,7 +948,7 @@ struct NoteDetailView: View {
                         Image("IconChevronDownSmall")
                             .renderingMode(.template)
                             .resizable().scaledToFit()
-                            .frame(width: 16, height: 16)
+                            .frame(width: 18, height: 18)
                     }
                     .foregroundColor(Color("SecondaryTextColor"))
                     .buttonStyle(.plain)
@@ -999,7 +1026,7 @@ struct NoteDetailView: View {
                 .renderingMode(.template)
                 .resizable()
                 .scaledToFit()
-                .frame(width: 20, height: 20)
+                .frame(width: 18, height: 18)
                 .foregroundColor(Color("SecondaryTextColor"))
 
             TextField("Enter URL", text: $linkInputText)
@@ -1062,7 +1089,7 @@ struct NoteDetailView: View {
                         .renderingMode(.template)
                         .resizable()
                         .scaledToFit()
-                        .frame(width: 20, height: 20)
+                        .frame(width: 18, height: 18)
                         .foregroundColor(Color("SecondaryTextColor"))
                 }
                 .buttonStyle(.plain)
@@ -1073,7 +1100,7 @@ struct NoteDetailView: View {
                         .renderingMode(.template)
                         .resizable()
                         .scaledToFit()
-                        .frame(width: 20, height: 20)
+                        .frame(width: 18, height: 18)
                         .foregroundColor(Color("SecondaryTextColor"))
                 }
                 .buttonStyle(.plain)

@@ -15,7 +15,7 @@ import AppKit
 struct NoteToolsBar: View {
     let note: Note
 
-    private let iconSize: CGFloat = 20
+    private let iconSize: CGFloat = 18
     private let spacing: CGFloat = 12
 
     var body: some View {
@@ -32,14 +32,14 @@ struct NoteToolsBar: View {
             toolButton(icon: "insert link", tooltip: "Insert Link") {
                 postToolAction(.link)
             }
+            toolButton(icon: "IconPageTextSearch", tooltip: "Search on Page") {
+                postToolAction(.searchOnPage)
+            }
             #if os(macOS)
             ShareToolButton(note: note, iconSize: iconSize)
                 .frame(width: iconSize, height: iconSize)
                 .subtleHoverScale(1.12)
             #endif
-            toolButton(icon: "IconPageTextSearch", tooltip: "Search on Page") {
-                postToolAction(.searchOnPage)
-            }
         }
     }
 
@@ -111,7 +111,7 @@ private struct ShareToolButton: NSViewRepresentable {
         @objc func showSharePicker(_ sender: NSButton) {
             var shareText = note.title
             if !note.content.isEmpty {
-                shareText += "\n\n" + note.content
+                shareText += "\n\n" + note.content.strippingColorMarkup
             }
             let picker = NSSharingServicePicker(items: [shareText])
             picker.show(relativeTo: sender.bounds, of: sender, preferredEdge: .minY)

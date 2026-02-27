@@ -124,7 +124,7 @@ struct GalleryGridOverlay: View {
         return Button(action: isLightbox ? backToGrid : dismiss) {
             HStack(spacing: isLightbox ? 10 : 0) {
                 Image(systemName: isLightbox ? "chevron.left" : "xmark")
-                    .font(FontManager.icon(weight: .semibold))
+                    .font(FontManager.icon(size: 18, weight: .semibold))
                     .foregroundStyle(closeSymbolColor)
 
                 if isLightbox {

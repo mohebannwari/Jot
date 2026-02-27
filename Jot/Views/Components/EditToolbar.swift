@@ -37,7 +37,7 @@ struct EditToolbar: View {
                     Image(systemName: "textformat")
                         .font(FontManager.heading(size: 20, weight: .regular))
                         .foregroundColor(Color("PrimaryTextColor"))
-                        .frame(width: 20, height: 20)
+                        .frame(width: 18, height: 18)
                 }
                 .buttonStyle(.plain)
                 .frame(width: 44, height: 44)
@@ -621,7 +621,7 @@ struct EditToolbar: View {
                     .renderingMode(.template)
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 20, height: 20)
+                    .frame(width: 18, height: 18)
                     .foregroundColor(Color("SecondaryTextColor"))
 
                 TextField("Enter URL", text: $linkURL)
@@ -738,7 +738,7 @@ private struct ToolButton: View {
                         .renderingMode(.template)
                         .resizable()
                         .scaledToFit()
-                        .frame(width: 20, height: 20)
+                        .frame(width: 18, height: 18)
                 } else {
                     Image(systemName: systemName)
                         .font(FontManager.heading(size: 20, weight: .medium))
@@ -748,7 +748,7 @@ private struct ToolButton: View {
             .scaleEffect(isSelected ? 1.05 : (isHovered ? 1.03 : 1.0))
             .animation(.bouncy(duration: 0.2), value: isSelected)
             .animation(.bouncy(duration: 0.2), value: isHovered)
-            .frame(width: 20, height: 20)
+            .frame(width: 18, height: 18)
         }
         .buttonStyle(.plain)
         .frame(width: 44, height: 44)

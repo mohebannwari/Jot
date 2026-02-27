@@ -22,7 +22,7 @@ struct ImageAttachmentTagView: View {
                 .renderingMode(.template)
                 .resizable()
                 .scaledToFit()
-                .frame(width: 15, height: 15)
+                .frame(width: 18, height: 18)
                 .foregroundStyle(foregroundColor)
             Text(label)
                 .font(FontManager.metadata(size: 11, weight: .medium))

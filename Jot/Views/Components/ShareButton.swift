@@ -16,7 +16,7 @@ struct ShareButton: View {
     var body: some View {
         #if os(macOS)
         ShareButtonMac(note: note)
-            .frame(width: 20, height: 20)
+            .frame(width: 18, height: 18)
         #else
         EmptyView()
         #endif
@@ -35,7 +35,7 @@ private struct ShareButtonMac: NSViewRepresentable {
         button.image?.isTemplate = true
         button.contentTintColor = NSColor(named: "SecondaryTextColor")
         button.imageScaling = .scaleProportionallyUpOrDown
-        button.setFrameSize(NSSize(width: 20, height: 20))
+        button.setFrameSize(NSSize(width: 18, height: 18))
         button.target = context.coordinator
         button.action = #selector(Coordinator.showSharePicker(_:))
         return button
@@ -59,7 +59,7 @@ private struct ShareButtonMac: NSViewRepresentable {
         @objc func showSharePicker(_ sender: NSButton) {
             var shareText = note.title
             if !note.content.isEmpty {
-                shareText += "\n\n" + note.content
+                shareText += "\n\n" + note.content.strippingColorMarkup
             }
 
             let picker = NSSharingServicePicker(items: [shareText])

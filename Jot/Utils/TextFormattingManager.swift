@@ -429,6 +429,60 @@ class TextFormattingManager: ObservableObject {
             }
         }
 
+        // MARK: - Text Color
+
+        static let customTextColorKey = NSAttributedString.Key("JotCustomTextColor")
+
+        private static let debugLog: URL = {
+            let url = URL(fileURLWithPath: "/tmp/jot_color_debug.log")
+            try? "=== Jot Color Debug Log ===\n".write(to: url, atomically: true, encoding: .utf8)
+            return url
+        }()
+
+        static func colorLog(_ msg: String) {
+            let line = "\(Date()): \(msg)\n"
+            if let handle = try? FileHandle(forWritingTo: debugLog) {
+                handle.seekToEndOfFile()
+                handle.write(line.data(using: .utf8)!)
+                handle.closeFile()
+            }
+        }
+
+        func applyTextColor(hex: String, to textView: NSTextView) {
+            let range = textView.selectedRange()
+            Self.colorLog("applyTextColor called hex=\(hex) range=(\(range.location),\(range.length))")
+            guard range.length > 0 else {
+                Self.colorLog("BAIL: selection length is 0")
+                return
+            }
+            let nsColor = Self.nsColorFromHex(hex)
+            Self.colorLog("nsColor=\(nsColor)")
+            textView.textStorage?.beginEditing()
+            textView.textStorage?.addAttribute(.foregroundColor, value: nsColor, range: range)
+            textView.textStorage?.addAttribute(Self.customTextColorKey, value: true, range: range)
+            textView.textStorage?.endEditing()
+            textView.needsDisplay = true
+
+            // Verify attributes were actually set
+            if let storage = textView.textStorage, range.location + range.length <= storage.length {
+                let attrs = storage.attributes(at: range.location, effectiveRange: nil)
+                let hasKey = attrs[Self.customTextColorKey] as? Bool
+                let fg = attrs[.foregroundColor] as? NSColor
+                Self.colorLog("VERIFY after apply: customKey=\(String(describing: hasKey)), fgColor=\(String(describing: fg))")
+            }
+        }
+
+        static func nsColorFromHex(_ hex: String) -> NSColor {
+            let clean = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+            var int: UInt64 = 0
+            Scanner(string: clean).scanHexInt64(&int)
+            return NSColor(
+                srgbRed: CGFloat((int >> 16) & 0xFF) / 255.0,
+                green: CGFloat((int >> 8) & 0xFF) / 255.0,
+                blue: CGFloat(int & 0xFF) / 255.0,
+                alpha: 1.0)
+        }
+
         // MARK: - State Updates
 
         func updateFormattingState(from textView: NSTextView) {

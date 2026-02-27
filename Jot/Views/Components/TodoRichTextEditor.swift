@@ -12,13 +12,14 @@ import SwiftUI
 import AppKit
 import QuartzCore
 import CoreImage
-import UniformTypeIdentifiers
 import QuickLook
+import UniformTypeIdentifiers
 
 extension NSAttributedString.Key {
     fileprivate static let webClipTitle = NSAttributedString.Key("WebClipTitle")
     fileprivate static let webClipDescription = NSAttributedString.Key("WebClipDescription")
     fileprivate static let webClipDomain = NSAttributedString.Key("WebClipDomain")
+    fileprivate static let plainLinkURL = NSAttributedString.Key("PlainLinkURL")
     fileprivate static let imageFilename = NSAttributedString.Key("ImageFilename")
     fileprivate static let fileStoredFilename = NSAttributedString.Key("FileStoredFilename")
     fileprivate static let fileOriginalFilename = NSAttributedString.Key("FileOriginalFilename")
@@ -354,6 +355,12 @@ struct TodoRichTextEditor: View {
     @State private var commandMenuPosition: CGPoint = .zero
     @State private var commandMenuSelectedIndex = 0
     @State private var commandSlashLocation: Int = -1
+
+    // URL paste option menu state
+    @State private var showURLPasteMenu = false
+    @State private var urlPasteMenuPosition: CGPoint = .zero
+    @State private var urlPasteURL: String = ""
+    @State private var urlPasteRange: NSRange = NSRange(location: 0, length: 0)
     fileprivate static let commandMenuActions: [EditTool] = [.imageUpload, .voiceRecord, .link, .todo]
     fileprivate static let commandMenuBaseWidth: CGFloat = CommandMenuLayout.width
     fileprivate static let commandMenuOuterPadding: CGFloat = CommandMenuLayout.outerPadding
@@ -423,6 +430,45 @@ struct TodoRichTextEditor: View {
                 }
             }
         }
+        .overlay(alignment: .topLeading) {
+            GeometryReader { geometry in
+                if showURLPasteMenu {
+                    URLPasteOptionMenu(
+                        onMention: {
+                            withAnimation(.smooth(duration: 0.15)) { showURLPasteMenu = false }
+                            NotificationCenter.default.post(
+                                name: .urlPasteSelectMention,
+                                object: [
+                                    "url": urlPasteURL,
+                                    "range": NSValue(range: urlPasteRange),
+                                ] as [String: Any]
+                            )
+                        },
+                        onPasteAsURL: {
+                            withAnimation(.smooth(duration: 0.15)) { showURLPasteMenu = false }
+                            NotificationCenter.default.post(
+                                name: .urlPasteSelectPlainLink,
+                                object: [
+                                    "url": urlPasteURL,
+                                    "range": NSValue(range: urlPasteRange),
+                                ] as [String: Any]
+                            )
+                        }
+                    )
+                    .offset(
+                        x: clampedURLPasteMenuPosition(for: geometry.size).x,
+                        y: clampedURLPasteMenuPosition(for: geometry.size).y
+                    )
+                    .transition(
+                        .asymmetric(
+                            insertion: .scale(scale: 0.92, anchor: .top).combined(with: .opacity),
+                            removal: .scale(scale: 0.96, anchor: .top).combined(with: .opacity)
+                        )
+                    )
+                    .zIndex(999)
+                }
+            }
+        }
         .onReceive(
             NotificationCenter.default.publisher(for: Notification.Name("TodoToolbarAction"))
         ) { _ in
@@ -481,6 +527,34 @@ struct TodoRichTextEditor: View {
                 }
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .urlPasteDetected)) { notification in
+            guard let info = notification.object as? [String: Any],
+                  let url = info["url"] as? String,
+                  let rangeValue = info["range"] as? NSValue,
+                  let rectValue = info["rect"] as? NSValue else { return }
+
+            let range = rangeValue.rangeValue
+            let rect = rectValue.rectValue
+
+            urlPasteURL = url
+            urlPasteRange = range
+
+            // Center the menu 8px below the URL text
+            let menuWidth: CGFloat = 160
+            let menuX = rect.midX - menuWidth / 2
+            let menuY = rect.maxY + 8
+
+            urlPasteMenuPosition = CGPoint(x: max(0, menuX), y: menuY)
+
+            withAnimation(.smooth(duration: 0.2)) {
+                showURLPasteMenu = true
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .urlPasteDismiss)) { _ in
+            if showURLPasteMenu {
+                withAnimation(.smooth(duration: 0.15)) { showURLPasteMenu = false }
+            }
+        }
     }
 
     // MARK: - Command Menu Handlers
@@ -512,6 +586,97 @@ struct TodoRichTextEditor: View {
         return CGPoint(x: clampedX, y: clampedY)
     }
 
+    private func clampedURLPasteMenuPosition(for containerSize: CGSize) -> CGPoint {
+        let menuWidth: CGFloat = 160
+        let menuHeight: CGFloat = 68
+        let maxX = max(0, containerSize.width - menuWidth)
+        let maxY = max(0, containerSize.height - menuHeight)
+        let clampedX = min(max(urlPasteMenuPosition.x, 0), maxX)
+        let clampedY = min(max(urlPasteMenuPosition.y, 0), maxY)
+        return CGPoint(x: clampedX, y: clampedY)
+    }
+
+}
+
+// MARK: - URL Paste Option Menu
+
+struct URLPasteOptionMenu: View {
+    let onMention: () -> Void
+    let onPasteAsURL: () -> Void
+
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var hoveredOption: Int?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            optionRow(
+                iconName: "insert link",
+                label: "Mention",
+                index: 0,
+                action: onMention
+            )
+            optionRow(
+                iconName: "IconGlobe",
+                label: "Paste as URL",
+                index: 1,
+                action: onPasteAsURL
+            )
+        }
+        .padding(CommandMenuLayout.outerPadding)
+        .frame(width: 160)
+        .liquidGlass(in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .shadow(color: .black.opacity(0.12), radius: 24, x: 0, y: 12)
+        .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 4)
+    }
+
+    private func optionRow(
+        iconName: String,
+        label: String,
+        index: Int,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(iconName)
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 18, height: 18)
+                    .foregroundStyle(iconColor(for: index))
+
+                Text(label)
+                    .font(FontManager.heading(size: 13, weight: .regular))
+                    .foregroundStyle(textColor(for: index))
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                hoveredOption == index
+                    ? Capsule().fill(Color("HoverBackgroundColor"))
+                    : nil
+            )
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered in
+            withAnimation(.smooth(duration: 0.12)) {
+                hoveredOption = isHovered ? index : (hoveredOption == index ? nil : hoveredOption)
+            }
+        }
+    }
+
+    private func iconColor(for index: Int) -> Color {
+        hoveredOption == index
+            ? (colorScheme == .dark ? .white : Color("PrimaryTextColor"))
+            : Color("IconSecondaryColor")
+    }
+
+    private func textColor(for index: Int) -> Color {
+        hoveredOption == index
+            ? (colorScheme == .dark ? .white : Color("PrimaryTextColor"))
+            : Color("PrimaryTextColor")
+    }
 }
 
 // MARK: - Representable Implementations
@@ -537,7 +702,6 @@ struct TodoRichTextEditor: View {
             textView.drawsBackground = false
             // Use Charter for body text as per design requirements
             textView.font = FontManager.bodyNS(size: 16, weight: .regular)
-            textView.textColor = NSColor.labelColor
             textView.textContainerInset = NSSize(width: 0, height: 16)
             textView.linkTextAttributes = [
                 .underlineStyle: 0,
@@ -621,6 +785,21 @@ struct TodoRichTextEditor: View {
                         .underlineColor: NSColor.clear,
                     ]
                     context.coordinator.updateColorScheme(resolvedScheme)
+
+                    // Re-color non-custom text ranges for the new theme
+                    if let textStorage = textView.textStorage {
+                        let themeColor = resolvedTextColor(for: resolvedScheme, appearance: textView.appearance)
+                        let fullRange = NSRange(location: 0, length: textStorage.length)
+                        textStorage.beginEditing()
+                        textStorage.enumerateAttributes(in: fullRange, options: []) { attributes, range, _ in
+                            guard attributes[.attachment] == nil else { return }
+                            if attributes[TextFormattingManager.customTextColorKey] as? Bool != true {
+                                textStorage.addAttribute(.foregroundColor, value: themeColor, range: range)
+                            }
+                        }
+                        textStorage.endEditing()
+                        textView.needsDisplay = true
+                    }
                 }
             }
 
@@ -745,6 +924,7 @@ struct TodoRichTextEditor: View {
             private enum AttachmentPreviewTarget {
                 case image(filename: String)
                 case file(metadata: FileAttachmentMetadata)
+                case webClip(attachment: NSTextAttachment)
             }
 
             private weak var previewHostView: NSView?
@@ -756,6 +936,7 @@ struct TodoRichTextEditor: View {
             private var originalTextViewFilters: [Any]?
             private var isHoverEffectApplied = false
             private var hiddenAttachmentState: HiddenAttachmentState?
+            private var hoveredWebClipAttachment: NSTextAttachment?
             // Allow slight tolerance so hover stays active when the cursor is near the tag edges
             private let hoverHitTolerance: CGFloat = 4
             private static let previewImageCache: NSCache<NSString, NSImage> = {
@@ -876,6 +1057,12 @@ struct TodoRichTextEditor: View {
                 pattern: webClipPattern,
                 options: []
             )
+            private static let plainLinkMarkupPrefix = "[[link|"
+            private static let plainLinkPattern = #"\[\[link\|([^\]]*)\]\]"#
+            private static let plainLinkRegex: NSRegularExpression? = try? NSRegularExpression(
+                pattern: plainLinkPattern,
+                options: []
+            )
             private static func cleanedWebClipComponent(_ value: Any?) -> String {
                 guard let raw = value as? String else { return "" }
                 let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -978,7 +1165,6 @@ struct TodoRichTextEditor: View {
                         width: pixelWidth / displayScale,
                         height: pixelHeight / displayScale)
 
-                    // Create NSImage with correct size to prevent blurriness
                     let nsImage = NSImage(size: displaySize)
                     nsImage.addRepresentation(NSBitmapImageRep(cgImage: cgImage))
 
@@ -1007,7 +1193,57 @@ struct TodoRichTextEditor: View {
 
                 return attributed
             }
-            
+
+            /// Create a plain blue text link attachment -- looks like text, behaves like a button.
+            private func makePlainLinkAttachment(url rawURL: String) -> NSMutableAttributedString {
+                let normalizedURL = Self.normalizedURL(from: rawURL)
+                let linkValue = normalizedURL.isEmpty ? rawURL : normalizedURL
+
+                let linkView = Text(linkValue)
+                    .font(FontManager.heading(size: Self.textFont.pointSize, weight: .regular))
+                    .foregroundColor(.accentColor)
+                    .fixedSize()
+                    .environment(\.colorScheme, currentColorScheme)
+
+                let renderer = ImageRenderer(content: linkView)
+                let displayScale = NSScreen.main?.backingScaleFactor ?? 2.0
+                renderer.scale = displayScale
+                renderer.isOpaque = false
+
+                let attachment = NSTextAttachment()
+
+                guard let cgImage = renderer.cgImage else {
+                    return NSMutableAttributedString(string: linkValue)
+                }
+
+                let pixelWidth = CGFloat(cgImage.width)
+                let pixelHeight = CGFloat(cgImage.height)
+                let displaySize = CGSize(
+                    width: pixelWidth / displayScale,
+                    height: pixelHeight / displayScale)
+
+                let nsImage = NSImage(size: displaySize)
+                nsImage.addRepresentation(NSBitmapImageRep(cgImage: cgImage))
+
+                attachment.image = nsImage
+                attachment.bounds = CGRect(
+                    x: 0,
+                    y: Self.imageTagVerticalOffset(for: displaySize.height),
+                    width: displaySize.width,
+                    height: displaySize.height
+                )
+
+                let attributed = NSMutableAttributedString(attachment: attachment)
+                let attachmentRange = NSRange(location: 0, length: attributed.length)
+                attributed.addAttribute(.link, value: linkValue, range: attachmentRange)
+                attributed.addAttribute(.underlineStyle, value: 0, range: attachmentRange)
+                attributed.addAttribute(.plainLinkURL, value: linkValue, range: attachmentRange)
+                attributed.addAttribute(
+                    .paragraphStyle, value: Self.webClipParagraphStyle(), range: attachmentRange)
+
+                return attributed
+            }
+
             /// Create an inline image attachment tag from a filename
             private func makeImageAttachment(filename: String, imageNumber: Int) -> NSMutableAttributedString {
                 func fallbackAttributedString() -> NSMutableAttributedString {
@@ -1416,6 +1652,49 @@ struct TodoRichTextEditor: View {
                     removeHoverEffect(from: textView)
                 }
                 restoreHiddenAttachment()
+                resetWebClipHover()
+            }
+
+            private func showWebClipHover(
+                attachment: NSTextAttachment,
+                characterIndex: Int,
+                at rectInTextView: CGRect,
+                in textView: NSTextView
+            ) {
+                if hoveredWebClipAttachment === attachment { return }
+                hoveredWebClipAttachment = attachment
+
+                // attachment.image is nil once the layout system moves it to a cell
+                let image = attachmentImage(attachment, in: textView, characterIndex: characterIndex)
+                    ?? attachment.image
+                guard let image else { return }
+
+                let scaleAmount: CGFloat = 1.06
+                let scaledSize = CGSize(
+                    width: rectInTextView.width * scaleAmount,
+                    height: rectInTextView.height * scaleAmount
+                )
+                let scaledOrigin = CGPoint(
+                    x: rectInTextView.midX - scaledSize.width / 2,
+                    y: rectInTextView.midY - scaledSize.height / 2
+                )
+                let scaledRect = CGRect(origin: scaledOrigin, size: scaledSize)
+
+                let host = previewHostView ?? textView.superview
+                guard let host else { return }
+
+                let rectInHost = textView.convert(scaledRect, to: host)
+                let overlay = ensureHoverTagOverlay(in: host, relativeTo: textView)
+                overlay.image = image
+                overlay.imageScaling = .scaleProportionallyUpOrDown
+                overlay.frame = rectInHost.integral
+                overlay.layer?.cornerRadius = rectInHost.height / 2
+                overlay.layer?.cornerCurve = .continuous
+                overlay.layer?.masksToBounds = true
+            }
+
+            private func resetWebClipHover() {
+                hoveredWebClipAttachment = nil
             }
 
             private func ensureHoverTagOverlay(in container: NSView, relativeTo referenceView: NSView) -> NSImageView {
@@ -1611,6 +1890,8 @@ struct TodoRichTextEditor: View {
                         displayLabel: displayLabel
                     )
                     previewTarget = .file(metadata: metadata)
+                } else if attributes[.webClipDomain] != nil {
+                    previewTarget = .webClip(attachment: attachment)
                 } else {
                     hideImagePreview()
                     return false
@@ -1674,6 +1955,8 @@ struct TodoRichTextEditor: View {
                         at: rectInTextView,
                         in: textView
                     )
+                case .webClip:
+                    break
                 }
                 return true
             }
@@ -1896,10 +2179,64 @@ struct TodoRichTextEditor: View {
                     }
                 }
 
+                let urlPasteMention = NotificationCenter.default.addObserver(
+                    forName: .urlPasteSelectMention, object: nil, queue: .main
+                ) { [weak self] notification in
+                    guard let info = notification.object as? [String: Any],
+                          let url = info["url"] as? String,
+                          let rangeValue = info["range"] as? NSValue else { return }
+                    Task { @MainActor [weak self] in
+                        self?.replaceURLPasteWithWebClip(url: url, range: rangeValue.rangeValue)
+                    }
+                }
+
+                let urlPasteSelectPlainLink = NotificationCenter.default.addObserver(
+                    forName: .urlPasteSelectPlainLink, object: nil, queue: .main
+                ) { [weak self] notification in
+                    guard let info = notification.object as? [String: Any],
+                          let url = info["url"] as? String,
+                          let rangeValue = info["range"] as? NSValue else { return }
+                    Task { @MainActor [weak self] in
+                        self?.replaceURLPasteWithPlainLink(url: url, range: rangeValue.rangeValue)
+                    }
+                }
+
+                let urlPasteDismiss = NotificationCenter.default.addObserver(
+                    forName: .urlPasteDismiss, object: nil, queue: .main
+                ) { [weak self] notification in
+                    let range = (notification.object as? NSValue)?.rangeValue
+                    Task { @MainActor [weak self] in
+                        if let range { self?.clearURLPasteHighlight(range: range) }
+                    }
+                }
+
+                let applyColor = NotificationCenter.default.addObserver(
+                    forName: Notification.Name("applyTextColor"), object: nil, queue: .main
+                ) { [weak self] notification in
+                    TextFormattingManager.colorLog("RECEIVED notification applyTextColor")
+                    guard let hex = notification.userInfo?["hex"] as? String else {
+                        TextFormattingManager.colorLog("FAIL: hex not found in userInfo")
+                        return
+                    }
+                    TextFormattingManager.colorLog("hex=\(hex), self is nil=\(self == nil)")
+                    Task { @MainActor [weak self] in
+                        guard let self = self, let textView = self.textView else {
+                            TextFormattingManager.colorLog("FAIL: self or textView nil inside Task")
+                            return
+                        }
+                        TextFormattingManager.colorLog("Inside Task: calling applyTextColor")
+                        self.formatter.applyTextColor(hex: hex, to: textView)
+                        self.syncText()
+                        TextFormattingManager.colorLog("syncText done, lastSerialized contains color=\(self.lastSerialized.contains("[[color|"))")
+                    }
+                }
+
                 observers = [
                     insertTodo, insertLink, insertVoiceTranscript, insertImage, applyTool, applyCommandMenuTool,
                     highlightSearch, clearSearch,
                     proofreadShow, proofreadClear, proofreadApply, captureSelection,
+                    urlPasteMention, urlPasteSelectPlainLink, urlPasteDismiss,
+                    applyColor,
                 ]
             }
 
@@ -2344,6 +2681,10 @@ struct TodoRichTextEditor: View {
                           let linkValue = attributes[.link] as? String,
                           let url = URL(string: linkValue) {
                     action = .webClip(url: url)
+                } else if attributes[.plainLinkURL] != nil,
+                          let linkValue = attributes[.link] as? String,
+                          let url = URL(string: linkValue) {
+                    action = .webClip(url: url)
                 } else {
                     action = nil
                 }
@@ -2431,14 +2772,13 @@ struct TodoRichTextEditor: View {
                 }
 
                 textStorage.beginEditing()
-                textStorage.removeAttribute(.foregroundColor, range: fullRange)
                 textStorage.enumerateAttributes(in: fullRange, options: []) {
                     attributes, range, _ in
-                    if attributes[.attachment] == nil {
+                    guard attributes[.attachment] == nil else { return }
+                    if attributes[TextFormattingManager.customTextColorKey] as? Bool != true {
                         textStorage.addAttribute(.foregroundColor, value: textColor, range: range)
                     }
                 }
-
                 textStorage.endEditing()
 
                 // Force the text view to redisplay with new colors
@@ -2536,6 +2876,9 @@ struct TodoRichTextEditor: View {
                         }
                     }
                 }
+
+                // Dismiss URL paste menu on any text change
+                NotificationCenter.default.post(name: .urlPasteDismiss, object: nil)
 
                 syncText()
             }
@@ -2778,6 +3121,48 @@ struct TodoRichTextEditor: View {
 
                 replaceSelection(with: composed)
                 syncText()
+            }
+
+            private func replaceURLPasteWithWebClip(url: String, range: NSRange) {
+                guard let textView = textView, let textStorage = textView.textStorage else { return }
+
+                // Clear the blue highlight
+                if range.location + range.length <= textStorage.length {
+                    textStorage.removeAttribute(.foregroundColor, range: range)
+                }
+
+                // Select the pasted URL text range and replace with web clip
+                textView.setSelectedRange(range)
+                insertWebClip(url: url)
+            }
+
+            private func replaceURLPasteWithPlainLink(url: String, range: NSRange) {
+                guard let textView = textView, let textStorage = textView.textStorage else { return }
+
+                if range.location + range.length <= textStorage.length {
+                    textStorage.removeAttribute(.foregroundColor, range: range)
+                }
+
+                textView.setSelectedRange(range)
+
+                let attachment = makePlainLinkAttachment(url: url)
+                let composed = NSMutableAttributedString()
+                composed.append(attachment)
+                let space = NSAttributedString(
+                    string: " ",
+                    attributes: Self.baseTypingAttributes(for: currentColorScheme))
+                composed.append(space)
+
+                replaceSelection(with: composed)
+                syncText()
+            }
+
+            private func clearURLPasteHighlight(range: NSRange) {
+                guard let textStorage = textView?.textStorage else { return }
+                guard range.location + range.length <= textStorage.length else { return }
+                // Restore base text attributes (keep the URL text as-is but remove special styling)
+                let base = Self.baseTypingAttributes(for: currentColorScheme)
+                textStorage.addAttributes(base, range: range)
             }
 
             private func deleteWebClipAttachment(url: String) {
@@ -3067,15 +3452,21 @@ struct TodoRichTextEditor: View {
                         needsFixing = true
                     }
 
-                    // Check text color
-                    if let currentColor = attributes[.foregroundColor] as? NSColor {
-                        if !currentColor.isEqual(expectedColor) {
+                    // Check text color — skip ranges with a user-intentional custom color
+                    let hasCustomColor = attributes[TextFormattingManager.customTextColorKey] as? Bool == true
+                    if hasCustomColor {
+                        NSLog("[ColorDebug] fixInconsistentFonts: PRESERVING custom color at range (%d,%d)", range.location, range.length)
+                    }
+                    if !hasCustomColor {
+                        if let currentColor = attributes[.foregroundColor] as? NSColor {
+                            if !currentColor.isEqual(expectedColor) {
+                                fixedAttributes[.foregroundColor] = expectedColor
+                                needsFixing = true
+                            }
+                        } else {
                             fixedAttributes[.foregroundColor] = expectedColor
                             needsFixing = true
                         }
-                    } else {
-                        fixedAttributes[.foregroundColor] = expectedColor
-                        needsFixing = true
                     }
 
                     if needsFixing {
@@ -3191,6 +3582,11 @@ struct TodoRichTextEditor: View {
                         let cell = attachment.attachmentCell as? TodoCheckboxAttachmentCell
                     {
                         output.append(cell.isChecked ? "[x]" : "[ ]")
+                    } else if attributes[.plainLinkURL] is String,
+                        let urlString = attributes[.link] as? String
+                    {
+                        let sanitizedURL = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
+                        output.append("[[link|\(sanitizedURL)]]")
                     } else if let attachment = attributes[.attachment] as? NSTextAttachment,
                         !(attachment.attachmentCell is TodoCheckboxAttachmentCell),
                         let urlString = attributes[.link] as? String
@@ -3228,7 +3624,18 @@ struct TodoRichTextEditor: View {
                             NSLog("⚠️ Serialization CRITICAL: Could not find filename for image attachment. Data may be lost.")
                         }
                     } else {
-                        output.append((storage.string as NSString).substring(with: range))
+                        let rangeText = (storage.string as NSString).substring(with: range)
+                        if attributes[TextFormattingManager.customTextColorKey] as? Bool == true,
+                           let nsColor = attributes[.foregroundColor] as? NSColor
+                        {
+                            let hex = Self.nsColorToHex(nsColor)
+                            NSLog("[ColorDebug] SERIALIZE: emitting color markup hex=%@ text='%@'", hex, rangeText)
+                            output.append("[[color|\(hex)]]")
+                            output.append(rangeText)
+                            output.append("[[/color]]")
+                        } else {
+                            output.append(rangeText)
+                        }
                     }
                 }
                 return output
@@ -3297,6 +3704,28 @@ struct TodoRichTextEditor: View {
                                 result.append(attachment)
 
                                 // Add space after webclip for horizontal spacing
+                                let space = NSAttributedString(
+                                    string: " ",
+                                    attributes: Self.baseTypingAttributes(for: currentColorScheme))
+                                result.append(space)
+
+                                index = endIndex
+                                lastWasWebClip = true
+                                continue
+                            }
+                        }
+                    } else if text[index...].hasPrefix(Self.plainLinkMarkupPrefix) {
+                        if let endIndex = text[index...].range(of: "]]")?.upperBound {
+                            let linkText = String(text[index..<endIndex])
+                            if let regex = Self.plainLinkRegex,
+                               let match = regex.firstMatch(
+                                   in: linkText, options: [],
+                                   range: NSRange(location: 0, length: linkText.utf16.count))
+                            {
+                                let rawURL = Self.string(from: match, at: 1, in: linkText)
+                                let attachment = makePlainLinkAttachment(url: rawURL)
+                                result.append(attachment)
+
                                 let space = NSAttributedString(
                                     string: " ",
                                     attributes: Self.baseTypingAttributes(for: currentColorScheme))
@@ -3420,6 +3849,27 @@ struct TodoRichTextEditor: View {
                                 continue
                             }
                         }
+                    } else if text[index...].hasPrefix("[[color|") {
+                        let prefixLen = "[[color|".count
+                        let afterPrefix = text.index(index, offsetBy: prefixLen)
+                        if text.distance(from: afterPrefix, to: text.endIndex) >= 8 {
+                            let hexEnd = text.index(afterPrefix, offsetBy: 6)
+                            let hex = String(text[afterPrefix..<hexEnd])
+                            if text[hexEnd...].hasPrefix("]]") {
+                                let contentStart = text.index(hexEnd, offsetBy: 2)
+                                if let closingRange = text[contentStart...].range(of: "[[/color]]") {
+                                    let coloredText = String(text[contentStart..<closingRange.lowerBound])
+                                    var attrs = Self.baseTypingAttributes(for: currentColorScheme)
+                                    attrs[.foregroundColor] = TextFormattingManager.nsColorFromHex(hex)
+                                    attrs[TextFormattingManager.customTextColorKey] = true
+                                    result.append(NSAttributedString(string: coloredText, attributes: attrs))
+                                    index = closingRange.upperBound
+                                    lastWasWebClip = false
+                                    continue
+                                }
+                            }
+                        }
+                        // Malformed -- fall through to single-char handler
                     }
 
                     // Add single character with proper attributes
@@ -3475,23 +3925,23 @@ struct TodoRichTextEditor: View {
                 return style
             }
 
-            // Paragraph style for web clip attachments with extra spacing to prevent overlap
+            // Paragraph style for web clip attachments — matches base style so line
+            // heights stay consistent whether the clip is inline or on its own line.
             static func webClipParagraphStyle() -> NSParagraphStyle {
-                let style = NSMutableParagraphStyle()
-                style.lineHeightMultiple = 1.0
-                // NO minimum/maximum line height - let attachment determine its own space
-                // This prevents empty clickable space above/below
-                style.minimumLineHeight = 0
-                style.maximumLineHeight = 0
-                // No paragraph spacing - web clips are now inline with horizontal spacing
-                style.paragraphSpacing = 0
-                style.paragraphSpacingBefore = 0
-                return style
+                return baseParagraphStyle()
             }
             
             static func imageTagVerticalOffset(for height: CGFloat) -> CGFloat {
                 let offset = (textFont.capHeight - height) / 2
                 return offset
+            }
+
+            private static func nsColorToHex(_ color: NSColor) -> String {
+                let c = color.usingColorSpace(.sRGB) ?? color.usingColorSpace(.deviceRGB) ?? color
+                return String(format: "%02x%02x%02x",
+                              Int(round(c.redComponent * 255)),
+                              Int(round(c.greenComponent * 255)),
+                              Int(round(c.blueComponent * 255)))
             }
 
             static func baseTypingAttributes(for colorScheme: ColorScheme? = nil)
@@ -3552,8 +4002,61 @@ struct TodoRichTextEditor: View {
 
         override func paste(_ sender: Any?) {
             isPasting = true
+
+            let pastedText = NSPasteboard.general.string(forType: .string)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let isURL = Self.isLikelyURL(pastedText)
+            let beforeLocation = selectedRange().location
+
             super.paste(sender)
             isPasting = false
+
+            if isURL && !pastedText.isEmpty {
+                let afterLocation = selectedRange().location
+                let pastedLength = afterLocation - beforeLocation
+                if pastedLength > 0 {
+                    let pastedRange = NSRange(location: beforeLocation, length: pastedLength)
+
+                    // Style the pasted URL with blue text
+                    textStorage?.addAttribute(
+                        .foregroundColor, value: NSColor.controlAccentColor, range: pastedRange)
+
+                    // Calculate position for the option menu
+                    if let layoutManager = layoutManager, let textContainer = textContainer {
+                        let glyphRange = layoutManager.glyphRange(
+                            forCharacterRange: pastedRange, actualCharacterRange: nil)
+                        let rect = layoutManager.boundingRect(
+                            forGlyphRange: glyphRange, in: textContainer)
+                        let adjustedRect = CGRect(
+                            x: rect.origin.x + textContainerOrigin.x,
+                            y: rect.origin.y + textContainerOrigin.y,
+                            width: rect.width,
+                            height: rect.height
+                        )
+
+                        DispatchQueue.main.async {
+                            NotificationCenter.default.post(
+                                name: .urlPasteDetected,
+                                object: [
+                                    "url": pastedText,
+                                    "range": NSValue(range: pastedRange),
+                                    "rect": NSValue(rect: adjustedRect),
+                                ] as [String: Any]
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        private static func isLikelyURL(_ text: String) -> Bool {
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, !trimmed.contains(" "), !trimmed.contains("\n") else {
+                return false
+            }
+            if trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://") { return true }
+            let domainPattern = #"^[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?(\.[a-zA-Z]{2,})+(/.*)?$"#
+            return trimmed.range(of: domainPattern, options: .regularExpression) != nil
         }
 
         override func pasteAsPlainText(_ sender: Any?) {
@@ -3970,6 +4473,12 @@ extension Notification.Name {
     static let commandMenuNavigateDown = Notification.Name("CommandMenuNavigateDown")
     static let commandMenuSelect = Notification.Name("CommandMenuSelect")
     static let applyCommandMenuTool = Notification.Name("ApplyCommandMenuTool")
+
+    // URL paste option menu notifications
+    static let urlPasteDetected = Notification.Name("URLPasteDetected")
+    static let urlPasteSelectMention = Notification.Name("URLPasteSelectMention")
+    static let urlPasteSelectPlainLink = Notification.Name("URLPasteSelectPlainLink")
+    static let urlPasteDismiss = Notification.Name("URLPasteDismiss")
 
     // In-note search notifications
     static let showInNoteSearch = Notification.Name("ShowInNoteSearch")

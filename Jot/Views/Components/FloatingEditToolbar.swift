@@ -535,17 +535,17 @@ private struct FloatingToolButton: View {
                         .renderingMode(.template)
                         .resizable()
                         .scaledToFit()
-                        .frame(width: 20, height: 20)
+                        .frame(width: 18, height: 18)
                 } else {
                     Image(systemName: systemName)
-                        .font(FontManager.icon(weight: .medium))
+                        .font(FontManager.icon(size: 18, weight: .medium))
                 }
             }
             .foregroundColor(iconColor)
             .scaleEffect(isSelected ? 1.05 : (isHovered ? 1.03 : 1.0))
             .animation(.bouncy(duration: 0.2), value: isSelected)
             .animation(.bouncy(duration: 0.2), value: isHovered)
-            .frame(width: 20, height: 20)
+            .frame(width: 18, height: 18)
         }
         .buttonStyle(.plain)
         .frame(width: 36, height: 36)

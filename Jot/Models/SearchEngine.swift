@@ -224,7 +224,7 @@ struct SearchHit: Identifiable, Equatable {
         guard let note else {
             return ""
         }
-        let content = note.content
+        let content = note.content.strippingColorMarkup
         guard let r = contentRange else { return String(content.prefix(140)) + (content.count > 140 ? "..." : "") }
         let start = content.index(r.lowerBound, offsetBy: -min(30, content.distance(from: content.startIndex, to: r.lowerBound)), limitedBy: content.startIndex) ?? content.startIndex
         let end = content.index(r.upperBound, offsetBy: min(90, content.distance(from: r.upperBound, to: content.endIndex)), limitedBy: content.endIndex) ?? content.endIndex

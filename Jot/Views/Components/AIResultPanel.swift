@@ -32,7 +32,7 @@ struct AIResultPanel: View {
                 .resizable()
                 .scaledToFit()
                 .foregroundColor(Color("SecondaryTextColor"))
-                .frame(width: 14, height: 14)
+                .frame(width: 18, height: 18)
 
             Text(toolLabel.uppercased())
                 .font(FontManager.metadata(size: 11, weight: .semibold))
@@ -47,7 +47,7 @@ struct AIResultPanel: View {
                     .resizable()
                     .scaledToFit()
                     .foregroundColor(Color("SecondaryTextColor"))
-                    .frame(width: 15, height: 15)
+                    .frame(width: 18, height: 18)
             }
             .buttonStyle(.plain)
             .macPointingHandCursor()

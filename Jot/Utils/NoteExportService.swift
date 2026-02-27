@@ -84,34 +84,35 @@ final class NoteExportService {
     // MARK: - PDF Export
 
     private func exportToPDF(notes: [Note], filename: String) async -> Bool {
-        // Create PDF data
+        guard let data = await buildPDFData(notes: notes) else { return false }
+        return saveFile(data: data, filename: filename, fileExtension: "pdf")
+    }
+
+    /// Builds raw PDF Data for the given notes without triggering a save dialog.
+    /// Returns nil if the PDF context could not be created.
+    func buildPDFData(notes: [Note]) async -> Data? {
         let pdfData = NSMutableData()
 
         // Page dimensions (US Letter)
         let pageRect = CGRect(x: 0, y: 0, width: 612, height: 792)
         let margins: CGFloat = 72 // 1 inch
 
-        // Create PDF context
         guard let pdfConsumer = CGDataConsumer(data: pdfData),
               let pdfContext = CGContext(consumer: pdfConsumer, mediaBox: nil, nil) else {
             NSLog("NoteExportService: Failed to create PDF context")
-            return false
+            return nil
         }
 
-        // Draw each note as a page
         for note in notes {
-            // Begin page
             pdfContext.beginPDFPage(nil)
-
-            // Create graphics context
+            pdfContext.saveGState()
+            pdfContext.concatenate(CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: 0, ty: pageRect.height))
             let nsGraphicsContext = NSGraphicsContext(cgContext: pdfContext, flipped: true)
             NSGraphicsContext.saveGraphicsState()
             NSGraphicsContext.current = nsGraphicsContext
 
-            // Extract images from content
-            let (cleanContent, imageFilenames) = extractImages(from: note.content)
+            let (cleanContent, imageFilenames) = extractImages(from: note.content.strippingColorMarkup)
 
-            // Draw white background
             NSColor.white.setFill()
             NSBezierPath(rect: pageRect).fill()
 
@@ -168,14 +169,11 @@ final class NoteExportService {
                 if let imageURL = ImageStorageManager.shared.getImageURL(for: imageFilename),
                    let image = NSImage(contentsOf: imageURL) {
 
-                    // Check if we have space on current page
                     let maxWidth = pageRect.width - (margins * 2)
                     let aspectRatio = image.size.height / image.size.width
                     let imageWidth = min(image.size.width, maxWidth)
                     let imageHeight = imageWidth * aspectRatio
 
-                    // If image doesn't fit, we'll just clip it for now
-                    // In a more advanced version, we'd create a new page
                     if yPosition + imageHeight < pageRect.height - margins {
                         let imageRect = CGRect(
                             x: margins,
@@ -190,20 +188,81 @@ final class NoteExportService {
             }
 
             NSGraphicsContext.restoreGraphicsState()
-
-            // End page
+            pdfContext.restoreGState()
             pdfContext.endPDFPage()
         }
 
-        // Close PDF
         pdfContext.closePDF()
+        return pdfData as Data
+    }
 
-        return saveFile(data: pdfData as Data, filename: filename, fileExtension: "pdf")
+    /// Generates a Retina-quality thumbnail image of the first page of a note's PDF representation.
+    func generatePreviewImage(for note: Note) async -> NSImage? {
+        guard let data = await buildPDFData(notes: [note]),
+              let pdfDoc = PDFDocument(data: data),
+              let page = pdfDoc.page(at: 0) else { return nil }
+        // 2× of 228×337 for Retina sharpness
+        return page.thumbnail(of: CGSize(width: 456, height: 674), for: .mediaBox)
+    }
+
+    /// Generates a format-aware preview thumbnail for the export sheet.
+    func generatePreviewImage(for note: Note, format: NoteExportFormat) async -> NSImage? {
+        switch format {
+        case .pdf:
+            return await generatePreviewImage(for: note)
+        case .markdown:
+            return generateTextPreviewImage(buildMarkdownString(notes: [note]))
+        case .html:
+            return generateTextPreviewImage(buildHTMLString(notes: [note], title: note.title))
+        }
+    }
+
+    /// High-resolution text preview for the Quick Look overlay (~2× standard size).
+    func generateQuickLookTextImage(_ text: String) -> NSImage? {
+        generateTextPreviewImage(text, size: CGSize(width: 1164, height: 1718))
+    }
+
+    private func generateTextPreviewImage(_ text: String) -> NSImage? {
+        generateTextPreviewImage(text, size: CGSize(width: 456, height: 674))
+    }
+
+    private func generateTextPreviewImage(_ text: String, size: CGSize) -> NSImage? {
+        let image = NSImage(size: size)
+        image.lockFocus()
+        NSColor.white.setFill()
+        NSBezierPath(rect: NSRect(origin: .zero, size: size)).fill()
+        let margin: CGFloat = size.width * 0.05
+        let fontSize: CGFloat = size.width * 0.017
+        let font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.lineBreakMode = .byWordWrapping
+        paragraphStyle.lineSpacing = 1
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: NSColor(red: 0.15, green: 0.15, blue: 0.15, alpha: 1.0),
+            .paragraphStyle: paragraphStyle
+        ]
+        (text as NSString).draw(
+            in: NSRect(x: margin, y: margin, width: size.width - margin * 2, height: size.height - margin * 2),
+            withAttributes: attrs
+        )
+        image.unlockFocus()
+        return image
     }
 
     // MARK: - Markdown Export
 
     private func exportToMarkdown(notes: [Note], filename: String) async -> Bool {
+        let markdown = buildMarkdownString(notes: notes)
+        guard let data = markdown.data(using: .utf8) else {
+            NSLog("NoteExportService: Failed to convert markdown to data")
+            return false
+        }
+        return saveFile(data: data, filename: filename, fileExtension: "md")
+    }
+
+    /// Builds a Markdown string for the given notes without any I/O.
+    func buildMarkdownString(notes: [Note]) -> String {
         var markdown = ""
 
         for (index, note) in notes.enumerated() {
@@ -211,25 +270,20 @@ final class NoteExportService {
                 markdown += "\n\n---\n\n"
             }
 
-            // Add title
             markdown += "# \(note.title)\n\n"
 
-            // Add date
             let dateFormatter = DateFormatter()
             dateFormatter.dateStyle = .long
             dateFormatter.timeStyle = .short
             markdown += "*\(dateFormatter.string(from: note.date))*\n\n"
 
-            // Add tags
             if !note.tags.isEmpty {
                 markdown += "**Tags:** \(note.tags.map { "#\($0)" }.joined(separator: " "))\n\n"
             }
 
-            // Extract images and replace with markdown syntax
-            let (cleanContent, imageFilenames) = extractImages(from: note.content)
+            let (cleanContent, imageFilenames) = extractImages(from: note.content.strippingColorMarkup)
             markdown += cleanContent + "\n\n"
 
-            // Add images as markdown image references
             for imageFilename in imageFilenames {
                 if ImageStorageManager.shared.getImageURL(for: imageFilename) != nil {
                     markdown += "![Image](\(imageFilename))\n\n"
@@ -237,24 +291,29 @@ final class NoteExportService {
             }
         }
 
-        guard let data = markdown.data(using: .utf8) else {
-            NSLog("NoteExportService: Failed to convert markdown to data")
-            return false
-        }
-
-        return saveFile(data: data, filename: filename, fileExtension: "md")
+        return markdown
     }
 
     // MARK: - HTML Export
 
     private func exportToHTML(notes: [Note], filename: String) async -> Bool {
+        let html = buildHTMLString(notes: notes, title: filename)
+        guard let data = html.data(using: .utf8) else {
+            NSLog("NoteExportService: Failed to convert HTML to data")
+            return false
+        }
+        return saveFile(data: data, filename: filename, fileExtension: "html")
+    }
+
+    /// Builds an HTML string for the given notes without any I/O.
+    func buildHTMLString(notes: [Note], title: String = "Notes") -> String {
         var html = """
         <!DOCTYPE html>
         <html>
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>\(filename)</title>
+            <title>\(title)</title>
             <style>
                 body {
                     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
@@ -312,13 +371,11 @@ final class NoteExportService {
 
             html += "<h1>\(escapeHTML(note.title))</h1>\n"
 
-            // Add date
             let dateFormatter = DateFormatter()
             dateFormatter.dateStyle = .long
             dateFormatter.timeStyle = .short
             html += "<div class=\"date\">\(dateFormatter.string(from: note.date))</div>\n"
 
-            // Add tags
             if !note.tags.isEmpty {
                 html += "<div class=\"tags\">\n"
                 for tag in note.tags {
@@ -327,16 +384,14 @@ final class NoteExportService {
                 html += "</div>\n"
             }
 
-            // Extract images and replace with HTML
-            let (cleanContent, imageFilenames) = extractImages(from: note.content)
+            let (cleanContent, imageFilenames) = extractImages(from: note.content.strippingColorMarkup)
             html += "<div class=\"content\">\(escapeHTML(cleanContent))</div>\n"
 
-            // Add images as base64 embedded images
             for imageFilename in imageFilenames {
                 if let imageURL = ImageStorageManager.shared.getImageURL(for: imageFilename),
                    let imageData = try? Data(contentsOf: imageURL) {
                     let base64String = imageData.base64EncodedString()
-                    let mimeType = "image/jpeg" // Assuming JPEG as that's what ImageStorageManager saves
+                    let mimeType = "image/jpeg"
                     html += "<img src=\"data:\(mimeType);base64,\(base64String)\" alt=\"Image\">\n"
                 }
             }
@@ -347,12 +402,7 @@ final class NoteExportService {
         </html>
         """
 
-        guard let data = html.data(using: .utf8) else {
-            NSLog("NoteExportService: Failed to convert HTML to data")
-            return false
-        }
-
-        return saveFile(data: data, filename: filename, fileExtension: "html")
+        return html
     }
 
     // MARK: - Helper Methods

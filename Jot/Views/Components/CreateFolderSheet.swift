@@ -26,7 +26,7 @@ struct CreateFolderSheet: View {
         self.onCreate = onCreate
         self.onCancel = onCancel
         self.editingFolder = editingFolder
-        _folderName = State(initialValue: editingFolder?.name ?? "New Notebook")
+        _folderName = State(initialValue: editingFolder?.name ?? "New Folder")
         _selectedColorHex = State(initialValue: editingFolder?.colorHex)
     }
 
@@ -63,7 +63,7 @@ struct CreateFolderSheet: View {
 
     private var nameInputRow: some View {
         HStack(spacing: 8) {
-            TextField("Notebook name", text: $folderName)
+            TextField("Folder name", text: $folderName)
                 .font(FontManager.heading(size: 15, weight: .medium))
                 .tracking(-0.5)
                 .foregroundColor(Color("PrimaryTextColor"))
@@ -80,7 +80,7 @@ struct CreateFolderSheet: View {
                         .resizable()
                         .scaledToFit()
                         .foregroundColor(Color("SecondaryTextColor"))
-                        .frame(width: 20, height: 20)
+                        .frame(width: 18, height: 18)
                 }
                 .buttonStyle(.plain)
                 .subtleHoverScale(1.06)
@@ -103,9 +103,9 @@ struct CreateFolderSheet: View {
                     .resizable()
                     .scaledToFit()
                     .foregroundColor(Color("IconSecondaryColor"))
-                    .frame(width: 20, height: 20)
+                    .frame(width: 18, height: 18)
 
-                Text("Choose notebook color")
+                Text("Choose folder color")
                     .font(FontManager.heading(size: 13, weight: .medium))
                     .foregroundColor(Color("PrimaryTextColor"))
                     .tracking(-0.4)

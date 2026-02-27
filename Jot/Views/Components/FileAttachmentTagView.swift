@@ -36,11 +36,11 @@ struct FileAttachmentTagView: View {
                         .scaledToFit()
                 } else {
                     Image(systemName: systemIconName)
-                        .font(FontManager.icon(weight: .medium))
+                        .font(FontManager.icon(size: 18, weight: .medium))
                 }
             }
             .foregroundStyle(foregroundColor)
-            .frame(width: 20, height: 20)
+            .frame(width: 18, height: 18)
 
             Text(label.lowercased())
                 .font(FontManager.metadata(size: 11, weight: .medium))

@@ -150,9 +150,12 @@ struct TrashSheet: View {
                         }
                     }
                 } label: {
-                    Image(systemName: "arrow.uturn.backward")
-                        .font(.system(size: 11, weight: .semibold))
+                    Image("IconStepBack")
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
                         .foregroundColor(Color("SecondaryTextColor"))
+                        .frame(width: 18, height: 18)
                         .frame(width: 26, height: 26)
                 }
                 .buttonStyle(.plain)
@@ -169,9 +172,12 @@ struct TrashSheet: View {
                         }
                     }
                 } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 11, weight: .semibold))
+                    Image("delete")
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
                         .foregroundColor(.red.opacity(0.8))
+                        .frame(width: 18, height: 18)
                         .frame(width: 26, height: 26)
                 }
                 .buttonStyle(.plain)

@@ -113,6 +113,21 @@ extension View {
 }
 #endif
 
+// MARK: - Context Menu Icon Helper
+
+/// macOS `.contextMenu` renders via NSMenu which ignores SwiftUI `.frame()`.
+/// This creates an Image with explicit NSImage.size so NSMenu respects 18×18.
+#if os(macOS)
+extension Image {
+    static func menuIcon(_ name: String, size: CGFloat = 18) -> Image {
+        let img = NSImage(named: name) ?? NSImage()
+        img.isTemplate = true
+        img.size = NSSize(width: size, height: size)
+        return Image(nsImage: img)
+    }
+}
+#endif
+
 // MARK: - Shared Animation Constants
 
 extension Animation {
@@ -255,6 +270,22 @@ struct ShimmerModifier: ViewModifier {
 extension View {
     func shimmering(active: Bool = true) -> some View {
         modifier(ShimmerModifier(isActive: active))
+    }
+}
+
+// MARK: - Color Markup Stripping
+
+extension String {
+    /// Strips `[[color|rrggbb]]...[[/color]]` serialization markup, leaving inner text intact.
+    var strippingColorMarkup: String {
+        guard contains("[[color|") else { return self }
+        var result = self
+        result = result.replacingOccurrences(of: "[[/color]]", with: "")
+        if let regex = try? NSRegularExpression(pattern: #"\[\[color\|[0-9a-fA-F]{6}\]\]"#) {
+            result = regex.stringByReplacingMatches(
+                in: result, range: NSRange(result.startIndex..., in: result), withTemplate: "")
+        }
+        return result
     }
 }
 

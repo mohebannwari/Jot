@@ -53,12 +53,31 @@ struct ArchivedNoteRow: View {
                         .renderingMode(.template)
                         .resizable()
                         .scaledToFit()
-                        .frame(width: 15, height: 15)
+                        .frame(width: 18, height: 18)
                         .foregroundColor(Color("SecondaryTextColor"))
                 }
                 .buttonStyle(.plain)
                 .subtleHoverScale(1.06)
                 .help("Unarchive Note")
+                .opacity(isHovered ? 1 : 0)
+                .allowsHitTesting(isHovered)
+
+                Button {
+                    HapticManager.shared.buttonTap()
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        onDelete()
+                    }
+                } label: {
+                    Image("delete")
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 18, height: 18)
+                        .foregroundColor(.red)
+                }
+                .buttonStyle(.plain)
+                .subtleHoverScale(1.06)
+                .help("Delete Note")
                 .opacity(isHovered ? 1 : 0)
                 .allowsHitTesting(isHovered)
             }
@@ -91,11 +110,7 @@ struct ArchivedNoteRow: View {
                     Label {
                         Text("Delete Note")
                     } icon: {
-                        Image("delete")
-                            .renderingMode(.template)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 20, height: 20)
+                        Image.menuIcon("delete")
                     }
                 }
             } else {
@@ -108,11 +123,7 @@ struct ArchivedNoteRow: View {
                     Label {
                         Text("Unarchive")
                     } icon: {
-                        Image("IconStepBack")
-                            .renderingMode(.template)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 20, height: 20)
+                        Image.menuIcon("IconStepBack")
                     }
                 }
 
@@ -125,11 +136,7 @@ struct ArchivedNoteRow: View {
                     Label {
                         Text("Delete")
                     } icon: {
-                        Image("delete")
-                            .renderingMode(.template)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 20, height: 20)
+                        Image.menuIcon("delete")
                     }
                 }
             }

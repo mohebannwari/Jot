@@ -22,13 +22,6 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		325763962F3BEF03001A5CAC /* Exceptions for "JotTests" folder in "Jot" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				"jot-new.icon",
-			);
-			target = 32921E072E424DC0006A7C11 /* Jot */;
-		};
 		32921E3D2E424F01006A7C11 /* Exceptions for "Jot" folder in "Jot" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
@@ -49,9 +42,6 @@
 		};
 		33AA00002E45AAAA00000000 /* JotTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				325763962F3BEF03001A5CAC /* Exceptions for "JotTests" folder in "Jot" target */,
-			);
 			path = JotTests;
 			sourceTree = "<group>";
 		};

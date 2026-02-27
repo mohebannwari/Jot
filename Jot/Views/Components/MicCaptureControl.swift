@@ -99,9 +99,9 @@ private extension MicCaptureControl {
             }
         } label: {
             Image(systemName: "mic")
-                .font(FontManager.icon(weight: .medium))
+                .font(FontManager.icon(size: 18, weight: .medium))
                 .foregroundStyle(Color("SecondaryTextColor"))
-                .frame(width: 20, height: 20)
+                .frame(width: 18, height: 18)
         }
         .buttonStyle(.plain)
         .macPointingHandCursor()
@@ -120,7 +120,7 @@ private extension MicCaptureControl {
                 Image(systemName: "stop.circle.fill")
                     .font(.system(size: 20, weight: .medium))
                     .foregroundStyle(.white, Color.red)
-                    .frame(width: 20, height: 20)
+                    .frame(width: 18, height: 18)
             }
             .buttonStyle(.plain)
             .macPointingHandCursor()
@@ -151,7 +151,7 @@ private extension MicCaptureControl {
                     .resizable()
                     .scaledToFit()
                     .foregroundColor(Color(red: 0.937, green: 0.267, blue: 0.267))
-                    .frame(width: 20, height: 20)
+                    .frame(width: 18, height: 18)
             }
             .buttonStyle(.plain)
             .macPointingHandCursor()
@@ -168,7 +168,7 @@ private extension MicCaptureControl {
                     .resizable()
                     .scaledToFit()
                     .foregroundColor(Color(red: 0.659, green: 0.635, blue: 0.620))
-                    .frame(width: 20, height: 20)
+                    .frame(width: 18, height: 18)
             }
             .buttonStyle(.plain)
             .macPointingHandCursor()
@@ -191,7 +191,7 @@ private extension MicCaptureControl {
                         .resizable()
                         .scaledToFit()
                         .foregroundColor(Color(red: 0.231, green: 0.510, blue: 0.965))
-                        .frame(width: 20, height: 20)
+                        .frame(width: 18, height: 18)
                 }
             }
             .buttonStyle(.plain)
@@ -239,7 +239,7 @@ private extension MicCaptureControl {
     func errorBanner(message: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(FontManager.icon(weight: .semibold))
+                .font(FontManager.icon(size: 18, weight: .semibold))
                 .foregroundStyle(.orange)
 
             Text(message)
