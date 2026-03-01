@@ -14,6 +14,7 @@ import AppKit
 
 struct NoteDetailView: View {
     let note: Note
+    let editorInstanceID: UUID
     let focusRequestID: UUID
     let contentTopInsetAdjustment: CGFloat
     var onSave: (Note) -> Void
@@ -29,6 +30,10 @@ struct NoteDetailView: View {
     @State private var editedTags: [String]
     @State private var autosaveWorkItem: DispatchWorkItem?
     @State private var lastSavedSnapshot: DraftSnapshot
+    /// The note whose content editedTitle/editedContent/editedTags currently describe.
+    /// Distinct from `note` (the prop), which SwiftUI updates to the NEW note BEFORE
+    /// `onChange(of: note.id)` fires — so `persistIfNeeded()` must use this, not `note`.
+    @State private var noteForPersist: Note
 
     static let imageTagPattern = #"\[\[image\|\|\|([^\]]+)\]\]"#
     static let imageTagRegex = try? NSRegularExpression(pattern: imageTagPattern, options: [])
@@ -115,11 +120,13 @@ struct NoteDetailView: View {
 
     init(
         note: Note,
+        editorInstanceID: UUID = UUID(),
         focusRequestID: UUID,
         contentTopInsetAdjustment: CGFloat = 0,
         onSave: @escaping (Note) -> Void
     ) {
         self.note = note
+        self.editorInstanceID = editorInstanceID
         self.focusRequestID = focusRequestID
         self.contentTopInsetAdjustment = contentTopInsetAdjustment
         self.onSave = onSave
@@ -129,6 +136,7 @@ struct NoteDetailView: View {
         self._lastSavedSnapshot = State(
             initialValue: DraftSnapshot(title: note.title, content: note.content, tags: note.tags)
         )
+        self._noteForPersist = State(initialValue: note)
     }
 
     // MARK: - Body
@@ -159,6 +167,10 @@ struct NoteDetailView: View {
     // MARK: - Note Content
 
     private var noteContent: some View {
+        noteContentEvents
+    }
+
+    private var noteContentLayout: some View {
         ZStack(alignment: .topLeading) {
             Color.clear
                 .ignoresSafeArea()
@@ -231,6 +243,7 @@ struct NoteDetailView: View {
                         TodoRichTextEditor(
                             text: $editedContent,
                             focusRequestID: localEditorFocusID ?? focusRequestID,
+                            editorInstanceID: editorInstanceID,
                             onToolbarAction: handleEditToolAction,
                             onCommandMenuSelection: handleCommandMenuSelection
                         )
@@ -280,6 +293,7 @@ struct NoteDetailView: View {
             // Sticky header
             if showStickyHeader {
                 ZStack(alignment: .top) {
+                    // Gradient fade — extends into the safe area (title bar zone)
                     Rectangle()
                         .fill(Color.clear)
                         .frame(height: 120)
@@ -288,8 +302,10 @@ struct NoteDetailView: View {
                                 .mask(headerMaskGradient)
                                 .ignoresSafeArea(edges: .top)
                         )
+                        .ignoresSafeArea(edges: .top)
                         .blur(radius: 0.1)
 
+                    // Title — lives in normal content space (same as overlay icons)
                     HStack {
                         Spacer()
                         Text(editedTitle.isEmpty ? "Untitled" : editedTitle)
@@ -301,10 +317,10 @@ struct NoteDetailView: View {
                             .padding(.horizontal, 80)
                         Spacer()
                     }
-                    .padding(.top, 14)
+                    .frame(height: 18)
+                    .padding(.top, 12)
                 }
                 .frame(maxWidth: .infinity)
-                .ignoresSafeArea(edges: .top)
                 .transition(.move(edge: .top).combined(with: .opacity))
                 .zIndex(15)
             }
@@ -330,78 +346,22 @@ struct NoteDetailView: View {
                 .animation(.jotSmoothFast, value: showFloatingToolbar)
         }
         .overlay {
-            GeometryReader { geometry in
-                if showFloatingToolbar && !showEditContentPanel {
-                    let parentFrame = geometry.frame(in: .global)
-                    let localX = floatingToolbarOffset.x - parentFrame.minX
-                    let localY = floatingToolbarOffset.y - parentFrame.minY
-                    let toolbarWidth: CGFloat = 250
-                    let toolbarHeight: CGFloat = 36
-                    let centerX = localX + toolbarWidth / 2
-                    let centerY = localY + toolbarHeight / 2
-
-                    FloatingEditToolbar(
-                        position: floatingToolbarOffset,
-                        placeAbove: floatingToolbarPlaceAbove,
-                        width: 250,
-                        onToolAction: handleEditToolAction
-                    )
-                    .position(x: centerX, y: centerY)
-                    .transition(.scale(scale: 0.9).combined(with: .opacity))
-                    .zIndex(100)
-
-                    // Color picker pill — 8px to the right of the main toolbar
-                    let colorPillWidth: CGFloat = 186
-                    let colorPillGap: CGFloat = 8
-                    let colorPillCenterX = localX + toolbarWidth + colorPillGap + colorPillWidth / 2
-
-                    FloatingColorPicker(onColorSelected: { hex in
-                        TextFormattingManager.colorLog("POST notification applyTextColor hex=\(hex)")
-                        NotificationCenter.default.post(
-                            name: Notification.Name("applyTextColor"),
-                            object: nil,
-                            userInfo: ["hex": hex]
-                        )
-                    })
-                    .position(x: colorPillCenterX, y: centerY)
-                    .transition(.scale(scale: 0.9).combined(with: .opacity))
-                    .zIndex(100)
-                }
-            }
+            floatingToolbarOverlay
+                .allowsHitTesting(showFloatingToolbar && !showEditContentPanel)
         }
         .overlay {
-            GeometryReader { geometry in
-                if showEditContentPanel {
-                    // Reuse floatingToolbarOffset — it's already in the correct coordinate space
-                    // (same calculation path that correctly positions FloatingEditToolbar).
-                    let parentFrame = geometry.frame(in: .global)
-                    let localX = floatingToolbarOffset.x - parentFrame.minX
-                    let localY = floatingToolbarOffset.y - parentFrame.minY
-                    let estimatedWidth: CGFloat = 280
-                    let centerX = min(
-                        max(localX + estimatedWidth / 2, estimatedWidth / 2),
-                        geometry.size.width - estimatedWidth / 2
-                    )
-                    let centerY = localY - 20
-
-                    EditContentFloatingPanel(
-                        state: aiPanelState,
-                        onReplace: { applyEditContentReplacement() },
-                        onDismiss: {
-                            withAnimation(.jotSpring) {
-                                showEditContentPanel = false
-                                aiPanelState = .none
-                            }
-                        },
-                        onRedo: { redoEditContent() }
-                    )
-                    .position(x: centerX, y: centerY)
-                    .transition(.scale(scale: 0.9, anchor: .bottom).combined(with: .opacity))
-                    .zIndex(150)
-                }
-            }
-            .allowsHitTesting(showEditContentPanel)
+            editContentPanelOverlay
+                .allowsHitTesting(showEditContentPanel)
         }
+        .preference(
+            key: BottomOverlayActivePreferenceKey.self,
+            value: showSearchOnPageOverlay || showLinkInputOverlay || showVoiceRecorderOverlay
+        )
+    }
+
+    // Event handling chain — split from layout to reduce type-checker pressure
+    private var noteContentEvents: some View {
+        noteContentLayout
         .onAppear {
             updateGalleryPreview(for: editedContent)
             glassElementsVisible = true
@@ -435,6 +395,9 @@ struct NoteDetailView: View {
         .onChange(of: note.id) { oldNoteID, newNoteID in
             autosaveWorkItem?.cancel()
             persistIfNeeded()
+            // Advance noteForPersist to the new note AFTER the save above.
+            // persistIfNeeded() must see the OLD note (via noteForPersist) to save correctly.
+            noteForPersist = note
 
             // Cache current state (don't cache editPreview — it's contextual to a selection)
             if case .editPreview = aiPanelState {
@@ -449,7 +412,7 @@ struct NoteDetailView: View {
             aiSummaryText = nil
             aiKeyPointsItems = nil
             currentProofreadIndex = 0
-            NotificationCenter.default.post(name: .aiProofreadClearOverlays, object: nil)
+            NotificationCenter.default.post(name: .aiProofreadClearOverlays, object: nil, userInfo: ["editorInstanceID": editorInstanceID])
 
             // Restore standard note fields
             editedTitle = note.title
@@ -477,7 +440,7 @@ struct NoteDetailView: View {
                     NotificationCenter.default.post(
                         name: .aiProofreadShowAnnotations,
                         object: annotations,
-                        userInfo: ["activeIndex": 0]
+                        userInfo: ["activeIndex": 0, "editorInstanceID": self.editorInstanceID]
                     )
                 }
             }
@@ -486,27 +449,27 @@ struct NoteDetailView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .noteToolsBarAction))
         { notification in
-            if let rawValue = notification.object as? String,
-               let tool = EditTool(rawValue: rawValue)
-            {
-                handleEditToolAction(tool)
-            }
+            handleNoteToolsBarNotification(notification)
         }
         .onReceive(NotificationCenter.default.publisher(for: .aiToolAction)) { notification in
+            if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
             guard let tool = notification.object as? AITool else { return }
             Task { await handleAITool(tool) }
         }
         .onReceive(NotificationCenter.default.publisher(for: .aiEditSubmit)) { notification in
+            if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
             guard let instruction = notification.object as? String else { return }
             Task { await handleAIEdit(instruction: instruction) }
         }
         .onReceive(NotificationCenter.default.publisher(for: .aiEditCaptureSelection)) { notification in
+            if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
             guard let userInfo = notification.userInfo else { return }
             capturedSelectionRange = (userInfo["nsRange"] as? NSRange) ?? NSRange(location: NSNotFound, length: 0)
             capturedSelectionText = (userInfo["selectedText"] as? String) ?? ""
             capturedSelectionWindowRect = (userInfo["windowRect"] as? CGRect) ?? .zero
         }
         .onReceive(NotificationCenter.default.publisher(for: .aiProofreadApplySuggestion)) { notification in
+            if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
             guard let userInfo = notification.userInfo,
                   let original = userInfo["original"] as? String else { return }
             if case .proofread(var annotations) = aiPanelState {
@@ -518,13 +481,14 @@ struct NoteDetailView: View {
                         NotificationCenter.default.post(
                             name: .aiProofreadShowAnnotations,
                             object: annotations,
-                            userInfo: ["activeIndex": currentProofreadIndex]
+                            userInfo: ["activeIndex": self.currentProofreadIndex, "editorInstanceID": self.editorInstanceID]
                         )
                     }
                 }
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .showInNoteSearch)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .showInNoteSearch)) { notification in
+            if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
             presentSearchOnPage()
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("ShowCommandMenu")))
@@ -549,38 +513,7 @@ struct NoteDetailView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .textSelectionChanged))
         { notification in
-            DispatchQueue.main.async {
-                guard let userInfo = notification.userInfo,
-                      let hasSelection = userInfo["hasSelection"] as? Bool else { return }
-
-                if hasSelection,
-                   let selectionWidth = userInfo["selectionWidth"] as? CGFloat,
-                   let selectionHeight = userInfo["selectionHeight"] as? CGFloat,
-                   let selectionWindowY = userInfo["selectionWindowY"] as? CGFloat,
-                   let selectionWindowX = userInfo["selectionWindowX"] as? CGFloat,
-                   let visibleWidth = userInfo["visibleWidth"] as? CGFloat,
-                   let visibleHeight = userInfo["visibleHeight"] as? CGFloat {
-
-                    let result = FloatingToolbarPositioner.calculatePosition(
-                        selectionWindowX: selectionWindowX,
-                        selectionWindowY: selectionWindowY,
-                        selectionWidth: selectionWidth,
-                        selectionHeight: selectionHeight,
-                        visibleWidth: visibleWidth,
-                        visibleHeight: visibleHeight
-                    )
-
-                    withAnimation(.jotSmoothFast) {
-                        self.floatingToolbarOffset = result.origin
-                        self.floatingToolbarPlaceAbove = result.placeAbove
-                        self.showFloatingToolbar = true
-                    }
-                } else {
-                    withAnimation(.smooth(duration: 0.15)) {
-                        self.showFloatingToolbar = false
-                    }
-                }
-            }
+            handleTextSelectionChanged(notification)
         }
         .sheet(isPresented: $showImagePicker) {
             ImagePicker(
@@ -597,6 +530,147 @@ struct NoteDetailView: View {
                 }
             )
             .frame(minWidth: 800, minHeight: 600)
+        }
+    }
+
+    // MARK: - Extracted Overlays (reduce type-checker pressure on noteContent)
+
+    @ViewBuilder
+    private var editContentPanelOverlay: some View {
+        GeometryReader { geometry in
+            if showEditContentPanel {
+                let parentFrame = geometry.frame(in: .global)
+                let localX = floatingToolbarOffset.x - parentFrame.minX
+                let localY = floatingToolbarOffset.y - parentFrame.minY
+                let estimatedWidth: CGFloat = 280
+                let centerX = min(
+                    max(localX + estimatedWidth / 2, estimatedWidth / 2),
+                    geometry.size.width - estimatedWidth / 2
+                )
+                let centerY = localY - 20
+
+                EditContentFloatingPanel(
+                    state: aiPanelState,
+                    onReplace: { applyEditContentReplacement() },
+                    onDismiss: {
+                        withAnimation(.jotSpring) {
+                            showEditContentPanel = false
+                            aiPanelState = .none
+                        }
+                    },
+                    onRedo: { redoEditContent() }
+                )
+                .position(x: centerX, y: centerY)
+                .transition(.scale(scale: 0.9, anchor: .bottom).combined(with: .opacity))
+                .zIndex(150)
+            }
+        }
+        .allowsHitTesting(showEditContentPanel)
+    }
+
+
+    @ViewBuilder
+    private var floatingToolbarOverlay: some View {
+        GeometryReader { geometry in
+            if showFloatingToolbar && !showEditContentPanel {
+                let parentFrame = geometry.frame(in: .global)
+                let localX = floatingToolbarOffset.x - parentFrame.minX
+                let localY = floatingToolbarOffset.y - parentFrame.minY
+                let toolbarWidth: CGFloat = 250
+                let toolbarHeight: CGFloat = 36
+                let paneWidth: CGFloat = geometry.size.width
+                let edgeInset: CGFloat = 12
+                let centerX: CGFloat = localX + toolbarWidth / 2
+                let clampedCenterX: CGFloat = min(max(centerX, toolbarWidth / 2 + edgeInset), paneWidth - toolbarWidth / 2 - edgeInset)
+                let centerY: CGFloat = localY + toolbarHeight / 2
+
+                FloatingEditToolbar(
+                    position: floatingToolbarOffset,
+                    placeAbove: floatingToolbarPlaceAbove,
+                    width: 250,
+                    onToolAction: handleEditToolAction
+                )
+                .position(x: clampedCenterX, y: centerY)
+                .transition(.scale(scale: 0.9).combined(with: .opacity))
+                .zIndex(100)
+
+                // Color picker — positioned ABOVE the toolbar, centered, with 4px gap
+                let colorPillWidth: CGFloat = 186
+                let colorPillHeight: CGFloat = 36
+                let colorPickerGap: CGFloat = 4
+                let colorPickerY: CGFloat = centerY - toolbarHeight / 2 - colorPickerGap - colorPillHeight / 2
+                let clampedColorX: CGFloat = min(
+                    max(colorPillWidth / 2 + edgeInset, clampedCenterX),
+                    paneWidth - colorPillWidth / 2 - edgeInset
+                )
+
+                FloatingColorPicker(onColorSelected: { [editorInstanceID] hex in
+                    NotificationCenter.default.post(
+                        name: Notification.Name("applyTextColor"),
+                        object: nil,
+                        userInfo: ["hex": hex, "editorInstanceID": editorInstanceID]
+                    )
+                })
+                .position(x: clampedColorX, y: colorPickerY)
+                .transition(.scale(scale: 0.9).combined(with: .opacity))
+                .zIndex(100)
+            }
+        }
+    }
+
+    // MARK: - Notification Handlers (extracted to reduce type-checker pressure)
+
+    private func handleTextSelectionChanged(_ notification: Notification) {
+        DispatchQueue.main.async {
+            guard let userInfo = notification.userInfo,
+                  let hasSelection = userInfo["hasSelection"] as? Bool else { return }
+
+            // If this notification is from a different pane, dismiss our toolbar
+            if let notifID = userInfo["editorInstanceID"] as? UUID,
+               notifID != self.editorInstanceID {
+                if hasSelection {
+                    withAnimation(.smooth(duration: 0.15)) { self.showFloatingToolbar = false }
+                }
+                return
+            }
+
+            if hasSelection,
+               let selectionWidth = userInfo["selectionWidth"] as? CGFloat,
+               let selectionHeight = userInfo["selectionHeight"] as? CGFloat,
+               let selectionWindowY = userInfo["selectionWindowY"] as? CGFloat,
+               let selectionWindowX = userInfo["selectionWindowX"] as? CGFloat,
+               let visibleWidth = userInfo["visibleWidth"] as? CGFloat,
+               let visibleHeight = userInfo["visibleHeight"] as? CGFloat {
+
+                let result = FloatingToolbarPositioner.calculatePosition(
+                    selectionWindowX: selectionWindowX,
+                    selectionWindowY: selectionWindowY,
+                    selectionWidth: selectionWidth,
+                    selectionHeight: selectionHeight,
+                    visibleWidth: visibleWidth,
+                    visibleHeight: visibleHeight
+                )
+
+                withAnimation(.jotSmoothFast) {
+                    self.floatingToolbarOffset = result.origin
+                    self.floatingToolbarPlaceAbove = result.placeAbove
+                    self.showFloatingToolbar = true
+                }
+            } else {
+                withAnimation(.smooth(duration: 0.15)) {
+                    self.showFloatingToolbar = false
+                }
+            }
+        }
+    }
+
+    private func handleNoteToolsBarNotification(_ notification: Notification) {
+        if let notifID = notification.userInfo?["editorInstanceID"] as? UUID,
+           notifID != self.editorInstanceID { return }
+        if let rawValue = notification.object as? String,
+           let tool = EditTool(rawValue: rawValue)
+        {
+            handleEditToolAction(tool)
         }
     }
 
@@ -773,9 +847,9 @@ struct NoteDetailView: View {
         LinearGradient(
             gradient: Gradient(stops: [
                 .init(color: Color.white, location: 0.0),
-                .init(color: Color.white.opacity(0.96), location: 0.2),
-                .init(color: Color.white.opacity(0.8), location: 0.45),
-                .init(color: Color.white.opacity(0.45), location: 0.68),
+                .init(color: Color.white, location: 0.28),
+                .init(color: Color.white.opacity(0.85), location: 0.45),
+                .init(color: Color.white.opacity(0.45), location: 0.65),
                 .init(color: Color.white.opacity(0.18), location: 0.82),
                 .init(color: Color.clear, location: 1.0),
             ]),
@@ -959,7 +1033,7 @@ struct NoteDetailView: View {
                 Spacer()
 
                 Button("Done") {
-                    NotificationCenter.default.post(name: .aiProofreadClearOverlays, object: nil)
+                    NotificationCenter.default.post(name: .aiProofreadClearOverlays, object: nil, userInfo: ["editorInstanceID": editorInstanceID])
                     withAnimation(.jotSpring) { aiPanelState = .none }
                 }
                 .font(FontManager.heading(size: 12, weight: .regular))
@@ -1126,7 +1200,9 @@ struct NoteDetailView: View {
         )
         guard snapshot != lastSavedSnapshot else { return }
 
-        var updatedNote = note
+        // Use noteForPersist, NOT note. SwiftUI updates `note` to the NEW note before
+        // onChange(of: note.id) fires, so `note` here already has the wrong ID.
+        var updatedNote = noteForPersist
         updatedNote.title = editedTitle
         updatedNote.content = editedContent
         updatedNote.tags = editedTags
@@ -1171,13 +1247,16 @@ struct NoteDetailView: View {
         if performAuxiliaryToolAction(tool) {
             return
         }
+        let eidInfo: [String: Any] = ["editorInstanceID": editorInstanceID]
         switch tool {
         case .todo:
             NotificationCenter.default.post(
-                name: Notification.Name("TodoToolbarAction"), object: nil)
+                name: Notification.Name("TodoToolbarAction"), object: nil, userInfo: eidInfo)
         default:
+            var info = eidInfo
+            info["tool"] = tool.rawValue
             NotificationCenter.default.post(
-                name: Notification.Name("applyEditTool"), object: nil, userInfo: ["tool": tool.rawValue])
+                name: Notification.Name("applyEditTool"), object: nil, userInfo: info)
         }
     }
 
@@ -1214,5 +1293,12 @@ struct TitleOffsetPreferenceKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()
+    }
+}
+
+struct BottomOverlayActivePreferenceKey: PreferenceKey {
+    static var defaultValue: Bool = false
+    static func reduce(value: inout Bool, nextValue: () -> Bool) {
+        value = value || nextValue()
     }
 }

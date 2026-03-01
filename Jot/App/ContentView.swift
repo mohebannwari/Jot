@@ -8,9 +8,98 @@
 import AppKit
 import SwiftUI
 
+enum SplitPosition { case left, right }
+enum SplitPickerPane { case primary, secondary }
+
+struct SplitSession: Identifiable, Equatable {
+    let id: UUID
+    var primaryNoteID: UUID?
+    var secondaryNoteID: UUID?
+    var position: SplitPosition = .right
+    var ratio: CGFloat = 0.5
+
+    init(id: UUID = UUID(), primaryNoteID: UUID? = nil, secondaryNoteID: UUID? = nil) {
+        self.id = id
+        self.primaryNoteID = primaryNoteID
+        self.secondaryNoteID = secondaryNoteID
+    }
+
+    var isComplete: Bool { primaryNoteID != nil && secondaryNoteID != nil }
+}
+
 private struct ExportQuickLookContext {
     let notes: [Note]
     let format: NoteExportFormat
+}
+
+/// Separate struct so the hover `@State` doesn't invalidate ContentView's body.
+private struct AddSplitButtonView: View {
+    let isPending: Bool
+    let borderColor: Color
+    let onTap: () -> Void
+
+    @State private var isHovered = false
+    @State private var dashPhase: CGFloat = 0
+
+    private let dashLength: CGFloat = 6
+    private let gapLength: CGFloat = 6
+    private let buttonHeight: CGFloat = 26
+    private var patternLength: CGFloat { dashLength + gapLength }
+
+    var body: some View {
+        Button(action: onTap) {
+            ZStack {
+                if isPending {
+                    Text("Cancel")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(Color("SecondaryTextColor"))
+                        .tracking(-0.3)
+                } else {
+                    Image("IconPlusSmall")
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
+                        .foregroundColor(Color("SecondaryTextColor"))
+                        .frame(width: 18, height: 18)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: buttonHeight)
+            .contentShape(RoundedRectangle(cornerRadius: 999))
+        }
+        .buttonStyle(.plain)
+        .macPointingHandCursor()
+        .overlay(
+            RoundedRectangle(cornerRadius: 999, style: .continuous)
+                .strokeBorder(
+                    style: StrokeStyle(
+                        lineWidth: 2,
+                        lineCap: .round,
+                        dash: [dashLength, gapLength],
+                        dashPhase: dashPhase
+                    )
+                )
+                .foregroundColor(borderColor)
+        )
+        .onHover { hovering in
+            isHovered = hovering
+            if hovering {
+                startMarchingAnimation()
+            }
+        }
+        .onChange(of: isHovered) { _, hovering in
+            if !hovering {
+                withAnimation(.easeOut(duration: 0.3)) { dashPhase = 0 }
+            }
+        }
+    }
+
+    private func startMarchingAnimation() {
+        dashPhase = 0
+        withAnimation(.linear(duration: 0.6).repeatForever(autoreverses: false)) {
+            dashPhase = patternLength
+        }
+    }
 }
 
 /// Makes the hosting NSWindow transparent so liquid glass is the sole background layer.
@@ -98,7 +187,23 @@ struct ContentView: View {
     @State private var trafficLightMetrics = TrafficLightMetrics.fallback
     @State private var isFloatingSidebarVisible = false
     @State private var floatingSidebarDismissWorkItem: DispatchWorkItem?
-
+    @State private var isSplitMenuVisible = false
+    @State private var splitSessions: [SplitSession] = []
+    @State private var activeSplitID: UUID? = nil
+    @State private var pendingSplitID: UUID? = nil
+    @State private var isSplitViewVisible = false
+    @State private var splitPickerOverlayPane: SplitPickerPane? = nil
+    @State private var splitDragDelta: CGFloat = 0
+    @State private var isDragSplitTargeted = false
+    @State private var activeSplitPane: SplitPickerPane? = nil
+    @State private var splitAiToolsState: AIToolsState = .collapsed
+    @State private var splitFocusRequestID = UUID()
+    @State private var primaryEditorID = UUID()
+    @State private var splitEditorID = UUID()
+    @State private var currentDetailWidth: CGFloat = 0
+    @State private var splitMenuButtonFrame: CGRect = .zero
+    @State private var primaryBottomOverlayActive = false
+    @State private var splitBottomOverlayActive = false
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -130,6 +235,8 @@ struct ContentView: View {
     private let floatingSidebarEdgeInset: CGFloat = 8
     private let floatingSidebarHoverTriggerWidth: CGFloat = 20
     private let floatingSidebarDismissDelay: TimeInterval = 0.3
+    private let splitGap: CGFloat = 8
+    private let splitMinPaneWidth: CGFloat = 360
     private let sidebarItemLeadingPadding: CGFloat = 8
     private let sidebarItemTrailingPadding: CGFloat = 8
     private let sidebarItemVPadding: CGFloat = 8
@@ -152,6 +259,59 @@ struct ContentView: View {
     private enum FolderCreationIntent {
         case standalone
         case withNotes(Set<UUID>)
+    }
+
+    private var isSplitActive: Bool { !splitSessions.isEmpty }
+
+    /// Whether the split layout should render right now
+    private var shouldShowSplitLayout: Bool {
+        activeSplitID != nil && isSplitViewVisible
+    }
+
+    /// Active-note ID for sidebar cards.
+    /// Returns nil while the split layout is showing so regular sections
+    /// don't highlight a note that's already represented in the Active Split container.
+    private var sidebarActiveNoteID: UUID? {
+        shouldShowSplitLayout ? nil : selectedNote?.id
+    }
+
+    /// Selection set for sidebar cards.
+    /// Empty while the split layout is showing so regular sections
+    /// don't render any selection background on split-owned notes.
+    private var sidebarSelectedNoteIDs: Set<UUID> {
+        shouldShowSplitLayout ? [] : selectedNoteIDs
+    }
+
+    private var activeSplit: SplitSession? {
+        guard let id = activeSplitID else { return nil }
+        return splitSessions.first(where: { $0.id == id })
+    }
+
+    private var activeSplitIndex: Int? {
+        guard let id = activeSplitID else { return nil }
+        return splitSessions.firstIndex(where: { $0.id == id })
+    }
+
+    private var activePrimaryNote: Note? {
+        guard let noteID = activeSplit?.primaryNoteID else { return nil }
+        return notesManager.notes.first(where: { $0.id == noteID })
+    }
+
+    private var activeSecondaryNote: Note? {
+        guard let noteID = activeSplit?.secondaryNoteID else { return nil }
+        return notesManager.notes.first(where: { $0.id == noteID })
+    }
+
+    private var isActiveSplitPending: Bool {
+        activeSplitID != nil && activeSplitID == pendingSplitID
+    }
+
+    private func recentNotes(excluding note: Note) -> [Note] {
+        notesManager.notes
+            .filter { $0.id != note.id && !$0.isArchived && !$0.isDeleted }
+            .sorted { $0.date > $1.date }
+            .prefix(10)
+            .map { $0 }
     }
 
     var body: some View {
@@ -262,6 +422,15 @@ struct ContentView: View {
             notesPendingExport = [note]
             withAnimation(.jotSpring) { isBatchExportSheetPresented = true }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .editorDidBecomeFirstResponder)) { notification in
+            guard shouldShowSplitLayout,
+                  let eid = notification.userInfo?["editorInstanceID"] as? UUID else { return }
+            if eid == primaryEditorID && activeSplitPane != .primary {
+                activeSplitPane = .primary
+            } else if eid == splitEditorID && activeSplitPane != .secondary {
+                activeSplitPane = .secondary
+            }
+        }
     }
 
     @ViewBuilder
@@ -369,16 +538,35 @@ struct ContentView: View {
                 if !isSidebarVisible { floatingSidebarOverlay }
             }
             .overlay(alignment: .topLeading) {
-                if !isSidebarVisible { collapsedTopBarRow }
+                if !isSidebarVisible && !isActiveSplitPending { collapsedTopBarRow }
             }
             .overlay(alignment: .topLeading) {
                 globalSearchShortcutActivator
+            }
+            if isSplitMenuVisible {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture { withAnimation(.jotSpring) { isSplitMenuVisible = false } }
+                    .ignoresSafeArea()
+                    .zIndex(199)
             }
             appCenteredSearchOverlay().zIndex(3)
             appWindowSettingsOverlay().zIndex(4)
             appWindowTrashOverlay().zIndex(5)
         }
         .coordinateSpace(name: "contentArea")
+        .overlay(alignment: .topLeading) {
+            if isSplitMenuVisible {
+                SplitOptionMenu(
+                    onSplitRight: { openSplit(position: .right) },
+                    onSplitLeft:  { openSplit(position: .left)  },
+                    dismiss: { withAnimation(.jotSpring) { isSplitMenuVisible = false } }
+                )
+                .offset(x: max(8, splitMenuButtonFrame.minX - 8), y: splitMenuButtonFrame.maxY + 7)
+                .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .topLeading)))
+                .animation(.jotSpring, value: isSplitMenuVisible)
+            }
+        }
     }
 
     @ViewBuilder
@@ -388,33 +576,305 @@ struct ContentView: View {
         sidebarDetailGap: CGFloat
     ) -> some View {
         if let note = selectedNote {
-            let detailWidth: CGFloat = isSidebarVisible
+            let needsPendingPadding = isActiveSplitPending && !isSidebarVisible
+            let totalDetailWidth: CGFloat = isSidebarVisible
                 ? max(0, availableWidth - visibleSidebarWidth - sidebarDetailGap)
-                : availableWidth
-            let detailCornerRadius: CGFloat = isSidebarVisible ? windowCornerRadius - windowContentPadding : 0
-            detailPane(note: note)
-                .frame(width: detailWidth)
-                .frame(maxHeight: .infinity)
-                .background(
-                    RoundedRectangle(cornerRadius: detailCornerRadius, style: .continuous)
-                        .fill(colorScheme == .dark
-                            ? Color(red: 0.047, green: 0.039, blue: 0.035)
-                            : Color(red: 0.906, green: 0.898, blue: 0.894))
-                )
-                .clipShape(RoundedRectangle(cornerRadius: detailCornerRadius, style: .continuous))
-                .overlay(alignment: .bottomTrailing) {
-                    AIToolsOverlay(state: $aiToolsState)
-                        .padding(.trailing, 18)
-                        .padding(.bottom, 18)
+                : needsPendingPadding
+                    ? availableWidth - windowContentPadding * 2
+                    : availableWidth
+            let cornerRadius: CGFloat = (isSidebarVisible || needsPendingPadding)
+                ? windowCornerRadius - windowContentPadding : 0
+            ZStack {
+                if shouldShowSplitLayout {
+                    let primaryNote = activePrimaryNote ?? selectedNote ?? Note(title: "", content: "")
+                    splitDetailLayout(primaryNote: primaryNote, totalWidth: totalDetailWidth, cornerRadius: cornerRadius)
+                } else if isDragSplitTargeted && !isSplitActive {
+                    dragSplitPreviewLayout(note: note, totalWidth: totalDetailWidth, cornerRadius: cornerRadius)
+                } else {
+                    singleNotePane(note: note, width: totalDetailWidth, cornerRadius: cornerRadius)
                 }
-                .overlay(alignment: .bottomLeading) {
-                    NoteToolsBar(note: note)
-                        .padding(.leading, 18)
-                        .padding(.bottom, 18)
+            }
+            // Stable drop zone — never destroyed when isDragSplitTargeted toggles
+            .overlay(alignment: .trailing) {
+                if !shouldShowSplitLayout && !isSplitActive {
+                    Color.clear
+                        .frame(width: totalDetailWidth * 0.5)
+                        .allowsHitTesting(false)
+                        .dropDestination(for: TransferablePayload.self) { payloads, _ in
+                            let items = payloads.flatMap { $0.items }
+                            guard let droppedItem = items.first,
+                                  droppedItem.noteID != note.id else { return false }
+                            withAnimation(.jotSpring) {
+                                createSplitFromDrop(primaryNote: note, droppedNoteID: droppedItem.noteID)
+                            }
+                            return true
+                        } isTargeted: { targeted in
+                            withAnimation(.jotSpring) { isDragSplitTargeted = targeted }
+                        }
                 }
-                .padding(.leading, sidebarDetailGap)
-                .disabled(isCreateFolderAlertPresented || pendingFolderToEdit != nil)
+            }
+            .padding(.leading, sidebarDetailGap)
+            .padding(needsPendingPadding ? windowContentPadding : 0)
+            .background(
+                Color.clear
+                    .onAppear { currentDetailWidth = totalDetailWidth }
+                    .onChange(of: totalDetailWidth) { currentDetailWidth = $0 }
+            )
+            .disabled(isCreateFolderAlertPresented || pendingFolderToEdit != nil)
         }
+    }
+
+    private var detailBg: Color {
+        colorScheme == .dark
+            ? Color(red: 0.047, green: 0.039, blue: 0.035)
+            : Color(red: 0.906, green: 0.898, blue: 0.894)
+    }
+
+    @ViewBuilder
+    private func dragSplitPreviewLayout(note: Note, totalWidth: CGFloat, cornerRadius: CGFloat) -> some View {
+        let splitRadius = windowCornerRadius - windowContentPadding
+        let primW = ((totalWidth - splitGap) * 0.5).rounded()
+        let secW = (totalWidth - primW - splitGap).rounded()
+
+        HStack(spacing: 0) {
+            singleNotePane(note: note, width: primW, cornerRadius: splitRadius)
+            splitPaneResizeHandle(totalWidth: totalWidth)
+            // Empty dashed placeholder -- no note list, no close button
+            RoundedRectangle(cornerRadius: splitRadius, style: .continuous)
+                .strokeBorder(style: StrokeStyle(lineWidth: 2, lineCap: .round, dash: [6, 6]))
+                .foregroundColor(colorScheme == .dark ? Color.white.opacity(0.15) : Color.black.opacity(0.25))
+                .frame(width: secW)
+                .frame(maxHeight: .infinity)
+        }
+    }
+
+    private func createSplitFromDrop(primaryNote: Note, droppedNoteID: UUID) {
+        isDragSplitTargeted = false
+        var session = SplitSession()
+        session.primaryNoteID = primaryNote.id
+        session.secondaryNoteID = droppedNoteID
+        session.position = .right
+        splitSessions.append(session)
+        activeSplitID = session.id
+        isSplitViewVisible = true
+        activeSplitPane = .primary
+    }
+
+    private func focusSplitPane(_ pane: SplitPickerPane) {
+        guard activeSplitPane != pane else { return }
+        activeSplitPane = pane
+        if pane == .primary {
+            detailFocusRequestID = UUID()
+        } else {
+            splitFocusRequestID = UUID()
+        }
+    }
+
+    private func singleNotePane(note: Note, width: CGFloat, cornerRadius: CGFloat) -> some View {
+        detailPane(note: note)
+            .frame(width: width)
+            .frame(maxHeight: .infinity)
+            .background(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).fill(detailBg))
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .splitPaneShadow(isActive: colorScheme == .light && !shouldShowSplitLayout, cornerRadius: cornerRadius, backgroundColor: detailBg, colorScheme: colorScheme)
+            .onPreferenceChange(BottomOverlayActivePreferenceKey.self) { primaryBottomOverlayActive = $0 }
+            .overlay(alignment: .bottomTrailing) {
+                AIToolsOverlay(state: $aiToolsState, editorInstanceID: primaryEditorID).padding(.trailing, 18).padding(.bottom, 18)
+            }
+            .overlay(alignment: .bottomLeading) {
+                if !primaryBottomOverlayActive {
+                    NoteToolsBar(note: note, editorInstanceID: primaryEditorID).padding(.leading, 18).padding(.bottom, 18)
+                        .transition(.opacity)
+                }
+            }
+    }
+
+    @ViewBuilder
+    private func splitDetailLayout(primaryNote: Note, totalWidth: CGFloat, cornerRadius: CGFloat) -> some View {
+        let splitRadius = windowCornerRadius - windowContentPadding
+        let position = activeSplit?.position ?? .right
+        let ratio = activeSplit?.ratio ?? 0.5
+
+        let availableForSplit = totalWidth - splitGap
+        let baseSecW = availableForSplit * ratio
+        let maxW = totalWidth - splitMinPaneWidth - splitGap
+        let secW = max(splitMinPaneWidth, min(maxW, baseSecW + splitDragDelta)).rounded()
+        let primW = (totalWidth - secW - splitGap).rounded()
+
+        let isPending = isActiveSplitPending
+        let hasPrimary = activeSplit?.primaryNoteID != nil
+        let hasSecondary = activeSplit?.secondaryNoteID != nil
+
+        if position == .right {
+            HStack(spacing: 0) {
+                // Left = primary
+                if hasPrimary {
+                    singleNotePane(note: primaryNote, width: primW, cornerRadius: splitRadius)
+                        .splitPaneDimming(isInactive: activeSplitPane != .primary, cornerRadius: splitRadius, colorScheme: colorScheme)
+                        .splitPaneShadow(isActive: activeSplitPane == .primary, cornerRadius: splitRadius, backgroundColor: detailBg, colorScheme: colorScheme)
+                        .zIndex(activeSplitPane == .primary ? 1 : 0)
+                        .overlay(alignment: .topTrailing) {
+                            if !isPending {
+                                splitPaneControls(isLeftPane: true, isPrimaryPane: true)
+                                    .padding(.top, 12).padding(.trailing, 12)
+                            }
+                        }
+                        .overlay {
+                            splitPickerOverlayView(for: .primary, primaryNote: primaryNote)
+                        }
+                } else {
+                    splitPickerPane(width: primW, cornerRadius: splitRadius, excludingNote: activeSecondaryNote, isPrimary: true)
+                }
+                splitPaneResizeHandle(totalWidth: totalWidth)
+                // Right = secondary
+                if hasSecondary, let secNote = activeSecondaryNote {
+                    secondaryNotePane(note: secNote, width: secW, cornerRadius: splitRadius, primaryNote: primaryNote)
+                        .splitPaneDimming(isInactive: activeSplitPane != .secondary, cornerRadius: splitRadius, colorScheme: colorScheme)
+                        .splitPaneShadow(isActive: activeSplitPane == .secondary, cornerRadius: splitRadius, backgroundColor: detailBg, colorScheme: colorScheme)
+                        .zIndex(activeSplitPane == .secondary ? 1 : 0)
+                } else {
+                    splitPickerPane(width: secW, cornerRadius: splitRadius, excludingNote: activePrimaryNote, isPrimary: false)
+                }
+            }
+        } else {
+            HStack(spacing: 0) {
+                // Left = secondary
+                if hasSecondary, let secNote = activeSecondaryNote {
+                    secondaryNotePane(note: secNote, width: secW, cornerRadius: splitRadius, primaryNote: primaryNote)
+                        .splitPaneDimming(isInactive: activeSplitPane != .secondary, cornerRadius: splitRadius, colorScheme: colorScheme)
+                        .splitPaneShadow(isActive: activeSplitPane == .secondary, cornerRadius: splitRadius, backgroundColor: detailBg, colorScheme: colorScheme)
+                        .zIndex(activeSplitPane == .secondary ? 1 : 0)
+                } else {
+                    splitPickerPane(width: secW, cornerRadius: splitRadius, excludingNote: activePrimaryNote, isPrimary: false)
+                }
+                splitPaneResizeHandle(totalWidth: totalWidth)
+                // Right = primary
+                if hasPrimary {
+                    singleNotePane(note: primaryNote, width: primW, cornerRadius: splitRadius)
+                        .splitPaneDimming(isInactive: activeSplitPane != .primary, cornerRadius: splitRadius, colorScheme: colorScheme)
+                        .splitPaneShadow(isActive: activeSplitPane == .primary, cornerRadius: splitRadius, backgroundColor: detailBg, colorScheme: colorScheme)
+                        .zIndex(activeSplitPane == .primary ? 1 : 0)
+                        .overlay(alignment: .topTrailing) {
+                            if !isPending {
+                                splitPaneControls(isLeftPane: false, isPrimaryPane: true)
+                                    .padding(.top, 12).padding(.trailing, 12)
+                            }
+                        }
+                        .overlay {
+                            splitPickerOverlayView(for: .primary, primaryNote: primaryNote)
+                        }
+                } else {
+                    splitPickerPane(width: primW, cornerRadius: splitRadius, excludingNote: activeSecondaryNote, isPrimary: true)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func splitPickerPane(width: CGFloat, cornerRadius: CGFloat, excludingNote: Note?, isPrimary: Bool) -> some View {
+        let excludeNote = excludingNote ?? Note(title: "", content: "")
+        SplitNotePickerView(
+            recentNotes: recentNotes(excluding: excludeNote),
+            onSelect: { note in
+                withAnimation(.jotSpring) {
+                    guard let idx = activeSplitIndex else { return }
+                    if isPrimary {
+                        splitSessions[idx].primaryNoteID = note.id
+                        selectedNote = note
+                        selectedNoteIDs = [note.id]
+                    } else {
+                        splitSessions[idx].secondaryNoteID = note.id
+                    }
+                    if splitSessions[idx].isComplete {
+                        pendingSplitID = nil
+                    }
+                }
+            },
+            onClose: { cancelPendingSplit() },
+            showCloseButton: !isPrimary && activeSplit?.primaryNoteID != nil
+        )
+        .frame(width: width)
+        .frame(maxHeight: .infinity)
+        .overlay(
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .strokeBorder(style: StrokeStyle(lineWidth: 2, lineCap: .round, dash: [6, 6]))
+                .foregroundColor(colorScheme == .dark ? Color.white.opacity(0.15) : Color.black.opacity(0.25))
+        )
+    }
+
+    @ViewBuilder
+    private func secondaryNotePane(note: Note, width: CGFloat, cornerRadius: CGFloat, primaryNote: Note) -> some View {
+        let position = activeSplit?.position ?? .right
+        let isLeftPane = (position == .left)
+
+        NoteDetailView(
+            note: note,
+            editorInstanceID: splitEditorID,
+            focusRequestID: splitFocusRequestID,
+            contentTopInsetAdjustment: detailToggleToContentExtraSpacingWhenSidebarHidden
+        ) { saveSplitNote($0) }
+        .frame(width: width)
+        .frame(maxHeight: .infinity)
+        .background(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).fill(detailBg))
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .onPreferenceChange(BottomOverlayActivePreferenceKey.self) { splitBottomOverlayActive = $0 }
+        .overlay(alignment: .bottomTrailing) {
+            AIToolsOverlay(state: $splitAiToolsState, editorInstanceID: splitEditorID).padding(.trailing, 18).padding(.bottom, 18)
+        }
+        .overlay(alignment: .bottomLeading) {
+            if !splitBottomOverlayActive {
+                NoteToolsBar(note: note, editorInstanceID: splitEditorID).padding(.leading, 18).padding(.bottom, 18)
+                    .transition(.opacity)
+            }
+        }
+        .overlay(alignment: .topTrailing) {
+            splitPaneControls(isLeftPane: isLeftPane, isPrimaryPane: false)
+                .padding(.top, 12).padding(.trailing, 12)
+        }
+        .overlay {
+            splitPickerOverlayView(for: .secondary, primaryNote: primaryNote)
+        }
+    }
+
+    private func splitPaneResizeHandle(totalWidth: CGFloat) -> some View {
+        let position = activeSplit?.position ?? .right
+        let ratio = activeSplit?.ratio ?? 0.5
+        return ZStack {
+            RoundedRectangle(cornerRadius: 999)
+                .fill(Color("IconSecondaryColor"))
+                .frame(width: 4, height: 18)
+        }
+        .frame(width: splitGap)
+        .frame(maxHeight: .infinity)
+        .contentShape(Rectangle())
+        .macResizeLeftRightCursor()
+        .onHover { isHovering in
+            if isHovering { NSCursor.resizeLeftRight.push() }
+            else { NSCursor.pop() }
+        }
+        .highPriorityGesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { value in
+                    let delta = position == .right
+                        ? -value.translation.width
+                        :  value.translation.width
+                    splitDragDelta = delta
+                    NSCursor.resizeLeftRight.set()
+                }
+                .onEnded { value in
+                    let delta = position == .right
+                        ? -value.translation.width
+                        :  value.translation.width
+                    let availableForSplit = totalWidth - splitGap
+                    let baseSecW = availableForSplit * ratio
+                    let maxW = totalWidth - splitMinPaneWidth - splitGap
+                    let finalSecW = max(splitMinPaneWidth, min(maxW, baseSecW + delta))
+                    if let idx = activeSplitIndex {
+                        splitSessions[idx].ratio = finalSecW / availableForSplit
+                    }
+                    splitDragDelta = 0
+                }
+        )
     }
 
     // MARK: - Export Sheet Overlay
@@ -558,8 +1018,8 @@ struct ContentView: View {
                 if shouldShowPinnedSection {
                     PinnedNotesSection(
                         notes: pinnedNotes,
-                        selectedNoteIDs: selectedNoteIDs,
-                        activeNoteID: selectedNote?.id,
+                        selectedNoteIDs: sidebarSelectedNoteIDs,
+                        activeNoteID: sidebarActiveNoteID,
                         folders: folders,
                         onNoteTap: handleNoteTap,
                         onDeleteNotes: requestDeleteNotes,
@@ -583,8 +1043,8 @@ struct ContentView: View {
                     FolderSection(
                         folders: folders,
                         notesByFolder: notesByFolderID,
-                        selectedNoteIDs: selectedNoteIDs,
-                        activeNoteID: selectedNote?.id,
+                        selectedNoteIDs: sidebarSelectedNoteIDs,
+                        activeNoteID: sidebarActiveNoteID,
                         expandedFolderIDs: $expandedFolderIDs,
                         showAllNotesFolderIDs: $showAllNotesFolderIDs,
                         allFolders: folders,
@@ -619,12 +1079,14 @@ struct ContentView: View {
                     )
                 }
 
+                activeSplitSidebarSection
+
                 if shouldShowTodaySection {
                     NotesSection(
                         title: "Today",
                         notes: todayNotes,
-                        selectedNoteIDs: selectedNoteIDs,
-                        activeNoteID: selectedNote?.id,
+                        selectedNoteIDs: sidebarSelectedNoteIDs,
+                        activeNoteID: sidebarActiveNoteID,
                         folders: folders,
                         onNoteTap: handleNoteTap,
                         onDeleteNotes: requestDeleteNotes,
@@ -650,8 +1112,8 @@ struct ContentView: View {
                     NotesSection(
                         title: "This month",
                         notes: thisMonthNotes,
-                        selectedNoteIDs: selectedNoteIDs,
-                        activeNoteID: selectedNote?.id,
+                        selectedNoteIDs: sidebarSelectedNoteIDs,
+                        activeNoteID: sidebarActiveNoteID,
                         folders: folders,
                         onNoteTap: handleNoteTap,
                         onDeleteNotes: requestDeleteNotes,
@@ -677,8 +1139,8 @@ struct ContentView: View {
                     NotesSection(
                         title: "This year",
                         notes: thisYearNotes,
-                        selectedNoteIDs: selectedNoteIDs,
-                        activeNoteID: selectedNote?.id,
+                        selectedNoteIDs: sidebarSelectedNoteIDs,
+                        activeNoteID: sidebarActiveNoteID,
                         folders: folders,
                         onNoteTap: handleNoteTap,
                         onDeleteNotes: requestDeleteNotes,
@@ -704,8 +1166,8 @@ struct ContentView: View {
                     NotesSection(
                         title: "Older",
                         notes: olderNotes,
-                        selectedNoteIDs: selectedNoteIDs,
-                        activeNoteID: selectedNote?.id,
+                        selectedNoteIDs: sidebarSelectedNoteIDs,
+                        activeNoteID: sidebarActiveNoteID,
                         folders: folders,
                         onNoteTap: handleNoteTap,
                         onDeleteNotes: requestDeleteNotes,
@@ -731,8 +1193,8 @@ struct ContentView: View {
                     NotesSection(
                         title: "Unfiled",
                         notes: [],
-                        selectedNoteIDs: selectedNoteIDs,
-                        activeNoteID: selectedNote?.id,
+                        selectedNoteIDs: sidebarSelectedNoteIDs,
+                        activeNoteID: sidebarActiveNoteID,
                         folders: folders,
                         onNoteTap: handleNoteTap,
                         onDeleteNotes: requestDeleteNotes,
@@ -795,6 +1257,7 @@ struct ContentView: View {
                     isSidebarVisible = false
                 }
             }
+            splitMenuIconButton
         }
         .padding(.leading, iconLeading - windowContentPadding)
         .frame(width: sidebarDesignColumnWidth, height: sidebarTopBarButtonSize, alignment: .leading)
@@ -1240,7 +1703,10 @@ struct ContentView: View {
             presentSearch()
             return
         }
-        NotificationCenter.default.post(name: .showInNoteSearch, object: nil)
+        let eid = shouldShowSplitLayout
+            ? (activeSplitPane == .primary ? primaryEditorID : splitEditorID)
+            : primaryEditorID
+        NotificationCenter.default.post(name: .showInNoteSearch, object: nil, userInfo: ["editorInstanceID": eid])
     }
 
     private var collapsedTopBarRow: some View {
@@ -1262,6 +1728,10 @@ struct ContentView: View {
             }
             .opacity(isFloatingSidebarVisible ? 0 : 1)
             .allowsHitTesting(!isFloatingSidebarVisible)
+
+            splitMenuIconButton
+                .opacity(isFloatingSidebarVisible ? 0 : 1)
+                .allowsHitTesting(!isFloatingSidebarVisible)
         }
         .padding(.leading, iconLeading)
         .padding(.top, iconTop)
@@ -1366,6 +1836,7 @@ struct ContentView: View {
     private func detailPane(note: Note) -> some View {
         NoteDetailView(
             note: note,
+            editorInstanceID: primaryEditorID,
             focusRequestID: detailFocusRequestID,
             contentTopInsetAdjustment: isSidebarVisible ? 0 : detailToggleToContentExtraSpacingWhenSidebarHidden
         ) { updated in
@@ -1399,6 +1870,351 @@ struct ContentView: View {
         .subtleHoverScale(1.06)
     }
 
+    @ViewBuilder
+    private var splitMenuIconButton: some View {
+        if !isSplitActive {
+            sidebarTopBarIcon(assetName: "IconSplit") {
+                withAnimation(.jotSpring) { isSplitMenuVisible.toggle() }
+            }
+            .background(
+                GeometryReader { geo in
+                    Color.clear
+                        .onAppear {
+                            splitMenuButtonFrame = geo.frame(in: .named("contentArea"))
+                        }
+                        .onChange(of: geo.frame(in: .named("contentArea"))) { _, newFrame in
+                            splitMenuButtonFrame = newFrame
+                        }
+                }
+            )
+        }
+    }
+
+    // MARK: - Active Split Sidebar Section
+
+    @ViewBuilder
+    private var activeSplitSidebarSection: some View {
+        let completedSessions = splitSessions.filter { $0.isComplete }
+        if !splitSessions.isEmpty {
+            VStack(spacing: 0) {
+                Text("Active Split")
+                    .font(FontManager.heading(size: 13, weight: .medium))
+                    .foregroundColor(Color("SecondaryTextColor"))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 8)
+                    .padding(.bottom, 4)
+
+                VStack(spacing: 8) {
+                    ForEach(completedSessions) { session in
+                        splitSessionContainer(session: session)
+                    }
+                }
+
+                addSplitButton
+                    .padding(.top, completedSessions.isEmpty ? 0 : 8)
+            }
+        }
+    }
+
+    private func splitSessionContainer(session: SplitSession) -> some View {
+        let pNote = notesManager.notes.first(where: { $0.id == session.primaryNoteID })
+        let sNote = notesManager.notes.first(where: { $0.id == session.secondaryNoteID })
+
+        return VStack(spacing: 4) {
+            if let pNote {
+                splitSessionNoteRow(note: pNote, session: session)
+            }
+
+            Image("WavyDividerLine")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .foregroundColor(Color("IconSecondaryColor"))
+                .frame(height: 4)
+                .padding(.horizontal, 8)
+                .opacity(0.4)
+
+            if let sNote {
+                splitSessionNoteRow(note: sNote, session: session)
+            }
+        }
+        .padding(4)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(colorScheme == .light ? Color.white : Color(red: 0.047, green: 0.039, blue: 0.035))
+        )
+        .shadow(color: .black.opacity(0.06), radius: 3, x: 0, y: 1)
+        .shadow(color: .black.opacity(0.03), radius: 1, x: 0, y: 0)
+        .contextMenu {
+            Button("Separate all notes") {
+                withAnimation(.jotSpring) {
+                    splitSessions.removeAll(where: { $0.id == session.id })
+                    if session.id == activeSplitID {
+                        if let next = splitSessions.last(where: { $0.isComplete }) {
+                            activeSplitID = next.id
+                        } else {
+                            activeSplitID = nil
+                            isSplitViewVisible = false
+                        }
+                    }
+                    if session.id == pendingSplitID { pendingSplitID = nil }
+                }
+            }
+            Button("Close split", role: .destructive) {
+                withAnimation(.jotSpring) {
+                    splitSessions.removeAll(where: { $0.id == session.id })
+                    if session.id == activeSplitID {
+                        if let next = splitSessions.last(where: { $0.isComplete }) {
+                            activeSplitID = next.id
+                        } else {
+                            activeSplitID = nil
+                            isSplitViewVisible = false
+                        }
+                    }
+                    if session.id == pendingSplitID { pendingSplitID = nil }
+                }
+            }
+        }
+    }
+
+    private func splitSessionNoteRow(note: Note, session: SplitSession) -> some View {
+        Button {
+            activeSplitID = session.id
+            isSplitViewVisible = true
+            if let primaryID = session.primaryNoteID,
+               let pNote = notesManager.notes.first(where: { $0.id == primaryID }) {
+                selectedNote = pNote
+                selectedNoteIDs = [pNote.id]
+            }
+        } label: {
+            HStack {
+                Text(note.title.isEmpty ? "Untitled" : note.title)
+                    .font(.system(size: 15, weight: .medium))
+                    .tracking(-0.5)
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+                Spacer()
+                Text(formatSplitDate(note.date))
+                    .font(FontManager.metadata(size: 11, weight: .medium))
+                    .tracking(-0.2)
+                    .foregroundColor(Color("SecondaryTextColor"))
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 8)
+            .contentShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+        .macPointingHandCursor()
+    }
+
+    private var addSplitButton: some View {
+        AddSplitButtonView(
+            isPending: pendingSplitID != nil,
+            borderColor: colorScheme == .dark ? Color.white.opacity(0.15) : Color.black.opacity(0.25),
+            onTap: {
+                if pendingSplitID != nil {
+                    cancelPendingSplit()
+                } else {
+                    withAnimation(.jotSpring) { addNewSplit() }
+                }
+            }
+        )
+    }
+
+    private func formatSplitDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "dd.MM.yyyy"
+        return formatter.string(from: date)
+    }
+
+    // MARK: - Split Pane Controls
+
+    private func splitPaneControls(isLeftPane: Bool, isPrimaryPane: Bool) -> some View {
+        HStack(spacing: 8) {
+            // Flashcards: toggle note picker overlay on this pane
+            Button {
+                let target: SplitPickerPane = isPrimaryPane ? .primary : .secondary
+                withAnimation(.jotSpring) {
+                    splitPickerOverlayPane = splitPickerOverlayPane == target ? nil : target
+                }
+            } label: {
+                Image("IconFlashcards")
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .foregroundColor(Color("SecondaryTextColor"))
+                    .frame(width: 18, height: 18)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .macPointingHandCursor()
+            .help("Switch note")
+            .subtleHoverScale(1.06)
+
+            // Move to other pane
+            Button {
+                withAnimation(.jotSpring) { moveSplitToOtherSide() }
+            } label: {
+                Image(isLeftPane ? "IconMoveToLeft" : "IconMoveToRight")
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .foregroundColor(Color("SecondaryTextColor"))
+                    .frame(width: 18, height: 18)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .macPointingHandCursor()
+            .help(isLeftPane ? "Move to right" : "Move to left")
+            .subtleHoverScale(1.06)
+
+            // Close this pane
+            Button {
+                withAnimation(.jotSpring) {
+                    if isLeftPane { closeLeftSplit() } else { closeRightSplit() }
+                }
+            } label: {
+                Image(isLeftPane ? "IconCloseLeftSplit" : "IconCloseRightSplit")
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .foregroundColor(Color("SecondaryTextColor"))
+                    .frame(width: 18, height: 18)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .macPointingHandCursor()
+            .help(isLeftPane ? "Close left split" : "Close right split")
+            .subtleHoverScale(1.06)
+        }
+    }
+
+    // MARK: - Split Picker Overlay
+
+    @ViewBuilder
+    private func splitPickerOverlayView(for pane: SplitPickerPane, primaryNote: Note) -> some View {
+        if splitPickerOverlayPane == pane {
+            ZStack {
+                Color.black.opacity(0.05)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        withAnimation(.jotSpring) { splitPickerOverlayPane = nil }
+                    }
+
+                SplitPickerOverlayCard(
+                    notes: recentNotes(excluding: pane == .primary ? (activeSecondaryNote ?? primaryNote) : primaryNote),
+                    onSelect: { note in
+                        withAnimation(.jotSpring) {
+                            guard let idx = activeSplitIndex else { return }
+                            if pane == .primary {
+                                splitSessions[idx].primaryNoteID = note.id
+                                selectedNote = note
+                                selectedNoteIDs = [note.id]
+                            } else {
+                                splitSessions[idx].secondaryNoteID = note.id
+                            }
+                            splitPickerOverlayPane = nil
+                        }
+                    }
+                )
+            }
+        }
+    }
+
+    // MARK: - Split Actions
+
+    private func openSplit(position: SplitPosition) {
+        var session = SplitSession()
+        session.primaryNoteID = selectedNote?.id
+        session.position = position
+        splitSessions.append(session)
+        activeSplitID = session.id
+        pendingSplitID = session.id
+        isSplitViewVisible = true
+        withAnimation(.jotSpring) { isSplitMenuVisible = false }
+    }
+
+    private func addNewSplit() {
+        let session = SplitSession()
+        splitSessions.append(session)
+        activeSplitID = session.id
+        pendingSplitID = session.id
+        isSplitViewVisible = true
+    }
+
+    private func cancelPendingSplit() {
+        guard let pendingID = pendingSplitID else { return }
+        withAnimation(.jotSpring) {
+            splitSessions.removeAll(where: { $0.id == pendingID })
+            pendingSplitID = nil
+            if let lastCompleted = splitSessions.last(where: { $0.isComplete }) {
+                activeSplitID = lastCompleted.id
+            } else {
+                activeSplitID = nil
+                isSplitViewVisible = false
+            }
+        }
+    }
+
+    private func closeSplit() {
+        guard let activeID = activeSplitID else { return }
+        withAnimation(.jotSpring) {
+            splitSessions.removeAll(where: { $0.id == activeID })
+            if activeID == pendingSplitID { pendingSplitID = nil }
+            splitPickerOverlayPane = nil
+            isSplitMenuVisible = false
+            activeSplitPane = nil
+            if let next = splitSessions.last(where: { $0.isComplete }) {
+                activeSplitID = next.id
+            } else {
+                activeSplitID = nil
+                isSplitViewVisible = false
+            }
+        }
+    }
+
+    private func closeRightSplit() {
+        guard let split = activeSplit else { return }
+        if split.position == .right {
+            closeSplit()
+        } else {
+            if let secID = split.secondaryNoteID,
+               let secNote = notesManager.notes.first(where: { $0.id == secID }) {
+                selectedNote = secNote
+                selectedNoteIDs = [secNote.id]
+            }
+            closeSplit()
+        }
+    }
+
+    private func closeLeftSplit() {
+        guard let split = activeSplit else { return }
+        if split.position == .left {
+            closeSplit()
+        } else {
+            if let secID = split.secondaryNoteID,
+               let secNote = notesManager.notes.first(where: { $0.id == secID }) {
+                selectedNote = secNote
+                selectedNoteIDs = [secNote.id]
+            }
+            closeSplit()
+        }
+    }
+
+    private func moveSplitToOtherSide() {
+        guard let idx = activeSplitIndex else { return }
+        let oldPrimary = splitSessions[idx].primaryNoteID
+        let oldSecondary = splitSessions[idx].secondaryNoteID
+        splitSessions[idx].primaryNoteID = oldSecondary
+        splitSessions[idx].secondaryNoteID = oldPrimary
+        if let newPrimaryID = splitSessions[idx].primaryNoteID,
+           let note = notesManager.notes.first(where: { $0.id == newPrimaryID }) {
+            selectedNote = note
+            selectedNoteIDs = [note.id]
+        }
+    }
+
     // MARK: - Actions
 
     private func handleNoteTap(_ note: Note, _ interaction: NoteSelectionInteraction) {
@@ -1416,6 +2232,7 @@ struct ContentView: View {
 
         switch interaction {
         case .plain:
+            if isSplitActive { isSplitViewVisible = false }
             openNote(note)
         case .commandToggle, .shiftRange:
             synchronizeDetailPaneWithSelection()
@@ -1444,6 +2261,10 @@ struct ContentView: View {
             selectedNoteIDs.insert(updated.id)
         }
         selectionAnchorID = selectionAnchorID ?? updated.id
+    }
+
+    private func saveSplitNote(_ updated: Note) {
+        notesManager.updateNote(updated)
     }
 
     private func openNote(_ note: Note, focusEditor: Bool = true, withHaptic: Bool = true) {
@@ -2092,6 +2913,91 @@ struct NotesSection: View {
     }
 }
 
+// Split Picker Overlay — Figma 2122:7878
+// Self-contained card with its own search state; lifecycle resets on mount.
+private struct SplitPickerOverlayCard: View {
+    let notes: [Note]
+    let onSelect: (Note) -> Void
+
+    @State private var searchQuery = ""
+
+    private var filteredNotes: [Note] {
+        let base = searchQuery.isEmpty
+            ? notes
+            : notes.filter { $0.title.localizedCaseInsensitiveContains(searchQuery) }
+        return Array(base.prefix(10))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Title — Label/Label-5/Medium
+            Text("Switch note")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(Color("SecondaryTextColor"))
+                .tracking(-0.2)
+                .padding(8)
+
+            // Search field — Label/Label-4/Medium
+            HStack(spacing: 8) {
+                Image("IconMagnifyingGlass")
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .foregroundColor(Color("SecondaryTextColor"))
+                    .frame(width: 18, height: 18)
+                TextField("Search", text: $searchQuery)
+                    .font(.system(size: 11, weight: .medium))
+                    .tracking(-0.2)
+                    .textFieldStyle(.plain)
+            }
+            .padding(8)
+
+            // Results — Label/Label-2/Medium
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(filteredNotes) { note in
+                    SplitPickerOverlayRow(note: note, onSelect: onSelect)
+                }
+            }
+        }
+        .padding(12)
+        .frame(width: 400)
+        .fixedSize(horizontal: false, vertical: true)
+        .liquidGlass(in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+}
+
+private struct SplitPickerOverlayRow: View {
+    let note: Note
+    let onSelect: (Note) -> Void
+
+    var body: some View {
+        Button {
+            onSelect(note)
+        } label: {
+            HStack(spacing: 8) {
+                Image("IconNoteText")
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .foregroundColor(Color("SecondaryTextColor"))
+                    .frame(width: 18, height: 18)
+                Text(note.title.isEmpty ? "Untitled" : note.title)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundColor(.primary)
+                    .tracking(-0.5)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 8)
+            .contentShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+        .macPointingHandCursor()
+        .subtleHoverScale()
+    }
+}
+
 // Note List Card Component (Figma design)
 struct NoteListCard: View {
     let note: Note
@@ -2720,6 +3626,35 @@ struct FlowLayout: Layout {
             }
 
             self.size = CGSize(width: maxWidth, height: y + lineHeight)
+        }
+    }
+}
+
+// MARK: - Split Pane Shadow
+
+private extension View {
+    /// Dims an inactive split pane with a color overlay instead of `.opacity()`,
+    /// so the underlying NSTextView's insertion point renders at full alpha.
+    func splitPaneDimming(isInactive: Bool, cornerRadius: CGFloat, colorScheme: ColorScheme) -> some View {
+        self.overlay {
+            if isInactive {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(Color(colorScheme == .dark ? .black : .white).opacity(0.3))
+                    .allowsHitTesting(false)
+            }
+        }
+    }
+
+    /// Applies a layered shadow via a background shape instead of directly on the content.
+    /// This prevents SwiftUI from rasterizing the content (which kills NSTextView's cursor blink timer).
+    func splitPaneShadow(isActive: Bool, cornerRadius: CGFloat, backgroundColor: Color, colorScheme: ColorScheme) -> some View {
+        let base: Color = colorScheme == .dark ? .white : .black
+        return self.background {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(backgroundColor)
+                .shadow(color: base.opacity(isActive ? 0.20 : 0), radius: 1, x: 0, y: 0)
+                .shadow(color: base.opacity(isActive ? 0.15 : 0), radius: 6, x: 0, y: 2)
+                .shadow(color: base.opacity(isActive ? 0.10 : 0), radius: 20, x: 0, y: 6)
         }
     }
 }

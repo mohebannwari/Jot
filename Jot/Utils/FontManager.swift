@@ -76,16 +76,33 @@ struct FontManager {
             .leading(.tight)
     }
     
-    /// NSFont version for AppKit headings
-    static func headingNS(size: CGFloat = 24, weight: Weight = .medium) -> NSFont {
-        // SF Pro Compact on macOS
-        if let compact = NSFont(name: ".AppleSystemUIFontCompact", size: size) {
-            return compact
+    /// NSFont version for AppKit headings.
+    /// Follows the user's body font style setting so headings stay visually coherent
+    /// with the surrounding text (Charter → Charter bold, Mono → monospaced, System → SF Pro).
+    nonisolated static func headingNS(size: CGFloat = 24, weight: Weight = .medium) -> NSFont {
+        switch currentBodyFontStyle() {
+        case .default:
+            // Use Charter at heading weight, matching body font family
+            if let charter = NSFont(name: "Charter-Bold", size: size) {
+                return charter
+            } else if let charter = NSFont(name: "Charter", size: size) {
+                let descriptor = charter.fontDescriptor.withSymbolicTraits(.bold)
+                return NSFont(descriptor: descriptor, size: size) ?? charter
+            }
+            // Fallback: system font
+            return NSFont.systemFont(ofSize: size, weight: weight.toNSWeight())
+        case .system:
+            // SF Pro Compact for system font choice
+            if let compact = NSFont(name: ".AppleSystemUIFontCompact", size: size) {
+                return compact
+            }
+            return NSFont.systemFont(ofSize: size, weight: weight.toNSWeight())
+        case .mono:
+            // 16/15 ≈ 1.067 — same optical size compensation as bodyNS, inlined to avoid main-actor access
+            return NSFont.monospacedSystemFont(ofSize: size * (16.0 / 15.0), weight: weight.toNSWeight())
         }
-        // Fallback to standard SF Pro with weight
-        return NSFont.systemFont(ofSize: size, weight: weight.toNSWeight())
     }
-    
+
     // MARK: - Metadata Fonts (SF Mono)
     
     /// Metadata font using SF Mono for dates, timestamps, and technical info

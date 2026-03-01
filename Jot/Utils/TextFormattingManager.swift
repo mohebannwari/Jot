@@ -39,10 +39,40 @@ class TextFormattingManager: ObservableObject {
             }
         }
 
+        // MARK: - Undo Helpers
+
+        private func captureSnapshot(_ storage: NSTextStorage, range: NSRange)
+            -> [(NSRange, [NSAttributedString.Key: Any])]
+        {
+            var snapshot: [(NSRange, [NSAttributedString.Key: Any])] = []
+            storage.enumerateAttributes(in: range, options: []) { attrs, subRange, _ in
+                snapshot.append((subRange, attrs))
+            }
+            return snapshot
+        }
+
+        private func registerUndo(
+            textView: NSTextView,
+            snapshot: [(NSRange, [NSAttributedString.Key: Any])],
+            actionName: String
+        ) {
+            guard let undoManager = textView.undoManager else { return }
+            let storage = textView.textStorage
+            undoManager.registerUndo(withTarget: textView) { [weak storage] tv in
+                storage?.beginEditing()
+                for (range, attrs) in snapshot {
+                    storage?.setAttributes(attrs, range: range)
+                }
+                storage?.endEditing()
+                tv.needsDisplay = true
+            }
+            undoManager.setActionName(actionName)
+        }
+
         // MARK: - Text Formatting Actions
 
         func applyFormatting(to textView: NSTextView, tool: EditTool) {
-            guard let textStorage = textView.textStorage else { return }
+            guard textView.textStorage != nil else { return }
 
             let selectedRange = textView.selectedRange()
 
@@ -61,19 +91,19 @@ class TextFormattingManager: ObservableObject {
             case .titleCase:
                 applyTitleCase(to: textView, in: selectedRange)
             case .h1:
-                applyHeading(.h1, to: textStorage, in: selectedRange)
+                applyHeading(.h1, to: textView, in: selectedRange)
             case .h2:
-                applyHeading(.h2, to: textStorage, in: selectedRange)
+                applyHeading(.h2, to: textView, in: selectedRange)
             case .h3:
-                applyHeading(.h3, to: textStorage, in: selectedRange)
+                applyHeading(.h3, to: textView, in: selectedRange)
             case .bold:
-                toggleBold(in: textStorage, range: selectedRange)
+                toggleBold(in: textView, range: selectedRange)
             case .italic:
-                toggleItalic(in: textStorage, range: selectedRange)
+                toggleItalic(in: textView, range: selectedRange)
             case .underline:
-                toggleUnderline(in: textStorage, range: selectedRange)
+                toggleUnderline(in: textView, range: selectedRange)
             case .strikethrough:
-                toggleStrikethrough(in: textStorage, range: selectedRange)
+                toggleStrikethrough(in: textView, range: selectedRange)
             case .bulletList:
                 toggleBulletList(to: textView, in: selectedRange)
             case .todo:
@@ -121,14 +151,17 @@ class TextFormattingManager: ObservableObject {
         // MARK: - Headings
 
         private func applyHeading(
-            _ level: HeadingLevel, to textStorage: NSTextStorage, in range: NSRange
+            _ level: HeadingLevel, to textView: NSTextView, in range: NSRange
         ) {
+            guard let textStorage = textView.textStorage else { return }
+
+            let snapshot = captureSnapshot(textStorage, range: range)
+
             textStorage.beginEditing()
 
             // Remove existing heading attributes
             textStorage.removeAttribute(.font, range: range)
 
-            // Apply new heading style - using SF Pro Compact for headings
             let weight: FontManager.Weight = level.fontWeight == .semibold ? .semibold : .regular
             let font = FontManager.headingNS(size: level.fontSize, weight: weight)
             textStorage.addAttribute(.font, value: font, range: range)
@@ -141,11 +174,15 @@ class TextFormattingManager: ObservableObject {
 
             textStorage.endEditing()
             currentHeadingLevel = level
+
+            registerUndo(textView: textView, snapshot: snapshot, actionName: "Heading")
         }
 
         // MARK: - Text Styles
 
-        private func toggleBold(in textStorage: NSTextStorage, range: NSRange) {
+        private func toggleBold(in textView: NSTextView, range: NSRange) {
+            guard let textStorage = textView.textStorage else { return }
+            let snapshot = captureSnapshot(textStorage, range: range)
             textStorage.beginEditing()
 
             var hasBold = false
@@ -157,20 +194,15 @@ class TextFormattingManager: ObservableObject {
             }
 
             if hasBold {
-                // Remove bold
-                textStorage.enumerateAttribute(.font, in: range, options: []) {
-                    value, subRange, _ in
+                textStorage.enumerateAttribute(.font, in: range, options: []) { value, subRange, _ in
                     if let font = value as? NSFont {
-                        let newFont = NSFontManager.shared.convert(
-                            font, toNotHaveTrait: .boldFontMask)
+                        let newFont = NSFontManager.shared.convert(font, toNotHaveTrait: .boldFontMask)
                         textStorage.addAttribute(.font, value: newFont, range: subRange)
                     }
                 }
                 isBold = false
             } else {
-                // Add bold
-                textStorage.enumerateAttribute(.font, in: range, options: []) {
-                    value, subRange, _ in
+                textStorage.enumerateAttribute(.font, in: range, options: []) { value, subRange, _ in
                     if let font = value as? NSFont {
                         let newFont = NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask)
                         textStorage.addAttribute(.font, value: newFont, range: subRange)
@@ -180,9 +212,12 @@ class TextFormattingManager: ObservableObject {
             }
 
             textStorage.endEditing()
+            registerUndo(textView: textView, snapshot: snapshot, actionName: "Bold")
         }
 
-        private func toggleItalic(in textStorage: NSTextStorage, range: NSRange) {
+        private func toggleItalic(in textView: NSTextView, range: NSRange) {
+            guard let textStorage = textView.textStorage else { return }
+            let snapshot = captureSnapshot(textStorage, range: range)
             textStorage.beginEditing()
 
             var hasItalic = false
@@ -194,23 +229,17 @@ class TextFormattingManager: ObservableObject {
             }
 
             if hasItalic {
-                // Remove italic
-                textStorage.enumerateAttribute(.font, in: range, options: []) {
-                    value, subRange, _ in
+                textStorage.enumerateAttribute(.font, in: range, options: []) { value, subRange, _ in
                     if let font = value as? NSFont {
-                        let newFont = NSFontManager.shared.convert(
-                            font, toNotHaveTrait: .italicFontMask)
+                        let newFont = NSFontManager.shared.convert(font, toNotHaveTrait: .italicFontMask)
                         textStorage.addAttribute(.font, value: newFont, range: subRange)
                     }
                 }
                 isItalic = false
             } else {
-                // Add italic
-                textStorage.enumerateAttribute(.font, in: range, options: []) {
-                    value, subRange, _ in
+                textStorage.enumerateAttribute(.font, in: range, options: []) { value, subRange, _ in
                     if let font = value as? NSFont {
-                        let newFont = NSFontManager.shared.convert(
-                            font, toHaveTrait: .italicFontMask)
+                        let newFont = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask)
                         textStorage.addAttribute(.font, value: newFont, range: subRange)
                     }
                 }
@@ -218,51 +247,51 @@ class TextFormattingManager: ObservableObject {
             }
 
             textStorage.endEditing()
+            registerUndo(textView: textView, snapshot: snapshot, actionName: "Italic")
         }
 
-        private func toggleUnderline(in textStorage: NSTextStorage, range: NSRange) {
+        private func toggleUnderline(in textView: NSTextView, range: NSRange) {
+            guard let textStorage = textView.textStorage else { return }
+            let snapshot = captureSnapshot(textStorage, range: range)
             textStorage.beginEditing()
 
             var hasUnderline = false
             textStorage.enumerateAttribute(.underlineStyle, in: range, options: []) { value, _, _ in
-                if let style = value as? Int, style != 0 {
-                    hasUnderline = true
-                }
+                if let style = value as? Int, style != 0 { hasUnderline = true }
             }
 
             if hasUnderline {
                 textStorage.removeAttribute(.underlineStyle, range: range)
                 isUnderline = false
             } else {
-                textStorage.addAttribute(
-                    .underlineStyle, value: NSUnderlineStyle.single.rawValue, range: range)
+                textStorage.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: range)
                 isUnderline = true
             }
 
             textStorage.endEditing()
+            registerUndo(textView: textView, snapshot: snapshot, actionName: "Underline")
         }
 
-        private func toggleStrikethrough(in textStorage: NSTextStorage, range: NSRange) {
+        private func toggleStrikethrough(in textView: NSTextView, range: NSRange) {
+            guard let textStorage = textView.textStorage else { return }
+            let snapshot = captureSnapshot(textStorage, range: range)
             textStorage.beginEditing()
 
             var hasStrikethrough = false
-            textStorage.enumerateAttribute(.strikethroughStyle, in: range, options: []) {
-                value, _, _ in
-                if let style = value as? Int, style != 0 {
-                    hasStrikethrough = true
-                }
+            textStorage.enumerateAttribute(.strikethroughStyle, in: range, options: []) { value, _, _ in
+                if let style = value as? Int, style != 0 { hasStrikethrough = true }
             }
 
             if hasStrikethrough {
                 textStorage.removeAttribute(.strikethroughStyle, range: range)
                 isStrikethrough = false
             } else {
-                textStorage.addAttribute(
-                    .strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: range)
+                textStorage.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: range)
                 isStrikethrough = true
             }
 
             textStorage.endEditing()
+            registerUndo(textView: textView, snapshot: snapshot, actionName: "Strikethrough")
         }
 
         // MARK: - Lists
@@ -301,9 +330,10 @@ class TextFormattingManager: ObservableObject {
             guard let textStorage = textView.textStorage else { return }
             let selectedRange = textView.selectedRange()
 
-            textStorage.beginEditing()
-
             let paragraphRange = (textView.string as NSString).paragraphRange(for: selectedRange)
+            let snapshot = captureSnapshot(textStorage, range: paragraphRange)
+
+            textStorage.beginEditing()
 
             textStorage.enumerateAttribute(.paragraphStyle, in: paragraphRange, options: []) {
                 value, subRange, _ in
@@ -325,6 +355,7 @@ class TextFormattingManager: ObservableObject {
             }
 
             textStorage.endEditing()
+            registerUndo(textView: textView, snapshot: snapshot, actionName: "Indentation")
         }
 
         // MARK: - Alignment
@@ -334,9 +365,10 @@ class TextFormattingManager: ObservableObject {
         ) {
             guard let textStorage = textView.textStorage else { return }
 
-            textStorage.beginEditing()
-
             let paragraphRange = (textView.string as NSString).paragraphRange(for: range)
+            let snapshot = captureSnapshot(textStorage, range: paragraphRange)
+
+            textStorage.beginEditing()
 
             textStorage.enumerateAttribute(.paragraphStyle, in: paragraphRange, options: []) {
                 value, subRange, _ in
@@ -349,6 +381,7 @@ class TextFormattingManager: ObservableObject {
 
             textStorage.endEditing()
             currentAlignment = alignment
+            registerUndo(textView: textView, snapshot: snapshot, actionName: "Alignment")
         }
 
         // MARK: - Special Insertions
@@ -433,43 +466,21 @@ class TextFormattingManager: ObservableObject {
 
         static let customTextColorKey = NSAttributedString.Key("JotCustomTextColor")
 
-        private static let debugLog: URL = {
-            let url = URL(fileURLWithPath: "/tmp/jot_color_debug.log")
-            try? "=== Jot Color Debug Log ===\n".write(to: url, atomically: true, encoding: .utf8)
-            return url
-        }()
+        func applyTextColor(hex: String, range: NSRange, to textView: NSTextView) {
+            guard range.length > 0, range.location != NSNotFound else { return }
+            guard let storage = textView.textStorage else { return }
+            guard NSMaxRange(range) <= storage.length else { return }
 
-        static func colorLog(_ msg: String) {
-            let line = "\(Date()): \(msg)\n"
-            if let handle = try? FileHandle(forWritingTo: debugLog) {
-                handle.seekToEndOfFile()
-                handle.write(line.data(using: .utf8)!)
-                handle.closeFile()
-            }
-        }
-
-        func applyTextColor(hex: String, to textView: NSTextView) {
-            let range = textView.selectedRange()
-            Self.colorLog("applyTextColor called hex=\(hex) range=(\(range.location),\(range.length))")
-            guard range.length > 0 else {
-                Self.colorLog("BAIL: selection length is 0")
-                return
-            }
+            let snapshot = captureSnapshot(storage, range: range)
             let nsColor = Self.nsColorFromHex(hex)
-            Self.colorLog("nsColor=\(nsColor)")
-            textView.textStorage?.beginEditing()
-            textView.textStorage?.addAttribute(.foregroundColor, value: nsColor, range: range)
-            textView.textStorage?.addAttribute(Self.customTextColorKey, value: true, range: range)
-            textView.textStorage?.endEditing()
-            textView.needsDisplay = true
 
-            // Verify attributes were actually set
-            if let storage = textView.textStorage, range.location + range.length <= storage.length {
-                let attrs = storage.attributes(at: range.location, effectiveRange: nil)
-                let hasKey = attrs[Self.customTextColorKey] as? Bool
-                let fg = attrs[.foregroundColor] as? NSColor
-                Self.colorLog("VERIFY after apply: customKey=\(String(describing: hasKey)), fgColor=\(String(describing: fg))")
-            }
+            storage.beginEditing()
+            storage.addAttribute(.foregroundColor, value: nsColor, range: range)
+            storage.addAttribute(Self.customTextColorKey, value: true, range: range)
+            storage.endEditing()
+
+            textView.needsDisplay = true
+            registerUndo(textView: textView, snapshot: snapshot, actionName: "Text Color")
         }
 
         static func nsColorFromHex(_ hex: String) -> NSColor {

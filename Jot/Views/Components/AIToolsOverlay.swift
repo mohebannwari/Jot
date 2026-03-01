@@ -17,6 +17,7 @@ enum AIToolsState: Equatable {
 
 struct AIToolsOverlay: View {
     @Binding var state: AIToolsState
+    var editorInstanceID: UUID?
     @State private var promptText = ""
     @Environment(\.colorScheme) private var colorScheme
 
@@ -86,20 +87,20 @@ struct AIToolsOverlay: View {
     private var expandedToolBar: some View {
         HStack(spacing: 12) {
             toolBarButton(icon: "IconBroomSparkle", tooltip: "Proofread") {
-                NotificationCenter.default.post(name: .aiEditRequestSelection, object: nil)
-                NotificationCenter.default.post(name: .aiToolAction, object: AITool.proofread)
+                NotificationCenter.default.post(name: .aiEditRequestSelection, object: nil, userInfo: eidInfo)
+                NotificationCenter.default.post(name: .aiToolAction, object: AITool.proofread, userInfo: eidInfo)
                 state = .collapsed
             }
             toolBarButton(icon: "IconListSparkle", tooltip: "Key Points") {
-                NotificationCenter.default.post(name: .aiToolAction, object: AITool.keyPoints)
+                NotificationCenter.default.post(name: .aiToolAction, object: AITool.keyPoints, userInfo: eidInfo)
                 state = .collapsed
             }
             toolBarButton(icon: "IconSummary", tooltip: "Summarize") {
-                NotificationCenter.default.post(name: .aiToolAction, object: AITool.summary)
+                NotificationCenter.default.post(name: .aiToolAction, object: AITool.summary, userInfo: eidInfo)
                 state = .collapsed
             }
             toolBarButton(icon: "IconArrowsAllSides2", tooltip: "Edit Content") {
-                NotificationCenter.default.post(name: .aiEditRequestSelection, object: nil)
+                NotificationCenter.default.post(name: .aiEditRequestSelection, object: nil, userInfo: eidInfo)
                 state = .promptField
             }
         }
@@ -195,7 +196,7 @@ struct AIToolsOverlay: View {
             .onKeyPress(.return) {
                 let trimmed = promptText.trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !trimmed.isEmpty else { return .ignored }
-                NotificationCenter.default.post(name: .aiEditSubmit, object: trimmed)
+                NotificationCenter.default.post(name: .aiEditSubmit, object: trimmed, userInfo: eidInfo)
                 promptText = ""
                 state = .collapsed
                 return .handled
@@ -210,7 +211,7 @@ struct AIToolsOverlay: View {
         Button {
             let trimmed = promptText.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { return }
-            NotificationCenter.default.post(name: .aiEditSubmit, object: trimmed)
+            NotificationCenter.default.post(name: .aiEditSubmit, object: trimmed, userInfo: eidInfo)
             promptText = ""
             state = .collapsed
         } label: {
@@ -239,6 +240,12 @@ struct AIToolsOverlay: View {
             .scaledToFit()
             .foregroundColor(Color("IconSecondaryColor"))
             .frame(width: dim, height: dim)
+    }
+
+    // MARK: - Notification Helpers
+
+    private var eidInfo: [String: Any]? {
+        editorInstanceID.map { ["editorInstanceID": $0] }
     }
 
     // MARK: - Theme Colors

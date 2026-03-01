@@ -1,0 +1,112 @@
+//
+//  SplitNotePickerView.swift
+//  Jot
+//
+//  Secondary-pane content shown while the user picks a note for the split view.
+//  Based on Figma 2047:3739 — "split-view-select-note".
+//
+
+import SwiftUI
+
+struct SplitNotePickerView: View {
+    let recentNotes: [Note]
+    let onSelect: (Note) -> Void
+    let onClose: () -> Void
+    var showCloseButton: Bool = true
+
+    @State private var searchQuery = ""
+
+    private var filteredNotes: [Note] {
+        searchQuery.isEmpty
+            ? recentNotes
+            : recentNotes.filter { $0.title.localizedCaseInsensitiveContains(searchQuery) }
+    }
+
+    var body: some View {
+        // Vertically centered content block
+        VStack(alignment: .leading, spacing: 0) {
+            Spacer(minLength: 0)
+
+            Text("Select a note")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(Color("SecondaryTextColor"))
+                .tracking(-0.2)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 8)
+
+            HStack(spacing: 8) {
+                Image("IconMagnifyingGlass")
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .foregroundColor(Color("SecondaryTextColor"))
+                    .frame(width: 18, height: 18)
+                TextField("Search", text: $searchQuery)
+                    .font(.system(size: 11, weight: .medium))
+                    .tracking(-0.2)
+                    .textFieldStyle(.plain)
+            }
+            .padding(8)
+
+            VStack(spacing: 0) {
+                ForEach(filteredNotes) { note in
+                    PickerNoteRow(note: note, onSelect: onSelect)
+                }
+            }
+
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: 260, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .center)
+        .overlay(alignment: .bottom) {
+            if showCloseButton {
+                Button(action: onClose) {
+                    Text("Close splitview")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(Color("SecondaryTextColor"))
+                        .tracking(-0.3)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                }
+                .buttonStyle(.plain)
+                .macPointingHandCursor()
+                .liquidGlass(in: Capsule())
+                .subtleHoverScale(1.06)
+                .padding(.bottom, 28)
+            }
+        }
+    }
+}
+
+// Separate struct so @State inside SubtleHoverScale doesn't dirty the parent body.
+private struct PickerNoteRow: View {
+    let note: Note
+    let onSelect: (Note) -> Void
+
+    var body: some View {
+        Button {
+            onSelect(note)
+        } label: {
+            HStack(spacing: 8) {
+                Image("IconNoteText")
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .foregroundColor(Color("SecondaryTextColor"))
+                    .frame(width: 18, height: 18)
+                Text(note.title.isEmpty ? "Untitled" : note.title)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundColor(.primary)
+                    .tracking(-0.5)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 8)
+            .contentShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+        .macPointingHandCursor()
+        .subtleHoverScale()  // default 1.01 — matches NoteListCard in the sidebar
+    }
+}

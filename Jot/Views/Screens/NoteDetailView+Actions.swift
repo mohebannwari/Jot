@@ -43,12 +43,12 @@ extension NoteDetailView {
                 }
                 currentProofreadIndex = 0
                 withAnimation(.jotSpring) { aiPanelState = .proofread(annotations) }
-                NotificationCenter.default.post(name: .aiProofreadClearOverlays, object: nil)
+                NotificationCenter.default.post(name: .aiProofreadClearOverlays, object: nil, userInfo: ["editorInstanceID": editorInstanceID])
                 if !annotations.isEmpty {
                     NotificationCenter.default.post(
                         name: .aiProofreadShowAnnotations,
                         object: annotations,
-                        userInfo: ["activeIndex": 0]
+                        userInfo: ["activeIndex": 0, "editorInstanceID": editorInstanceID]
                     )
                 }
             case .editContent:
@@ -152,7 +152,7 @@ extension NoteDetailView {
 
         editedContent = text
         scheduleAutosave()
-        NotificationCenter.default.post(name: .aiProofreadClearOverlays, object: nil)
+        NotificationCenter.default.post(name: .aiProofreadClearOverlays, object: nil, userInfo: ["editorInstanceID": editorInstanceID])
         withAnimation(.jotSpring) { aiPanelState = .proofread([]) }
     }
 
@@ -162,7 +162,7 @@ extension NoteDetailView {
         NotificationCenter.default.post(
             name: .aiProofreadShowAnnotations,
             object: annotations,
-            userInfo: ["activeIndex": currentProofreadIndex]
+            userInfo: ["activeIndex": currentProofreadIndex, "editorInstanceID": editorInstanceID]
         )
     }
 
@@ -172,7 +172,7 @@ extension NoteDetailView {
         NotificationCenter.default.post(
             name: .aiProofreadShowAnnotations,
             object: annotations,
-            userInfo: ["activeIndex": currentProofreadIndex]
+            userInfo: ["activeIndex": currentProofreadIndex, "editorInstanceID": editorInstanceID]
         )
     }
 
@@ -188,7 +188,8 @@ extension NoteDetailView {
         if let transcript = result.transcript, !transcript.isEmpty {
             NotificationCenter.default.post(
                 name: .insertVoiceTranscriptInEditor,
-                object: transcript
+                object: transcript,
+                userInfo: ["editorInstanceID": editorInstanceID]
             )
         }
 
@@ -218,7 +219,8 @@ extension NoteDetailView {
                 await MainActor.run {
                     NotificationCenter.default.post(
                         name: .insertImageInEditor,
-                        object: filename
+                        object: filename,
+                        userInfo: ["editorInstanceID": self.editorInstanceID]
                     )
                 }
             }
@@ -262,7 +264,7 @@ extension NoteDetailView {
     }
 
     func handleLinkInsert(_ url: String) {
-        NotificationCenter.default.post(name: Notification.Name("InsertWebLink"), object: url)
+        NotificationCenter.default.post(name: Notification.Name("InsertWebLink"), object: url, userInfo: ["editorInstanceID": editorInstanceID])
     }
 
     // MARK: - Search on Page
@@ -283,14 +285,14 @@ extension NoteDetailView {
         searchOnPageMatches = []
         searchOnPageCurrentIndex = 0
         isSearchOnPageFocused = false
-        NotificationCenter.default.post(name: .clearSearchHighlights, object: nil)
+        NotificationCenter.default.post(name: .clearSearchHighlights, object: nil, userInfo: ["editorInstanceID": editorInstanceID])
     }
 
     func performInNoteSearch(_ query: String) {
         guard !query.isEmpty else {
             searchOnPageMatches = []
             searchOnPageCurrentIndex = 0
-            NotificationCenter.default.post(name: .clearSearchHighlights, object: nil)
+            NotificationCenter.default.post(name: .clearSearchHighlights, object: nil, userInfo: ["editorInstanceID": editorInstanceID])
             return
         }
 
@@ -319,7 +321,8 @@ extension NoteDetailView {
             object: nil,
             userInfo: [
                 "ranges": ranges,
-                "activeIndex": searchOnPageCurrentIndex
+                "activeIndex": searchOnPageCurrentIndex,
+                "editorInstanceID": editorInstanceID
             ]
         )
     }
@@ -342,7 +345,8 @@ extension NoteDetailView {
             object: nil,
             userInfo: [
                 "ranges": searchOnPageMatches,
-                "activeIndex": searchOnPageCurrentIndex
+                "activeIndex": searchOnPageCurrentIndex,
+                "editorInstanceID": editorInstanceID
             ]
         )
     }

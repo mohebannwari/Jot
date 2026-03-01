@@ -73,6 +73,7 @@ private enum AttachmentMarkup {
 // Notification names for floating toolbar coordination
 extension Notification.Name {
     static let textSelectionChanged = Notification.Name("TextSelectionChanged")
+    static let editorDidBecomeFirstResponder = Notification.Name("EditorDidBecomeFirstResponder")
 }
 
 // MARK: - Typing Animation Layout Manager
@@ -343,11 +344,26 @@ private final class ImagePreviewView: NSImageView {
 
 struct TodoRichTextEditor: View {
     @Binding var text: String
-    var focusRequestID: UUID? = nil
+    var focusRequestID: UUID?
+    var editorInstanceID: UUID?
     var onToolbarAction: ((EditTool) -> Void)?
     var onCommandMenuSelection: ((EditTool) -> Void)?
     @Environment(\.colorScheme) private var colorScheme
     private let baseBottomInset: CGFloat = 0
+
+    init(
+        text: Binding<String>,
+        focusRequestID: UUID? = nil,
+        editorInstanceID: UUID? = nil,
+        onToolbarAction: ((EditTool) -> Void)? = nil,
+        onCommandMenuSelection: ((EditTool) -> Void)? = nil
+    ) {
+        self._text = text
+        self.focusRequestID = focusRequestID
+        self.editorInstanceID = editorInstanceID
+        self.onToolbarAction = onToolbarAction
+        self.onCommandMenuSelection = onCommandMenuSelection
+    }
 
 
     // Command menu state (triggered by "/" character)
@@ -403,7 +419,8 @@ struct TodoRichTextEditor: View {
                     text: $text,
                     colorScheme: colorScheme,
                     bottomInset: bottomInset,
-                    focusRequestID: focusRequestID
+                    focusRequestID: focusRequestID,
+                    editorInstanceID: editorInstanceID
                 )
         }
         .frame(maxWidth: .infinity)  // Natural height based on content
@@ -471,13 +488,15 @@ struct TodoRichTextEditor: View {
         }
         .onReceive(
             NotificationCenter.default.publisher(for: Notification.Name("TodoToolbarAction"))
-        ) { _ in
-            NotificationCenter.default.post(name: .insertTodoInEditor, object: nil)
+        ) { notification in
+            if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
+            NotificationCenter.default.post(name: .insertTodoInEditor, object: nil, userInfo: editorInstanceID.map { ["editorInstanceID": $0] })
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("InsertWebLink"))) {
             notification in
+            if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
             if let url = notification.object as? String {
-                NotificationCenter.default.post(name: .insertWebClipInEditor, object: url)
+                NotificationCenter.default.post(name: .insertWebClipInEditor, object: url, userInfo: editorInstanceID.map { ["editorInstanceID": $0] })
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("ShowCommandMenu")))
@@ -687,12 +706,14 @@ struct URLPasteOptionMenu: View {
         let colorScheme: ColorScheme
         let bottomInset: CGFloat
         let focusRequestID: UUID?
+        let editorInstanceID: UUID?
         private let unlimitedDimension = CGFloat.greatestFiniteMagnitude
 
         func makeNSView(context: Context) -> InlineNSTextView {
             let textView = InlineNSTextView()
             textView.delegate = context.coordinator
             textView.actionDelegate = context.coordinator
+            textView.editorInstanceID = editorInstanceID
             textView.isEditable = true
             textView.isSelectable = true
             textView.isRichText = true
@@ -763,6 +784,8 @@ struct URLPasteOptionMenu: View {
             // Defer first responder setup to avoid focus issues
             DispatchQueue.main.async {
                 textView.window?.makeFirstResponder(textView)
+                // Position cursor at start so empty notes show a blinking caret immediately
+                textView.setSelectedRange(NSRange(location: 0, length: 0))
             }
 
             return textView
@@ -776,9 +799,9 @@ struct URLPasteOptionMenu: View {
             if context.coordinator.currentColorScheme != resolvedScheme {
                 if let resolvedAppearance = appearance(for: resolvedScheme) {
                     textView.appearance = resolvedAppearance
-                    let resolvedColor = resolvedTextColor(
-                        for: resolvedScheme, appearance: textView.appearance)
-                    textView.textColor = resolvedColor
+                    // Do NOT call textView.textColor — its setter walks the whole storage and
+                    // overwrites every foreground-color attribute, destroying custom hex colors.
+                    // NSColor.labelColor in the storage adapts automatically when appearance changes.
                     textView.typingAttributes = Coordinator.baseTypingAttributes(for: resolvedScheme)
                     textView.linkTextAttributes = [
                         .underlineStyle: 0,
@@ -786,20 +809,8 @@ struct URLPasteOptionMenu: View {
                     ]
                     context.coordinator.updateColorScheme(resolvedScheme)
 
-                    // Re-color non-custom text ranges for the new theme
-                    if let textStorage = textView.textStorage {
-                        let themeColor = resolvedTextColor(for: resolvedScheme, appearance: textView.appearance)
-                        let fullRange = NSRange(location: 0, length: textStorage.length)
-                        textStorage.beginEditing()
-                        textStorage.enumerateAttributes(in: fullRange, options: []) { attributes, range, _ in
-                            guard attributes[.attachment] == nil else { return }
-                            if attributes[TextFormattingManager.customTextColorKey] as? Bool != true {
-                                textStorage.addAttribute(.foregroundColor, value: themeColor, range: range)
-                            }
-                        }
-                        textStorage.endEditing()
-                        textView.needsDisplay = true
-                    }
+                    // NSColor.labelColor is dynamic — setting the appearance is sufficient.
+                    textView.needsDisplay = true
                 }
             }
 
@@ -854,7 +865,8 @@ struct URLPasteOptionMenu: View {
             return Coordinator(
                 text: $text,
                 colorScheme: colorScheme,
-                focusRequestID: focusRequestID
+                focusRequestID: focusRequestID,
+                editorInstanceID: editorInstanceID
             )
         }
 
@@ -885,12 +897,7 @@ struct URLPasteOptionMenu: View {
         private func resolvedTextColor(for scheme: ColorScheme, appearance: NSAppearance?)
             -> NSColor
         {
-            // Use the actual PrimaryTextColor values from the asset catalog
-            if scheme == .dark {
-                return NSColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0)  // White for dark mode
-            } else {
-                return NSColor(red: 0.102, green: 0.102, blue: 0.102, alpha: 1.0)  // Dark gray for light mode
-            }
+            return NSColor.labelColor
         }
 
         @MainActor final class Coordinator: NSObject, NSTextViewDelegate {
@@ -901,6 +908,7 @@ struct URLPasteOptionMenu: View {
             private var isUpdating = false
             private var textBinding: Binding<String>
             private var lastHandledFocusRequestID: UUID?
+            private let editorInstanceID: UUID?
 
             // Typing animation state
             fileprivate weak var typingAnimationManager: TypingAnimationLayoutManager?
@@ -990,7 +998,7 @@ struct URLPasteOptionMenu: View {
                         lastKnownSelectionWindowRect = selectionRectInWindow
 
                         // Post notification with selection info - let the view calculate toolbar position
-                        let info: [String: Any] = [
+                        var info: [String: Any] = [
                             "hasSelection": true,
                             "selectionX": selectionX,
                             "selectionY": selectionY,
@@ -1001,6 +1009,7 @@ struct URLPasteOptionMenu: View {
                             "visibleWidth": visibleRect.width,
                             "visibleHeight": visibleRect.height
                         ]
+                        if let eid = editorInstanceID { info["editorInstanceID"] = eid }
                         NotificationCenter.default.post(
                             name: .textSelectionChanged,
                             object: nil,
@@ -1017,7 +1026,8 @@ struct URLPasteOptionMenu: View {
                         lastKnownSelectionText = ""
                         lastKnownSelectionWindowRect = .zero
                     }
-                    let info: [String: Any] = ["hasSelection": false]
+                    var info: [String: Any] = ["hasSelection": false]
+                    if let eid = editorInstanceID { info["editorInstanceID"] = eid }
                     NotificationCenter.default.post(
                         name: .textSelectionChanged,
                         object: nil,
@@ -1961,10 +1971,11 @@ struct URLPasteOptionMenu: View {
                 return true
             }
 
-            init(text: Binding<String>, colorScheme: ColorScheme, focusRequestID: UUID?) {
+            init(text: Binding<String>, colorScheme: ColorScheme, focusRequestID: UUID?, editorInstanceID: UUID? = nil) {
                 self.textBinding = text
                 self.currentColorScheme = colorScheme
                 self.lastHandledFocusRequestID = focusRequestID
+                self.editorInstanceID = editorInstanceID
             }
 
             deinit {
@@ -2014,7 +2025,9 @@ struct URLPasteOptionMenu: View {
 
                 let insertTodo = NotificationCenter.default.addObserver(
                     forName: .insertTodoInEditor, object: nil, queue: .main
-                ) { [weak self] _ in
+                ) { [weak self] notification in
+                    if let nid = notification.userInfo?["editorInstanceID"] as? UUID,
+                       let myID = self?.editorInstanceID, nid != myID { return }
                     Task { @MainActor [weak self] in
                         self?.insertTodo()
                     }
@@ -2023,6 +2036,8 @@ struct URLPasteOptionMenu: View {
                 let insertLink = NotificationCenter.default.addObserver(
                     forName: .insertWebClipInEditor, object: nil, queue: .main
                 ) { [weak self] notification in
+                    if let nid = notification.userInfo?["editorInstanceID"] as? UUID,
+                       let myID = self?.editorInstanceID, nid != myID { return }
                     guard let url = notification.object as? String else { return }
                     Task { @MainActor [weak self] in
                         self?.insertWebClip(url: url)
@@ -2032,6 +2047,8 @@ struct URLPasteOptionMenu: View {
                 let insertVoiceTranscript = NotificationCenter.default.addObserver(
                     forName: .insertVoiceTranscriptInEditor, object: nil, queue: .main
                 ) { [weak self] notification in
+                    if let nid = notification.userInfo?["editorInstanceID"] as? UUID,
+                       let myID = self?.editorInstanceID, nid != myID { return }
                     NSLog("📝 Coordinator: Received insertVoiceTranscriptInEditor notification")
                     // We're on main queue (specified in observer), use assumeIsolated for synchronous execution
                     // This prevents race condition with view dismissal that occurred with Task wrapper
@@ -2049,10 +2066,12 @@ struct URLPasteOptionMenu: View {
                         NSLog("📝 Coordinator: Transcript insertion completed")
                     }
                 }
-                
+
                 let insertImage = NotificationCenter.default.addObserver(
                     forName: .insertImageInEditor, object: nil, queue: .main
                 ) { [weak self] notification in
+                    if let nid = notification.userInfo?["editorInstanceID"] as? UUID,
+                       let myID = self?.editorInstanceID, nid != myID { return }
                     NSLog("📝 Coordinator: Received insertImageInEditor notification")
                     guard let filename = notification.object as? String else {
                         NSLog("📝 Coordinator: No filename in notification object")
@@ -2071,6 +2090,8 @@ struct URLPasteOptionMenu: View {
                 let applyTool = NotificationCenter.default.addObserver(
                     forName: .applyEditTool, object: nil, queue: .main
                 ) { [weak self] notification in
+                    if let nid = notification.userInfo?["editorInstanceID"] as? UUID,
+                       let myID = self?.editorInstanceID, nid != myID { return }
                     guard let raw = notification.userInfo?["tool"] as? String else { return }
                     guard let tool = EditTool(rawValue: raw) else { return }
                     Task { @MainActor [weak self] in
@@ -2122,6 +2143,8 @@ struct URLPasteOptionMenu: View {
                 let highlightSearch = NotificationCenter.default.addObserver(
                     forName: .highlightSearchMatches, object: nil, queue: .main
                 ) { [weak self] notification in
+                    if let nid = notification.userInfo?["editorInstanceID"] as? UUID,
+                       let myID = self?.editorInstanceID, nid != myID { return }
                     guard let userInfo = notification.userInfo,
                           let ranges = userInfo["ranges"] as? [NSRange],
                           let activeIndex = userInfo["activeIndex"] as? Int else { return }
@@ -2132,7 +2155,9 @@ struct URLPasteOptionMenu: View {
 
                 let clearSearch = NotificationCenter.default.addObserver(
                     forName: .clearSearchHighlights, object: nil, queue: .main
-                ) { [weak self] _ in
+                ) { [weak self] notification in
+                    if let nid = notification.userInfo?["editorInstanceID"] as? UUID,
+                       let myID = self?.editorInstanceID, nid != myID { return }
                     Task { @MainActor [weak self] in
                         self?.clearSearchHighlighting()
                     }
@@ -2142,6 +2167,8 @@ struct URLPasteOptionMenu: View {
                 let proofreadShow = NotificationCenter.default.addObserver(
                     forName: .aiProofreadShowAnnotations, object: nil, queue: .main
                 ) { [weak self] notification in
+                    if let nid = notification.userInfo?["editorInstanceID"] as? UUID,
+                       let myID = self?.editorInstanceID, nid != myID { return }
                     guard let annotations = notification.object as? [ProofreadAnnotation] else { return }
                     let activeIndex = notification.userInfo?["activeIndex"] as? Int ?? 0
                     Task { @MainActor [weak self] in
@@ -2152,7 +2179,9 @@ struct URLPasteOptionMenu: View {
                 // MARK: Proofread clear overlays
                 let proofreadClear = NotificationCenter.default.addObserver(
                     forName: .aiProofreadClearOverlays, object: nil, queue: .main
-                ) { [weak self] _ in
+                ) { [weak self] notification in
+                    if let nid = notification.userInfo?["editorInstanceID"] as? UUID,
+                       let myID = self?.editorInstanceID, nid != myID { return }
                     Task { @MainActor [weak self] in
                         self?.clearProofreadOverlays()
                     }
@@ -2162,6 +2191,8 @@ struct URLPasteOptionMenu: View {
                 let proofreadApply = NotificationCenter.default.addObserver(
                     forName: .aiProofreadApplySuggestion, object: nil, queue: .main
                 ) { [weak self] notification in
+                    if let nid = notification.userInfo?["editorInstanceID"] as? UUID,
+                       let myID = self?.editorInstanceID, nid != myID { return }
                     guard let userInfo = notification.userInfo,
                           let original = userInfo["original"] as? String,
                           let replacement = userInfo["replacement"] as? String else { return }
@@ -2173,7 +2204,9 @@ struct URLPasteOptionMenu: View {
                 // MARK: Edit Content — capture selection
                 let captureSelection = NotificationCenter.default.addObserver(
                     forName: .aiEditRequestSelection, object: nil, queue: .main
-                ) { [weak self] _ in
+                ) { [weak self] notification in
+                    if let nid = notification.userInfo?["editorInstanceID"] as? UUID,
+                       let myID = self?.editorInstanceID, nid != myID { return }
                     Task { @MainActor [weak self] in
                         self?.captureSelectionForEditContent()
                     }
@@ -2213,21 +2246,21 @@ struct URLPasteOptionMenu: View {
                 let applyColor = NotificationCenter.default.addObserver(
                     forName: Notification.Name("applyTextColor"), object: nil, queue: .main
                 ) { [weak self] notification in
-                    TextFormattingManager.colorLog("RECEIVED notification applyTextColor")
-                    guard let hex = notification.userInfo?["hex"] as? String else {
-                        TextFormattingManager.colorLog("FAIL: hex not found in userInfo")
-                        return
-                    }
-                    TextFormattingManager.colorLog("hex=\(hex), self is nil=\(self == nil)")
-                    Task { @MainActor [weak self] in
-                        guard let self = self, let textView = self.textView else {
-                            TextFormattingManager.colorLog("FAIL: self or textView nil inside Task")
-                            return
-                        }
-                        TextFormattingManager.colorLog("Inside Task: calling applyTextColor")
-                        self.formatter.applyTextColor(hex: hex, to: textView)
+                    guard let hex = notification.userInfo?["hex"] as? String else { return }
+                    // Filter by editorInstanceID — only apply if this notification targets our pane
+                    if let expectedID = self?.editorInstanceID,
+                       let notifID = notification.userInfo?["editorInstanceID"] as? UUID,
+                       notifID != expectedID { return }
+                    // Run synchronously on the main actor — we are already on .main (queue: .main),
+                    // so MainActor.assumeIsolated is safe and avoids the async Task hop that would
+                    // let a note-switch fire persistIfNeeded() before editedContent is updated.
+                    MainActor.assumeIsolated { [weak self] in
+                        guard let self = self, let textView = self.textView else { return }
+                        // Use lastKnownSelectionRange — it survives focus changes (e.g. clicking the color picker).
+                        // textView.selectedRange() would be empty after the picker button steals focus.
+                        let range = self.lastKnownSelectionRange
+                        self.formatter.applyTextColor(hex: hex, range: range, to: textView)
                         self.syncText()
-                        TextFormattingManager.colorLog("syncText done, lastSerialized contains color=\(self.lastSerialized.contains("[[color|"))")
                     }
                 }
 
@@ -2264,11 +2297,8 @@ struct URLPasteOptionMenu: View {
                     resolved.append((annotation, found))
                 }
 
-                // Use the same explicit text colors the editor uses (from baseTypingAttributes)
                 let isDark = currentColorScheme == .dark
-                let baseColor: NSColor = isDark
-                    ? NSColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0)
-                    : NSColor(red: 0.102, green: 0.102, blue: 0.102, alpha: 1.0)
+                let baseColor: NSColor = NSColor.labelColor
                 let dimAlpha: CGFloat = isDark ? 0.4 : 0.25
                 let dimColor = baseColor.withAlphaComponent(dimAlpha)
 
@@ -2334,7 +2364,9 @@ struct URLPasteOptionMenu: View {
                     textView.didChangeText()
                 }
                 syncText()
-                NotificationCenter.default.post(name: .aiProofreadClearOverlays, object: nil)
+                var clearInfo: [String: Any] = [:]
+                if let eid = editorInstanceID { clearInfo["editorInstanceID"] = eid }
+                NotificationCenter.default.post(name: .aiProofreadClearOverlays, object: nil, userInfo: clearInfo.isEmpty ? nil : clearInfo)
             }
 
             // MARK: - Edit Content Selection Capture
@@ -2342,27 +2374,30 @@ struct URLPasteOptionMenu: View {
             private func captureSelectionForEditContent() {
                 // Clicking the AI tools button clears the text view selection before this fires,
                 // so we use the last cached non-empty selection rather than reading the live selection.
+                var baseInfo: [String: Any] = [:]
+                if let eid = editorInstanceID { baseInfo["editorInstanceID"] = eid }
+
                 guard lastKnownSelectionRange.length > 0 else {
+                    var info = baseInfo
+                    info["nsRange"] = NSRange(location: NSNotFound, length: 0)
+                    info["selectedText"] = ""
+                    info["windowRect"] = CGRect.zero
                     NotificationCenter.default.post(
                         name: .aiEditCaptureSelection,
                         object: nil,
-                        userInfo: [
-                            "nsRange": NSRange(location: NSNotFound, length: 0),
-                            "selectedText": "",
-                            "windowRect": CGRect.zero
-                        ]
+                        userInfo: info
                     )
                     return
                 }
 
+                var info = baseInfo
+                info["nsRange"] = lastKnownSelectionRange
+                info["selectedText"] = lastKnownSelectionText
+                info["windowRect"] = lastKnownSelectionWindowRect
                 NotificationCenter.default.post(
                     name: .aiEditCaptureSelection,
                     object: nil,
-                    userInfo: [
-                        "nsRange": lastKnownSelectionRange,
-                        "selectedText": lastKnownSelectionText,
-                        "windowRect": lastKnownSelectionWindowRect
-                    ]
+                    userInfo: info
                 )
             }
 
@@ -2729,11 +2764,8 @@ struct URLPasteOptionMenu: View {
                 typingAnimationManager?.clearAllAnimations()
                 isUpdating = true
 
-                let targetTextColor: NSColor = currentColorScheme == .dark
-                    ? NSColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0)
-                    : NSColor(red: 0.102, green: 0.102, blue: 0.102, alpha: 1.0)
-                textView.textColor = targetTextColor
-
+                // setAttributedString replaces the entire storage — do NOT pre-set textColor
+                // (that setter walks-and-wipes all foreground attributes).
                 let attributedText = deserialize(text)
                 textStorage.setAttributedString(attributedText)
 
@@ -2758,37 +2790,8 @@ struct URLPasteOptionMenu: View {
 
             // Ensures all text has the correct foreground color attribute
             private func ensureTextColor() {
-                guard let textView = textView, let textStorage = textView.textStorage else {
-                    return
-                }
-                let fullRange = NSRange(location: 0, length: textStorage.length)
-
-                // Get the correct text color for current scheme
-                let textColor: NSColor
-                if currentColorScheme == .dark {
-                    textColor = NSColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0)
-                } else {
-                    textColor = NSColor(red: 0.102, green: 0.102, blue: 0.102, alpha: 1.0)
-                }
-
-                textStorage.beginEditing()
-                textStorage.enumerateAttributes(in: fullRange, options: []) {
-                    attributes, range, _ in
-                    guard attributes[.attachment] == nil else { return }
-                    if attributes[TextFormattingManager.customTextColorKey] as? Bool != true {
-                        textStorage.addAttribute(.foregroundColor, value: textColor, range: range)
-                    }
-                }
-                textStorage.endEditing()
-
-                // Force the text view to redisplay with new colors
-                textView.needsDisplay = true
-                if let layoutManager = textView.layoutManager,
-                    let textContainer = textView.textContainer
-                {
-                    layoutManager.invalidateDisplay(forCharacterRange: fullRange)
-                    layoutManager.ensureLayout(for: textContainer)
-                }
+                // NSColor.labelColor is dynamic — a display refresh is all that's needed.
+                textView?.needsDisplay = true
             }
 
             func updateIfNeeded(with text: String) {
@@ -2801,10 +2804,6 @@ struct URLPasteOptionMenu: View {
 
                 typingAnimationManager?.clearAllAnimations()
                 isUpdating = true
-
-                textView.textColor = currentColorScheme == .dark
-                    ? NSColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0)
-                    : NSColor(red: 0.102, green: 0.102, blue: 0.102, alpha: 1.0)
 
                 let attributedText = deserialize(text)
                 textStorage.setAttributedString(attributedText)
@@ -2837,43 +2836,28 @@ struct URLPasteOptionMenu: View {
                     pendingAnimationLength = nil
                 }
 
-                // Ensure typing attributes are preserved after Writing Tools operations
+                // Correct any font family injection from Writing Tools, then inherit typing
+                // attributes from the cursor position so bold/italic/heading/color all propagate
+                // naturally to the next typed character.
                 DispatchQueue.main.async {
-                    // Skip processing if we're in the middle of an update
                     guard !self.isUpdating else { return }
 
-                    // Fix any inconsistent fonts first
                     self.fixInconsistentFonts()
-                    textView.typingAttributes = Self.baseTypingAttributes(
-                        for: self.currentColorScheme)
 
-                    // Apply consistent formatting to any new text that might have been inserted
-                    // without proper attributes (e.g., from Writing Tools)
-                    let selectedRange = textView.selectedRange()
-                    if selectedRange.length == 0 && selectedRange.location > 0 {
-                        // Check if the character before cursor has proper font attributes
-                        let beforeRange = NSRange(location: selectedRange.location - 1, length: 1)
-                        if beforeRange.location >= 0,
-                            let textStorage = textView.textStorage,
-                            beforeRange.location + beforeRange.length <= textStorage.length
-                        {
-                            let attributes = textStorage.attributes(
-                                at: beforeRange.location, effectiveRange: nil)
-                            let currentFont = attributes[.font] as? NSFont
-                            let expectedFont =
-                                Self.baseTypingAttributes(for: self.currentColorScheme)[.font]
-                                as? NSFont
-
-                            // If font doesn't match, apply correct attributes to recent text
-                            if currentFont?.fontName != expectedFont?.fontName
-                                || currentFont?.pointSize != expectedFont?.pointSize
-                            {
-                                textStorage.addAttributes(
-                                    Self.baseTypingAttributes(for: self.currentColorScheme),
-                                    range: beforeRange
-                                )
-                            }
+                    // Derive typing attributes from the character at/before the cursor.
+                    // This is how every modern text editor works: the next typed character
+                    // inherits the formatting of its immediate left neighbour.
+                    if let storage = textView.textStorage, storage.length > 0 {
+                        let sel = textView.selectedRange()
+                        let loc = sel.location > 0 ? min(sel.location - 1, storage.length - 1) : 0
+                        var attrs = storage.attributes(at: loc, effectiveRange: nil)
+                        // Ensure adaptive text color for non-custom ranges
+                        if attrs[TextFormattingManager.customTextColorKey] as? Bool != true {
+                            attrs[.foregroundColor] = NSColor.labelColor
                         }
+                        textView.typingAttributes = attrs
+                    } else {
+                        textView.typingAttributes = Self.baseTypingAttributes(for: self.currentColorScheme)
                     }
                 }
 
@@ -2899,6 +2883,43 @@ struct URLPasteOptionMenu: View {
                 if replacementString == "\n", isInTodoParagraph(range: affectedCharRange) {
                     insertTodo()
                     return false
+                }
+
+                // Smart backspace: delete an empty todo paragraph entirely
+                if replacementString == "" {
+                    let storage = textView.textStorage!
+                    if isInTodoParagraph(range: affectedCharRange) {
+                        let loc = max(0, min(storage.length, affectedCharRange.location))
+                        let paraRange = (storage.string as NSString).paragraphRange(
+                            for: NSRange(location: loc, length: 0))
+                        // Todo structure: [attachment][space][space][text...]\n
+                        let contentStart = paraRange.location + 3
+                        guard contentStart <= NSMaxRange(paraRange),
+                              NSMaxRange(paraRange) <= storage.length else {
+                            return true
+                        }
+                        let contentRange = NSRange(
+                            location: contentStart,
+                            length: NSMaxRange(paraRange) - contentStart)
+                        let contentText = (storage.string as NSString)
+                            .substring(with: contentRange)
+                            .trimmingCharacters(in: .whitespacesAndNewlines)
+                        let cursorAtOrBeforeContent = affectedCharRange.location <= contentStart
+
+                        if contentText.isEmpty || cursorAtOrBeforeContent {
+                            let deleteStart = paraRange.location > 0 ? paraRange.location - 1 : paraRange.location
+                            let deleteLen = min(
+                                paraRange.length + (paraRange.location > 0 ? 1 : 0),
+                                storage.length - deleteStart)
+                            let safeRange = NSRange(location: deleteStart, length: deleteLen)
+                            isUpdating = true
+                            storage.replaceCharacters(in: safeRange, with: "")
+                            textView.setSelectedRange(NSRange(location: safeRange.location, length: 0))
+                            isUpdating = false
+                            syncText()
+                            return false
+                        }
+                    }
                 }
 
                 // Record pending animation for newly inserted text.
@@ -3416,9 +3437,6 @@ struct URLPasteOptionMenu: View {
                 styleTodoParagraphs()
                 lastSerialized = serialize()
                 textBinding.wrappedValue = lastSerialized
-
-                // Always ensure typing attributes are correct after sync
-                textView.typingAttributes = Self.baseTypingAttributes(for: currentColorScheme)
                 isUpdating = false
             }
 
@@ -3439,13 +3457,32 @@ struct URLPasteOptionMenu: View {
                     var needsFixing = false
                     var fixedAttributes: [NSAttributedString.Key: Any] = attributes
 
-                    // Check font
+                    // Check font: correct only when the FAMILY is wrong or size is wrong.
+                    // Checking family (not name) preserves intentional bold/italic variants
+                    // in the correct family, while still catching Writing Tools injecting
+                    // a completely different typeface (e.g. Helvetica into a Charter doc).
                     if let currentFont = attributes[.font] as? NSFont {
-                        if currentFont.fontName != expectedFont.fontName
-                            || currentFont.pointSize != expectedFont.pointSize
-                        {
-                            fixedAttributes[.font] = expectedFont
-                            needsFixing = true
+                        let isHeading = Self.headingLevel(for: currentFont) != nil
+                        if !isHeading {
+                            let currentFamily = currentFont.familyName ?? currentFont.fontName
+                            let expectedFamily = expectedFont.familyName ?? expectedFont.fontName
+                            if currentFamily != expectedFamily
+                                || currentFont.pointSize != expectedFont.pointSize
+                            {
+                                // Replace font family but preserve bold/italic traits
+                                let traits = NSFontManager.shared.traits(of: currentFont)
+                                var replacement = expectedFont
+                                if traits.contains(.boldFontMask) {
+                                    replacement = NSFontManager.shared.convert(
+                                        replacement, toHaveTrait: .boldFontMask)
+                                }
+                                if traits.contains(.italicFontMask) {
+                                    replacement = NSFontManager.shared.convert(
+                                        replacement, toHaveTrait: .italicFontMask)
+                                }
+                                fixedAttributes[.font] = replacement
+                                needsFixing = true
+                            }
                         }
                     } else {
                         fixedAttributes[.font] = expectedFont
@@ -3454,9 +3491,6 @@ struct URLPasteOptionMenu: View {
 
                     // Check text color — skip ranges with a user-intentional custom color
                     let hasCustomColor = attributes[TextFormattingManager.customTextColorKey] as? Bool == true
-                    if hasCustomColor {
-                        NSLog("[ColorDebug] fixInconsistentFonts: PRESERVING custom color at range (%d,%d)", range.location, range.length)
-                    }
                     if !hasCustomColor {
                         if let currentColor = attributes[.foregroundColor] as? NSColor {
                             if !currentColor.isEqual(expectedColor) {
@@ -3479,7 +3513,7 @@ struct URLPasteOptionMenu: View {
                 guard let textStorage = textView?.textStorage else { return }
                 let fullRange = NSRange(location: 0, length: textStorage.length)
                 textStorage.beginEditing()
-                textStorage.removeAttribute(.paragraphStyle, range: fullRange)
+                // Do NOT blanket-remove .paragraphStyle — heading and alignment styles live there.
                 textStorage.removeAttribute(.baselineOffset, range: fullRange)
 
                 var paragraphRange = NSRange(location: 0, length: 0)
@@ -3516,21 +3550,39 @@ struct URLPasteOptionMenu: View {
                         }
                     }
 
-                    // Apply appropriate paragraph style based on content type
-                    let paragraphStyle: NSParagraphStyle
-                    if isWebClipParagraph {
-                        paragraphStyle = Self.webClipParagraphStyle()
-                    } else if isTodoParagraph {
-                        paragraphStyle = Self.todoParagraphStyle()
-                    } else {
-                        paragraphStyle = Self.baseParagraphStyle()
+                    // Detect heading paragraphs — heading paragraph style is set during
+                    // deserialization and must not be overwritten here.
+                    var isHeadingParagraph = false
+                    if !isTodoParagraph && !isWebClipParagraph {
+                        textStorage.enumerateAttribute(.font, in: substringRange, options: []) { val, _, stop in
+                            if let f = val as? NSFont, Self.headingLevel(for: f) != nil {
+                                isHeadingParagraph = true
+                                stop.pointee = true
+                            }
+                        }
                     }
 
-                    textStorage.addAttribute(
-                        .paragraphStyle, value: paragraphStyle, range: substringRange)
+                    // Apply appropriate paragraph style based on content type
+                    if isWebClipParagraph {
+                        textStorage.addAttribute(.paragraphStyle, value: Self.webClipParagraphStyle(), range: substringRange)
+                    } else if isTodoParagraph {
+                        textStorage.addAttribute(.paragraphStyle, value: Self.todoParagraphStyle(), range: substringRange)
+                    } else if !isHeadingParagraph {
+                        // Body paragraph: apply base style but preserve any custom alignment
+                        let mutableStyle = Self.baseParagraphStyle().mutableCopy() as! NSMutableParagraphStyle
+                        var existingAlignment: NSTextAlignment = .left
+                        textStorage.enumerateAttribute(.paragraphStyle, in: substringRange, options: []) { val, _, stop in
+                            if let ps = val as? NSParagraphStyle, ps.alignment != .left {
+                                existingAlignment = ps.alignment
+                                stop.pointee = true
+                            }
+                        }
+                        if existingAlignment != .left { mutableStyle.alignment = existingAlignment }
+                        textStorage.addAttribute(.paragraphStyle, value: mutableStyle, range: substringRange)
+                    }
 
-                    // Don't adjust baseline for todo or web clip paragraphs
-                    if !isTodoParagraph && !isWebClipParagraph {
+                    // Don't adjust baseline for todo, web clip, or heading paragraphs
+                    if !isTodoParagraph && !isWebClipParagraph && !isHeadingParagraph {
                         textStorage.addAttribute(
                             .baselineOffset, value: Self.baseBaselineOffset, range: substringRange)
                     }
@@ -3625,17 +3677,78 @@ struct URLPasteOptionMenu: View {
                         }
                     } else {
                         let rangeText = (storage.string as NSString).substring(with: range)
+
+                        // Determine inline formatting for this run
+                        let font = attributes[.font] as? NSFont
+                        let heading = font.flatMap { Self.headingLevel(for: $0) }
+
+                        var runBold = false
+                        var runItalic = false
+                        if heading == nil, let f = font {
+                            let traits = NSFontManager.shared.traits(of: f)
+                            runBold = traits.contains(.boldFontMask)
+                            runItalic = traits.contains(.italicFontMask)
+                        }
+                        let hasUnderline = (attributes[.underlineStyle] as? Int ?? 0) != 0
+                        let hasStrikethrough = (attributes[.strikethroughStyle] as? Int ?? 0) != 0
+                        let alignment: NSTextAlignment
+                        if let ps = attributes[.paragraphStyle] as? NSParagraphStyle {
+                            alignment = ps.alignment
+                        } else {
+                            alignment = .left
+                        }
+
+                        // Build open/close tag wrappers (outer → inner)
+                        var openTags = ""
+                        var closeTags = ""
+
+                        // Alignment (outermost) — emit only for non-left
+                        if alignment != .left {
+                            switch alignment {
+                            case .center:
+                                openTags += "[[align:center]]"; closeTags = "[[/align]]" + closeTags
+                            case .right:
+                                openTags += "[[align:right]]"; closeTags = "[[/align]]" + closeTags
+                            case .justified:
+                                openTags += "[[align:justify]]"; closeTags = "[[/align]]" + closeTags
+                            default:
+                                break
+                            }
+                        }
+
+                        // Heading or bold/italic
+                        if let h = heading {
+                            switch h {
+                            case .h1: openTags += "[[h1]]"; closeTags = "[[/h1]]" + closeTags
+                            case .h2: openTags += "[[h2]]"; closeTags = "[[/h2]]" + closeTags
+                            case .h3: openTags += "[[h3]]"; closeTags = "[[/h3]]" + closeTags
+                            case .none: break
+                            }
+                        } else {
+                            if runBold   { openTags += "[[b]]"; closeTags = "[[/b]]" + closeTags }
+                            if runItalic { openTags += "[[i]]"; closeTags = "[[/i]]" + closeTags }
+                        }
+
+                        // Underline / strikethrough
+                        if hasUnderline     { openTags += "[[u]]"; closeTags = "[[/u]]" + closeTags }
+                        if hasStrikethrough { openTags += "[[s]]"; closeTags = "[[/s]]" + closeTags }
+
+                        // Color (innermost) — preserve existing serialization log
                         if attributes[TextFormattingManager.customTextColorKey] as? Bool == true,
                            let nsColor = attributes[.foregroundColor] as? NSColor
                         {
                             let hex = Self.nsColorToHex(nsColor)
-                            NSLog("[ColorDebug] SERIALIZE: emitting color markup hex=%@ text='%@'", hex, rangeText)
+                            output.append(openTags)
                             output.append("[[color|\(hex)]]")
                             output.append(rangeText)
                             output.append("[[/color]]")
+                            output.append(closeTags)
                         } else {
+                            output.append(openTags)
                             output.append(rangeText)
+                            output.append(closeTags)
                         }
+
                     }
                 }
                 return output
@@ -3652,6 +3765,14 @@ struct URLPasteOptionMenu: View {
                 var index = text.startIndex
                 var lastWasWebClip = false
                 var imageCounter = 0
+
+                // Inline formatting state
+                var fmtBold = false
+                var fmtItalic = false
+                var fmtUnderline = false
+                var fmtStrikethrough = false
+                var fmtHeading: TextFormattingManager.HeadingLevel = .none
+                var fmtAlignment: NSTextAlignment = .left
 
                 while index < text.endIndex {
                     if text[index...].hasPrefix("[x]") || text[index...].hasPrefix("[ ]") {
@@ -3849,6 +3970,78 @@ struct URLPasteOptionMenu: View {
                                 continue
                             }
                         }
+                    } else if text[index...].hasPrefix("[[b]]") {
+                        fmtBold = true
+                        index = text.index(index, offsetBy: 5)
+                        continue
+                    } else if text[index...].hasPrefix("[[/b]]") {
+                        fmtBold = false
+                        index = text.index(index, offsetBy: 6)
+                        continue
+                    } else if text[index...].hasPrefix("[[i]]") {
+                        fmtItalic = true
+                        index = text.index(index, offsetBy: 5)
+                        continue
+                    } else if text[index...].hasPrefix("[[/i]]") {
+                        fmtItalic = false
+                        index = text.index(index, offsetBy: 6)
+                        continue
+                    } else if text[index...].hasPrefix("[[u]]") {
+                        fmtUnderline = true
+                        index = text.index(index, offsetBy: 5)
+                        continue
+                    } else if text[index...].hasPrefix("[[/u]]") {
+                        fmtUnderline = false
+                        index = text.index(index, offsetBy: 6)
+                        continue
+                    } else if text[index...].hasPrefix("[[s]]") {
+                        fmtStrikethrough = true
+                        index = text.index(index, offsetBy: 5)
+                        continue
+                    } else if text[index...].hasPrefix("[[/s]]") {
+                        fmtStrikethrough = false
+                        index = text.index(index, offsetBy: 6)
+                        continue
+                    } else if text[index...].hasPrefix("[[h1]]") {
+                        fmtHeading = .h1
+                        index = text.index(index, offsetBy: 6)
+                        continue
+                    } else if text[index...].hasPrefix("[[/h1]]") {
+                        fmtHeading = .none
+                        index = text.index(index, offsetBy: 7)
+                        continue
+                    } else if text[index...].hasPrefix("[[h2]]") {
+                        fmtHeading = .h2
+                        index = text.index(index, offsetBy: 6)
+                        continue
+                    } else if text[index...].hasPrefix("[[/h2]]") {
+                        fmtHeading = .none
+                        index = text.index(index, offsetBy: 7)
+                        continue
+                    } else if text[index...].hasPrefix("[[h3]]") {
+                        fmtHeading = .h3
+                        index = text.index(index, offsetBy: 6)
+                        continue
+                    } else if text[index...].hasPrefix("[[/h3]]") {
+                        fmtHeading = .none
+                        index = text.index(index, offsetBy: 7)
+                        continue
+                    } else if text[index...].hasPrefix("[[align:center]]") {
+                        fmtAlignment = .center
+                        index = text.index(index, offsetBy: 16)
+                        continue
+                    } else if text[index...].hasPrefix("[[align:right]]") {
+                        fmtAlignment = .right
+                        index = text.index(index, offsetBy: 15)
+                        continue
+                    } else if text[index...].hasPrefix("[[align:justify]]") {
+                        fmtAlignment = .justified
+                        index = text.index(index, offsetBy: 17)
+                        continue
+                    } else if text[index...].hasPrefix("[[/align]]") {
+                        fmtAlignment = .left
+                        index = text.index(index, offsetBy: 10)
+                        continue
                     } else if text[index...].hasPrefix("[[color|") {
                         let prefixLen = "[[color|".count
                         let afterPrefix = text.index(index, offsetBy: prefixLen)
@@ -3859,7 +4052,12 @@ struct URLPasteOptionMenu: View {
                                 let contentStart = text.index(hexEnd, offsetBy: 2)
                                 if let closingRange = text[contentStart...].range(of: "[[/color]]") {
                                     let coloredText = String(text[contentStart..<closingRange.lowerBound])
-                                    var attrs = Self.baseTypingAttributes(for: currentColorScheme)
+                                    var attrs = Self.formattingAttributes(
+                                        base: currentColorScheme,
+                                        heading: fmtHeading,
+                                        bold: fmtBold, italic: fmtItalic,
+                                        underline: fmtUnderline, strikethrough: fmtStrikethrough,
+                                        alignment: fmtAlignment)
                                     attrs[.foregroundColor] = TextFormattingManager.nsColorFromHex(hex)
                                     attrs[TextFormattingManager.customTextColorKey] = true
                                     result.append(NSAttributedString(string: coloredText, attributes: attrs))
@@ -3892,9 +4090,13 @@ struct URLPasteOptionMenu: View {
                         finalChar = char
                     }
 
-                    let attributedChar = NSAttributedString(
-                        string: finalChar,
-                        attributes: Self.baseTypingAttributes(for: currentColorScheme))
+                    let charAttrs = Self.formattingAttributes(
+                        base: currentColorScheme,
+                        heading: fmtHeading,
+                        bold: fmtBold, italic: fmtItalic,
+                        underline: fmtUnderline, strikethrough: fmtStrikethrough,
+                        alignment: fmtAlignment)
+                    let attributedChar = NSAttributedString(string: finalChar, attributes: charAttrs)
                     result.append(attributedChar)
                     index = text.index(after: index)
                     lastWasWebClip = false
@@ -3936,6 +4138,15 @@ struct URLPasteOptionMenu: View {
                 return offset
             }
 
+            private static func headingLevel(for font: NSFont) -> TextFormattingManager.HeadingLevel? {
+                switch font.pointSize {
+                case TextFormattingManager.HeadingLevel.h1.fontSize: return .h1
+                case TextFormattingManager.HeadingLevel.h2.fontSize: return .h2
+                case TextFormattingManager.HeadingLevel.h3.fontSize: return .h3
+                default: return nil
+                }
+            }
+
             private static func nsColorToHex(_ color: NSColor) -> String {
                 let c = color.usingColorSpace(.sRGB) ?? color.usingColorSpace(.deviceRGB) ?? color
                 return String(format: "%02x%02x%02x",
@@ -3947,25 +4158,56 @@ struct URLPasteOptionMenu: View {
             static func baseTypingAttributes(for colorScheme: ColorScheme? = nil)
                 -> [NSAttributedString.Key: Any]
             {
-                let textColor: NSColor
-                if let scheme = colorScheme {
-                    // Use the actual PrimaryTextColor values from the asset catalog
-                    if scheme == .dark {
-                        textColor = NSColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0)  // White for dark mode
-                    } else {
-                        textColor = NSColor(red: 0.102, green: 0.102, blue: 0.102, alpha: 1.0)  // Dark gray for light mode
-                    }
-                } else {
-                    textColor = NSColor.labelColor
-                }
-
                 return [
                     .font: textFont,
-                    .foregroundColor: textColor,
+                    .foregroundColor: NSColor.labelColor,
                     .paragraphStyle: baseParagraphStyle(),
                     .underlineStyle: 0,
-                        // .baselineOffset: baseBaselineOffset,
                 ]
+            }
+
+            /// Builds an attribute dictionary that applies inline formatting state on top of the
+            /// base typing attributes. Used during deserialization to reconstruct rich text.
+            private static func formattingAttributes(
+                base colorScheme: ColorScheme?,
+                heading: TextFormattingManager.HeadingLevel,
+                bold: Bool, italic: Bool,
+                underline: Bool, strikethrough: Bool,
+                alignment: NSTextAlignment
+            ) -> [NSAttributedString.Key: Any] {
+                var attrs = baseTypingAttributes(for: colorScheme)
+
+                // Font: heading or body with traits
+                if heading != .none {
+                    let weight: FontManager.Weight = heading.fontWeight == .semibold ? .semibold : .regular
+                    attrs[.font] = FontManager.headingNS(size: heading.fontSize, weight: weight)
+                    let paraStyle = NSMutableParagraphStyle()
+                    paraStyle.paragraphSpacingBefore = 8
+                    paraStyle.paragraphSpacing = 12
+                    if alignment != .left { paraStyle.alignment = alignment }
+                    attrs[.paragraphStyle] = paraStyle
+                } else {
+                    var font = attrs[.font] as? NSFont ?? textFont
+                    if bold   { font = NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask) }
+                    if italic { font = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask) }
+                    attrs[.font] = font
+
+                    if alignment != .left {
+                        let paraStyle = (attrs[.paragraphStyle] as? NSParagraphStyle)?
+                            .mutableCopy() as? NSMutableParagraphStyle ?? NSMutableParagraphStyle()
+                        paraStyle.alignment = alignment
+                        attrs[.paragraphStyle] = paraStyle
+                    }
+                }
+
+                attrs[.underlineStyle] = underline ? NSUnderlineStyle.single.rawValue : 0
+                if strikethrough {
+                    attrs[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
+                } else {
+                    attrs[.strikethroughStyle] = 0
+                }
+
+                return attrs
             }
 
             private static func baselineOffset(forLineHeight lineHeight: CGFloat, font: NSFont)
@@ -3995,6 +4237,7 @@ struct URLPasteOptionMenu: View {
         static var isCommandMenuShowing = false
 
         weak var actionDelegate: TodoEditorRepresentable.Coordinator?
+        var editorInstanceID: UUID?
         private var hoverTrackingArea: NSTrackingArea?
 
         /// Set during paste operations so the coordinator can skip the typing animation.
@@ -4123,13 +4366,14 @@ struct URLPasteOptionMenu: View {
         override func becomeFirstResponder() -> Bool {
             let result = super.becomeFirstResponder()
             if result {
-                // Ensure the text view is properly focused and can receive input
-                // Fix timing issue by ensuring window focus happens on next run loop
-                DispatchQueue.main.async {
-                    self.window?.makeFirstResponder(self)
-                    // Additional check to ensure we can actually receive text input
-                    self.insertionPointColor = NSColor.controlAccentColor
-                    self.needsDisplay = true
+                insertionPointColor = NSColor.controlAccentColor
+                needsDisplay = true
+                if let eid = self.editorInstanceID {
+                    NotificationCenter.default.post(
+                        name: .editorDidBecomeFirstResponder,
+                        object: nil,
+                        userInfo: ["editorInstanceID": eid]
+                    )
                 }
             }
             return result
@@ -4141,16 +4385,7 @@ struct URLPasteOptionMenu: View {
                 return
             }
             actionDelegate?.endAttachmentHover()
-            // Ensure the text view becomes first responder on click
-            if window?.makeFirstResponder(self) == true {
-                // Additional verification that we're ready for text input
-                DispatchQueue.main.async {
-                    if self.window?.firstResponder == self {
-                        self.insertionPointColor = NSColor.controlAccentColor
-                        self.needsDisplay = true
-                    }
-                }
-            }
+            window?.makeFirstResponder(self)
             super.mouseDown(with: event)
         }
 

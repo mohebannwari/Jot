@@ -14,6 +14,7 @@ import AppKit
 
 struct NoteToolsBar: View {
     let note: Note
+    var editorInstanceID: UUID? = nil
 
     private let iconSize: CGFloat = 18
     private let spacing: CGFloat = 12
@@ -60,9 +61,12 @@ struct NoteToolsBar: View {
     }
 
     private func postToolAction(_ tool: EditTool) {
+        var userInfo: [String: Any] = [:]
+        if let eid = editorInstanceID { userInfo["editorInstanceID"] = eid }
         NotificationCenter.default.post(
             name: .noteToolsBarAction,
-            object: tool.rawValue
+            object: tool.rawValue,
+            userInfo: userInfo.isEmpty ? nil : userInfo
         )
     }
 }
