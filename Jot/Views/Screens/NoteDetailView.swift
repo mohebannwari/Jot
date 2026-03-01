@@ -35,9 +35,6 @@ struct NoteDetailView: View {
     /// `onChange(of: note.id)` fires — so `persistIfNeeded()` must use this, not `note`.
     @State private var noteForPersist: Note
 
-    static let imageTagPattern = #"\[\[image\|\|\|([^\]]+)\]\]"#
-    static let imageTagRegex = try? NSRegularExpression(pattern: imageTagPattern, options: [])
-
     @State private var isAddingTag = false
     @State private var newTagText = ""
     @FocusState private var isAddingTagFocused: Bool
@@ -48,12 +45,6 @@ struct NoteDetailView: View {
     @State private var pressedTag: String?
     @State private var selectedTags: Set<String> = []
     @Namespace private var glassNamespace
-
-    // MARK: - Gallery state (accessed by +Gallery extension)
-    @State var galleryPreviewImage: NSImage?
-    @State var lastGalleryFilename: String?
-    @State var galleryItems: [GalleryGridOverlay.Item] = []
-    @State var showGalleryGrid = false
 
     // MARK: - Overlay state (accessed by +Actions extension)
     @State var showVoiceRecorderOverlay = false
@@ -142,26 +133,7 @@ struct NoteDetailView: View {
     // MARK: - Body
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            noteContent
-                .blur(radius: showGalleryGrid ? 0.6 : 0)
-                .scaleEffect(showGalleryGrid ? 0.996 : 1.0)
-                .animation(.smooth(duration: 0.28), value: showGalleryGrid)
-                .allowsHitTesting(!showGalleryGrid)
-
-            if showGalleryGrid, !galleryItems.isEmpty {
-                GalleryGridOverlay(
-                    items: galleryItems,
-                    onDismiss: {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
-                            showGalleryGrid = false
-                        }
-                    }
-                )
-                .transition(.opacity.combined(with: .scale(scale: 0.98)))
-                .zIndex(200)
-            }
-        }
+        noteContent
     }
 
     // MARK: - Note Content
@@ -326,20 +298,6 @@ struct NoteDetailView: View {
             }
 
         }
-        .overlay(alignment: .bottomLeading) {
-            if let previewImage = galleryPreviewImage {
-                GalleryPreviewOverlay(image: previewImage, onTap: {
-                    guard !galleryItems.isEmpty else { return }
-                    withAnimation(.jotSpring) {
-                        showGalleryGrid = true
-                    }
-                })
-                    .padding(.leading, 22)
-                    .padding(.bottom, 56)
-                    .transition(.opacity.combined(with: .scale(scale: 0.94)))
-                    .zIndex(40)
-            }
-        }
         .overlay(alignment: .bottom) {
             bottomOverlay
                 .opacity(showFloatingToolbar ? 0.5 : 1.0)
@@ -355,7 +313,11 @@ struct NoteDetailView: View {
         }
         .preference(
             key: BottomOverlayActivePreferenceKey.self,
-            value: showSearchOnPageOverlay || showLinkInputOverlay || showVoiceRecorderOverlay
+            value: showVoiceRecorderOverlay
+        )
+        .preference(
+            key: BottomInputOverlayActivePreferenceKey.self,
+            value: showSearchOnPageOverlay || showLinkInputOverlay
         )
     }
 
@@ -363,7 +325,6 @@ struct NoteDetailView: View {
     private var noteContentEvents: some View {
         noteContentLayout
         .onAppear {
-            updateGalleryPreview(for: editedContent)
             glassElementsVisible = true
             if isNewNote {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
@@ -385,8 +346,7 @@ struct NoteDetailView: View {
             }
             scheduleAutosave()
         }
-        .onChange(of: editedContent) { newValue in
-            updateGalleryPreview(for: newValue)
+        .onChange(of: editedContent) { _ in
             scheduleAutosave()
         }
         .onChange(of: editedTags) { _, _ in
@@ -424,8 +384,6 @@ struct NoteDetailView: View {
                     titleFocused = true
                 }
             }
-            galleryPreviewImage = nil; lastGalleryFilename = nil
-            galleryItems = []; showGalleryGrid = false
             showVoiceRecorderOverlay = false; showLinkInputOverlay = false; showImagePicker = false
             capturedSelectionRange = NSRange(location: NSNotFound, length: 0)
             capturedSelectionText = ""; capturedSelectionWindowRect = .zero
@@ -445,7 +403,6 @@ struct NoteDetailView: View {
                 }
             }
 
-            updateGalleryPreview(for: note.content)
         }
         .onReceive(NotificationCenter.default.publisher(for: .noteToolsBarAction))
         { notification in
@@ -1297,6 +1254,13 @@ struct TitleOffsetPreferenceKey: PreferenceKey {
 }
 
 struct BottomOverlayActivePreferenceKey: PreferenceKey {
+    static var defaultValue: Bool = false
+    static func reduce(value: inout Bool, nextValue: () -> Bool) {
+        value = value || nextValue()
+    }
+}
+
+struct BottomInputOverlayActivePreferenceKey: PreferenceKey {
     static var defaultValue: Bool = false
     static func reduce(value: inout Bool, nextValue: () -> Bool) {
         value = value || nextValue()

@@ -51,16 +51,6 @@ private final class CursorOverlayView: NSView {
         nil  // Allow underlying views to receive events
     }
 
-    override func layout() {
-        super.layout()
-        refreshCursorRects()
-    }
-
-    override func setFrameSize(_ newSize: NSSize) {
-        super.setFrameSize(newSize)
-        refreshCursorRects()
-    }
-
     override func resetCursorRects() {
         super.resetCursorRects()
         discardCursorRects()
@@ -142,6 +132,9 @@ extension Animation {
 
     /// Quick, damped spring for hover micro-interactions.
     static let jotHover = Animation.spring(response: 0.25, dampingFraction: 0.75)
+
+    /// Snappy spring for drag-feedback states (targeting, drop preview).
+    static let jotDragSnap = Animation.spring(response: 0.18, dampingFraction: 0.9)
 }
 
 // MARK: - Subtle Hover Scale

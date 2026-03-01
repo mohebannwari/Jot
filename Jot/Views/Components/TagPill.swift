@@ -44,8 +44,7 @@ struct TagPill: View {
         .padding(.trailing, 4)
         .padding(.vertical, 6)
         .frame(height: 28)
-        .background(.ultraThinMaterial, in: Capsule())
-        .background(Color("TagBackgroundColor"), in: Capsule())
+        .tintedLiquidGlass(in: Capsule(), tint: Color("TagBackgroundColor"))
         .background(
             Capsule()
                 .fill(Color.clear)
@@ -57,12 +56,5 @@ struct TagPill: View {
         .animation(.jotBounce, value: isHovered)
         .animation(.bouncy(duration: 0.2), value: isPressed)
         .macPointingHandCursor()
-    }
-
-    private var available26: Bool {
-        if #available(iOS 26.0, macOS 26.0, *) {
-            return true
-        }
-        return false
     }
 }

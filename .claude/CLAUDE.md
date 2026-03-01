@@ -123,17 +123,35 @@ Jot/
 - Persistence: `SimpleSwiftDataManager`
 - View structure: props → computed properties → body
 - Never hardcode design values — always use asset catalog names
+- Sidebar row height: 34pt for all note rows (NoteListCard, split containers, placeholders)
+- Concentric corner radii: outer container 12, inner = outer - padding (e.g., pinned notes: container 12, padding 4, inner cards 8)
+- Forced-appearance containers: split session containers use hardcoded `Color.white` + `.black` text (intentional — theme-independent by design)
 
 ---
 
 ## Liquid Glass (iOS 26+ / macOS 26+)
-Priority:
-1. `.glassEffect()` — regular + capsule (default)
-2. `.glassEffect(.thin, in: RoundedRectangle(cornerRadius: 20))`
-3. `.glassEffect(.regular.interactive(true))`
-4. Fallback: `.ultraThinMaterial`
+Variants (from the `Glass` type):
+- `.regular` — default for toolbars, buttons, navigation (adapts to any content)
+- `.clear` — floating controls over media (photos, maps); needs bold foreground
+- `.identity` — disables glass conditionally (cleaner than if/else branching)
 
-Rules: no glass-on-glass; floating elements only; `.glassEffectID()` for morphing.
+Modifiers (chain on any variant):
+- `.tint(color)` — semantic coloring integrated into the glass material
+- `.interactive()` — scaling, bounce, shimmer on press (interactive elements only)
+
+Shapes: `Capsule()` (default), `RoundedRectangle(cornerRadius:)`, `Circle()`, `.rect(cornerRadius: .containerConcentric)`
+
+Morphing: `.glassEffectID(id, in: namespace)` inside `GlassEffectContainer`
+
+Helpers (in `GlassEffects.swift`):
+- `liquidGlass(in:)` — standard interactive glass
+- `tintedLiquidGlass(in:tint:)` — glass with native `.tint()` color
+- `thinLiquidGlass(in:)` — plain glass without interactivity
+- `prominentGlassStyle()` — `.glassProminent` button style
+- `glassID(_:in:)` — morphing ID wrapper
+- Fallback: `.ultraThinMaterial` (pre-26 path)
+
+Rules: no glass-on-glass; floating elements only; coordinate morphing with `GlassEffectContainer`.
 
 ---
 
@@ -197,6 +215,11 @@ Icons in the app come from different Figma grid sizes. When displayed at the sam
 When exporting or editing an SVG, calculate: `stroke-width = viewBox_size ÷ 12`.
 
 Icons that deviate from this ratio will appear thinner or heavier than their siblings when scaled to the same SwiftUI frame. Fix the SVG source, not the frame size.
+
+### SVG Rotation in SwiftUI
+Figma may export SVGs in the wrong orientation. To rotate (e.g., horizontal to vertical):
+`.frame(width: W, height: H).rotationEffect(.degrees(90)).frame(width: H, height: W)`
+First frame renders at native proportions, rotation flips visually, second frame constrains layout space.
 
 ---
 

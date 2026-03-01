@@ -258,8 +258,7 @@ private extension MicCaptureControl {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(Capsule().fill(.clear))
-        .background(.ultraThinMaterial, in: Capsule())
+        .liquidGlass(in: Capsule())
         .padding(.top, 12)
         .padding(.horizontal, 4)
     }

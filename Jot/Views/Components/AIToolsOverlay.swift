@@ -152,11 +152,7 @@ struct AIToolsOverlay: View {
         }
         .padding(promptCardPadding)
         .frame(width: promptCardWidth)
-        #if os(macOS)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: promptCardRadius, style: .continuous))
-        #else
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: promptCardRadius, style: .continuous))
-        #endif
+        .liquidGlass(in: RoundedRectangle(cornerRadius: promptCardRadius, style: .continuous))
     }
 
     private var promptCardHeader: some View {
