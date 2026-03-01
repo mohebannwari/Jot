@@ -35,9 +35,7 @@ extension View {
     ) -> some View {
         if #available(iOS 26.0, macOS 26.0, *) {
             self
-                .glassEffect(in: shape)
-                .background(shape.fill(tint.opacity(tintOpacity)))
-                .overlay(shape.stroke(Color.primary.opacity(strokeOpacity), lineWidth: 0.5))
+                .glassEffect(.regular.tint(tint.opacity(tintOpacity)), in: shape)
         } else {
             self
                 .background(.ultraThinMaterial, in: shape)

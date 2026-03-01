@@ -21,6 +21,7 @@ extension NSAttributedString.Key {
     fileprivate static let webClipDomain = NSAttributedString.Key("WebClipDomain")
     fileprivate static let plainLinkURL = NSAttributedString.Key("PlainLinkURL")
     fileprivate static let imageFilename = NSAttributedString.Key("ImageFilename")
+    fileprivate static let imageWidthRatio = NSAttributedString.Key("ImageWidthRatio")
     fileprivate static let fileStoredFilename = NSAttributedString.Key("FileStoredFilename")
     fileprivate static let fileOriginalFilename = NSAttributedString.Key("FileOriginalFilename")
     fileprivate static let fileTypeIdentifier = NSAttributedString.Key("FileTypeIdentifier")
@@ -29,7 +30,7 @@ extension NSAttributedString.Key {
 
 private enum AttachmentMarkup {
     static let imageMarkupPrefix = "[[image|"
-    static let imagePattern = #"\[\[image\|\|\|([^\]]+)\]\]"#
+    static let imagePattern = #"\[\[image\|\|\|([^\]|]+)(?:\|\|\|([0-9]*\.?[0-9]+))?\]\]"#
     static let imageRegex: NSRegularExpression? = try? NSRegularExpression(
         pattern: imagePattern,
         options: []
@@ -219,15 +220,280 @@ fileprivate final class TypingAnimationLayoutManager: NSLayoutManager {
 /// Dedicated attachment type so that we never lose the stored filename during round-trips.
 private final class NoteImageAttachment: NSTextAttachment {
     let storedFilename: String
+    var widthRatio: CGFloat
 
-    init(filename: String) {
+    init(filename: String, widthRatio: CGFloat = 1.0) {
         self.storedFilename = filename
+        self.widthRatio = widthRatio
         super.init(data: nil, ofType: nil)
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("NoteImageAttachment does not support init(coder:)")
+    }
+}
+
+/// Cell that allocates space for an image attachment but draws nothing visible.
+/// The InlineImageOverlayView handles rendering.
+private final class ImageSizeAttachmentCell: NSTextAttachmentCell {
+    let displaySize: CGSize
+
+    init(size: CGSize) {
+        self.displaySize = size
+        super.init(imageCell: nil)
+    }
+
+    @available(*, unavailable)
+    required init(coder: NSCoder) {
+        fatalError("ImageSizeAttachmentCell does not support init(coder:)")
+    }
+
+    override var cellSize: NSSize { displaySize }
+
+    override nonisolated func cellBaselineOffset() -> NSPoint { .zero }
+
+    override func draw(withFrame cellFrame: NSRect, in controlView: NSView?) {
+        // Intentionally empty — overlay view renders the image
+    }
+
+    override func draw(withFrame cellFrame: NSRect, in controlView: NSView?, characterIndex charIndex: Int, layoutManager: NSLayoutManager) {
+        // Intentionally empty — overlay view renders the image
+    }
+}
+
+/// Floating view hosted in the scroll view's clip view that renders an image
+/// with rounded corners, drop shadow, subtle border, and edge-based resizing.
+/// No visible handle — resize is indicated purely by cursor changes on the
+/// right edge, bottom edge, and bottom-right corner. Captures the entire image
+/// bounds for hit testing; non-edge clicks are forwarded to the text view.
+private final class InlineImageOverlayView: NSView {
+    var image: NSImage? {
+        didSet { imageLayer.contents = image }
+    }
+    var onResizeEnded: ((CGFloat) -> Void)?
+    var containerWidth: CGFloat = 0
+    var currentRatio: CGFloat = 1.0
+    var storedFilename: String = ""
+    weak var parentTextView: NSTextView?
+
+    private let imageLayer = CALayer()
+    private let shadowLayer = CALayer()
+    private let borderLayer = CALayer()
+
+    /// Large edge zones for comfortable resize grabbing.
+    /// Right edge: rightmost 40px. Bottom edge: bottommost 40px. Corner: overlap of both.
+    private let edgeZone: CGFloat = 40
+
+    /// Corner radius scales proportionally with image width.
+    private var computedCornerRadius: CGFloat {
+        min(24, max(12, bounds.width * 0.06))
+    }
+
+    private enum ResizeEdge { case right, bottom, corner }
+    private var isDragging = false
+    private var activeEdge: ResizeEdge?
+    private var dragStartPoint: CGPoint = .zero
+    private var dragStartWidth: CGFloat = 0
+    private var dragStartHeight: CGFloat = 0
+
+    override var isFlipped: Bool { true }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.masksToBounds = false
+
+        // Drop shadow
+        shadowLayer.backgroundColor = NSColor.black.cgColor
+        shadowLayer.cornerCurve = .continuous
+        shadowLayer.masksToBounds = false
+        shadowLayer.shadowOpacity = 0.18
+        shadowLayer.shadowRadius = 10
+        shadowLayer.shadowOffset = CGSize(width: 0, height: 3)
+        shadowLayer.shadowColor = NSColor.black.cgColor
+        layer?.addSublayer(shadowLayer)
+
+        // Image with continuous rounded corners
+        imageLayer.masksToBounds = true
+        imageLayer.cornerCurve = .continuous
+        imageLayer.contentsGravity = .resizeAspectFill
+        imageLayer.allowsEdgeAntialiasing = true
+        layer?.addSublayer(imageLayer)
+
+        // Subtle border — continuous corners, adapts to light/dark mode
+        borderLayer.cornerCurve = .continuous
+        borderLayer.borderWidth = 1.0
+        borderLayer.masksToBounds = true
+        layer?.addSublayer(borderLayer)
+
+        let scale = NSScreen.main?.backingScaleFactor ?? 2.0
+        for l: CALayer in [imageLayer, shadowLayer, borderLayer] {
+            l.contentsScale = scale
+        }
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("InlineImageOverlayView does not support init(coder:)")
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateAppearanceDependentLayers()
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateAppearanceDependentLayers()
+    }
+
+    private func updateAppearanceDependentLayers() {
+        let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        borderLayer.borderColor = isDark
+            ? NSColor.white.withAlphaComponent(0.12).cgColor
+            : NSColor.black.withAlphaComponent(0.08).cgColor
+        shadowLayer.shadowOpacity = isDark ? 0.18 : 0.25
+        CATransaction.commit()
+    }
+
+    override func layout() {
+        super.layout()
+        let radius = computedCornerRadius
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        imageLayer.frame = bounds
+        imageLayer.cornerRadius = radius
+        shadowLayer.frame = bounds
+        shadowLayer.cornerRadius = radius
+        borderLayer.frame = bounds
+        borderLayer.cornerRadius = radius
+        CATransaction.commit()
+    }
+
+    // MARK: - Cursor Rects
+
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        discardCursorRects()
+        let zone = edgeZone
+
+        // Corner (bottom-right) — added first; edges exclude this region
+        let cornerRect = CGRect(x: bounds.maxX - zone, y: bounds.maxY - zone,
+                                width: zone, height: zone)
+        addCursorRect(cornerRect, cursor: NSCursor.frameResize(position: .bottomRight, directions: .all))
+
+        // Right edge (excluding corner)
+        let rightRect = CGRect(x: bounds.maxX - zone, y: bounds.minY,
+                               width: zone, height: bounds.height - zone)
+        addCursorRect(rightRect, cursor: NSCursor.frameResize(position: .right, directions: .all))
+
+        // Bottom edge (excluding corner)
+        let bottomRect = CGRect(x: bounds.minX, y: bounds.maxY - zone,
+                                width: bounds.width - zone, height: zone)
+        addCursorRect(bottomRect, cursor: NSCursor.frameResize(position: .bottom, directions: .all))
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        let changed = newSize != frame.size
+        super.setFrameSize(newSize)
+        if changed { window?.invalidateCursorRects(for: self) }
+    }
+
+    // MARK: - Edge Detection
+
+    /// Returns the appropriate resize cursor if `windowPoint` falls on an edge zone, nil otherwise.
+    /// Called by the coordinator from InlineNSTextView.mouseMoved to bypass NSTextView's cursor override.
+    func cursorForPoint(_ windowPoint: CGPoint) -> NSCursor? {
+        let local = convert(windowPoint, from: nil)
+        guard let edge = resizeEdge(at: local) else { return nil }
+        return switch edge {
+        case .right:  NSCursor.frameResize(position: .right, directions: .all)
+        case .bottom: NSCursor.frameResize(position: .bottom, directions: .all)
+        case .corner: NSCursor.frameResize(position: .bottomRight, directions: .all)
+        }
+    }
+
+    private func resizeEdge(at point: NSPoint) -> ResizeEdge? {
+        guard bounds.contains(point) else { return nil }
+        let onRight = point.x >= bounds.maxX - edgeZone
+        let onBottom = point.y >= bounds.maxY - edgeZone
+        if onRight && onBottom { return .corner }
+        if onRight { return .right }
+        if onBottom { return .bottom }
+        return nil
+    }
+
+    // MARK: - Hit Testing
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let local = convert(point, from: superview)
+        if isDragging { return self }
+        return bounds.contains(local) ? self : nil
+    }
+
+    // MARK: - Resize Drag + Event Forwarding
+
+    override func mouseDown(with event: NSEvent) {
+        let local = convert(event.locationInWindow, from: nil)
+        if let edge = resizeEdge(at: local) {
+            isDragging = true
+            activeEdge = edge
+            dragStartPoint = event.locationInWindow
+            dragStartWidth = bounds.width
+            dragStartHeight = bounds.height
+            // Lock cursor during drag so it persists even outside view bounds
+            let resizeCursor: NSCursor = switch edge {
+            case .right:  NSCursor.frameResize(position: .right, directions: .all)
+            case .bottom: NSCursor.frameResize(position: .bottom, directions: .all)
+            case .corner: NSCursor.frameResize(position: .bottomRight, directions: .all)
+            }
+            resizeCursor.push()
+        } else {
+            parentTextView?.mouseDown(with: event)
+        }
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard isDragging, let edge = activeEdge,
+              let imgSize = image?.size, imgSize.width > 0 else {
+            if !isDragging { parentTextView?.mouseDragged(with: event) }
+            return
+        }
+        let aspect = imgSize.height / imgSize.width
+
+        let newWidth: CGFloat
+        switch edge {
+        case .right, .corner:
+            let dx = event.locationInWindow.x - dragStartPoint.x
+            newWidth = dragStartWidth + dx
+        case .bottom:
+            let dy = dragStartPoint.y - event.locationInWindow.y
+            newWidth = (dragStartHeight + dy) / aspect
+        }
+
+        let clamped = max(100, min(containerWidth, newWidth))
+        frame = CGRect(x: frame.minX, y: frame.minY, width: clamped, height: clamped * aspect)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard isDragging else {
+            parentTextView?.mouseUp(with: event)
+            return
+        }
+        NSCursor.pop()  // Balance the push() from mouseDown
+        isDragging = false
+        activeEdge = nil
+        guard containerWidth > 0 else { return }
+        let newRatio = min(1.0, max(0.1, frame.width / containerWidth))
+        currentRatio = newRatio
+        onResizeEnded?(newRatio)
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        nextResponder?.scrollWheel(with: event)
     }
 }
 
@@ -251,96 +517,6 @@ private final class NoteFileAttachment: NSTextAttachment {
         fatalError("NoteFileAttachment does not support init(coder:)")
     }
 }
-
-/// Preview image view that renders the attachment thumbnail with rounded corners and stroke.
-private final class ImagePreviewView: NSImageView {
-    var colorScheme: ColorScheme = .dark {
-        didSet { updateAppearance() }
-    }
-
-    override var isFlipped: Bool { true }
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        wantsLayer = true
-        layer?.masksToBounds = false
-        layer?.shadowOpacity = 0.28
-        layer?.shadowRadius = 8
-        layer?.shadowOffset = CGSize(width: 0, height: 4)
-        imageScaling = .scaleProportionallyUpOrDown
-        imageView.wantsLayer = true
-        imageView.layer?.masksToBounds = true
-        imageView.layer?.cornerRadius = 8
-        // Enable smoother corner radius rendering
-        imageView.layer?.cornerCurve = .continuous
-        imageView.layer?.allowsEdgeAntialiasing = true
-        imageView.imageScaling = .scaleProportionallyUpOrDown
-        addSubview(imageView)
-        updateAppearance()
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("ImagePreviewView does not support init(coder:)")
-    }
-
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-
-    func configure(image: NSImage, displaySize: CGSize) {
-        let scale = NSScreen.main?.backingScaleFactor ?? 2.0
-        layer?.contentsScale = scale
-        imageView.layer?.contentsScale = scale
-        frame.size = displaySize
-        imageView.frame = bounds
-        imageView.image = image
-        let path = CGPath(
-            roundedRect: CGRect(origin: .zero, size: displaySize),
-            cornerWidth: 8,
-            cornerHeight: 8,
-            transform: nil)
-        layer?.shadowPath = path
-    }
-
-    func animateEntrance() {
-        guard let layer = layer else { return }
-        layer.removeAnimation(forKey: "entranceTransform")
-        layer.removeAnimation(forKey: "entranceOpacity")
-
-        let initialTransform = CATransform3DMakeTranslation(0, 14, 0)
-        layer.transform = initialTransform
-        layer.opacity = 0
-
-        let timing = CAMediaTimingFunction(controlPoints: 0.18, 0.82, 0.24, 0.98)
-        let duration: CFTimeInterval = 0.26
-
-        let transformAnimation = CABasicAnimation(keyPath: "transform")
-        transformAnimation.fromValue = initialTransform
-        transformAnimation.toValue = CATransform3DIdentity
-        transformAnimation.duration = duration
-        transformAnimation.timingFunction = timing
-
-        let opacityAnimation = CABasicAnimation(keyPath: "opacity")
-        opacityAnimation.fromValue = 0
-        opacityAnimation.toValue = 1
-        opacityAnimation.duration = duration
-        opacityAnimation.timingFunction = timing
-
-        layer.add(transformAnimation, forKey: "entranceTransform")
-        layer.add(opacityAnimation, forKey: "entranceOpacity")
-        layer.transform = CATransform3DIdentity
-        layer.opacity = 1
-    }
-
-    private func updateAppearance() {
-        layer?.shadowColor = (colorScheme == .dark
-            ? NSColor.black.withAlphaComponent(0.6)
-            : NSColor.black.withAlphaComponent(0.3)).cgColor
-        layer?.backgroundColor = NSColor.clear.cgColor
-    }
-
-    private let imageView = NSImageView()
-}
-
 
 struct TodoRichTextEditor: View {
     @Binding var text: String
@@ -826,6 +1002,11 @@ struct URLPasteOptionMenu: View {
             // Only update text if it has actually changed
             context.coordinator.updateIfNeeded(with: text)
             context.coordinator.requestFocusIfNeeded(focusRequestID)
+
+            // During makeNSView the text view isn't in the hierarchy yet, so overlay
+            // creation and the bounds-change observer registration are deferred.
+            // By the time SwiftUI calls updateNSView the view IS hosted — finish setup.
+            context.coordinator.completeDeferredSetup(in: textView)
         }
 
         // Report dynamic size to SwiftUI so the editor grows with its content naturally
@@ -900,7 +1081,7 @@ struct URLPasteOptionMenu: View {
             return NSColor.labelColor
         }
 
-        @MainActor final class Coordinator: NSObject, NSTextViewDelegate {
+        @MainActor final class Coordinator: NSObject, NSTextViewDelegate, NSLayoutManagerDelegate {
             private weak var textView: NSTextView?
             private var observers: [NSObjectProtocol] = []
             private var lastSerialized = ""
@@ -914,14 +1095,6 @@ struct URLPasteOptionMenu: View {
             fileprivate weak var typingAnimationManager: TypingAnimationLayoutManager?
             private var pendingAnimationLocation: Int?
             private var pendingAnimationLength: Int?
-            private struct HiddenAttachmentState {
-                let attachment: NSTextAttachment
-                weak var textView: NSTextView?
-                let originalImage: NSImage?
-                let originalCell: (any NSTextAttachmentCellProtocol)?
-                let characterIndex: Int
-            }
-
             private struct FileAttachmentMetadata {
                 let storedFilename: String
                 let originalFilename: String
@@ -929,27 +1102,20 @@ struct URLPasteOptionMenu: View {
                 let displayLabel: String
             }
 
-            private enum AttachmentPreviewTarget {
-                case image(filename: String)
-                case file(metadata: FileAttachmentMetadata)
-                case webClip(attachment: NSTextAttachment)
-            }
+            // MARK: - Inline image overlay tracking
+            private var imageOverlays: [ObjectIdentifier: InlineImageOverlayView] = [:]
+            private weak var overlayHostView: NSView?
+            /// True when applyInitialText ran but the view was not in the hierarchy
+            /// yet (no enclosingScrollView), so overlay creation was deferred.
+            private var needsDeferredOverlaySetup = false
+            /// True once the bounds-change observer on the clip view has been registered.
+            private var hasBoundsObserver = false
 
-            private weak var previewHostView: NSView?
-            private var imagePreviewView: ImagePreviewView?
-            private var currentPreviewIdentifier: String?
-            // Cache the attachment rect to prevent jitter during horizontal cursor movement
-            private var cachedAttachmentRect: CGRect?
-            private var hoverTagOverlayView: NSImageView?
-            private var originalTextViewFilters: [Any]?
-            private var isHoverEffectApplied = false
-            private var hiddenAttachmentState: HiddenAttachmentState?
-            private var hoveredWebClipAttachment: NSTextAttachment?
-            // Allow slight tolerance so hover stays active when the cursor is near the tag edges
-            private let hoverHitTolerance: CGFloat = 4
-            private static let previewImageCache: NSCache<NSString, NSImage> = {
+
+            private static let inlineImageCache: NSCache<NSString, NSImage> = {
                 let cache = NSCache<NSString, NSImage>()
-                cache.countLimit = 32
+                cache.countLimit = 24
+                cache.totalCostLimit = 50 * 1024 * 1024
                 return cache
             }()
 
@@ -1255,59 +1421,43 @@ struct URLPasteOptionMenu: View {
             }
 
             /// Create an inline image attachment tag from a filename
-            private func makeImageAttachment(filename: String, imageNumber: Int) -> NSMutableAttributedString {
-                func fallbackAttributedString() -> NSMutableAttributedString {
-                    return NSMutableAttributedString(string: "[Image: \(filename)]")
+            /// Create a block-level image attachment with the given width ratio.
+            private func makeImageAttachment(filename: String, widthRatio: CGFloat = 1.0) -> NSMutableAttributedString {
+                // Load image to get native aspect ratio
+                let imageSize: CGSize
+                if let url = ImageStorageManager.shared.getImageURL(for: filename),
+                   let img = NSImage(contentsOf: url) {
+                    imageSize = img.size
+                } else {
+                    NSLog("makeImageAttachment: no stored file for %@", filename)
+                    imageSize = CGSize(width: 4, height: 3)
                 }
 
-                let tagLabel = "image\(max(imageNumber, 1))"
+                var containerWidth = textView?.textContainer?.containerSize.width ?? 400
+                // During makeNSView, replaceLayoutManager resets the container width to 0.
+                // Fall back to a sensible default so attachments aren't zero-sized.
+                if containerWidth < 1 { containerWidth = 400 }
+                let maxDisplayWidth = containerWidth
+                let displayWidth = min(maxDisplayWidth, maxDisplayWidth * widthRatio)
+                let aspectRatio = imageSize.height / imageSize.width
+                let displayHeight = displayWidth * aspectRatio
 
-                if ImageStorageManager.shared.getImageURL(for: filename) == nil {
-                    NSLog("🖼️ makeImageAttachment: WARNING - no stored file found for %@", filename)
-                }
-
-                let attachment: NoteImageAttachment
-                let displaySize: CGSize
-
-                let tagView = ImageAttachmentTagView(label: tagLabel)
-                    .environment(\.colorScheme, currentColorScheme)
-                let renderer = ImageRenderer(content: tagView)
-                let scale = NSScreen.main?.backingScaleFactor ?? 2.0
-                renderer.scale = scale
-                renderer.isOpaque = false
-
-                guard let cgImage = renderer.cgImage else {
-                    NSLog("🖼️ makeImageAttachment: FAILED to render tag CGImage")
-                    return fallbackAttributedString()
-                }
-
-                displaySize = CGSize(
-                    width: CGFloat(cgImage.width) / scale,
-                    height: CGFloat(cgImage.height) / scale
-                )
-
-                let renderedImage = NSImage(size: displaySize)
-                renderedImage.addRepresentation(NSBitmapImageRep(cgImage: cgImage))
-
-                attachment = NoteImageAttachment(filename: filename)
-                attachment.image = renderedImage
-                attachment.attachmentCell = NSTextAttachmentCell(imageCell: renderedImage)
-
-
-                attachment.bounds = CGRect(
-                    x: 0,
-                    y: Self.imageTagVerticalOffset(for: displaySize.height),
-                    width: displaySize.width,
-                    height: displaySize.height
-                )
+                let attachment = NoteImageAttachment(filename: filename, widthRatio: widthRatio)
+                let cellSize = CGSize(width: displayWidth, height: displayHeight)
+                attachment.attachmentCell = ImageSizeAttachmentCell(size: cellSize)
+                attachment.bounds = CGRect(origin: .zero, size: cellSize)
 
                 let attributed = NSMutableAttributedString(attachment: attachment)
-                let attachmentRange = NSRange(location: 0, length: attributed.length)
-                attributed.addAttribute(.imageFilename, value: filename, range: attachmentRange)
+                let range = NSRange(location: 0, length: attributed.length)
+                attributed.addAttribute(.imageFilename, value: filename, range: range)
+                attributed.addAttribute(.imageWidthRatio, value: widthRatio, range: range)
 
-                let sizeDescription: String
-                sizeDescription = NSStringFromSize(
-                    NSSize(width: displaySize.width, height: displaySize.height))
+                // Block paragraph style
+                let blockStyle = NSMutableParagraphStyle()
+                blockStyle.alignment = .left
+                blockStyle.paragraphSpacing = 8
+                blockStyle.paragraphSpacingBefore = 8
+                attributed.addAttribute(.paragraphStyle, value: blockStyle, range: range)
 
                 return attributed
             }
@@ -1383,592 +1533,24 @@ struct URLPasteOptionMenu: View {
                 return attributed
             }
 
-            private func ensurePreviewInfrastructure(for textView: NSTextView) {
-                if previewHostView == nil {
-                    previewHostView = textView.enclosingScrollView?.contentView
-                }
-
-                guard let host = previewHostView else { return }
-
-                if imagePreviewView == nil {
-                    let preview = ImagePreviewView(frame: .zero)
-                    preview.isHidden = true
-                    preview.colorScheme = currentColorScheme
-                    host.addSubview(preview)
-                    imagePreviewView = preview
-                }
-            }
-
-            private func previewDisplaySize(for image: NSImage) -> CGSize {
-                let maxDimension: CGFloat = 62
-                let imageSize = image.size
-                guard imageSize.width > 0, imageSize.height > 0 else {
-                    return CGSize(width: maxDimension, height: maxDimension)
-                }
-
-                if imageSize.width >= imageSize.height {
-                    let height = maxDimension
-                    let width = maxDimension * (imageSize.width / imageSize.height)
-                    return CGSize(width: width, height: height)
-                } else {
-                    let width = maxDimension
-                    let height = maxDimension * (imageSize.height / imageSize.width)
-                    return CGSize(width: width, height: height)
-                }
-            }
-
-            private func showImagePreview(
-                for filename: String,
-                attachment: NSTextAttachment,
-                characterIndex: Int,
-                at rectInView: CGRect,
-                in textView: NSTextView
-            ) {
-                showAttachmentPreview(
-                    identifier: filename,
-                    attachment: attachment,
-                    characterIndex: characterIndex,
-                    at: rectInView,
-                    in: textView
-                ) {
-                    guard let imageURL = ImageStorageManager.shared.getImageURL(for: filename) else {
-                        return nil
-                    }
-                    return NSImage(contentsOf: imageURL)
-                }
-            }
-
-            private func showFilePreview(
-                metadata: FileAttachmentMetadata,
-                attachment: NSTextAttachment,
-                characterIndex: Int,
-                at rectInView: CGRect,
-                in textView: NSTextView
-            ) {
-                showAttachmentPreview(
-                    identifier: metadata.storedFilename,
-                    attachment: attachment,
-                    characterIndex: characterIndex,
-                    at: rectInView,
-                    in: textView
-                ) {
-                    guard let fileURL = FileAttachmentStorageManager.shared.fileURL(
-                        for: metadata.storedFilename
-                    ) else {
-                        return nil
-                    }
-                    return generateFilePreviewImage(for: fileURL, displayLabel: metadata.displayLabel)
-                }
-            }
-
-            private func showAttachmentPreview(
-                identifier: String,
-                attachment: NSTextAttachment,
-                characterIndex: Int,
-                at rectInView: CGRect,
-                in textView: NSTextView,
-                imageProvider: () -> NSImage?
-            ) {
-                ensurePreviewInfrastructure(for: textView)
-
-                guard let preview = imagePreviewView else { return }
-
-                preview.colorScheme = currentColorScheme
-
-                let cacheKey = identifier as NSString
-                var resolvedImage = Self.previewImageCache.object(forKey: cacheKey)
-                if resolvedImage == nil {
-                    resolvedImage = imageProvider()
-                    if let resolvedImage {
-                        Self.previewImageCache.setObject(resolvedImage, forKey: cacheKey)
-                    }
-                }
-
-                guard let image = resolvedImage else {
-                    hideImagePreview()
-                    return
-                }
-
-                let isNewAttachment = currentPreviewIdentifier != identifier
-
-                if isNewAttachment {
-                    let displaySize = previewDisplaySize(for: image)
-                    preview.configure(image: image, displaySize: displaySize)
-                    currentPreviewIdentifier = identifier
-                    cachedAttachmentRect = rectInView
-                } else if cachedAttachmentRect == nil {
-                    cachedAttachmentRect = rectInView
-                }
-
-                if let cached = cachedAttachmentRect {
-                    let deltaX = abs(cached.midX - rectInView.midX)
-                    let deltaY = abs(cached.midY - rectInView.midY)
-                    if deltaX > 0.75 || deltaY > 0.75 {
-                        cachedAttachmentRect = rectInView
-                    }
-                }
-
-                let positioningRect = cachedAttachmentRect ?? rectInView
-
-                let previewSize = preview.frame.size
-                let verticalSpacing: CGFloat = 8
-                let minPadding: CGFloat = 12
-
-                func clampedFrame(
-                    anchorRect: CGRect,
-                    containerBounds: CGRect,
-                    containerIsFlipped: Bool
-                ) -> CGRect {
-                    var frame = CGRect(origin: .zero, size: previewSize)
-                    let minX = containerBounds.minX + minPadding
-                    let maxX = containerBounds.maxX - frame.width - minPadding
-                    let desiredCenterX = anchorRect.midX
-                    frame.origin.x = desiredCenterX - frame.width / 2
-                    frame.origin.x = min(maxX, max(minX, frame.origin.x))
-
-                    let boundsMinY = containerBounds.minY + minPadding
-                    let boundsMaxY = containerBounds.maxY - minPadding
-
-                    if containerIsFlipped {
-                        let aboveOrigin = anchorRect.minY - verticalSpacing - frame.height
-                        let aboveFits = aboveOrigin >= boundsMinY
-                        let belowOrigin = anchorRect.maxY + verticalSpacing
-                        let belowFits = belowOrigin + frame.height <= boundsMaxY
-
-                        if aboveFits {
-                            frame.origin.y = min(aboveOrigin, boundsMaxY - frame.height)
-                        } else if belowFits {
-                            frame.origin.y = max(belowOrigin, boundsMinY)
-                        } else {
-                            let clamped = max(boundsMinY, min(aboveOrigin, boundsMaxY - frame.height))
-                            frame.origin.y = clamped
-                        }
-                    } else {
-                        let aboveOrigin = anchorRect.maxY + verticalSpacing
-                        let aboveFits = aboveOrigin + frame.height <= boundsMaxY
-                        let belowOrigin = anchorRect.minY - verticalSpacing - frame.height
-                        let belowFits = belowOrigin >= boundsMinY
-
-                        if aboveFits {
-                            frame.origin.y = aboveOrigin
-                        } else if belowFits {
-                            frame.origin.y = belowOrigin
-                        } else {
-                            let clamped = max(boundsMinY, min(aboveOrigin, boundsMaxY - frame.height))
-                            frame.origin.y = clamped
-                        }
-                    }
-
-                    frame.origin.x = round(frame.origin.x)
-                    frame.origin.y = round(frame.origin.y)
-                    return frame
-                }
-
-                applyHoverEffectIfNeeded(to: textView)
-
-                let overlayImage = attachmentImage(
-                    attachment,
-                    in: textView,
-                    characterIndex: characterIndex
-                )
-
-                hideUnderlyingAttachment(attachment, characterIndex: characterIndex, in: textView)
-
-                if let host = previewHostView ?? textView.superview {
-                    var anchorInHost = textView.convert(positioningRect, to: host)
-                    anchorInHost.origin.x = round(anchorInHost.origin.x)
-                    anchorInHost.origin.y = round(anchorInHost.origin.y)
-
-                    if let image = overlayImage {
-                        let overlay = ensureHoverTagOverlay(in: host, relativeTo: textView)
-                        overlay.image = image
-                        overlay.frame = anchorInHost.integral
-                        overlay.layer?.cornerRadius = overlay.frame.height / 2
-                        overlay.layer?.cornerCurve = .continuous
-                        overlay.layer?.masksToBounds = true
-                    } else {
-                        clearHoverTagOverlay()
-                    }
-
-                    let referenceView = hoverTagOverlayView ?? textView
-
-                    if preview.superview !== host {
-                        host.addSubview(preview, positioned: .above, relativeTo: referenceView)
-                    } else {
-                        host.addSubview(preview, positioned: .above, relativeTo: referenceView)
-                    }
-
-                    let framed = clampedFrame(
-                        anchorRect: anchorInHost,
-                        containerBounds: host.bounds,
-                        containerIsFlipped: host.isFlipped
-                    )
-                    preview.frame = framed
-                } else {
-                    clearHoverTagOverlay()
-
-                    var anchorInTextView = positioningRect
-                    anchorInTextView.origin.x = round(anchorInTextView.origin.x)
-                    anchorInTextView.origin.y = round(anchorInTextView.origin.y)
-
-                    let framed = clampedFrame(
-                        anchorRect: anchorInTextView,
-                        containerBounds: textView.bounds,
-                        containerIsFlipped: textView.isFlipped
-                    )
-                    preview.frame = framed
-                }
-
-                if isNewAttachment || preview.isHidden {
-                    preview.animateEntrance()
-                }
-
-                preview.isHidden = false
-            }
-
-            private func generateFilePreviewImage(for url: URL, displayLabel: String) -> NSImage? {
-                let maxDimension: CGFloat = 62
-                let scale = NSScreen.main?.backingScaleFactor ?? 2.0
-                let targetSize = CGSize(width: maxDimension * scale, height: maxDimension * scale)
-
-                if let cgImage = QLThumbnailImageCreate(
-                    kCFAllocatorDefault,
-                    url as CFURL,
-                    targetSize,
-                    nil
-                )?.takeRetainedValue() {
-                    let displaySize = CGSize(
-                        width: CGFloat(cgImage.width) / scale,
-                        height: CGFloat(cgImage.height) / scale
-                    )
-                    let image = NSImage(size: NSSize(width: displaySize.width, height: displaySize.height))
-                    image.addRepresentation(NSBitmapImageRep(cgImage: cgImage))
-                    return image
-                }
-
-                let icon = NSWorkspace.shared.icon(forFile: url.path)
-                icon.size = NSSize(width: maxDimension, height: maxDimension)
-                return icon
-            }
-
-            private func hideImagePreview() {
-                currentPreviewIdentifier = nil
-                // Clear cached rect when hiding preview to start fresh on next hover
-                cachedAttachmentRect = nil
-                imagePreviewView?.layer?.removeAllAnimations()
-                imagePreviewView?.isHidden = true
-                clearHoverTagOverlay()
-                if let textView {
-                    removeHoverEffect(from: textView)
-                }
-                restoreHiddenAttachment()
-                resetWebClipHover()
-            }
-
-            private func showWebClipHover(
-                attachment: NSTextAttachment,
-                characterIndex: Int,
-                at rectInTextView: CGRect,
-                in textView: NSTextView
-            ) {
-                if hoveredWebClipAttachment === attachment { return }
-                hoveredWebClipAttachment = attachment
-
-                // attachment.image is nil once the layout system moves it to a cell
-                let image = attachmentImage(attachment, in: textView, characterIndex: characterIndex)
-                    ?? attachment.image
-                guard let image else { return }
-
-                let scaleAmount: CGFloat = 1.06
-                let scaledSize = CGSize(
-                    width: rectInTextView.width * scaleAmount,
-                    height: rectInTextView.height * scaleAmount
-                )
-                let scaledOrigin = CGPoint(
-                    x: rectInTextView.midX - scaledSize.width / 2,
-                    y: rectInTextView.midY - scaledSize.height / 2
-                )
-                let scaledRect = CGRect(origin: scaledOrigin, size: scaledSize)
-
-                let host = previewHostView ?? textView.superview
-                guard let host else { return }
-
-                let rectInHost = textView.convert(scaledRect, to: host)
-                let overlay = ensureHoverTagOverlay(in: host, relativeTo: textView)
-                overlay.image = image
-                overlay.imageScaling = .scaleProportionallyUpOrDown
-                overlay.frame = rectInHost.integral
-                overlay.layer?.cornerRadius = rectInHost.height / 2
-                overlay.layer?.cornerCurve = .continuous
-                overlay.layer?.masksToBounds = true
-            }
-
-            private func resetWebClipHover() {
-                hoveredWebClipAttachment = nil
-            }
-
-            private func ensureHoverTagOverlay(in container: NSView, relativeTo referenceView: NSView) -> NSImageView {
-                if let existing = hoverTagOverlayView, existing.superview === container {
-                    container.addSubview(existing, positioned: .above, relativeTo: referenceView)
-                    return existing
-                }
-
-                hoverTagOverlayView?.removeFromSuperview()
-
-                let overlay = NSImageView(frame: .zero)
-                overlay.imageScaling = .scaleProportionallyUpOrDown
-                overlay.wantsLayer = true
-                overlay.layer?.masksToBounds = true
-                overlay.layer?.cornerCurve = .continuous
-                container.addSubview(overlay, positioned: .above, relativeTo: referenceView)
-                hoverTagOverlayView = overlay
-                return overlay
-            }
-
-            private func clearHoverTagOverlay() {
-                hoverTagOverlayView?.removeFromSuperview()
-                hoverTagOverlayView = nil
-            }
-
-            private func applyHoverEffectIfNeeded(to textView: NSTextView) {
-                guard !isHoverEffectApplied else { return }
-
-                textView.wantsLayer = true
-                textView.layerUsesCoreImageFilters = true
-                originalTextViewFilters = textView.layer?.filters
-
-                if let blur = CIFilter(name: "CIGaussianBlur") {
-                    blur.setDefaults()
-                    blur.setValue(2.0, forKey: kCIInputRadiusKey as String)
-                    textView.layer?.filters = [blur]
-                } else {
-                    textView.layer?.filters = nil
-                }
-
-                textView.alphaValue = 0.5
-                isHoverEffectApplied = true
-            }
-
-            private func removeHoverEffect(from textView: NSTextView) {
-                guard isHoverEffectApplied else { return }
-                textView.alphaValue = 1.0
-                textView.layer?.filters = originalTextViewFilters
-                textView.layerUsesCoreImageFilters = false
-                originalTextViewFilters = nil
-                isHoverEffectApplied = false
-            }
-
-            private func attachmentImage(
-                _ attachment: NSTextAttachment,
-                in textView: NSTextView,
-                characterIndex: Int
-            ) -> NSImage? {
-                if let cell = attachment.attachmentCell as? NSTextAttachmentCell {
-                    return cell.image
-                }
-                return attachment.image(
-                    forBounds: attachment.bounds,
-                    textContainer: textView.textContainer,
-                    characterIndex: characterIndex
-                )
-            }
-
-            private func hideUnderlyingAttachment(
-                _ attachment: NSTextAttachment,
-                characterIndex: Int,
-                in textView: NSTextView
-            ) {
-                restoreHiddenAttachment(except: attachment)
-
-                guard hiddenAttachmentState?.attachment !== attachment else { return }
-
-                let originalImage = attachment.image
-                let originalCell = attachment.attachmentCell
-
-                guard attachment.bounds.width > 0, attachment.bounds.height > 0 else { return }
-
-                if let transparent = makeTransparentImage(of: attachment.bounds.size) {
-                    attachment.image = transparent
-                    attachment.attachmentCell = NSTextAttachmentCell(imageCell: transparent)
-                } else {
-                    attachment.image = nil
-                    attachment.attachmentCell = nil
-                }
-
-                textView.layoutManager?.invalidateDisplay(
-                    forCharacterRange: NSRange(location: characterIndex, length: 1))
-
-                hiddenAttachmentState = HiddenAttachmentState(
-                    attachment: attachment,
-                    textView: textView,
-                    originalImage: originalImage,
-                    originalCell: originalCell,
-                    characterIndex: characterIndex
-                )
-            }
-
-            private func restoreHiddenAttachment(except attachmentToKeepHidden: NSTextAttachment? = nil) {
-                guard let state = hiddenAttachmentState else { return }
-                if let keepHidden = attachmentToKeepHidden, state.attachment === keepHidden {
-                    return
-                }
-
-                let attachment = state.attachment
-
-                attachment.image = state.originalImage
-                if let originalCell = state.originalCell {
-                    attachment.attachmentCell = originalCell
-                } else {
-                    attachment.attachmentCell = nil
-                }
-
-                state.textView?.layoutManager?.invalidateDisplay(
-                    forCharacterRange: NSRange(location: state.characterIndex, length: 1))
-
-                hiddenAttachmentState = nil
-            }
-
-            private func makeTransparentImage(of size: CGSize) -> NSImage? {
-                guard size.width > 0, size.height > 0 else { return nil }
-                let image = NSImage(size: size)
-                image.lockFocus()
-                NSColor.clear.setFill()
-                NSRect(origin: .zero, size: size).fill()
-                image.unlockFocus()
-                return image
-            }
 
             func endAttachmentHover() {
-                hideImagePreview()
+                // No-op — hover preview system removed
             }
 
             func handleAttachmentHover(at point: CGPoint, in textView: NSTextView) -> Bool {
-                // Fast path: if we're already showing a preview and the cursor is still within
-                // the cached rect (with tolerance), keep the preview stable without recalculating
-                if currentPreviewIdentifier != nil,
-                    let cachedRect = cachedAttachmentRect
-                {
-                    let toleranceRect = cachedRect.insetBy(dx: -hoverHitTolerance, dy: -hoverHitTolerance)
-                    if toleranceRect.contains(point) {
-                        // Still hovering over the same attachment - preview is already shown, no need to update
-                        return true
+                return false
+            }
+
+            /// Checks all image overlays for a resize edge at the given window point.
+            /// Returns the appropriate resize cursor, or nil if the point isn't on any edge.
+            func resizeCursorForPoint(_ windowPoint: CGPoint) -> NSCursor? {
+                for (_, overlay) in imageOverlays {
+                    if let cursor = overlay.cursorForPoint(windowPoint) {
+                        return cursor
                     }
                 }
-
-                guard let layoutManager = textView.layoutManager,
-                    let textStorage = textView.textStorage,
-                    let textContainer = textView.textContainer
-                else {
-                    hideImagePreview()
-                    return false
-                }
-
-                let containerPoint = CGPoint(
-                    x: point.x - textView.textContainerOrigin.x,
-                    y: point.y - textView.textContainerOrigin.y)
-
-                let glyphIndex = layoutManager.glyphIndex(for: containerPoint, in: textContainer)
-                if glyphIndex >= layoutManager.numberOfGlyphs {
-                    hideImagePreview()
-                    return false
-                }
-
-                let characterIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
-                guard characterIndex < textStorage.length else {
-                    hideImagePreview()
-                    return false
-                }
-
-                let attributes = textStorage.attributes(at: characterIndex, effectiveRange: nil)
-                guard let attachment = attributes[.attachment] as? NSTextAttachment else {
-                    hideImagePreview()
-                    return false
-                }
-
-                let previewTarget: AttachmentPreviewTarget
-                if let filename = attributes[.imageFilename] as? String {
-                    previewTarget = .image(filename: filename)
-                } else if let storedFilename = attributes[.fileStoredFilename] as? String,
-                          let originalFilename = attributes[.fileOriginalFilename] as? String,
-                          let typeIdentifier = attributes[.fileTypeIdentifier] as? String
-                {
-                    let displayLabel = (attributes[.fileDisplayLabel] as? String) ?? "File"
-                    let metadata = FileAttachmentMetadata(
-                        storedFilename: storedFilename,
-                        originalFilename: originalFilename,
-                        typeIdentifier: typeIdentifier,
-                        displayLabel: displayLabel
-                    )
-                    previewTarget = .file(metadata: metadata)
-                } else if attributes[.webClipDomain] != nil {
-                    previewTarget = .webClip(attachment: attachment)
-                } else {
-                    hideImagePreview()
-                    return false
-                }
-
-                let characterRange = NSRange(location: characterIndex, length: 1)
-                let glyphRange = layoutManager.glyphRange(
-                    forCharacterRange: characterRange,
-                    actualCharacterRange: nil)
-
-                guard glyphRange.length > 0 else {
-                    hideImagePreview()
-                    return false
-                }
-
-                // Get the bounding rect for the glyph - this is where it's visually rendered
-                let glyphRect = layoutManager.boundingRect(
-                    forGlyphRange: glyphRange,
-                    in: textContainer)
-                
-                // For attachments, glyphRect.origin.y is at the BASELINE
-                // The attachment's visual TOP is at baseline + attachment.bounds.origin.y
-                // (origin.y is negative for images taller than the line height)
-                let visualTop = glyphRect.origin.y + attachment.bounds.origin.y
-                
-                // Build the visual rect for the attachment
-                let drawingRect = CGRect(
-                    x: glyphRect.origin.x,
-                    y: visualTop,
-                    width: attachment.bounds.size.width,
-                    height: attachment.bounds.size.height
-                )
-
-                let rectInTextView = drawingRect.offsetBy(
-                    dx: textView.textContainerOrigin.x,
-                    dy: textView.textContainerOrigin.y)
-                
-                let detectionRect = rectInTextView.insetBy(
-                    dx: -hoverHitTolerance,
-                    dy: -hoverHitTolerance)
-
-                guard detectionRect.contains(point) else {
-                    hideImagePreview()
-                    return false
-                }
-
-                switch previewTarget {
-                case let .image(filename):
-                    showImagePreview(
-                        for: filename,
-                        attachment: attachment,
-                        characterIndex: characterIndex,
-                        at: rectInTextView,
-                        in: textView
-                    )
-                case let .file(metadata):
-                    showFilePreview(
-                        metadata: metadata,
-                        attachment: attachment,
-                        characterIndex: characterIndex,
-                        at: rectInTextView,
-                        in: textView
-                    )
-                case .webClip:
-                    break
-                }
-                return true
+                return nil
             }
 
             init(text: Binding<String>, colorScheme: ColorScheme, focusRequestID: UUID?, editorInstanceID: UUID? = nil) {
@@ -1982,33 +1564,23 @@ struct URLPasteOptionMenu: View {
                 typingAnimationManager?.clearAllAnimations()
                 observers.forEach { NotificationCenter.default.removeObserver($0) }
                 observers.removeAll()
+                imageOverlays.values.forEach { $0.removeFromSuperview() }
+                imageOverlays.removeAll()
             }
 
             func configure(with textView: NSTextView) {
                 self.textView = textView
-                let newHost = textView.enclosingScrollView?.contentView
-                if previewHostView !== newHost {
-                    imagePreviewView?.removeFromSuperview()
-                    imagePreviewView = nil
-                    clearHoverTagOverlay()
-                    removeHoverEffect(from: textView)
-                    restoreHiddenAttachment()
-                    previewHostView = newHost
+                // Overlay host: prefer the clip view if an NSScrollView exists,
+                // otherwise use the text view itself as fallback.
+                let newHost = textView.enclosingScrollView?.contentView ?? textView
+                if overlayHostView !== newHost {
+                    imageOverlays.values.forEach { $0.removeFromSuperview() }
+                    imageOverlays.removeAll()
+                    overlayHostView = newHost
                 }
-                ensurePreviewInfrastructure(for: textView)
-                if let clipView = newHost {
-                    clipView.postsBoundsChangedNotifications = true
-                    let observer = NotificationCenter.default.addObserver(
-                        forName: NSView.boundsDidChangeNotification,
-                        object: clipView,
-                        queue: .main
-                    ) { [weak self] _ in
-                        Task { @MainActor [weak self] in
-                            self?.hideImagePreview()
-                        }
-                    }
-                    observers.append(observer)
-                }
+                // Register as layout manager delegate for overlay position tracking
+                textView.layoutManager?.delegate = self
+                registerBoundsObserverIfNeeded(for: textView)
 
                 // Prevent layout shifts when gaining focus
                 NotificationCenter.default.addObserver(
@@ -2271,6 +1843,52 @@ struct URLPasteOptionMenu: View {
                     urlPasteMention, urlPasteSelectPlainLink, urlPasteDismiss,
                     applyColor,
                 ]
+            }
+
+            /// Registers a bounds-change observer on the text view's clip view so
+            /// overlays are repositioned on scroll. Safe to call multiple times — it
+            /// no-ops when the observer is already registered or the scroll view is
+            /// not yet available (will be retried from completeDeferredSetup).
+            private func registerBoundsObserverIfNeeded(for textView: NSTextView) {
+                guard !hasBoundsObserver,
+                      let clipView = textView.enclosingScrollView?.contentView else { return }
+                hasBoundsObserver = true
+                clipView.postsBoundsChangedNotifications = true
+                let observer = NotificationCenter.default.addObserver(
+                    forName: NSView.boundsDidChangeNotification,
+                    object: clipView,
+                    queue: .main
+                ) { [weak self] _ in
+                    Task { @MainActor [weak self] in
+                        if let tv = self?.textView {
+                            self?.updateImageOverlays(in: tv)
+                        }
+                    }
+                }
+                observers.append(observer)
+            }
+
+            /// Called from updateNSView once the view is in the hierarchy.
+            /// Completes any overlay work that was deferred during makeNSView.
+            func completeDeferredSetup(in textView: NSTextView) {
+                // Finish bounds-observer registration if configure() ran before
+                // the view had an enclosingScrollView.
+                if !hasBoundsObserver {
+                    registerBoundsObserverIfNeeded(for: textView)
+                }
+
+                // Upgrade overlay host from the text-view fallback to the clip view
+                // if an NSScrollView has appeared since configure() ran.
+                if let clipView = textView.enclosingScrollView?.contentView,
+                   overlayHostView !== clipView {
+                    needsDeferredOverlaySetup = true
+                }
+
+                // If applyInitialText couldn't create overlays, do it now.
+                if needsDeferredOverlaySetup {
+                    needsDeferredOverlaySetup = false
+                    updateImageOverlays(in: textView)
+                }
             }
 
             // MARK: - Proofread Overlay Helpers
@@ -2786,6 +2404,13 @@ struct URLPasteOptionMenu: View {
                 textView.needsLayout = true
 
                 isUpdating = false
+                // Create image overlays. updateImageOverlays now falls back to
+                // the text view itself as host when there's no enclosingScrollView,
+                // so this works even during makeNSView before the view hierarchy exists.
+                // Mark deferred so completeDeferredSetup can upgrade the host later
+                // if an NSScrollView appears (better coordinate system).
+                updateImageOverlays(in: textView)
+                needsDeferredOverlaySetup = true
             }
 
             // Ensures all text has the correct foreground color attribute
@@ -2815,6 +2440,8 @@ struct URLPasteOptionMenu: View {
                 textView.setSelectedRange(selectedRange)
 
                 isUpdating = false
+                // Ensure image overlays are created for deserialized attachments
+                updateImageOverlays(in: textView)
             }
 
             func textDidChange(_ notification: Notification) {
@@ -3228,38 +2855,43 @@ struct URLPasteOptionMenu: View {
             }
             
             private func insertImage(filename: String) {
-                NSLog("📝 insertImage: Called with filename: %@", filename)
-                guard let textView = textView else {
-                    NSLog("📝 insertImage: textView is nil")
-                    return
-                }
+                guard let textView = textView,
+                      let textStorage = textView.textStorage else { return }
 
-                let selectionRange = textView.selectedRange()
-                let storageString = textView.textStorage?.string ?? ""
-                let nsString = storageString as NSString
-                let baseAttributes = Self.baseTypingAttributes(for: currentColorScheme)
-
+                let baseAttrs = Self.baseTypingAttributes(for: currentColorScheme)
                 let composed = NSMutableAttributedString()
 
-                if needsLeadingSpace(before: selectionRange, in: nsString) {
-                    let leadingSpace = NSAttributedString(string: " ", attributes: baseAttributes)
-                    composed.append(leadingSpace)
+                let insertAt = min(textView.selectedRange().location, textStorage.length)
+                let nsString = textStorage.string as NSString
+
+                // Ensure we start on a new line
+                if insertAt > 0 {
+                    let prevChar = nsString.character(at: insertAt - 1)
+                    if let scalar = Unicode.Scalar(prevChar),
+                       !CharacterSet.newlines.contains(scalar) {
+                        composed.append(NSAttributedString(string: "\n", attributes: baseAttrs))
+                    }
                 }
 
-                NSLog("📝 insertImage: Creating inline image tag attachment")
-                let nextNumber = nextImageNumber(in: textView.textStorage)
-                let attachment = makeImageAttachment(filename: filename, imageNumber: nextNumber)
-                composed.append(attachment)
+                // Block-level image attachment
+                let imageAttrib = makeImageAttachment(filename: filename, widthRatio: 0.33)
+                composed.append(imageAttrib)
 
-                if needsTrailingSpace(after: selectionRange, in: nsString) {
-                    let trailingSpace = NSAttributedString(string: " ", attributes: baseAttributes)
-                    composed.append(trailingSpace)
+                // Newline after so the cursor lands on the next line
+                composed.append(NSAttributedString(string: "\n", attributes: baseAttrs))
+
+                let replaceRange = NSRange(location: insertAt, length: 0)
+                if textView.shouldChangeText(in: replaceRange, replacementString: composed.string) {
+                    isUpdating = true
+                    textStorage.beginEditing()
+                    textStorage.replaceCharacters(in: replaceRange, with: composed)
+                    textStorage.endEditing()
+                    textView.setSelectedRange(NSRange(location: insertAt + composed.length, length: 0))
+                    textView.didChangeText()
+                    isUpdating = false
                 }
-
-                replaceSelection(with: composed)
 
                 syncText()
-                NSLog("📝 insertImage: Completed")
             }
 
             private func insertFileAttachment(
@@ -3323,76 +2955,8 @@ struct URLPasteOptionMenu: View {
                 return !CharacterSet.whitespacesAndNewlines.contains(scalar)
             }
 
-            private func nextImageNumber(in textStorage: NSTextStorage?) -> Int {
-                guard let textStorage else { return 1 }
-                return max(1, imageAttachmentCount(in: textStorage) + 1)
-            }
-
-            private func imageAttachmentCount(in attributedString: NSAttributedString) -> Int {
-                let fullRange = NSRange(location: 0, length: attributedString.length)
-                guard fullRange.length > 0 else { return 0 }
-
-                var count = 0
-                attributedString.enumerateAttributes(in: fullRange, options: []) { attributes, _, _ in
-                    if attributes[.imageFilename] != nil
-                        || attributes[.attachment] is NoteImageAttachment
-                    {
-                        count += 1
-                    }
-                }
-                return count
-            }
-
-            private func renumberImageAttachments() {
-                guard let textView = textView,
-                    let textStorage = textView.textStorage
-                else { return }
-
-                let fullRange = NSRange(location: 0, length: textStorage.length)
-                guard fullRange.length > 0 else { return }
-
-                var replacements: [(range: NSRange, filename: String, number: Int)] = []
-                var counter = 0
-
-                textStorage.enumerateAttributes(in: fullRange, options: []) { attributes, range, _ in
-                    if let filename = attributes[.imageFilename] as? String {
-                        counter += 1
-                        replacements.append((range: range, filename: filename, number: counter))
-                    } else if let attachment = attributes[.attachment] as? NoteImageAttachment {
-                        counter += 1
-                        replacements.append(
-                            (range: range, filename: attachment.storedFilename, number: counter)
-                        )
-                    }
-                }
-
-                guard !replacements.isEmpty else { return }
-
-                let originalSelection = textView.selectedRange()
-                textStorage.beginEditing()
-                for replacement in replacements.reversed() {
-                    let updatedAttachment = makeImageAttachment(
-                        filename: replacement.filename,
-                        imageNumber: replacement.number
-                    )
-                    textStorage.replaceCharacters(in: replacement.range, with: updatedAttachment)
-                }
-                textStorage.endEditing()
-
-                let maxLocation = textStorage.length
-                let clampedLocation = min(originalSelection.location, maxLocation)
-                let clampedLength = min(
-                    originalSelection.length,
-                    max(0, maxLocation - clampedLocation)
-                )
-                textView.setSelectedRange(
-                    NSRange(location: clampedLocation, length: clampedLength)
-                )
-            }
-
             private func replaceSelection(with attributed: NSAttributedString) {
                 guard let textView = textView else { return }
-                hideImagePreview()
                 var range = textView.selectedRange()
                 let storageLength = textView.textStorage?.length ?? 0
 
@@ -3433,11 +2997,215 @@ struct URLPasteOptionMenu: View {
             private func syncText() {
                 guard let textView = textView else { return }
                 isUpdating = true
-                renumberImageAttachments()
                 styleTodoParagraphs()
                 lastSerialized = serialize()
                 textBinding.wrappedValue = lastSerialized
                 isUpdating = false
+                updateImageOverlays(in: textView)
+            }
+
+            // MARK: - Inline Image Overlay Management
+
+            private func updateImageOverlays(in textView: NSTextView) {
+                guard let textStorage = textView.textStorage,
+                      let layoutManager = textView.layoutManager,
+                      let textContainer = textView.textContainer else {
+                    return
+                }
+
+                // Prefer the enclosingScrollView's clipView as overlay host, but fall
+                // back to the text view itself when there is no NSScrollView ancestor
+                // (e.g. when hosted directly inside a SwiftUI ScrollView).
+                let hostView: NSView
+                if let clipView = textView.enclosingScrollView?.contentView {
+                    hostView = clipView
+                } else {
+                    hostView = textView
+                }
+
+                if overlayHostView !== hostView {
+                    imageOverlays.values.forEach { $0.removeFromSuperview() }
+                    imageOverlays.removeAll()
+                    overlayHostView = hostView
+                }
+
+                var seenIDs = Set<ObjectIdentifier>()
+                let fullRange = NSRange(location: 0, length: textStorage.length)
+                guard fullRange.length > 0 else {
+                    imageOverlays.values.forEach { $0.removeFromSuperview() }
+                    imageOverlays.removeAll()
+                    return
+                }
+
+                let containerWidth = textContainer.containerSize.width
+                // When the overlay host is the text view itself (no NSScrollView),
+                // positions are already in text-view-local coordinates.
+                let hostIsTextView = hostView === textView
+
+                var attachmentCount = 0
+                var needsLayoutInvalidation = false
+                textStorage.enumerateAttribute(.attachment, in: fullRange, options: []) { val, range, _ in
+                    guard let attachment = val as? NoteImageAttachment else { return }
+                    attachmentCount += 1
+                    let filename = attachment.storedFilename
+                    let id = ObjectIdentifier(attachment)
+                    seenIDs.insert(id)
+
+                    // ── Recalculate stale attachment bounds ──
+                    // During makeNSView, containerWidth is 0 (replaceLayoutManager resets it).
+                    // Attachments created then get bounds={0,0}. Once the real width is known,
+                    // recalculate bounds so the layout manager allocates proper glyph space.
+                    if containerWidth > 1 {
+                        let expectedWidth = containerWidth * attachment.widthRatio
+                        if abs(attachment.bounds.width - expectedWidth) > 1 {
+                            let aspectRatio: CGFloat
+                            let cacheKey = filename as NSString
+                            if let cachedImg = Self.inlineImageCache.object(forKey: cacheKey) {
+                                aspectRatio = cachedImg.size.height / cachedImg.size.width
+                            } else if let overlay = imageOverlays[id], let img = overlay.image {
+                                aspectRatio = img.size.height / img.size.width
+                            } else if let url = ImageStorageManager.shared.getImageURL(for: filename),
+                                      let img = NSImage(contentsOf: url) {
+                                aspectRatio = img.size.height / img.size.width
+                                Self.inlineImageCache.setObject(img, forKey: cacheKey)
+                            } else {
+                                aspectRatio = 3.0 / 4.0
+                            }
+                            let newSize = CGSize(width: expectedWidth, height: expectedWidth * aspectRatio)
+                            attachment.attachmentCell = ImageSizeAttachmentCell(size: newSize)
+                            attachment.bounds = CGRect(origin: .zero, size: newSize)
+                            layoutManager.invalidateLayout(forCharacterRange: range, actualCharacterRange: nil)
+                            needsLayoutInvalidation = true
+                        }
+                    }
+
+                    // Get glyph rect
+                    let glyphRange = layoutManager.glyphRange(
+                        forCharacterRange: range, actualCharacterRange: nil)
+                    guard glyphRange.length > 0 else {
+                        return
+                    }
+                    let glyphRect = layoutManager.boundingRect(
+                        forGlyphRange: glyphRange, in: textContainer)
+
+                    // Position in text-view-local coordinates
+                    let rectInTextView = CGRect(
+                        x: glyphRect.origin.x + textView.textContainerOrigin.x,
+                        y: glyphRect.origin.y + textView.textContainerOrigin.y,
+                        width: attachment.bounds.width,
+                        height: attachment.bounds.height
+                    )
+                    let overlayRect = hostIsTextView
+                        ? rectInTextView
+                        : textView.convert(rectInTextView, to: hostView)
+
+                    let ratio = attachment.widthRatio
+
+                    // Create or reuse overlay
+                    let overlay: InlineImageOverlayView
+                    if let existing = imageOverlays[id] {
+                        overlay = existing
+                    } else {
+                        overlay = InlineImageOverlayView(frame: .zero)
+                        overlay.storedFilename = filename
+                        overlay.containerWidth = containerWidth
+                        overlay.currentRatio = ratio
+                        overlay.parentTextView = textView
+
+                        overlay.onResizeEnded = { [weak self, weak textStorage, weak textView] newRatio in
+                            guard let self = self, let ts = textStorage, let tv = textView else { return }
+                            self.updateImageRatio(newRatio, attachment: attachment, in: ts, textView: tv)
+                        }
+
+                        // Load image from cache or async
+                        let cacheKey = filename as NSString
+                        if let cached = Self.inlineImageCache.object(forKey: cacheKey) {
+                            overlay.image = cached
+                        } else {
+                            Task.detached(priority: .userInitiated) { [weak overlay] in
+                                guard let url = ImageStorageManager.shared.getImageURL(for: filename),
+                                      let img = NSImage(contentsOf: url) else {
+                                    return
+                                }
+                                Self.inlineImageCache.setObject(img, forKey: cacheKey)
+                                let overlayAlive = overlay != nil
+                                await MainActor.run { overlay?.image = img }
+                            }
+                        }
+
+                        hostView.addSubview(overlay)
+                        imageOverlays[id] = overlay
+                    }
+
+                    overlay.frame = overlayRect.integral
+                    overlay.containerWidth = containerWidth
+                }
+
+                // Remove overlays for deleted attachments
+                let toRemove = imageOverlays.keys.filter { !seenIDs.contains($0) }
+                for key in toRemove {
+                    imageOverlays[key]?.removeFromSuperview()
+                    imageOverlays.removeValue(forKey: key)
+                }
+            }
+
+            private func updateImageRatio(
+                _ newRatio: CGFloat,
+                attachment: NoteImageAttachment,
+                in textStorage: NSTextStorage,
+                textView: NSTextView
+            ) {
+                let fullRange = NSRange(location: 0, length: textStorage.length)
+                var foundRange: NSRange?
+                textStorage.enumerateAttribute(.attachment, in: fullRange, options: []) { val, range, stop in
+                    if val as AnyObject === attachment {
+                        foundRange = range
+                        stop.pointee = true
+                    }
+                }
+                guard let charRange = foundRange else { return }
+
+                // Get image size for aspect ratio
+                let imageSize: CGSize
+                if let overlay = imageOverlays[ObjectIdentifier(attachment)],
+                   let img = overlay.image {
+                    imageSize = img.size
+                } else {
+                    imageSize = CGSize(width: 4, height: 3)
+                }
+
+                let containerWidth = textView.textContainer?.containerSize.width ?? 400
+                let displayWidth = containerWidth * newRatio
+                let aspectRatio = imageSize.height / imageSize.width
+                let displayHeight = displayWidth * aspectRatio
+
+                attachment.widthRatio = newRatio
+                let cellSize = CGSize(width: displayWidth, height: displayHeight)
+                attachment.attachmentCell = ImageSizeAttachmentCell(size: cellSize)
+                attachment.bounds = CGRect(origin: .zero, size: cellSize)
+
+                textStorage.beginEditing()
+                textStorage.addAttribute(.imageWidthRatio, value: newRatio, range: charRange)
+                textStorage.endEditing()
+
+                textView.layoutManager?.invalidateLayout(
+                    forCharacterRange: charRange, actualCharacterRange: nil)
+
+                syncText()
+            }
+
+            // MARK: - NSLayoutManagerDelegate
+
+            nonisolated func layoutManager(
+                _ layoutManager: NSLayoutManager,
+                didCompleteLayoutFor textContainer: NSTextContainer?,
+                atEnd layoutFinishedFlag: Bool
+            ) {
+                guard layoutFinishedFlag else { return }
+                Task { @MainActor [weak self] in
+                    guard let self = self, let tv = self.textView else { return }
+                    self.updateImageOverlays(in: tv)
+                }
             }
 
             /// Fixes any text that has inconsistent font formatting (e.g., from Writing Tools)
@@ -3525,6 +3293,7 @@ struct URLPasteOptionMenu: View {
 
                     var isTodoParagraph = false
                     var isWebClipParagraph = false
+                    var isImageParagraph = false
 
                     textStorage.enumerateAttribute(
                         .attachment,
@@ -3547,6 +3316,11 @@ struct URLPasteOptionMenu: View {
                                 isWebClipParagraph = true
                                 stop.pointee = true
                             }
+                            // Check if it's a block-level image attachment
+                            else if attachment is NoteImageAttachment {
+                                isImageParagraph = true
+                                stop.pointee = true
+                            }
                         }
                     }
 
@@ -3563,7 +3337,14 @@ struct URLPasteOptionMenu: View {
                     }
 
                     // Apply appropriate paragraph style based on content type
-                    if isWebClipParagraph {
+                    if isImageParagraph {
+                        // Preserve block image paragraph style — do not override
+                        let imgStyle = NSMutableParagraphStyle()
+                        imgStyle.alignment = .left
+                        imgStyle.paragraphSpacing = 8
+                        imgStyle.paragraphSpacingBefore = 8
+                        textStorage.addAttribute(.paragraphStyle, value: imgStyle, range: substringRange)
+                    } else if isWebClipParagraph {
                         textStorage.addAttribute(.paragraphStyle, value: Self.webClipParagraphStyle(), range: substringRange)
                     } else if isTodoParagraph {
                         textStorage.addAttribute(.paragraphStyle, value: Self.todoParagraphStyle(), range: substringRange)
@@ -3581,8 +3362,8 @@ struct URLPasteOptionMenu: View {
                         textStorage.addAttribute(.paragraphStyle, value: mutableStyle, range: substringRange)
                     }
 
-                    // Don't adjust baseline for todo, web clip, or heading paragraphs
-                    if !isTodoParagraph && !isWebClipParagraph && !isHeadingParagraph {
+                    // Don't adjust baseline for todo, web clip, heading, or image paragraphs
+                    if !isTodoParagraph && !isWebClipParagraph && !isHeadingParagraph && !isImageParagraph {
                         textStorage.addAttribute(
                             .baselineOffset, value: Self.baseBaselineOffset, range: substringRange)
                     }
@@ -3662,9 +3443,19 @@ struct URLPasteOptionMenu: View {
                         !(attachment.attachmentCell is TodoCheckboxAttachmentCell)
                     {
                         if let filename = attributes[.imageFilename] as? String {
-                            output.append("[[image|||\(filename)]]")
+                            let ratio = attributes[.imageWidthRatio] as? CGFloat ?? 1.0
+                            if abs(ratio - 1.0) < 0.001 {
+                                output.append("[[image|||\(filename)]]")
+                            } else {
+                                output.append("[[image|||\(filename)|||\(String(format: "%.4f", ratio))]]")
+                            }
                         } else if let noteAttachment = attachment as? NoteImageAttachment {
-                            output.append("[[image|||\(noteAttachment.storedFilename)]]")
+                            let ratio = noteAttachment.widthRatio
+                            if abs(ratio - 1.0) < 0.001 {
+                                output.append("[[image|||\(noteAttachment.storedFilename)]]")
+                            } else {
+                                output.append("[[image|||\(noteAttachment.storedFilename)|||\(String(format: "%.4f", ratio))]]")
+                            }
                         } else if let fileWrapper = attachment.fileWrapper,
                                 let filename = fileWrapper.preferredFilename ?? fileWrapper.filename,
                                 !filename.isEmpty,
@@ -3931,40 +3722,38 @@ struct URLPasteOptionMenu: View {
                                 )
                             {
                                 let filename = Self.string(from: match, at: 1, in: imageText)
-                                
-                                // Ensure spacing around inline attachment
+                                let ratioString = Self.string(from: match, at: 2, in: imageText)
+                                let widthRatio = Double(ratioString).map { CGFloat($0) } ?? 1.0
+
+                                // Block-level: ensure newline before image
                                 let baseAttributes = Self.baseTypingAttributes(
                                     for: currentColorScheme)
                                 if result.length > 0,
                                     let lastScalar = result.string.unicodeScalars.last,
-                                    !CharacterSet.whitespacesAndNewlines.contains(lastScalar)
+                                    !CharacterSet.newlines.contains(lastScalar)
                                 {
-                                    let leadingSpace = NSAttributedString(
-                                        string: " ", attributes: baseAttributes)
-                                    result.append(leadingSpace)
+                                    result.append(NSAttributedString(
+                                        string: "\n", attributes: baseAttributes))
                                 }
 
-                                imageCounter += 1
                                 let attachment = makeImageAttachment(
                                     filename: filename,
-                                    imageNumber: imageCounter
+                                    widthRatio: widthRatio
                                 )
                                 result.append(attachment)
 
-                                let shouldAddTrailingSpace: Bool
+                                // Ensure newline after so text doesn't flow inline
                                 if endIndex < text.endIndex {
-                                    let nextCharacter = text[endIndex]
-                                    shouldAddTrailingSpace = !nextCharacter.isWhitespace
+                                    let nextChar = text[endIndex]
+                                    if !nextChar.isNewline {
+                                        result.append(NSAttributedString(
+                                            string: "\n", attributes: baseAttributes))
+                                    }
                                 } else {
-                                    shouldAddTrailingSpace = true
+                                    result.append(NSAttributedString(
+                                        string: "\n", attributes: baseAttributes))
                                 }
 
-                                if shouldAddTrailingSpace {
-                                    let trailingSpace = NSAttributedString(
-                                        string: " ", attributes: baseAttributes)
-                                    result.append(trailingSpace)
-                                }
-                                
                                 index = endIndex
                                 lastWasWebClip = false
                                 continue
@@ -4347,6 +4136,13 @@ struct URLPasteOptionMenu: View {
         }
 
         override func mouseMoved(with event: NSEvent) {
+            // Check image overlay edges BEFORE calling super — NSTextView's
+            // mouseMoved forcibly resets the cursor to i-beam, overriding any
+            // cursor rects on subviews. Suppressing super is the only way to win.
+            if let cursor = actionDelegate?.resizeCursorForPoint(event.locationInWindow) {
+                cursor.set()
+                return
+            }
             super.mouseMoved(with: event)
             let point = convert(event.locationInWindow, from: nil)
             if actionDelegate?.handleAttachmentHover(at: point, in: self) != true {
