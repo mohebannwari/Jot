@@ -239,21 +239,3 @@ struct CreateFolderSheet: View {
     }
 }
 
-// MARK: - Color to Hex
-
-private extension Color {
-    func toHexString() -> String {
-        #if os(macOS)
-        let nsColor = NSColor(self).usingColorSpace(.deviceRGB) ?? NSColor(self)
-        let r = nsColor.redComponent
-        let g = nsColor.greenComponent
-        let b = nsColor.blueComponent
-        #else
-        var r: CGFloat = 0
-        var g: CGFloat = 0
-        var b: CGFloat = 0
-        UIColor(self).getRed(&r, green: &g, blue: &b, alpha: nil)
-        #endif
-        return String(format: "#%02x%02x%02x", Int(r * 255), Int(g * 255), Int(b * 255))
-    }
-}

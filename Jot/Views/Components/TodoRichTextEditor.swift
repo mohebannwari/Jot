@@ -11,8 +11,6 @@ import SwiftUI
 
 import AppKit
 import QuartzCore
-import CoreImage
-import QuickLook
 import UniformTypeIdentifiers
 
 extension NSAttributedString.Key {
@@ -663,7 +661,7 @@ struct TodoRichTextEditor: View {
             }
         }
         .onReceive(
-            NotificationCenter.default.publisher(for: Notification.Name("TodoToolbarAction"))
+            NotificationCenter.default.publisher(for: .todoToolbarAction)
         ) { notification in
             if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
             NotificationCenter.default.post(name: .insertTodoInEditor, object: nil, userInfo: editorInstanceID.map { ["editorInstanceID": $0] })
@@ -1007,6 +1005,10 @@ struct URLPasteOptionMenu: View {
             // creation and the bounds-change observer registration are deferred.
             // By the time SwiftUI calls updateNSView the view IS hosted — finish setup.
             context.coordinator.completeDeferredSetup(in: textView)
+
+            // Reposition overlays on every SwiftUI layout pass — catches frame
+            // changes from sizeThatFits, AI panel insertion/removal, etc.
+            context.coordinator.updateImageOverlays(in: textView)
         }
 
         // Report dynamic size to SwiftUI so the editor grows with its content naturally
@@ -1570,9 +1572,13 @@ struct URLPasteOptionMenu: View {
 
             func configure(with textView: NSTextView) {
                 self.textView = textView
-                // Overlay host: prefer the clip view if an NSScrollView exists,
-                // otherwise use the text view itself as fallback.
-                let newHost = textView.enclosingScrollView?.contentView ?? textView
+                // Always host overlays on the text view itself so they are
+                // positioned in text-view-local coordinates and scroll
+                // naturally with the content. Using the clip view required
+                // coordinate conversion (textView.convert → clipView) that
+                // became stale whenever SwiftUI re-laid-out the view hierarchy
+                // (e.g. AI panels appearing) without triggering an overlay update.
+                let newHost: NSView = textView
                 if overlayHostView !== newHost {
                     imageOverlays.values.forEach { $0.removeFromSuperview() }
                     imageOverlays.removeAll()
@@ -1877,10 +1883,9 @@ struct URLPasteOptionMenu: View {
                     registerBoundsObserverIfNeeded(for: textView)
                 }
 
-                // Upgrade overlay host from the text-view fallback to the clip view
-                // if an NSScrollView has appeared since configure() ran.
-                if let clipView = textView.enclosingScrollView?.contentView,
-                   overlayHostView !== clipView {
+                // Ensure overlay host is the text view (may still be nil from
+                // initial configure if called before the view was in hierarchy).
+                if overlayHostView !== textView {
                     needsDeferredOverlaySetup = true
                 }
 
@@ -2217,6 +2222,8 @@ struct URLPasteOptionMenu: View {
 
                 DispatchQueue.main.async {
                     textView.window?.makeFirstResponder(textView)
+                    let endPosition = textView.string.utf16.count
+                    textView.setSelectedRange(NSRange(location: endPosition, length: 0))
                 }
             }
 
@@ -3006,22 +3013,16 @@ struct URLPasteOptionMenu: View {
 
             // MARK: - Inline Image Overlay Management
 
-            private func updateImageOverlays(in textView: NSTextView) {
+            func updateImageOverlays(in textView: NSTextView) {
                 guard let textStorage = textView.textStorage,
                       let layoutManager = textView.layoutManager,
                       let textContainer = textView.textContainer else {
                     return
                 }
 
-                // Prefer the enclosingScrollView's clipView as overlay host, but fall
-                // back to the text view itself when there is no NSScrollView ancestor
-                // (e.g. when hosted directly inside a SwiftUI ScrollView).
-                let hostView: NSView
-                if let clipView = textView.enclosingScrollView?.contentView {
-                    hostView = clipView
-                } else {
-                    hostView = textView
-                }
+                // Always host overlays on the text view so they use text-view-local
+                // coordinates and scroll naturally with content — no conversion needed.
+                let hostView: NSView = textView
 
                 if overlayHostView !== hostView {
                     imageOverlays.values.forEach { $0.removeFromSuperview() }
@@ -3038,9 +3039,6 @@ struct URLPasteOptionMenu: View {
                 }
 
                 let containerWidth = textContainer.containerSize.width
-                // When the overlay host is the text view itself (no NSScrollView),
-                // positions are already in text-view-local coordinates.
-                let hostIsTextView = hostView === textView
 
                 var attachmentCount = 0
                 var needsLayoutInvalidation = false
@@ -3079,6 +3077,14 @@ struct URLPasteOptionMenu: View {
                         }
                     }
 
+                    // Ensure layout is settled before querying glyph positions.
+                    // Without this, boundingRect can return stale Y values when
+                    // called right after styleTodoParagraphs invalidated layout.
+                    let ensureGlyphs = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+                    if ensureGlyphs.length > 0 {
+                        layoutManager.ensureLayout(forGlyphRange: ensureGlyphs)
+                    }
+
                     // Get glyph rect
                     let glyphRange = layoutManager.glyphRange(
                         forCharacterRange: range, actualCharacterRange: nil)
@@ -3088,16 +3094,13 @@ struct URLPasteOptionMenu: View {
                     let glyphRect = layoutManager.boundingRect(
                         forGlyphRange: glyphRange, in: textContainer)
 
-                    // Position in text-view-local coordinates
-                    let rectInTextView = CGRect(
+                    // Position in text-view-local coordinates (host is always the text view)
+                    let overlayRect = CGRect(
                         x: glyphRect.origin.x + textView.textContainerOrigin.x,
                         y: glyphRect.origin.y + textView.textContainerOrigin.y,
                         width: attachment.bounds.width,
                         height: attachment.bounds.height
                     )
-                    let overlayRect = hostIsTextView
-                        ? rectInTextView
-                        : textView.convert(rectInTextView, to: hostView)
 
                     let ratio = attachment.widthRatio
 
@@ -4357,7 +4360,7 @@ struct URLPasteOptionMenu: View {
         }
         
         @objc private func insertTodo(_ sender: Any?) {
-            NotificationCenter.default.post(name: Notification.Name("TodoToolbarAction"), object: nil)
+            NotificationCenter.default.post(name: .todoToolbarAction, object: nil)
         }
         
         @objc private func insertBulletList(_ sender: Any?) {
@@ -4515,7 +4518,4 @@ extension Notification.Name {
     static let showInNoteSearch = Notification.Name("ShowInNoteSearch")
     static let highlightSearchMatches = Notification.Name("HighlightSearchMatches")
     static let clearSearchHighlights = Notification.Name("ClearSearchHighlights")
-
-    // Settings
-    static let openSettings = Notification.Name("openSettings")
 }

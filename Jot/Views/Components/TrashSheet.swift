@@ -157,9 +157,11 @@ struct TrashSheet: View {
                         .foregroundColor(Color("SecondaryTextColor"))
                         .frame(width: 18, height: 18)
                         .frame(width: 26, height: 26)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .subtleHoverScale(1.2)
+                .contentShape(Rectangle())
+                .subtleHoverScale(1.05)
                 .help("Restore")
 
                 // Permanent delete button
@@ -179,9 +181,11 @@ struct TrashSheet: View {
                         .foregroundColor(.red.opacity(0.8))
                         .frame(width: 18, height: 18)
                         .frame(width: 26, height: 26)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .subtleHoverScale(1.2)
+                .contentShape(Rectangle())
+                .subtleHoverScale(1.05)
                 .help("Delete permanently")
             }
         }

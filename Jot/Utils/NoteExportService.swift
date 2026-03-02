@@ -437,27 +437,9 @@ final class NoteExportService {
         return (cleanContent, imageFilenames)
     }
 
-    /// Save file using NSSavePanel
-    /// CRITICAL: This must be called from a synchronous context to allow runModal() to work
-    private nonisolated func saveFile(data: Data, filename: String, fileExtension: String) -> Bool {
-        // runModal() MUST run on the main thread in a synchronous context
-        // We use DispatchQueue.main.sync to escape the async context
-        var result = false
-
-        // If already on main thread, execute directly. Otherwise use sync dispatch.
-        if Thread.isMainThread {
-            result = saveFileOnMainThread(data: data, filename: filename, fileExtension: fileExtension)
-        } else {
-            DispatchQueue.main.sync {
-                result = saveFileOnMainThread(data: data, filename: filename, fileExtension: fileExtension)
-            }
-        }
-
-        return result
-    }
-
-    /// Helper to run save panel on main thread
-    private nonisolated func saveFileOnMainThread(data: Data, filename: String, fileExtension: String) -> Bool {
+    /// Save file using NSSavePanel — always called on main thread
+    @MainActor
+    private func saveFile(data: Data, filename: String, fileExtension: String) -> Bool {
         NSLog("NoteExportService: Starting save file dialog for %@.%@", filename, fileExtension)
 
         let savePanel = NSSavePanel()

@@ -230,6 +230,15 @@ struct ContentView: View {
     private var iconLeading: CGFloat { trafficLightMetrics.iconLeading }
     /// Icon top derived from the actual traffic light zoom button position.
     private var iconTop: CGFloat { trafficLightMetrics.iconTop }
+    /// Top padding for split pane controls / sticky header.
+    /// When sidebar is hidden the pane extends to the window edge, so align with traffic lights.
+    /// When sidebar is visible the pane is inset with rounded corners — use a fixed inset instead.
+    private var splitControlsTopPadding: CGFloat {
+        if isSidebarVisible {
+            return 8
+        }
+        return iconTop + (sidebarTopBarButtonSize - 18) / 2
+    }
 
     private enum FolderCreationIntent {
         case standalone
@@ -328,6 +337,33 @@ struct ContentView: View {
     // MARK: - Body Decomposition
 
     private var contentWithBehaviors: some View {
+        contentBaseLayout
+            .onReceive(NotificationCenter.default.publisher(for: .noteSelectionCommandTriggered)) { notification in
+                guard let rawAction = notification.userInfo?["action"] as? String,
+                      let action = NoteSelectionCommandAction(rawValue: rawAction) else { return }
+                handleSelectionCommand(action)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .openSettings)) { _ in
+                presentSettings()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .exportSingleNote)) { notification in
+                guard let noteID = notification.userInfo?["noteID"] as? UUID,
+                      let note = notesManager.notes.first(where: { $0.id == noteID }) else { return }
+                notesPendingExport = [note]
+                withAnimation(.jotSpring) { isBatchExportSheetPresented = true }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .editorDidBecomeFirstResponder)) { notification in
+                guard shouldShowSplitLayout,
+                      let eid = notification.userInfo?["editorInstanceID"] as? UUID else { return }
+                if eid == primaryEditorID && activeSplitPane != .primary {
+                    activeSplitPane = .primary
+                } else if eid == splitEditorID && activeSplitPane != .secondary {
+                    activeSplitPane = .secondary
+                }
+            }
+    }
+
+    private var contentBaseLayout: some View {
         GeometryReader { geometry in
             mainLayout(geometry: geometry)
         }
@@ -381,29 +417,6 @@ struct ContentView: View {
                 floatingSidebarDismissWorkItem?.cancel()
                 floatingSidebarDismissWorkItem = nil
                 withAnimation(.jotSpring) { isFloatingSidebarVisible = false }
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .noteSelectionCommandTriggered)) { notification in
-            guard let rawAction = notification.userInfo?["action"] as? String,
-                  let action = NoteSelectionCommandAction(rawValue: rawAction) else { return }
-            handleSelectionCommand(action)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .openSettings)) { _ in
-            presentSettings()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .exportSingleNote)) { notification in
-            guard let noteID = notification.userInfo?["noteID"] as? UUID,
-                  let note = notesManager.notes.first(where: { $0.id == noteID }) else { return }
-            notesPendingExport = [note]
-            withAnimation(.jotSpring) { isBatchExportSheetPresented = true }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .editorDidBecomeFirstResponder)) { notification in
-            guard shouldShowSplitLayout,
-                  let eid = notification.userInfo?["editorInstanceID"] as? UUID else { return }
-            if eid == primaryEditorID && activeSplitPane != .primary {
-                activeSplitPane = .primary
-            } else if eid == splitEditorID && activeSplitPane != .secondary {
-                activeSplitPane = .secondary
             }
         }
     }
@@ -678,7 +691,7 @@ struct ContentView: View {
                         .overlay(alignment: .topTrailing) {
                             if !isPending {
                                 splitPaneControls(isLeftPane: true, isPrimaryPane: true)
-                                    .padding(.top, 12).padding(.trailing, 12)
+                                    .padding(.top, splitControlsTopPadding).padding(.trailing, 12)
                             }
                         }
                         .overlay {
@@ -719,7 +732,7 @@ struct ContentView: View {
                         .overlay(alignment: .topTrailing) {
                             if !isPending {
                                 splitPaneControls(isLeftPane: false, isPrimaryPane: true)
-                                    .padding(.top, 12).padding(.trailing, 12)
+                                    .padding(.top, splitControlsTopPadding).padding(.trailing, 12)
                             }
                         }
                         .overlay {
@@ -773,7 +786,8 @@ struct ContentView: View {
             note: note,
             editorInstanceID: splitEditorID,
             focusRequestID: splitFocusRequestID,
-            contentTopInsetAdjustment: detailToggleToContentExtraSpacingWhenSidebarHidden
+            contentTopInsetAdjustment: detailToggleToContentExtraSpacingWhenSidebarHidden,
+            stickyHeaderTopPadding: splitControlsTopPadding
         ) { saveSplitNote($0) }
         .frame(width: width)
         .frame(maxHeight: .infinity)
@@ -792,7 +806,7 @@ struct ContentView: View {
         }
         .overlay(alignment: .topTrailing) {
             splitPaneControls(isLeftPane: isLeftPane, isPrimaryPane: false)
-                .padding(.top, 12).padding(.trailing, 12)
+                .padding(.top, splitControlsTopPadding).padding(.trailing, 12)
         }
         .overlay {
             splitPickerOverlayView(for: .secondary, primaryNote: primaryNote)
@@ -1804,7 +1818,8 @@ struct ContentView: View {
             note: note,
             editorInstanceID: primaryEditorID,
             focusRequestID: detailFocusRequestID,
-            contentTopInsetAdjustment: isSidebarVisible ? 0 : detailToggleToContentExtraSpacingWhenSidebarHidden
+            contentTopInsetAdjustment: isSidebarVisible ? 0 : detailToggleToContentExtraSpacingWhenSidebarHidden,
+            stickyHeaderTopPadding: splitControlsTopPadding
         ) { updated in
             saveUpdatedNote(updated)
         }
@@ -3705,13 +3720,7 @@ private extension View {
     /// Dims an inactive split pane with a color overlay instead of `.opacity()`,
     /// so the underlying NSTextView's insertion point renders at full alpha.
     func splitPaneDimming(isInactive: Bool, cornerRadius: CGFloat, colorScheme: ColorScheme) -> some View {
-        self.overlay {
-            if isInactive {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(Color(colorScheme == .dark ? .black : .white).opacity(0.4))
-                    .allowsHitTesting(false)
-            }
-        }
+        self
     }
 
     /// Applies a layered shadow via a background shape instead of directly on the content.

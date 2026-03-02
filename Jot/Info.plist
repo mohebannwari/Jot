@@ -6,8 +6,6 @@
     <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
     <key>LSUIElement</key>
     <false/>
-    <key>NSUserActivity</key>
-    <true/>
     <key>NSMicrophoneUsageDescription</key>
     <string>Jot needs access to the microphone so you can record voice notes.</string>
     <key>NSSpeechRecognitionUsageDescription</key>

@@ -17,6 +17,7 @@ struct NoteDetailView: View {
     let editorInstanceID: UUID
     let focusRequestID: UUID
     let contentTopInsetAdjustment: CGFloat
+    let stickyHeaderTopPadding: CGFloat
     var onSave: (Note) -> Void
 
     // MARK: - Environment
@@ -27,23 +28,15 @@ struct NoteDetailView: View {
     // MARK: - Core editing state
     @State private var editedTitle: String
     @State var editedContent: String
-    @State private var editedTags: [String]
     @State private var autosaveWorkItem: DispatchWorkItem?
     @State private var lastSavedSnapshot: DraftSnapshot
-    /// The note whose content editedTitle/editedContent/editedTags currently describe.
+    /// The note whose content editedTitle/editedContent currently describe.
     /// Distinct from `note` (the prop), which SwiftUI updates to the NEW note BEFORE
     /// `onChange(of: note.id)` fires — so `persistIfNeeded()` must use this, not `note`.
     @State private var noteForPersist: Note
 
-    @State private var isAddingTag = false
-    @State private var newTagText = ""
-    @FocusState private var isAddingTagFocused: Bool
-
     // MARK: - UI animation state
     @State private var glassElementsVisible = false
-    @State private var hoveredTag: String?
-    @State private var pressedTag: String?
-    @State private var selectedTags: Set<String> = []
     @Namespace private var glassNamespace
 
     // MARK: - Overlay state (accessed by +Actions extension)
@@ -80,6 +73,7 @@ struct NoteDetailView: View {
     // MARK: - Scroll / toolbar state
     @FocusState private var titleFocused: Bool
     @State private var localEditorFocusID: UUID?
+    @State private var scrollViewHeight: CGFloat = 0
 
     @State private var showStickyHeader = false
     @State private var headerRevealProgress: CGFloat = 0
@@ -104,7 +98,6 @@ struct NoteDetailView: View {
     private struct DraftSnapshot: Equatable {
         let title: String
         let content: String
-        let tags: [String]
     }
 
     // MARK: - Init
@@ -114,18 +107,19 @@ struct NoteDetailView: View {
         editorInstanceID: UUID = UUID(),
         focusRequestID: UUID,
         contentTopInsetAdjustment: CGFloat = 0,
+        stickyHeaderTopPadding: CGFloat = 12,
         onSave: @escaping (Note) -> Void
     ) {
         self.note = note
         self.editorInstanceID = editorInstanceID
         self.focusRequestID = focusRequestID
         self.contentTopInsetAdjustment = contentTopInsetAdjustment
+        self.stickyHeaderTopPadding = stickyHeaderTopPadding
         self.onSave = onSave
         self._editedTitle = State(initialValue: note.title)
         self._editedContent = State(initialValue: note.content)
-        self._editedTags = State(initialValue: note.tags)
         self._lastSavedSnapshot = State(
-            initialValue: DraftSnapshot(title: note.title, content: note.content, tags: note.tags)
+            initialValue: DraftSnapshot(title: note.title, content: note.content)
         )
         self._noteForPersist = State(initialValue: note)
     }
@@ -186,9 +180,6 @@ struct NoteDetailView: View {
                                         }
                                 }
                             )
-                        if FeatureFlags.tagsEnabled {
-                            tagsRow
-                        }
                         if let summaryText = aiSummaryText {
                             AIResultPanel(
                                 state: .summary(summaryText),
@@ -230,11 +221,25 @@ struct NoteDetailView: View {
                     }
                     .padding(.top, 48 + contentTopInsetAdjustment)
                     .padding(.horizontal, 60)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(maxWidth: .infinity, minHeight: scrollViewHeight, alignment: .topLeading)
+                    .background(
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                titleFocused = false
+                                localEditorFocusID = UUID()
+                            }
+                    )
                 }
                 .scrollClipDisabled()
                 .coordinateSpace(name: "scroll")
                 .contentMargins(.bottom, 100, for: .scrollContent)
+                .background(
+                    GeometryReader { geo in
+                        Color.clear.onAppear { scrollViewHeight = geo.size.height }
+                            .onChange(of: geo.size.height) { _, h in scrollViewHeight = h }
+                    }
+                )
                 .onChange(of: commandMenuNeedsSpace) { _, needsSpace in
                     if needsSpace {
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
@@ -290,7 +295,7 @@ struct NoteDetailView: View {
                         Spacer()
                     }
                     .frame(height: 18)
-                    .padding(.top, 12)
+                    .padding(.top, stickyHeaderTopPadding)
                 }
                 .frame(maxWidth: .infinity)
                 .transition(.move(edge: .top).combined(with: .opacity))
@@ -349,9 +354,6 @@ struct NoteDetailView: View {
         .onChange(of: editedContent) { _ in
             scheduleAutosave()
         }
-        .onChange(of: editedTags) { _, _ in
-            scheduleAutosave()
-        }
         .onChange(of: note.id) { oldNoteID, newNoteID in
             autosaveWorkItem?.cancel()
             persistIfNeeded()
@@ -377,8 +379,7 @@ struct NoteDetailView: View {
             // Restore standard note fields
             editedTitle = note.title
             editedContent = note.content
-            editedTags = note.tags
-            lastSavedSnapshot = DraftSnapshot(title: note.title, content: note.content, tags: note.tags)
+            lastSavedSnapshot = DraftSnapshot(title: note.title, content: note.content)
             if isNewNote {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
                     titleFocused = true
@@ -448,7 +449,7 @@ struct NoteDetailView: View {
             if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
             presentSearchOnPage()
         }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("ShowCommandMenu")))
+        .onReceive(NotificationCenter.default.publisher(for: .showCommandMenu))
         { notification in
             DispatchQueue.main.async {
                 if let info = notification.object as? [String: Any],
@@ -460,7 +461,7 @@ struct NoteDetailView: View {
                 }
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("HideCommandMenu")))
+        .onReceive(NotificationCenter.default.publisher(for: .hideCommandMenu))
         { _ in
             DispatchQueue.main.async {
                 withAnimation(.easeOut(duration: 0.15)) {
@@ -563,7 +564,7 @@ struct NoteDetailView: View {
 
                 FloatingColorPicker(onColorSelected: { [editorInstanceID] hex in
                     NotificationCenter.default.post(
-                        name: Notification.Name("applyTextColor"),
+                        name: .applyTextColor,
                         object: nil,
                         userInfo: ["hex": hex, "editorInstanceID": editorInstanceID]
                     )
@@ -675,113 +676,6 @@ struct NoteDetailView: View {
     }
 
     // MARK: - Tags
-
-    private var tagsRow: some View {
-        HStack(alignment: .top, spacing: 6) {
-            HStack(spacing: 6) {
-                Image(systemName: "plus")
-                    .font(FontManager.icon(size: 18, weight: .semibold))
-                    .foregroundColor(
-                        isAddingTag ? Color("AccentColor") : Color("SecondaryTextColor"))
-
-                if isAddingTag {
-                    TextField("New tag", text: $newTagText)
-                        .font(FontManager.heading(size: 12, weight: .semibold))
-                        .foregroundColor(Color("PrimaryTextColor"))
-                        .textFieldStyle(.plain)
-                        .lineLimit(1)
-                        .focused($isAddingTagFocused)
-                        .onSubmit(addTag)
-                        .onExitCommand { cancelTagInput() }
-                        .transition(.opacity)
-                        .onAppear {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                                isAddingTagFocused = true
-                            }
-                        }
-                } else if isNewNote {
-                    Text("New tag")
-                        .font(FontManager.heading(size: 12, weight: .semibold))
-                        .foregroundColor(Color("SecondaryTextColor"))
-                        .transition(.opacity)
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .frame(height: 28)
-            .frame(width: isAddingTag ? 128 : (isNewNote ? nil : 28))
-            .overlay(
-                Capsule()
-                    .strokeBorder(Color("BorderSubtleColor"), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-            )
-            .background(
-                Capsule()
-                    .fill(Color.clear)
-                    .frame(height: 44)
-            )
-            .contentShape(Capsule())
-            .onTapGesture {
-                if !isAddingTag {
-                    HapticManager.shared.tagInteraction()
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
-                        isAddingTag = true
-                    }
-                }
-            }
-            .animation(.spring(response: 0.35, dampingFraction: 0.75), value: isAddingTag)
-            .macPointingHandCursor()
-
-            if !editedTags.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(editedTags, id: \.self) { tag in
-                            TagPill(
-                                text: tag,
-                                isSelected: selectedTags.contains(tag),
-                                isHovered: hoveredTag == tag,
-                                isPressed: pressedTag == tag,
-                                visible: glassElementsVisible,
-                                onRemove: { removeTag(tag) },
-                                glassNamespace: glassNamespace
-                            )
-                            .onHover { hovering in
-                                withAnimation(.bouncy(duration: 0.2)) {
-                                    hoveredTag =
-                                        hovering ? tag : (hoveredTag == tag ? nil : hoveredTag)
-                                }
-                            }
-                            .onTapGesture {
-                                HapticManager.shared.tagInteraction()
-                                withAnimation(.jotBounce) {
-                                    if selectedTags.contains(tag) {
-                                        selectedTags.remove(tag)
-                                    } else {
-                                        selectedTags.insert(tag)
-                                    }
-                                }
-                            }
-                            .onLongPressGesture(
-                                minimumDuration: 0,
-                                pressing: { pressing in
-                                    withAnimation(.bouncy(duration: 0.15)) {
-                                        pressedTag =
-                                            pressing ? tag : (pressedTag == tag ? nil : pressedTag)
-                                    }
-                                }, perform: {})
-                        }
-                    }
-                    .padding(.horizontal, 4)
-                }
-                .scrollClipDisabled(true)
-            }
-
-            Spacer()
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .onExitCommand {
-            if isAddingTag { cancelTagInput() }
-        }
-    }
 
     // MARK: - Header Styling Helpers
 
@@ -1152,17 +1046,13 @@ struct NoteDetailView: View {
     private func persistIfNeeded() {
         let snapshot = DraftSnapshot(
             title: editedTitle,
-            content: editedContent,
-            tags: editedTags
+            content: editedContent
         )
         guard snapshot != lastSavedSnapshot else { return }
 
-        // Use noteForPersist, NOT note. SwiftUI updates `note` to the NEW note before
-        // onChange(of: note.id) fires, so `note` here already has the wrong ID.
         var updatedNote = noteForPersist
         updatedNote.title = editedTitle
         updatedNote.content = editedContent
-        updatedNote.tags = editedTags
         updatedNote.date = Date()
 
         onSave(updatedNote)
@@ -1178,28 +1068,6 @@ struct NoteDetailView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: workItem)
     }
 
-    private func addTag() {
-        let trimmed = newTagText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !editedTags.contains(trimmed) else {
-            cancelTagInput()
-            return
-        }
-        editedTags.append(trimmed)
-        cancelTagInput()
-    }
-
-    private func removeTag(_ tag: String) {
-        editedTags.removeAll { $0 == tag }
-    }
-
-    private func cancelTagInput() {
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-            isAddingTag = false
-        }
-        newTagText = ""
-        isAddingTagFocused = false
-    }
-
     private func handleEditToolAction(_ tool: EditTool) {
         if performAuxiliaryToolAction(tool) {
             return
@@ -1208,12 +1076,12 @@ struct NoteDetailView: View {
         switch tool {
         case .todo:
             NotificationCenter.default.post(
-                name: Notification.Name("TodoToolbarAction"), object: nil, userInfo: eidInfo)
+                name: .todoToolbarAction, object: nil, userInfo: eidInfo)
         default:
             var info = eidInfo
             info["tool"] = tool.rawValue
             NotificationCenter.default.post(
-                name: Notification.Name("applyEditTool"), object: nil, userInfo: info)
+                name: .applyEditTool, object: nil, userInfo: info)
         }
     }
 

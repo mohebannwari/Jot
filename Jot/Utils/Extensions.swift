@@ -159,6 +159,34 @@ extension View {
     }
 }
 
+// MARK: - Color Hex Initializer
+
+extension Color {
+    init(hex: String) {
+        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var int: UInt64 = 0
+        Scanner(string: hex).scanHexInt64(&int)
+        self.init(
+            .sRGB,
+            red: Double((int >> 16) & 0xFF) / 255,
+            green: Double((int >> 8) & 0xFF) / 255,
+            blue: Double(int & 0xFF) / 255
+        )
+    }
+
+    func toHexString() -> String {
+        #if os(macOS)
+        let nsColor = NSColor(self).usingColorSpace(.deviceRGB) ?? NSColor(self)
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        nsColor.getRed(&r, green: &g, blue: &b, alpha: &a)
+        #else
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        UIColor(self).getRed(&r, green: &g, blue: &b, alpha: &a)
+        #endif
+        return String(format: "#%02X%02X%02X", Int(r * 255), Int(g * 255), Int(b * 255))
+    }
+}
+
 // MARK: - Folder Color Helper
 
 extension Folder {
@@ -280,6 +308,16 @@ extension String {
         }
         return result
     }
+}
+
+// MARK: - App Notification Names
+
+extension Notification.Name {
+    static let exportSingleNote = Notification.Name("exportSingleNote")
+    static let openSettings = Notification.Name("openSettings")
+    static let noteToolsBarAction = Notification.Name("NoteToolsBarAction")
+    static let applyTextColor = Notification.Name("applyTextColor")
+    static let todoToolbarAction = Notification.Name("TodoToolbarAction")
 }
 
 // MARK: - AI Notification Names

@@ -21,8 +21,6 @@ struct FloatingSearch: View {
     @State private var selectedResultIndex: Int = 0
     @Environment(\.colorScheme) private var colorScheme
 
-    private let performanceMonitor = PerformanceMonitor.shared
-
     private let surfaceWidth: CGFloat = 400
     private let surfaceCornerRadius: CGFloat = 16
     private let resultItemCornerRadius: CGFloat = 8
@@ -63,7 +61,7 @@ struct FloatingSearch: View {
             handlePresentationChange(newValue)
         }
         .onChange(of: searchText) { _, newValue in
-            performanceMonitor.trackFeatureUsage("search_query")
+
             engine.query = newValue
             selectedResultIndex = 0
         }
@@ -71,7 +69,7 @@ struct FloatingSearch: View {
             selectedResultIndex = 0
         }
         .onAppear {
-            performanceMonitor.trackFeatureUsage("search_component_load")
+
             if isPresented {
                 prepareForPresentation()
             }
@@ -374,7 +372,7 @@ struct FloatingSearch: View {
     // MARK: - Navigation
 
     private func selectResult(_ result: SearchHit) {
-        performanceMonitor.trackFeatureUsage("search_result_selected")
+
         engine.recordCommittedQuery(searchText)
         if let note = result.note {
             onNoteSelected(note)

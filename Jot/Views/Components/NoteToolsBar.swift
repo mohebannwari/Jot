@@ -71,10 +71,6 @@ struct NoteToolsBar: View {
     }
 }
 
-extension Notification.Name {
-    static let noteToolsBarAction = Notification.Name("NoteToolsBarAction")
-}
-
 // MARK: - macOS Share Button
 
 #if os(macOS)

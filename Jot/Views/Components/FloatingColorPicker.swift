@@ -136,12 +136,3 @@ private class ColorPanelObserver: NSObject {
     }
 }
 
-private extension Color {
-    func toHexString() -> String {
-        let nsColor = NSColor(self).usingColorSpace(.deviceRGB) ?? NSColor(self)
-        let r = nsColor.redComponent
-        let g = nsColor.greenComponent
-        let b = nsColor.blueComponent
-        return String(format: "#%02x%02x%02x", Int(r * 255), Int(g * 255), Int(b * 255))
-    }
-}

@@ -29,17 +29,15 @@ final class SimpleSwiftDataManager: ObservableObject {
     private let modelContainer: ModelContainer
     private let modelContext: ModelContext
     private let backgroundContext: ModelContext
-    private let shouldAutoMigrateFromJSON: Bool
     private let logger = Logger(subsystem: "com.jot.app", category: "SimpleSwiftDataManager")
-    private let performanceMonitor = PerformanceMonitor.shared
 
     // MARK: - Performance Configuration
     private let batchSize = 50
     private let maxLoadLimit = 500
 
-    init(autoMigrateFromJSON: Bool = true) throws {
+    init() throws {
         // Setup SwiftData container
-        let schema = Schema([NoteEntity.self, TagEntity.self, FolderEntity.self])
+        let schema = Schema([NoteEntity.self, FolderEntity.self])
         let configuration = ModelConfiguration(
             schema: schema,
             isStoredInMemoryOnly: false,
@@ -49,7 +47,6 @@ final class SimpleSwiftDataManager: ObservableObject {
         self.modelContainer = try ModelContainer(for: schema, configurations: [configuration])
         self.modelContext = ModelContext(modelContainer)
         self.backgroundContext = ModelContext(modelContainer)
-        self.shouldAutoMigrateFromJSON = autoMigrateFromJSON
 
         // Configure main context for UI
         modelContext.autosaveEnabled = true
@@ -60,19 +57,12 @@ final class SimpleSwiftDataManager: ObservableObject {
         // Cleanup any leftover performance test notes
         cleanupPerformanceNotes()
 
-        // Load initial data with deterministic readiness sequencing
+        // Load initial data
         hasLoadedInitialNotes = false
-        hasCompletedMigrationCheck = false
+        hasCompletedMigrationCheck = true
         loadFolders()
 
-        // Auto-migrate from JSON if enabled, then load notes for initial UI state
         Task {
-            if self.shouldAutoMigrateFromJSON {
-                await self.autoMigrateFromJSONIfNeeded()
-            } else {
-                self.hasCompletedMigrationCheck = true
-            }
-
             self.loadNotes(isInitialLoad: true)
         }
     }
@@ -119,29 +109,17 @@ final class SimpleSwiftDataManager: ObservableObject {
                 }
             }
             do {
-                self.notes = try await performanceMonitor.trackSwiftDataOperation(
-                    operation: .fetch,
-                    recordCount: 0
-                ) {
-                    let predicate = #Predicate<NoteEntity> { $0.isArchived == false && $0.isDeleted == false }
-                    var descriptor = FetchDescriptor<NoteEntity>(
-                        predicate: predicate,
-                        sortBy: [SortDescriptor(\.modifiedAt, order: .reverse)]
-                    )
-                    descriptor.fetchLimit = self.maxLoadLimit
-                    let notes = try modelContext.fetch(descriptor).map { $0.toNote() }
-
-                    await MainActor.run {
-                        logger.info("Loaded \(notes.count) notes from SwiftData (limited to \(self.maxLoadLimit))")
-                    }
-
-                    return notes
-                }
+                let predicate = #Predicate<NoteEntity> { $0.isArchived == false && $0.isDeleted == false }
+                var descriptor = FetchDescriptor<NoteEntity>(
+                    predicate: predicate,
+                    sortBy: [SortDescriptor(\.modifiedAt, order: .reverse)]
+                )
+                descriptor.fetchLimit = self.maxLoadLimit
+                self.notes = try modelContext.fetch(descriptor).map { $0.toNote() }
+                logger.info("Loaded \(self.notes.count) notes from SwiftData (limited to \(self.maxLoadLimit))")
             } catch {
-                await MainActor.run {
-                    logger.error("Failed to load notes: \(error)")
-                    self.notes = []
-                }
+                logger.error("Failed to load notes: \(error)")
+                self.notes = []
             }
         }
     }
@@ -287,7 +265,7 @@ final class SimpleSwiftDataManager: ObservableObject {
         if folderID != nil {
             noteEntity.isPinned = false
         }
-        noteEntity.setTags(tags, in: modelContext)
+
 
         modelContext.insert(noteEntity)
 
@@ -319,7 +297,7 @@ final class SimpleSwiftDataManager: ObservableObject {
             noteEntity.updateContent(updatedNote.content)
             noteEntity.folderID = updatedNote.folderID
             noteEntity.isPinned = updatedNote.folderID == nil ? updatedNote.isPinned : false
-            noteEntity.setTags(updatedNote.tags, in: modelContext)
+
 
             try modelContext.save()
 
@@ -355,9 +333,10 @@ final class SimpleSwiftDataManager: ObservableObject {
         guard !ids.isEmpty else { return 0 }
 
         do {
-            let descriptor = FetchDescriptor<NoteEntity>()
-            let entities = try modelContext.fetch(descriptor)
-            let toArchive = entities.filter { ids.contains($0.id) && !$0.isArchived }
+            let idArray = Array(ids)
+            let predicate = #Predicate<NoteEntity> { idArray.contains($0.id) && $0.isArchived == false }
+            let descriptor = FetchDescriptor<NoteEntity>(predicate: predicate)
+            let toArchive = try modelContext.fetch(descriptor)
 
             guard !toArchive.isEmpty else {
                 logger.warning("No matching unarchived notes found for batch archive")
@@ -435,9 +414,10 @@ final class SimpleSwiftDataManager: ObservableObject {
         guard !ids.isEmpty else { return 0 }
 
         do {
-            let descriptor = FetchDescriptor<NoteEntity>()
-            let entities = try modelContext.fetch(descriptor)
-            let toTrash = entities.filter { ids.contains($0.id) && !$0.isDeleted }
+            let idArray = Array(ids)
+            let predicate = #Predicate<NoteEntity> { idArray.contains($0.id) && $0.isDeleted == false }
+            let descriptor = FetchDescriptor<NoteEntity>(predicate: predicate)
+            let toTrash = try modelContext.fetch(descriptor)
 
             guard !toTrash.isEmpty else {
                 logger.warning("No matching notes found for move to trash")
@@ -606,7 +586,7 @@ final class SimpleSwiftDataManager: ObservableObject {
             // Add new notes
             for note in newNotes {
                 let noteEntity = NoteEntity(from: note)
-                noteEntity.setTags(note.tags, in: modelContext)
+
                 modelContext.insert(noteEntity)
             }
 
@@ -770,9 +750,10 @@ final class SimpleSwiftDataManager: ObservableObject {
         guard !ids.isEmpty else { return 0 }
 
         do {
-            let descriptor = FetchDescriptor<NoteEntity>()
-            let entities = try modelContext.fetch(descriptor)
-            let toMove = entities.filter { ids.contains($0.id) }
+            let idArray = Array(ids)
+            let predicate = #Predicate<NoteEntity> { idArray.contains($0.id) }
+            let descriptor = FetchDescriptor<NoteEntity>(predicate: predicate)
+            let toMove = try modelContext.fetch(descriptor)
 
             guard !toMove.isEmpty else {
                 logger.warning("No matching notes found for batch move")
@@ -806,8 +787,6 @@ final class SimpleSwiftDataManager: ObservableObject {
     // MARK: - Search
 
     func searchNotes(query: String, limit: Int = 100) async -> [Note] {
-        performanceMonitor.trackFeatureUsage("search")
-
         let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedQuery.isEmpty else {
             return notes
@@ -817,26 +796,15 @@ final class SimpleSwiftDataManager: ObservableObject {
         let hasDistinctTagQuery = sanitizedTagQuery != normalizedQuery && !sanitizedTagQuery.isEmpty
 
         do {
-            return try await performanceMonitor.trackSwiftDataOperation(
-                operation: .search,
-                recordCount: 0
-            ) {
-                let predicate = NoteEntity.searchPredicate(for: normalizedQuery)
-                let sortDescriptors = NoteEntity.sortByRelevance(query: normalizedQuery)
-                var descriptor = FetchDescriptor(predicate: predicate, sortBy: sortDescriptors)
+            let predicate = NoteEntity.searchPredicate(for: normalizedQuery)
+            let sortDescriptors = NoteEntity.sortByRelevance(query: normalizedQuery)
+            var descriptor = FetchDescriptor(predicate: predicate, sortBy: sortDescriptors)
+            descriptor.fetchLimit = limit
 
-                // Limit search results for better performance
-                descriptor.fetchLimit = limit
-
-                let entities = try modelContext.fetch(descriptor)
-                let results = entities.map { $0.toNote() }
-
-                await MainActor.run {
-                    logger.info("Search for '\(query)' returned \(results.count) results")
-                }
-
-                return results
-            }
+            let entities = try modelContext.fetch(descriptor)
+            let results = entities.map { $0.toNote() }
+            logger.info("Search for '\(query)' returned \(results.count) results")
+            return results
         } catch {
             logger.error("Search failed: \(error)")
             // Fallback to in-memory search with limit
@@ -855,130 +823,6 @@ final class SimpleSwiftDataManager: ObservableObject {
         }
     }
 
-    // MARK: - Migration Helper
-
-    private func autoMigrateFromJSONIfNeeded() async {
-        defer {
-            hasCompletedMigrationCheck = true
-        }
-
-        // Check if SwiftData is empty
-        do {
-            let descriptor = FetchDescriptor<NoteEntity>()
-            let existingNotes = try modelContext.fetch(descriptor)
-
-            // If SwiftData already has notes, skip migration
-            guard existingNotes.isEmpty else {
-                logger.info("SwiftData already has notes, skipping migration")
-                return
-            }
-
-            // Check if JSON file exists
-            let jsonURL = NotesManager.getStorageURL()
-            guard FileManager.default.fileExists(atPath: jsonURL.path) else {
-                logger.info("No JSON file found, starting with empty database")
-                return
-            }
-
-            // Load JSON notes
-            let data = try Data(contentsOf: jsonURL)
-            let jsonNotes = try JSONDecoder().decode([Note].self, from: data)
-
-            guard !jsonNotes.isEmpty else {
-                logger.info("JSON file is empty, nothing to migrate")
-                return
-            }
-
-            logger.info("Found \(jsonNotes.count) notes in JSON, starting migration...")
-            hasLoadedInitialNotes = false
-
-            // Perform migration
-            try await migrateFromJSON(jsonNotes)
-
-            logger.info("Migration completed successfully")
-
-        } catch {
-            logger.error("Auto-migration failed: \(error)")
-        }
-    }
-
-    private func backupJSONFile() {
-        let jsonURL = NotesManager.getStorageURL()
-        guard FileManager.default.fileExists(atPath: jsonURL.path) else {
-            logger.info("No JSON file to backup")
-            return
-        }
-
-        let backupURL = jsonURL.deletingLastPathComponent()
-            .appendingPathComponent("notes.json.backup.\(Date().timeIntervalSince1970)")
-
-        do {
-            try FileManager.default.copyItem(at: jsonURL, to: backupURL)
-            logger.info("Created backup at: \(backupURL.path)")
-        } catch {
-            logger.error("Failed to create backup: \(error)")
-        }
-    }
-
-    func migrateFromJSON(_ jsonNotes: [Note]) async throws {
-        logger.info("Starting migration of \(jsonNotes.count) notes from JSON")
-
-        // Create backup before migration
-        backupJSONFile()
-
-        // Use background context for large operations
-        await withCheckedContinuation { continuation in
-            Task.detached {
-                do {
-                    // Process in batches to manage memory
-                    for batch in jsonNotes.chunked(into: self.batchSize) {
-                        try await self.migrateBatch(batch)
-
-                        // Yield control periodically to prevent blocking
-                        await Task.yield()
-                    }
-
-                    await MainActor.run {
-                        do {
-                            self.notes = try self.fetchNotesFromStore(limit: self.maxLoadLimit)
-                            self.logger.info("Migration completed successfully")
-                        } catch {
-                            self.notes = []
-                            self.logger.error("Migration reload failed: \(error)")
-                        }
-                        self.hasLoadedInitialNotes = true
-                        continuation.resume()
-                    }
-                } catch {
-                    await MainActor.run {
-                        self.logger.error("Migration failed: \(error)")
-                        self.hasLoadedInitialNotes = true
-                        continuation.resume()
-                    }
-                }
-            }
-        }
-    }
-
-    private func migrateBatch(_ notes: [Note]) async throws {
-        // Create a new background context for this batch
-        let batchContext = ModelContext(modelContainer)
-        batchContext.autosaveEnabled = false
-
-        for note in notes {
-            // Filter out performance test notes during migration
-            if note.title.contains("Performance Note") { continue }
-
-            let noteEntity = NoteEntity(from: note)
-            noteEntity.setTags(note.tags, in: batchContext)
-            batchContext.insert(noteEntity)
-        }
-
-        // Save batch and clean up
-        try batchContext.save()
-
-        logger.info("Migrated batch of \(notes.count) notes")
-    }
 
     // MARK: - Testing Helpers
 
@@ -987,12 +831,6 @@ final class SimpleSwiftDataManager: ObservableObject {
         let noteEntities = try modelContext.fetch(noteDescriptor)
         for note in noteEntities {
             modelContext.delete(note)
-        }
-
-        let tagDescriptor = FetchDescriptor<TagEntity>()
-        let tagEntities = try modelContext.fetch(tagDescriptor)
-        for tag in tagEntities {
-            modelContext.delete(tag)
         }
 
         let folderDescriptor = FetchDescriptor<FolderEntity>()

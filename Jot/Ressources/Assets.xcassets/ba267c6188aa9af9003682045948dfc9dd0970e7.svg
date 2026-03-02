@@ -1,5 +1,0 @@
-<svg preserveAspectRatio="none" width="100%" height="100%" overflow="visible" style="display: block;" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg">
-<g id="IconThumbtack">
-<path id="Vector" d="M7.50006 9.375H3.12506V8.45925C3.12506 8.04512 3.28956 7.648 3.58238 7.35519C4.29002 6.64756 4.68756 5.68779 4.68756 4.68704V3.75C4.68756 2.71447 5.52703 1.875 6.56256 1.875H8.43756C9.47312 1.875 10.3126 2.71447 10.3126 3.75V4.68704C10.3126 5.68779 10.7101 6.64756 11.4177 7.35519C11.7106 7.648 11.8751 8.04512 11.8751 8.45925V9.375H7.50006ZM7.50006 9.375V13.125" stroke="var(--stroke-0, #854D0E)" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/>
-</g>
-</svg>

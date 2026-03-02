@@ -247,9 +247,7 @@ struct AIToolsOverlay: View {
     // MARK: - Theme Colors
 
     private var cardBackgroundColor: Color {
-        colorScheme == .dark
-            ? Color(red: 0.16, green: 0.14, blue: 0.14, opacity: 0.85)
-            : Color.white.opacity(0.85)
+        Color("SurfaceElevatedColor").opacity(0.85)
     }
 
     private var textAreaBackgroundColor: Color {

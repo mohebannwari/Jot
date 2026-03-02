@@ -79,27 +79,7 @@ class WebMetadataFetcher: ObservableObject {
     }
     
     private func fetchWebsiteScreenshot(from urlString: String) async -> NSImage? {
-        // Use a free screenshot service with reduced timeout for faster loading
-        guard let encodedURL = urlString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let screenshotURL = URL(string: "https://image.thum.io/get/width/400/crop/600/\(encodedURL)") else {
-            return await fetchFavicon(from: urlString)
-        }
-        
-        do {
-            // Reduced timeout for faster fallback
-            let request = URLRequest(url: screenshotURL, timeoutInterval: 8.0)
-            let (data, response) = try await URLSession.shared.data(for: request)
-            
-            if let httpResponse = response as? HTTPURLResponse, 
-               httpResponse.statusCode == 200,
-               let image = NSImage(data: data) {
-                return image
-            }
-        } catch {
-            print("Screenshot fetch failed: \(error)")
-        }
-        
-        // Fallback to favicon
+        // Fetch favicon directly — no third-party screenshot services (privacy)
         return await fetchFavicon(from: urlString)
     }
 
@@ -239,7 +219,7 @@ class WebMetadataFetcher: ObservableObject {
         let faviconURLs = [
             "https://\(host)/favicon.ico",
             "https://\(host)/favicon.png",
-            "https://www.google.com/s2/favicons?domain=\(host)&sz=64"
+            "https://\(host)/apple-touch-icon.png"
         ]
         
         for faviconURLString in faviconURLs {

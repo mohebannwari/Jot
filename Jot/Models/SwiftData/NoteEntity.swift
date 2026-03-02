@@ -15,28 +15,15 @@ final class NoteEntity {
     var deletedDate: Date?
     var folderID: UUID?
 
-    // MARK: - Relationships
-    @Relationship(deleteRule: .nullify, inverse: \TagEntity.notes)
-    var tags: [TagEntity] = []
-
     // MARK: - Computed Properties for Search
     @Transient
     var searchableContent: String {
-        let tagNames = tags.map { $0.name }.joined(separator: " ")
-        return "\(title) \(content) \(tagNames)".lowercased()
+        "\(title) \(content)".lowercased()
     }
 
     @Transient
     var displayDate: String {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .short
-        return formatter.string(from: modifiedAt)
-    }
-
-    @Transient
-    var tagNames: [String] {
-        tags.map { $0.name }.sorted()
+        Self.displayDateFormatter.string(from: modifiedAt)
     }
 
     // MARK: - Performance Optimized Properties
@@ -67,8 +54,13 @@ final class NoteEntity {
         webClipURL != nil
     }
 
-    // MARK: - Search and Indexing Support
-    // Note: Index macros should be applied at class level, moving to init
+    // MARK: - Shared Formatters
+    private static let displayDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter
+    }()
 
     // MARK: - Initialization
     init(
@@ -149,8 +141,9 @@ final class NoteEntity {
                     self.webClipDescription = String(content[descSubstring])
                     self.webClipURL = String(content[urlSubstring])
 
-                    // Remove the webclip markup from content
-                    self.content = content.replacingOccurrences(of: content[Range(match.range, in: content)!], with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    if let fullMatchRange = Range(match.range, in: content) {
+                        self.content = content.replacingOccurrences(of: content[fullMatchRange], with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    }
                 }
             }
         }
@@ -168,64 +161,9 @@ final class NoteEntity {
         self.modifiedAt = Date()
     }
 
-    func addTag(_ tag: TagEntity) {
-        if !tags.contains(tag) {
-            tags.append(tag)
-            // Maintain bidirectional relationship
-            if !tag.notes.contains(self) {
-                tag.notes.append(self)
-            }
-            modifiedAt = Date()
-        }
-    }
-
-    func removeTag(_ tag: TagEntity) {
-        if let index = tags.firstIndex(of: tag) {
-            tags.remove(at: index)
-            // Maintain bidirectional relationship
-            if let noteIndex = tag.notes.firstIndex(of: self) {
-                tag.notes.remove(at: noteIndex)
-            }
-            modifiedAt = Date()
-        }
-    }
-
-    func setTags(_ tagNames: [String], in context: ModelContext) {
-        // Clear existing tags
-        tags.removeAll()
-
-        // Add new tags (create if they don't exist)
-        for tagName in tagNames {
-            let trimmedName = tagName.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmedName.isEmpty else { continue }
-
-            // Try to find existing tag
-            let predicate = #Predicate<TagEntity> { $0.name == trimmedName }
-            let descriptor = FetchDescriptor(predicate: predicate)
-
-            do {
-                let existingTags = try context.fetch(descriptor)
-                let tag = existingTags.first ?? TagEntity(name: trimmedName)
-
-                if existingTags.isEmpty {
-                    context.insert(tag)
-                }
-
-                addTag(tag)
-            } catch {
-                // If fetch fails, create new tag
-                let newTag = TagEntity(name: trimmedName)
-                context.insert(newTag)
-                addTag(newTag)
-            }
-        }
-
-        modifiedAt = Date()
-    }
-
     // MARK: - Export/Conversion
     func toNote() -> Note {
-        var note = Note(title: title, content: content, tags: tagNames, isPinned: isPinned, folderID: folderID, isArchived: isArchived, isDeleted: isDeleted, deletedDate: deletedDate)
+        var note = Note(title: title, content: content, tags: [], isPinned: isPinned, folderID: folderID, isArchived: isArchived, isDeleted: isDeleted, deletedDate: deletedDate)
         note.id = id
         note.date = modifiedAt
         return note
@@ -239,19 +177,13 @@ extension NoteEntity {
             .components(separatedBy: .whitespacesAndNewlines)
             .filter { !$0.isEmpty }
 
-        guard !searchTerms.isEmpty else {
+        guard let firstTerm = searchTerms.first else {
             return #Predicate<NoteEntity> { _ in false }
         }
 
-        // Simplified predicate to avoid complex subqueries that SwiftData doesn't support
-        let firstTerm = searchTerms.first!
-        let sanitizedTagTerm = firstTerm.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
-
         return #Predicate<NoteEntity> { note in
             note.title.localizedStandardContains(firstTerm) ||
-            note.content.localizedStandardContains(firstTerm) ||
-            (!sanitizedTagTerm.isEmpty &&
-             note.tags.contains { $0.name.contains(sanitizedTagTerm) })
+            note.content.localizedStandardContains(firstTerm)
         }
     }
 
@@ -263,8 +195,6 @@ extension NoteEntity {
     }
 
     static func sortByRelevance(query: String) -> [SortDescriptor<NoteEntity>] {
-        // Primary sort by modification date (most recent first)
-        // Future: implement relevance scoring
         return [
             SortDescriptor(\.modifiedAt, order: .reverse),
             SortDescriptor(\.createdAt, order: .reverse)

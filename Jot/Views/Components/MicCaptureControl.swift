@@ -150,7 +150,7 @@ private extension MicCaptureControl {
                     .renderingMode(.template)
                     .resizable()
                     .scaledToFit()
-                    .foregroundColor(Color(red: 0.937, green: 0.267, blue: 0.267))
+                    .foregroundColor(.red)
                     .frame(width: 18, height: 18)
             }
             .buttonStyle(.plain)
@@ -167,7 +167,7 @@ private extension MicCaptureControl {
                     .renderingMode(.template)
                     .resizable()
                     .scaledToFit()
-                    .foregroundColor(Color(red: 0.659, green: 0.635, blue: 0.620))
+                    .foregroundColor(Color("SecondaryTextColor"))
                     .frame(width: 18, height: 18)
             }
             .buttonStyle(.plain)
@@ -190,7 +190,7 @@ private extension MicCaptureControl {
                         .renderingMode(.template)
                         .resizable()
                         .scaledToFit()
-                        .foregroundColor(Color(red: 0.231, green: 0.510, blue: 0.965))
+                        .foregroundColor(Color("AccentColor"))
                         .frame(width: 18, height: 18)
                 }
             }

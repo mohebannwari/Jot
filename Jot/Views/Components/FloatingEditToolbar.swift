@@ -566,3 +566,66 @@ private struct FloatingToolButton: View {
         }
     }
 }
+
+// MARK: - EditTool Enum
+
+enum EditTool: String, CaseIterable {
+    case titleCase
+    case h1, h2, h3
+    case bold, italic, underline, strikethrough
+    case bulletList, todo
+    case indentLeft, indentRight
+    case alignLeft, alignCenter, alignRight, alignJustify
+    case lineBreak
+    case textSelect, divider
+    case link
+    case imageUpload
+    case voiceRecord
+    case searchOnPage
+
+    var isToggleable: Bool {
+        switch self {
+        case .bold, .italic, .underline, .strikethrough, .bulletList, .todo:
+            return true
+        default:
+            return false
+        }
+    }
+
+    var name: String {
+        switch self {
+        case .titleCase: return "Title Case"
+        case .h1: return "Heading 1"
+        case .h2: return "Heading 2"
+        case .h3: return "Heading 3"
+        case .bold: return "Bold"
+        case .italic: return "Italic"
+        case .underline: return "Underline"
+        case .strikethrough: return "Strikethrough"
+        case .bulletList: return "Bullet List"
+        case .todo: return "To-Do"
+        case .indentLeft: return "Decrease Indent"
+        case .indentRight: return "Increase Indent"
+        case .alignLeft: return "Align Left"
+        case .alignCenter: return "Align Center"
+        case .alignRight: return "Align Right"
+        case .alignJustify: return "Justify"
+        case .lineBreak: return "Line Break"
+        case .textSelect: return "Select Text"
+        case .divider: return "Insert Divider"
+        case .link: return "Insert Link"
+        case .imageUpload: return "Image Upload"
+        case .voiceRecord: return "Voice Record"
+        case .searchOnPage: return "Search on Page"
+        }
+    }
+
+    var keyboardShortcut: KeyEquivalent? {
+        switch self {
+        case .bold: return "b"
+        case .italic: return "i"
+        case .underline: return "u"
+        default: return nil
+        }
+    }
+}
