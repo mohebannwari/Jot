@@ -18,9 +18,9 @@ struct JotApp: App {
         do {
             manager = try SimpleSwiftDataManager()
         } catch {
-            print("Failed to initialize SimpleSwiftDataManager: \(error)")
-            // Fallback to in-memory storage
-            fatalError("Cannot initialize database. Please check logs.")
+            NSLog("Failed to initialize SimpleSwiftDataManager: %@", "\(error)")
+            // Fallback — attempt continues; crash only if truly unrecoverable
+            manager = try! SimpleSwiftDataManager()
         }
         _notesManager = StateObject(wrappedValue: manager)
 
@@ -76,7 +76,7 @@ struct JotApp: App {
                 .frame(minWidth: 815, minHeight: 600)
                 .environmentObject(notesManager)
                 .environmentObject(themeManager)
-                .preferredColorScheme(themeManager.currentTheme.colorScheme)
+                .preferredColorScheme(themeManager.resolvedColorScheme)
                 .containerShape(.rect(cornerRadius: 16))
         }
         #if os(macOS)
