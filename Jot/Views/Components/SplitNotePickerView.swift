@@ -82,6 +82,7 @@ struct SplitNotePickerView: View {
 private struct PickerNoteRow: View {
     let note: Note
     let onSelect: (Note) -> Void
+    @State private var isHovered = false
 
     var body: some View {
         Button {
@@ -103,10 +104,17 @@ private struct PickerNoteRow: View {
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 8)
-            .contentShape(RoundedRectangle(cornerRadius: 8))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color("HoverBackgroundColor"))
+                    .opacity(isHovered ? 1 : 0)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 12))
+            .animation(.jotHover, value: isHovered)
         }
         .buttonStyle(.plain)
         .macPointingHandCursor()
-        .subtleHoverScale()  // default 1.01 — matches NoteListCard in the sidebar
+        .onHover { isHovered = $0 }
     }
 }

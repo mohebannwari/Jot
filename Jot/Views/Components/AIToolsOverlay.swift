@@ -54,7 +54,7 @@ struct AIToolsOverlay: View {
             }
 
             if state == .promptField {
-                HStack(alignment: .bottom, spacing: 12) {
+                HStack(alignment: .bottom, spacing: 8) {
                     promptFieldCard
                         .transition(.move(edge: .trailing).combined(with: .opacity))
 
@@ -76,16 +76,18 @@ struct AIToolsOverlay: View {
             state = .expanded
         } label: {
             toolIcon("IconAppleIntelligenceIcon", size: 20)
+                .padding(4)
+                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(.plain)
         .macPointingHandCursor()
-        .subtleHoverScale(1.12)
+        .hoverContainer(cornerRadius: 8)
     }
 
     // MARK: - Expanded Tool Bar
 
     private var expandedToolBar: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 2) {
             toolBarButton(icon: "IconBroomSparkle", tooltip: "Proofread") {
                 NotificationCenter.default.post(name: .aiEditRequestSelection, object: nil, userInfo: eidInfo)
                 NotificationCenter.default.post(name: .aiToolAction, object: AITool.proofread, userInfo: eidInfo)
@@ -113,12 +115,13 @@ struct AIToolsOverlay: View {
     ) -> some View {
         Button(action: action) {
             toolIcon(icon)
-                .contentShape(Rectangle())
+                .padding(4)
+                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(.plain)
         .macPointingHandCursor()
         .help(tooltip)
-        .subtleHoverScale(1.12)
+        .hoverContainer(cornerRadius: 8)
     }
 
     // MARK: - Close Button
@@ -135,10 +138,12 @@ struct AIToolsOverlay: View {
             }
         } label: {
             toolIcon("IconChevronRightMedium")
+                .padding(4)
+                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(.plain)
         .macPointingHandCursor()
-        .subtleHoverScale(1.12)
+        .hoverContainer(cornerRadius: 8)
     }
 
 

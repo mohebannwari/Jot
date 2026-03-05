@@ -220,7 +220,6 @@ private struct FormatPillButton: View {
             )
             .shadow(color: Color.black.opacity(0.08), radius: 12, x: 0, y: 4)
             .shadow(color: Color.black.opacity(0.04), radius: 3, x: 0, y: 1)
-            .scaleEffect(isHovered ? 1.04 : (isSelected ? 1.02 : 1.0))
             .animation(.jotHover, value: isHovered)
             .animation(.jotBounce, value: isSelected)
         }

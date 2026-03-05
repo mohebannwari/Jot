@@ -208,50 +208,64 @@ public final class ImageStorageManager {
         return documentsURL.appendingPathComponent(storageDirectoryName, isDirectory: true)
     }
     
-    /// Process image: resize if needed and compress to JPEG
+    /// Process image: resize if needed and compress to JPEG.
+    /// Runs on a background thread to avoid blocking the UI.
     private func processImage(_ image: NSImage) async -> Data? {
-        // Get image dimensions
-        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
-            return nil
-        }
+        let maxWidth = maxImageWidth
+        let quality = compressionQuality
+        return await Task.detached(priority: .userInitiated) {
+            // Get image dimensions
+            guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+                return nil
+            }
 
-        let width = CGFloat(cgImage.width)
-        let height = CGFloat(cgImage.height)
+            let width = CGFloat(cgImage.width)
+            let height = CGFloat(cgImage.height)
 
-        // Calculate new size if image is too large
-        var newSize = NSSize(width: width, height: height)
-        if width > maxImageWidth {
-            let scale = maxImageWidth / width
-            newSize = NSSize(width: maxImageWidth, height: height * scale)
-        }
+            // Calculate new size if image is too large
+            var newSize = NSSize(width: width, height: height)
+            if width > maxWidth {
+                let scale = maxWidth / width
+                newSize = NSSize(width: maxWidth, height: height * scale)
+            }
 
-        // Resize if needed
-        let resizedImage: NSImage
-        if newSize != NSSize(width: width, height: height) {
-            resizedImage = NSImage(size: newSize)
-            resizedImage.lockFocus()
-            image.draw(
-                in: NSRect(origin: .zero, size: newSize),
-                from: NSRect(origin: .zero, size: image.size),
-                operation: .copy,
-                fraction: 1.0
-            )
-            resizedImage.unlockFocus()
-        } else {
-            resizedImage = image
-        }
+            // Use CGContext for thread-safe resize (no lockFocus)
+            let targetImage: NSImage
+            if newSize != NSSize(width: width, height: height) {
+                let bitsPerComponent = 8
+                let bytesPerRow = Int(newSize.width) * 4
+                guard let colorSpace = cgImage.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB),
+                      let ctx = CGContext(
+                          data: nil,
+                          width: Int(newSize.width),
+                          height: Int(newSize.height),
+                          bitsPerComponent: bitsPerComponent,
+                          bytesPerRow: bytesPerRow,
+                          space: colorSpace,
+                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+                      ) else {
+                    return nil
+                }
+                ctx.interpolationQuality = .high
+                ctx.draw(cgImage, in: CGRect(origin: .zero, size: newSize))
+                guard let resizedCG = ctx.makeImage() else { return nil }
+                targetImage = NSImage(cgImage: resizedCG, size: newSize)
+            } else {
+                targetImage = image
+            }
 
-        // Convert to JPEG data
-        guard let tiffData = resizedImage.tiffRepresentation,
-              let bitmapImage = NSBitmapImageRep(data: tiffData),
-              let jpegData = bitmapImage.representation(
-                using: .jpeg,
-                properties: [.compressionFactor: compressionQuality]
-              ) else {
-            return nil
-        }
+            // Convert to JPEG data
+            guard let tiffData = targetImage.tiffRepresentation,
+                  let bitmapImage = NSBitmapImageRep(data: tiffData),
+                  let jpegData = bitmapImage.representation(
+                    using: .jpeg,
+                    properties: [.compressionFactor: quality]
+                  ) else {
+                return nil
+            }
 
-        return jpegData
+            return jpegData
+        }.value
     }
 }
 

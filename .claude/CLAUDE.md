@@ -74,7 +74,7 @@ Before any feature implementation:
 |------|--------|
 | New feature | `superpowers:brainstorming` → `superpowers:writing-plans` → `superpowers:test-driven-development` |
 | Bug | `superpowers:systematic-debugging` |
-| Design / UI | `figma-design` |
+| Design / UI | `figma-design` → `frontend-design` |
 | Completion | `superpowers:verification-before-completion` → `superpowers:requesting-code-review` |
 | Multi-task | `superpowers:dispatching-parallel-agents` |
 

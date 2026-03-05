@@ -139,7 +139,7 @@ private extension MicCaptureControl {
     }
 
     var pausedView: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 2) {
             Button {
                 HapticManager.shared.buttonTap()
                 Task { @MainActor in
@@ -152,9 +152,12 @@ private extension MicCaptureControl {
                     .scaledToFit()
                     .foregroundColor(.red)
                     .frame(width: 18, height: 18)
+                    .padding(4)
+                    .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
             .buttonStyle(.plain)
             .macPointingHandCursor()
+            .hoverContainer(cornerRadius: 8)
             .accessibilityLabel(Text("Cancel recording"))
 
             Button {
@@ -169,9 +172,12 @@ private extension MicCaptureControl {
                     .scaledToFit()
                     .foregroundColor(Color("SecondaryTextColor"))
                     .frame(width: 18, height: 18)
+                    .padding(4)
+                    .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
             .buttonStyle(.plain)
             .macPointingHandCursor()
+            .hoverContainer(cornerRadius: 8)
             .accessibilityLabel(Text("Resume recording"))
 
             Button {
@@ -185,6 +191,7 @@ private extension MicCaptureControl {
                         .progressViewStyle(CircularProgressViewStyle(tint: .white))
                         .scaleEffect(0.8)
                         .frame(width: 20, height: 20)
+                        .padding(4)
                 } else {
                     Image("IconArrowUpCircle")
                         .renderingMode(.template)
@@ -192,10 +199,13 @@ private extension MicCaptureControl {
                         .scaledToFit()
                         .foregroundColor(Color("AccentColor"))
                         .frame(width: 18, height: 18)
+                        .padding(4)
+                        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
             }
             .buttonStyle(.plain)
             .macPointingHandCursor()
+            .hoverContainer(cornerRadius: 8)
             .disabled(viewModel.isProcessingSend)
             .accessibilityLabel(Text(viewModel.isProcessingSend ? "Sending voice note" : "Send voice note"))
         }

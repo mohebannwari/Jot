@@ -17,10 +17,9 @@ struct NoteToolsBar: View {
     var editorInstanceID: UUID? = nil
 
     private let iconSize: CGFloat = 18
-    private let spacing: CGFloat = 12
 
     var body: some View {
-        HStack(spacing: spacing) {
+        HStack(spacing: 2) {
             toolButton(icon: "gallery", tooltip: "Image Upload") {
                 postToolAction(.imageUpload)
             }
@@ -39,7 +38,8 @@ struct NoteToolsBar: View {
             #if os(macOS)
             ShareToolButton(note: note, iconSize: iconSize)
                 .frame(width: iconSize, height: iconSize)
-                .subtleHoverScale(1.12)
+                .padding(4)
+                .hoverContainer(cornerRadius: 8)
             #endif
         }
     }
@@ -52,12 +52,13 @@ struct NoteToolsBar: View {
                 .scaledToFit()
                 .foregroundColor(Color("IconSecondaryColor"))
                 .frame(width: iconSize, height: iconSize)
-                .contentShape(Rectangle())
+                .padding(4)
+                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(.plain)
         .macPointingHandCursor()
         .help(tooltip)
-        .subtleHoverScale(1.12)
+        .hoverContainer(cornerRadius: 8)
     }
 
     private func postToolAction(_ tool: EditTool) {

@@ -139,23 +139,57 @@ extension Animation {
 
 // MARK: - Subtle Hover Scale
 
-/// Self-contained hover scale effect for elements that don't track their own hover state.
+/// Self-contained hover effect with optional container background.
+/// Scale is intentionally omitted — scaleEffect rasterizes vector icons
+/// at their natural size, causing visible blur on Retina displays.
 private struct SubtleHoverScale: ViewModifier {
-    let scale: CGFloat
+    let containerCornerRadius: CGFloat?
     @State private var isHovered = false
 
     func body(content: Content) -> some View {
         content
-            .scaleEffect(isHovered ? scale : 1.0)
+            .background {
+                if let cr = containerCornerRadius {
+                    RoundedRectangle(cornerRadius: cr, style: .continuous)
+                        .fill(Color("HoverBackgroundColor"))
+                        .opacity(isHovered ? 1 : 0)
+                }
+            }
             .animation(.jotHover, value: isHovered)
             .onHover { isHovered = $0 }
     }
 }
 
 extension View {
-    /// Adds a self-contained subtle scale-up on hover.
-    func subtleHoverScale(_ scale: CGFloat = 1.01) -> some View {
-        modifier(SubtleHoverScale(scale: scale))
+    /// Adds a self-contained hover effect with optional container background.
+    func subtleHoverScale(_ scale: CGFloat = 1.01, container cornerRadius: CGFloat? = nil) -> some View {
+        modifier(SubtleHoverScale(containerCornerRadius: cornerRadius))
+    }
+}
+
+// MARK: - Hover Container Background
+
+/// Self-contained hover container background (no scale).
+private struct HoverContainerBackground: ViewModifier {
+    let cornerRadius: CGFloat
+    @State private var isHovered = false
+
+    func body(content: Content) -> some View {
+        content
+            .background(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(Color("HoverBackgroundColor"))
+                    .opacity(isHovered ? 1 : 0)
+            )
+            .animation(.jotSmoothFast, value: isHovered)
+            .onHover { isHovered = $0 }
+    }
+}
+
+extension View {
+    /// Adds a self-contained hover container background.
+    func hoverContainer(cornerRadius: CGFloat = 8) -> some View {
+        modifier(HoverContainerBackground(cornerRadius: cornerRadius))
     }
 }
 

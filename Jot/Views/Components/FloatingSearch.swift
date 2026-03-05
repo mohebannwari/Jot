@@ -23,7 +23,7 @@ struct FloatingSearch: View {
 
     private let surfaceWidth: CGFloat = 400
     private let surfaceCornerRadius: CGFloat = 16
-    private let resultItemCornerRadius: CGFloat = 8
+    private let resultItemCornerRadius: CGFloat = 12
 
     private enum SearchAnimations {
         static let appear = Animation.bouncy(duration: 0.35)
@@ -211,8 +211,10 @@ struct FloatingSearch: View {
                             .padding(.horizontal, 8)
                             .padding(.vertical, 8)
                             .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(RoundedRectangle(cornerRadius: resultItemCornerRadius, style: .continuous))
                         }
                         .buttonStyle(.plain)
+                        .hoverContainer(cornerRadius: resultItemCornerRadius)
                     }
                 }
             }
@@ -294,12 +296,16 @@ struct FloatingSearch: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .scaleEffect(isHovered || isSelected ? 1.01 : 1)
+            .background(
+                RoundedRectangle(cornerRadius: resultItemCornerRadius, style: .continuous)
+                    .fill(Color("HoverBackgroundColor"))
+                    .opacity(isHovered || isSelected ? 1 : 0)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: resultItemCornerRadius, style: .continuous))
             .animation(.jotHover, value: isHovered)
             .animation(.jotHover, value: isSelected)
         }
         .buttonStyle(.plain)
-        .contentShape(Rectangle())
         .onHover { hovering in
             withAnimation(SearchAnimations.resultHover) {
                 hoveredResultID = hovering ? result.id : (hoveredResultID == result.id ? nil : hoveredResultID)

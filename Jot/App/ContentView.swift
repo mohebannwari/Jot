@@ -202,7 +202,7 @@ struct ContentView: View {
     private let detailToggleToContentExtraSpacingWhenSidebarHidden: CGFloat = 16
     private let sidebarIconSize: CGFloat = 18
     private let sidebarTopIconSpacingCollapsed: CGFloat = 8
-    private let sidebarTopBarButtonSize: CGFloat = 20
+    private let sidebarTopBarButtonSize: CGFloat = 26
     private let sidebarTopBarTrafficLightGap: CGFloat = 12
     private let sidebarRowHoverInset: CGFloat = 0
     private let floatingSidebarWidth: CGFloat = 276
@@ -235,9 +235,9 @@ struct ContentView: View {
     /// When sidebar is visible the pane is inset with rounded corners — use a fixed inset instead.
     private var splitControlsTopPadding: CGFloat {
         if isSidebarVisible {
-            return 8
+            return 4
         }
-        return iconTop + (sidebarTopBarButtonSize - 18) / 2
+        return iconTop
     }
 
     private enum FolderCreationIntent {
@@ -290,12 +290,10 @@ struct ContentView: View {
         activeSplitID != nil && activeSplitID == pendingSplitID
     }
 
+    /// Notes are already sorted by date DESC and filtered to non-archived/non-deleted
+    /// by the fetch in SimpleSwiftDataManager. No re-sort needed — just exclude one ID.
     private func recentNotes(excluding note: Note) -> [Note] {
-        notesManager.notes
-            .filter { $0.id != note.id && !$0.isArchived && !$0.isDeleted }
-            .sorted { $0.date > $1.date }
-            .prefix(10)
-            .map { $0 }
+        Array(notesManager.notes.lazy.filter { $0.id != note.id }.prefix(10))
     }
 
     var body: some View {
@@ -654,11 +652,11 @@ struct ContentView: View {
             .onPreferenceChange(BottomOverlayActivePreferenceKey.self) { primaryBottomOverlayActive = $0 }
             .onPreferenceChange(BottomInputOverlayActivePreferenceKey.self) { primaryBottomInputOverlayActive = $0 }
             .overlay(alignment: .bottomTrailing) {
-                AIToolsOverlay(state: $aiToolsState, editorInstanceID: primaryEditorID).padding(.trailing, 18).padding(.bottom, 18)
+                AIToolsOverlay(state: $aiToolsState, editorInstanceID: primaryEditorID).padding(.trailing, 14).padding(.bottom, 14)
             }
             .overlay(alignment: .bottomLeading) {
                 if !(primaryBottomOverlayActive || (primaryBottomInputOverlayActive && width < 620)) {
-                    NoteToolsBar(note: note, editorInstanceID: primaryEditorID).padding(.leading, 18).padding(.bottom, 18)
+                    NoteToolsBar(note: note, editorInstanceID: primaryEditorID).padding(.leading, 14).padding(.bottom, 14)
                         .transition(.opacity)
                 }
             }
@@ -691,7 +689,7 @@ struct ContentView: View {
                         .overlay(alignment: .topTrailing) {
                             if !isPending {
                                 splitPaneControls(isLeftPane: true, isPrimaryPane: true)
-                                    .padding(.top, splitControlsTopPadding).padding(.trailing, 12)
+                                    .padding(.top, splitControlsTopPadding).padding(.trailing, 8)
                             }
                         }
                         .overlay {
@@ -732,7 +730,7 @@ struct ContentView: View {
                         .overlay(alignment: .topTrailing) {
                             if !isPending {
                                 splitPaneControls(isLeftPane: false, isPrimaryPane: true)
-                                    .padding(.top, splitControlsTopPadding).padding(.trailing, 12)
+                                    .padding(.top, splitControlsTopPadding).padding(.trailing, 8)
                             }
                         }
                         .overlay {
@@ -796,17 +794,17 @@ struct ContentView: View {
         .onPreferenceChange(BottomOverlayActivePreferenceKey.self) { splitBottomOverlayActive = $0 }
         .onPreferenceChange(BottomInputOverlayActivePreferenceKey.self) { splitBottomInputOverlayActive = $0 }
         .overlay(alignment: .bottomTrailing) {
-            AIToolsOverlay(state: $splitAiToolsState, editorInstanceID: splitEditorID).padding(.trailing, 18).padding(.bottom, 18)
+            AIToolsOverlay(state: $splitAiToolsState, editorInstanceID: splitEditorID).padding(.trailing, 14).padding(.bottom, 14)
         }
         .overlay(alignment: .bottomLeading) {
             if !(splitBottomOverlayActive || (splitBottomInputOverlayActive && width < 620)) {
-                NoteToolsBar(note: note, editorInstanceID: splitEditorID).padding(.leading, 18).padding(.bottom, 18)
+                NoteToolsBar(note: note, editorInstanceID: splitEditorID).padding(.leading, 14).padding(.bottom, 14)
                     .transition(.opacity)
             }
         }
         .overlay(alignment: .topTrailing) {
             splitPaneControls(isLeftPane: isLeftPane, isPrimaryPane: false)
-                .padding(.top, splitControlsTopPadding).padding(.trailing, 12)
+                .padding(.top, splitControlsTopPadding).padding(.trailing, 8)
         }
         .overlay {
             splitPickerOverlayView(for: .secondary, primaryNote: primaryNote)
@@ -1232,12 +1230,12 @@ struct ContentView: View {
 
     private var sidebarTitleBarRow: some View {
         HStack(spacing: sidebarTopIconSpacingCollapsed) {
-            sidebarTopBarIcon(assetName: "IconLayoutAlignLeft") {
+            sidebarTopBarIcon(assetName: "IconLayoutAlignLeft", withHoverBox: false) {
                 withAnimation(sidebarVisibilityAnimation) {
                     isSidebarVisible = false
                 }
             }
-            splitMenuIconButton
+            splitMenuIconButton(withHoverBox: false)
         }
         .padding(.leading, iconLeading - windowContentPadding)
         .frame(width: sidebarDesignColumnWidth, height: sidebarTopBarButtonSize, alignment: .leading)
@@ -1285,7 +1283,6 @@ struct ContentView: View {
 
                 Spacer(minLength: 0)
             }
-            .scaleEffect(hoveredSidebarMenuLabel == label ? 1.01 : 1.0)
             .padding(.leading, sidebarItemLeadingPadding)
             .padding(.trailing, sidebarItemTrailingPadding)
             .padding(.vertical, sidebarItemVPadding)
@@ -1294,7 +1291,7 @@ struct ContentView: View {
             .contentShape(Rectangle())
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.clear)
+                    .fill(hoveredSidebarMenuLabel == label ? Color("HoverBackgroundColor") : Color.clear)
                     .padding(.horizontal, sidebarRowHoverInset)
             )
         }
@@ -1464,12 +1461,11 @@ struct ContentView: View {
                                 .opacity(isHovered ? 1 : 0)
                                 .allowsHitTesting(isHovered)
                             }
-                            .scaleEffect(isHovered ? 1.01 : 1.0)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(8)
                             .background(
                                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                    .fill(Color.clear)
+                                    .fill(isHovered ? Color("HoverBackgroundColor") : Color.clear)
                             )
                             .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                             .animation(.jotHover, value: isHovered)
@@ -1690,7 +1686,7 @@ struct ContentView: View {
     }
 
     private var collapsedTopBarRow: some View {
-        HStack(spacing: sidebarTopIconSpacingCollapsed) {
+        HStack(spacing: 2) {
             sidebarTopBarIcon(assetName: "IconLayoutAlignLeft") {
                 withAnimation(sidebarVisibilityAnimation) {
                     isSidebarVisible = true
@@ -1709,11 +1705,11 @@ struct ContentView: View {
             .opacity(isFloatingSidebarVisible ? 0 : 1)
             .allowsHitTesting(!isFloatingSidebarVisible)
 
-            splitMenuIconButton
+            splitMenuIconButton()
                 .opacity(isFloatingSidebarVisible ? 0 : 1)
                 .allowsHitTesting(!isFloatingSidebarVisible)
         }
-        .padding(.leading, iconLeading)
+        .padding(.leading, iconLeading - 3)
         .padding(.top, iconTop)
         .contentShape(Rectangle())
         .allowsHitTesting(true)
@@ -1834,27 +1830,41 @@ struct ContentView: View {
             .frame(width: sidebarIconSize, height: sidebarIconSize)
     }
 
+    @ViewBuilder
     private func sidebarTopBarIcon(
         assetName: String,
         disabled: Bool = false,
+        withHoverBox: Bool = true,
         action: @escaping () -> Void
     ) -> some View {
-        Button(action: action) {
-            sidebarAssetIcon(assetName: assetName, tint: Color("SecondaryTextColor"))
-                .frame(width: sidebarTopBarButtonSize, height: sidebarTopBarButtonSize, alignment: .center)
-                .contentShape(Rectangle())
+        if withHoverBox {
+            Button(action: action) {
+                sidebarAssetIcon(assetName: assetName, tint: Color("SecondaryTextColor"))
+                    .padding(4)
+                    .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .macPointingHandCursor()
+            .disabled(disabled)
+            .opacity(disabled ? 0.5 : 1)
+            .hoverContainer(cornerRadius: 8)
+        } else {
+            Button(action: action) {
+                sidebarAssetIcon(assetName: assetName, tint: Color("SecondaryTextColor"))
+                    .frame(width: 20, height: 20, alignment: .center)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .macPointingHandCursor()
+            .disabled(disabled)
+            .opacity(disabled ? 0.5 : 1)
         }
-        .buttonStyle(.plain)
-        .macPointingHandCursor()
-        .disabled(disabled)
-        .opacity(disabled ? 0.5 : 1)
-        .subtleHoverScale(1.06)
     }
 
     @ViewBuilder
-    private var splitMenuIconButton: some View {
+    private func splitMenuIconButton(withHoverBox: Bool = true) -> some View {
         if !isSplitActive {
-            sidebarTopBarIcon(assetName: "IconSplit") {
+            sidebarTopBarIcon(assetName: "IconSplit", withHoverBox: withHoverBox) {
                 withAnimation(.jotSpring) { isSplitMenuVisible.toggle() }
             }
             .background(
@@ -2104,7 +2114,7 @@ struct ContentView: View {
     // MARK: - Split Pane Controls
 
     private func splitPaneControls(isLeftPane: Bool, isPrimaryPane: Bool) -> some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 2) {
             // Flashcards: toggle note picker overlay on this pane
             Button {
                 let target: SplitPickerPane = isPrimaryPane ? .primary : .secondary
@@ -2118,12 +2128,13 @@ struct ContentView: View {
                     .scaledToFit()
                     .foregroundColor(Color("SecondaryTextColor"))
                     .frame(width: 18, height: 18)
-                    .contentShape(Rectangle())
+                    .padding(4)
+                    .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
             .buttonStyle(.plain)
             .macPointingHandCursor()
             .help("Switch note")
-            .subtleHoverScale(1.06)
+            .hoverContainer(cornerRadius: 8)
 
             // Move to other pane
             Button {
@@ -2135,12 +2146,13 @@ struct ContentView: View {
                     .scaledToFit()
                     .foregroundColor(Color("SecondaryTextColor"))
                     .frame(width: 18, height: 18)
-                    .contentShape(Rectangle())
+                    .padding(4)
+                    .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
             .buttonStyle(.plain)
             .macPointingHandCursor()
             .help(isLeftPane ? "Move to right" : "Move to left")
-            .subtleHoverScale(1.06)
+            .hoverContainer(cornerRadius: 8)
 
             // Close this pane
             Button {
@@ -2154,12 +2166,13 @@ struct ContentView: View {
                     .scaledToFit()
                     .foregroundColor(Color("SecondaryTextColor"))
                     .frame(width: 18, height: 18)
-                    .contentShape(Rectangle())
+                    .padding(4)
+                    .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
             .buttonStyle(.plain)
             .macPointingHandCursor()
             .help(isLeftPane ? "Close left split" : "Close right split")
-            .subtleHoverScale(1.06)
+            .hoverContainer(cornerRadius: 8)
         }
     }
 
@@ -3051,6 +3064,7 @@ private struct SplitPickerOverlayCard: View {
 private struct SplitPickerOverlayRow: View {
     let note: Note
     let onSelect: (Note) -> Void
+    @State private var isHovered = false
 
     var body: some View {
         Button {
@@ -3072,11 +3086,18 @@ private struct SplitPickerOverlayRow: View {
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color("HoverBackgroundColor"))
+                    .opacity(isHovered ? 1 : 0)
+            )
             .contentShape(RoundedRectangle(cornerRadius: 8))
+            .animation(.jotHover, value: isHovered)
         }
         .buttonStyle(.plain)
         .macPointingHandCursor()
-        .subtleHoverScale()
+        .onHover { isHovered = $0 }
     }
 }
 
@@ -3177,7 +3198,6 @@ struct NoteListCard: View {
                     .font(FontManager.metadata(size: 11, weight: .medium))
                     .foregroundColor(Color("SecondaryTextColor"))
             }
-            .scaleEffect(isHovered ? 1.01 : 1.0)
             .animation(.jotHover, value: isHovered)
             .padding(8)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -3189,6 +3209,9 @@ struct NoteListCard: View {
                 } else if isSelected {
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                         .fill(Color("SurfaceTranslucentColor"))
+                } else if isHovered {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(Color("HoverBackgroundColor"))
                 }
             }
             .shadow(color: isActiveNote ? .black.opacity(0.06) : .clear, radius: 3, x: 0, y: 1)

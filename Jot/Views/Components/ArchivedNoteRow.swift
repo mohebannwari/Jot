@@ -90,7 +90,6 @@ struct ArchivedNoteRow: View {
         )
         .shadow(color: isActive ? .black.opacity(0.06) : .clear, radius: 3, x: 0, y: 1)
         .shadow(color: isActive ? .black.opacity(0.03) : .clear, radius: 1, x: 0, y: 0)
-        .scaleEffect(isHovered ? 1.01 : 1.0)
         .animation(.jotHover, value: isHovered)
         .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .onTapGesture {
@@ -148,6 +147,8 @@ struct ArchivedNoteRow: View {
             return colorScheme == .light ? Color.white : Color(red: 0.047, green: 0.039, blue: 0.035)
         } else if isSelected {
             return Color("SurfaceTranslucentColor")
+        } else if isHovered {
+            return Color("HoverBackgroundColor")
         }
         return Color.clear
     }

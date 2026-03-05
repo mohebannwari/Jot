@@ -61,7 +61,7 @@ struct FloatingColorPicker: View {
                 .frame(width: 20, height: 20)
         }
         .buttonStyle(.plain)
-        .scaleEffect(isPressed ? 0.88 : (isHovered ? 1.06 : (circlesVisible ? 1.0 : 0.6)))
+        .scaleEffect(isPressed ? 0.88 : (circlesVisible ? 1.0 : 0.6))
         .opacity(circlesVisible ? 1 : 0)
         .animation(.bouncy(duration: 0.2), value: isHovered)
         .animation(.bouncy(duration: 0.15), value: isPressed)

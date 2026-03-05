@@ -108,13 +108,15 @@ struct FloatingSettings: View {
                 if isSelected {
                     Capsule()
                         .fill(colorScheme == .light ? Color.white : Color("SettingsActiveTabColor"))
+                } else if isHovered {
+                    Capsule()
+                        .fill(Color("HoverBackgroundColor"))
                 }
             }
             .clipShape(Capsule())
             .shadow(color: isSelected ? .black.opacity(0.06) : .clear, radius: 3, x: 0, y: 1)
             .shadow(color: isSelected ? .black.opacity(0.03) : .clear, radius: 1, x: 0, y: 0)
-            .scaleEffect(isHovered ? 1.01 : 1)
-            .animation(.jotHover, value: isHovered)
+                        .animation(.jotHover, value: isHovered)
         }
         .buttonStyle(.plain)
         .macPointingHandCursor()
@@ -205,8 +207,7 @@ struct FloatingSettings: View {
                     .frame(maxWidth: .infinity)
             }
             .frame(maxWidth: .infinity)
-            .scaleEffect(isHovered ? 1.01 : 1)
-            .animation(.jotHover, value: isHovered)
+                        .animation(.jotHover, value: isHovered)
         }
         .buttonStyle(.plain)
         .macPointingHandCursor()
@@ -266,8 +267,7 @@ struct FloatingSettings: View {
                     .frame(maxWidth: .infinity)
             }
             .frame(maxWidth: .infinity)
-            .scaleEffect(isHovered ? 1.01 : 1)
-            .animation(.jotHover, value: isHovered)
+                        .animation(.jotHover, value: isHovered)
         }
         .buttonStyle(.plain)
         .macPointingHandCursor()
@@ -346,8 +346,7 @@ struct FloatingSettings: View {
                     .frame(maxWidth: .infinity)
             }
             .frame(width: bodyFontCardWidth)
-            .scaleEffect(isHovered ? 1.01 : 1)
-            .animation(.jotHover, value: isHovered)
+                        .animation(.jotHover, value: isHovered)
         }
         .buttonStyle(.plain)
         .macPointingHandCursor()

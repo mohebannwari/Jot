@@ -167,7 +167,6 @@ struct FolderSection: View {
             .opacity(shouldShowActions ? 1 : 0)
             .allowsHitTesting(shouldShowActions)
         }
-        .scaleEffect(isHovered ? 1.01 : 1.0)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(8)
         .background(
@@ -313,6 +312,9 @@ struct FolderSection: View {
     private func rowBackgroundColor(isDropTarget: Bool, isHovered: Bool) -> Color {
         if isDropTarget {
             return Color("SurfaceTranslucentColor")
+        }
+        if isHovered {
+            return Color("HoverBackgroundColor")
         }
         return Color.clear
     }

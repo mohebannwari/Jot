@@ -1425,13 +1425,14 @@ struct URLPasteOptionMenu: View {
             /// Create an inline image attachment tag from a filename
             /// Create a block-level image attachment with the given width ratio.
             private func makeImageAttachment(filename: String, widthRatio: CGFloat = 1.0) -> NSMutableAttributedString {
-                // Load image to get native aspect ratio
+                // Get aspect ratio from in-memory cache to avoid blocking disk I/O.
+                // Falls back to 4:3 if not cached — updateImageOverlays will correct
+                // bounds asynchronously once the image loads.
                 let imageSize: CGSize
-                if let url = ImageStorageManager.shared.getImageURL(for: filename),
-                   let img = NSImage(contentsOf: url) {
-                    imageSize = img.size
+                let cacheKey = filename as NSString
+                if let cachedImg = Self.inlineImageCache.object(forKey: cacheKey) {
+                    imageSize = cachedImg.size
                 } else {
-                    NSLog("makeImageAttachment: no stored file for %@", filename)
                     imageSize = CGSize(width: 4, height: 3)
                 }
 
@@ -1589,7 +1590,7 @@ struct URLPasteOptionMenu: View {
                 registerBoundsObserverIfNeeded(for: textView)
 
                 // Prevent layout shifts when gaining focus
-                NotificationCenter.default.addObserver(
+                let windowKey = NotificationCenter.default.addObserver(
                     forName: NSWindow.didBecomeKeyNotification, object: textView.window,
                     queue: .main
                 ) { [weak self] _ in
@@ -1843,6 +1844,7 @@ struct URLPasteOptionMenu: View {
                 }
 
                 observers = [
+                    windowKey,
                     insertTodo, insertLink, insertVoiceTranscript, insertImage, applyTool, applyCommandMenuTool,
                     highlightSearch, clearSearch,
                     proofreadShow, proofreadClear, proofreadApply, captureSelection,
@@ -3062,11 +3064,9 @@ struct URLPasteOptionMenu: View {
                                 aspectRatio = cachedImg.size.height / cachedImg.size.width
                             } else if let overlay = imageOverlays[id], let img = overlay.image {
                                 aspectRatio = img.size.height / img.size.width
-                            } else if let url = ImageStorageManager.shared.getImageURL(for: filename),
-                                      let img = NSImage(contentsOf: url) {
-                                aspectRatio = img.size.height / img.size.width
-                                Self.inlineImageCache.setObject(img, forKey: cacheKey)
                             } else {
+                                // Use default ratio; the async overlay load will correct
+                                // bounds once the image arrives — no synchronous disk I/O.
                                 aspectRatio = 3.0 / 4.0
                             }
                             let newSize = CGSize(width: expectedWidth, height: expectedWidth * aspectRatio)
@@ -3080,14 +3080,12 @@ struct URLPasteOptionMenu: View {
                     // Ensure layout is settled before querying glyph positions.
                     // Without this, boundingRect can return stale Y values when
                     // called right after styleTodoParagraphs invalidated layout.
-                    let ensureGlyphs = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
-                    if ensureGlyphs.length > 0 {
-                        layoutManager.ensureLayout(forGlyphRange: ensureGlyphs)
+                    let glyphRange = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+                    if glyphRange.length > 0 {
+                        layoutManager.ensureLayout(forGlyphRange: glyphRange)
                     }
 
                     // Get glyph rect
-                    let glyphRange = layoutManager.glyphRange(
-                        forCharacterRange: range, actualCharacterRange: nil)
                     guard glyphRange.length > 0 else {
                         return
                     }
@@ -3568,8 +3566,25 @@ struct URLPasteOptionMenu: View {
                 var fmtHeading: TextFormattingManager.HeadingLevel = .none
                 var fmtAlignment: NSTextAlignment = .left
 
+                // Buffer for accumulating plain text characters with the same attributes.
+                // Flushed as a single NSAttributedString when formatting changes or a tag is hit.
+                var textBuffer = ""
+                let colorSchemeForBuffer = currentColorScheme
+                func flushBuffer() {
+                    guard !textBuffer.isEmpty else { return }
+                    let attrs = Self.formattingAttributes(
+                        base: colorSchemeForBuffer,
+                        heading: fmtHeading,
+                        bold: fmtBold, italic: fmtItalic,
+                        underline: fmtUnderline, strikethrough: fmtStrikethrough,
+                        alignment: fmtAlignment)
+                    result.append(NSAttributedString(string: textBuffer, attributes: attrs))
+                    textBuffer = ""
+                }
+
                 while index < text.endIndex {
                     if text[index...].hasPrefix("[x]") || text[index...].hasPrefix("[ ]") {
+                        flushBuffer()
                         let isChecked = text[index...].hasPrefix("[x]")
                         let attachment = NSTextAttachment()
                         attachment.attachmentCell = TodoCheckboxAttachmentCell(isChecked: isChecked)
@@ -3585,6 +3600,7 @@ struct URLPasteOptionMenu: View {
                         lastWasWebClip = false
                         continue
                     } else if text[index...].hasPrefix(Self.webClipMarkupPrefix) {
+                        flushBuffer()
                         if let endIndex = text[index...].range(of: "]]")?.upperBound {
                             let webclipText = String(text[index..<endIndex])
                             if let regex = Self.webClipRegex,
@@ -3630,6 +3646,7 @@ struct URLPasteOptionMenu: View {
                             }
                         }
                     } else if text[index...].hasPrefix(Self.plainLinkMarkupPrefix) {
+                        flushBuffer()
                         if let endIndex = text[index...].range(of: "]]")?.upperBound {
                             let linkText = String(text[index..<endIndex])
                             if let regex = Self.plainLinkRegex,
@@ -3652,6 +3669,7 @@ struct URLPasteOptionMenu: View {
                             }
                         }
                     } else if text[index...].hasPrefix(AttachmentMarkup.fileMarkupPrefix) {
+                        flushBuffer()
                         if let endIndex = text[index...].range(of: "]]")?.upperBound {
                             let fileText = String(text[index..<endIndex])
                             if let regex = AttachmentMarkup.fileRegex,
@@ -3715,6 +3733,7 @@ struct URLPasteOptionMenu: View {
                             }
                         }
                     } else if text[index...].hasPrefix(AttachmentMarkup.imageMarkupPrefix) {
+                        flushBuffer()
                         if let endIndex = text[index...].range(of: "]]")?.upperBound {
                             let imageText = String(text[index..<endIndex])
                             if let regex = AttachmentMarkup.imageRegex,
@@ -3763,78 +3782,97 @@ struct URLPasteOptionMenu: View {
                             }
                         }
                     } else if text[index...].hasPrefix("[[b]]") {
+                        flushBuffer()
                         fmtBold = true
                         index = text.index(index, offsetBy: 5)
                         continue
                     } else if text[index...].hasPrefix("[[/b]]") {
+                        flushBuffer()
                         fmtBold = false
                         index = text.index(index, offsetBy: 6)
                         continue
                     } else if text[index...].hasPrefix("[[i]]") {
+                        flushBuffer()
                         fmtItalic = true
                         index = text.index(index, offsetBy: 5)
                         continue
                     } else if text[index...].hasPrefix("[[/i]]") {
+                        flushBuffer()
                         fmtItalic = false
                         index = text.index(index, offsetBy: 6)
                         continue
                     } else if text[index...].hasPrefix("[[u]]") {
+                        flushBuffer()
                         fmtUnderline = true
                         index = text.index(index, offsetBy: 5)
                         continue
                     } else if text[index...].hasPrefix("[[/u]]") {
+                        flushBuffer()
                         fmtUnderline = false
                         index = text.index(index, offsetBy: 6)
                         continue
                     } else if text[index...].hasPrefix("[[s]]") {
+                        flushBuffer()
                         fmtStrikethrough = true
                         index = text.index(index, offsetBy: 5)
                         continue
                     } else if text[index...].hasPrefix("[[/s]]") {
+                        flushBuffer()
                         fmtStrikethrough = false
                         index = text.index(index, offsetBy: 6)
                         continue
                     } else if text[index...].hasPrefix("[[h1]]") {
+                        flushBuffer()
                         fmtHeading = .h1
                         index = text.index(index, offsetBy: 6)
                         continue
                     } else if text[index...].hasPrefix("[[/h1]]") {
+                        flushBuffer()
                         fmtHeading = .none
                         index = text.index(index, offsetBy: 7)
                         continue
                     } else if text[index...].hasPrefix("[[h2]]") {
+                        flushBuffer()
                         fmtHeading = .h2
                         index = text.index(index, offsetBy: 6)
                         continue
                     } else if text[index...].hasPrefix("[[/h2]]") {
+                        flushBuffer()
                         fmtHeading = .none
                         index = text.index(index, offsetBy: 7)
                         continue
                     } else if text[index...].hasPrefix("[[h3]]") {
+                        flushBuffer()
                         fmtHeading = .h3
                         index = text.index(index, offsetBy: 6)
                         continue
                     } else if text[index...].hasPrefix("[[/h3]]") {
+                        flushBuffer()
                         fmtHeading = .none
                         index = text.index(index, offsetBy: 7)
                         continue
                     } else if text[index...].hasPrefix("[[align:center]]") {
+                        flushBuffer()
                         fmtAlignment = .center
                         index = text.index(index, offsetBy: 16)
                         continue
                     } else if text[index...].hasPrefix("[[align:right]]") {
+                        flushBuffer()
                         fmtAlignment = .right
                         index = text.index(index, offsetBy: 15)
                         continue
                     } else if text[index...].hasPrefix("[[align:justify]]") {
+                        flushBuffer()
                         fmtAlignment = .justified
                         index = text.index(index, offsetBy: 17)
                         continue
                     } else if text[index...].hasPrefix("[[/align]]") {
+                        flushBuffer()
                         fmtAlignment = .left
                         index = text.index(index, offsetBy: 10)
                         continue
                     } else if text[index...].hasPrefix("[[color|") {
+                        flushBuffer()
                         let prefixLen = "[[color|".count
                         let afterPrefix = text.index(index, offsetBy: prefixLen)
                         if text.distance(from: afterPrefix, to: text.endIndex) >= 8 {
@@ -3862,11 +3900,10 @@ struct URLPasteOptionMenu: View {
                         // Malformed -- fall through to single-char handler
                     }
 
-                    // Add single character with proper attributes
-                    let char = String(text[index])
+                    // Accumulate plain text into buffer instead of one-char-at-a-time appends.
+                    let char = text[index]
 
                     // Convert newline to space if between webclips
-                    let finalChar: String
                     if char == "\n" && lastWasWebClip {
                         // Check if next non-whitespace char is a webclip
                         var nextIndex = text.index(after: index)
@@ -3874,26 +3911,19 @@ struct URLPasteOptionMenu: View {
                             nextIndex = text.index(after: nextIndex)
                         }
                         if nextIndex < text.endIndex && text[nextIndex...].hasPrefix(Self.webClipMarkupPrefix) {
-                            finalChar = " "  // Convert newline to space between webclips
+                            textBuffer.append(" ")  // Convert newline to space between webclips
                         } else {
-                            finalChar = char
+                            textBuffer.append(char)
                         }
                     } else {
-                        finalChar = char
+                        textBuffer.append(char)
                     }
 
-                    let charAttrs = Self.formattingAttributes(
-                        base: currentColorScheme,
-                        heading: fmtHeading,
-                        bold: fmtBold, italic: fmtItalic,
-                        underline: fmtUnderline, strikethrough: fmtStrikethrough,
-                        alignment: fmtAlignment)
-                    let attributedChar = NSAttributedString(string: finalChar, attributes: charAttrs)
-                    result.append(attributedChar)
                     index = text.index(after: index)
                     lastWasWebClip = false
                 }
 
+                flushBuffer()
                 return result
             }
 
