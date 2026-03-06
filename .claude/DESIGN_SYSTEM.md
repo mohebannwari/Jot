@@ -14,7 +14,7 @@ All semantic colors live in `Jot/Ressources/Assets.xcassets/`. Reference by name
 | `AccentColor` | `#2563EB` | `#608DFA` |
 | `MainColor` | `#FDBA74` | `#FDBA74` |
 | `BackgroundColor` | `#FFFFFF5C` (36% white) | `#0C0A0908` (3% near-black) |
-| `BorderSubtleColor` | `#1A1A1A33` (20% black) | `#FFFFFF17` (9% white) |
+| `BorderSubtleColor` | `#1A1A1A17` (9% black) | `#FFFFFF17` (9% white) |
 | `ButtonPrimaryBgColor` | `#1A1A1A` | `#FFFFFF` |
 | `ButtonPrimaryTextColor` | `#FFFFFF` | `#1A1A1A` |
 | `CardBackgroundColor` | `#FFFFFFB3` (70% white) | `#1C1918B3` (70% dark) |
@@ -22,7 +22,7 @@ All semantic colors live in `Jot/Ressources/Assets.xcassets/`. Reference by name
 | `HoverBackgroundColor` | `#D1D3D0` | `#444040` |
 | `IconSecondaryColor` | `#1A1A1AB3` (70% black) | `#A8A29E` |
 | `MenuButtonColor` | `#1A1A1AB3` (70% black) | `#FFFFFFB3` (70% white) |
-| `PinnedBgColor` | `#FEEF8A` (amber) | `#854D0E` (amber-dark) |
+| `PinnedBgColor` | `#FEF08A` (amber) | `#854D0E` (amber-dark) |
 | `PinnedIconColor` | `#854D0E` | `#FEEF8A` |
 | `PrimaryTextColor` | `#1A1A1A` | `#FFFFFF` |
 | `SearchInputBackgroundColor` | `#FFFFFF` | `#1C1918` |

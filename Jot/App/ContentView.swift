@@ -167,6 +167,7 @@ struct ContentView: View {
     @State private var splitPickerOverlayPane: SplitPickerPane? = nil
     @State private var splitDragDelta: CGFloat = 0
     @State private var isSplitHandleDragging = false
+    @State private var isSplitHandleHovered = false
     @State private var isDragSplitTargeted = false
     @State private var activeSplitPane: SplitPickerPane? = nil
     @State private var splitAiToolsState: AIToolsState = .collapsed
@@ -693,7 +694,7 @@ struct ContentView: View {
         let baseSecW = availableForSplit * ratio
         let maxW = totalWidth - splitMinPaneWidth - splitGap
         let secW = max(splitMinPaneWidth, min(maxW, baseSecW + splitDragDelta)).rounded()
-        let primW = (totalWidth - secW - splitGap).rounded()
+        let primW = totalWidth - secW - splitGap
 
         let isPending = isActiveSplitPending
         let hasPrimary = activeSplit?.primaryNoteID != nil
@@ -843,16 +844,22 @@ struct ContentView: View {
         .frame(width: splitGap)
         .frame(maxHeight: .infinity)
         .contentShape(Rectangle())
-        .macResizeLeftRightCursor()
+        .onHover { hovering in
+            isSplitHandleHovered = hovering
+            if hovering && !isSplitHandleDragging {
+                NSCursor.resizeLeftRight.push()
+            } else if !hovering && !isSplitHandleDragging {
+                NSCursor.pop()
+            }
+        }
         .highPriorityGesture(
-            DragGesture(minimumDistance: 0)
+            DragGesture(minimumDistance: 0, coordinateSpace: .global)
                 .onChanged { value in
                     let delta = position == .right
                         ? -value.translation.width
                         :  value.translation.width
-                    if splitDragDelta == 0 && !isSplitHandleDragging {
+                    if !isSplitHandleDragging {
                         isSplitHandleDragging = true
-                        NSCursor.resizeLeftRight.push()
                     }
                     splitDragDelta = delta
                 }
@@ -868,8 +875,8 @@ struct ContentView: View {
                         splitSessions[idx].ratio = finalSecW / availableForSplit
                     }
                     splitDragDelta = 0
-                    if isSplitHandleDragging {
-                        isSplitHandleDragging = false
+                    isSplitHandleDragging = false
+                    if !isSplitHandleHovered {
                         NSCursor.pop()
                     }
                 }

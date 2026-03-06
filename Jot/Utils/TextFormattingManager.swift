@@ -479,6 +479,9 @@ class TextFormattingManager: ObservableObject {
             storage.addAttribute(Self.customTextColorKey, value: true, range: range)
             storage.endEditing()
 
+            // Force the layout manager to re-render glyphs in the affected range.
+            // Without this, selected text in dark mode won't visually update until deselected.
+            textView.layoutManager?.invalidateDisplay(forCharacterRange: range)
             textView.needsDisplay = true
             registerUndo(textView: textView, snapshot: snapshot, actionName: "Text Color")
         }

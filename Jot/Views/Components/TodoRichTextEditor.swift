@@ -917,6 +917,12 @@ struct URLPasteOptionMenu: View {
             // Critical: Ensure text view accepts text input
             textView.insertionPointColor = NSColor.controlAccentColor
 
+            // Only set background highlight for selection — omit foreground override
+            // so custom text colors (e.g. purple) remain visible while selected.
+            textView.selectedTextAttributes = [
+                .backgroundColor: NSColor.selectedTextBackgroundColor
+            ]
+
             // Enable Writing Tools when text is selected (without standalone button)
             if #available(macOS 15.0, *) {
                 textView.writingToolsBehavior = .complete
@@ -1960,14 +1966,22 @@ struct URLPasteOptionMenu: View {
                 proofreadPillViews.forEach { $0.view.removeFromSuperview() }
                 proofreadPillViews.removeAll()
 
-                // Restore full text opacity
+                // Restore full text opacity — preserve user-applied custom colors
                 if storage.length > 0 {
+                    let fullRange = NSRange(location: 0, length: storage.length)
                     storage.beginEditing()
-                    storage.addAttribute(
-                        .foregroundColor,
-                        value: NSColor.labelColor,
-                        range: NSRange(location: 0, length: storage.length)
-                    )
+                    storage.enumerateAttribute(
+                        TextFormattingManager.customTextColorKey, in: fullRange, options: []
+                    ) { value, range, _ in
+                        if value as? Bool == true {
+                            // Custom-colored text: restore full alpha but keep the original color
+                            if let color = storage.attribute(.foregroundColor, at: range.location, effectiveRange: nil) as? NSColor {
+                                storage.addAttribute(.foregroundColor, value: color.withAlphaComponent(1.0), range: range)
+                            }
+                        } else {
+                            storage.addAttribute(.foregroundColor, value: NSColor.labelColor, range: range)
+                        }
+                    }
                     storage.endEditing()
                 }
                 proofreadHighlightedRanges.removeAll()

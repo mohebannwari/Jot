@@ -139,7 +139,7 @@ struct TrashSheet: View {
 
             Spacer(minLength: 0)
 
-            HStack(spacing: 4) {
+            HStack(spacing: 8) {
                 // Restore button
                 Button {
                     HapticManager.shared.buttonTap()
@@ -156,12 +156,11 @@ struct TrashSheet: View {
                         .scaledToFit()
                         .foregroundColor(Color("SecondaryTextColor"))
                         .frame(width: 18, height: 18)
-                        .frame(width: 26, height: 26)
-                        .contentShape(Rectangle())
+                        .padding(6)
+                        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
                 .buttonStyle(.plain)
-                .contentShape(Rectangle())
-                .subtleHoverScale(1.05)
+                .subtleHoverScale(1.06, container: 8)
                 .help("Restore")
 
                 // Permanent delete button
@@ -180,12 +179,11 @@ struct TrashSheet: View {
                         .scaledToFit()
                         .foregroundColor(.red.opacity(0.8))
                         .frame(width: 18, height: 18)
-                        .frame(width: 26, height: 26)
-                        .contentShape(Rectangle())
+                        .padding(6)
+                        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
                 .buttonStyle(.plain)
-                .contentShape(Rectangle())
-                .subtleHoverScale(1.05)
+                .subtleHoverScale(1.06, container: 8)
                 .help("Delete permanently")
             }
         }

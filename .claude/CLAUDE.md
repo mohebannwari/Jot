@@ -124,7 +124,7 @@ Jot/
 - View structure: props → computed properties → body
 - Never hardcode design values — always use asset catalog names
 - Sidebar row height: 34pt for all note rows (NoteListCard, split containers, placeholders)
-- Concentric corner radii: outer container 12, inner = outer - padding (e.g., pinned notes: container 12, padding 4, inner cards 8)
+- Concentric corner radii: outer container 16, inner = outer - padding (e.g., pinned notes: container 16, padding 4, inner cards 12)
 - Forced-appearance containers: split session containers use hardcoded `Color.white` + `.black` text (intentional — theme-independent by design)
 
 ---
