@@ -247,6 +247,27 @@ struct ContentView: View {
 
     private var isSplitActive: Bool { !splitSessions.isEmpty }
 
+    /// Navigate to the split session containing this note
+    private func activateSplitForNote(_ note: Note) {
+        guard let session = splitSessions.first(where: {
+            $0.primaryNoteID == note.id || $0.secondaryNoteID == note.id
+        }) else { return }
+        activeSplitID = session.id
+        isSplitViewVisible = true
+        selectedNote = note
+        selectedNoteIDs = [note.id]
+    }
+
+    /// All note IDs currently participating in any split session
+    private var splitNoteIDs: Set<UUID> {
+        var ids = Set<UUID>()
+        for session in splitSessions {
+            if let p = session.primaryNoteID { ids.insert(p) }
+            if let s = session.secondaryNoteID { ids.insert(s) }
+        }
+        return ids
+    }
+
     /// Whether the split layout should render right now
     private var shouldShowSplitLayout: Bool {
         activeSplitID != nil && isSplitViewVisible
@@ -998,6 +1019,8 @@ struct ContentView: View {
                         notes: pinnedNotes,
                         selectedNoteIDs: sidebarSelectedNoteIDs,
                         activeNoteID: sidebarActiveNoteID,
+                        splitNoteIDs: splitNoteIDs,
+                        onSplitIconTap: activateSplitForNote,
                         folders: folders,
                         onNoteTap: handleNoteTap,
                         onDeleteNotes: requestDeleteNotes,
@@ -1053,7 +1076,9 @@ struct ContentView: View {
                         onDeleteFolder: deleteFolder,
                         onDropNotesIntoFolder: { noteIDs, folderID in
                             batchMoveNotes(noteIDs, toFolderID: folderID)
-                        }
+                        },
+                        splitNoteIDs: splitNoteIDs,
+                        onSplitIconTap: activateSplitForNote
                     )
                 }
 
@@ -1065,6 +1090,8 @@ struct ContentView: View {
                         notes: todayNotes,
                         selectedNoteIDs: sidebarSelectedNoteIDs,
                         activeNoteID: sidebarActiveNoteID,
+                        splitNoteIDs: splitNoteIDs,
+                        onSplitIconTap: activateSplitForNote,
                         folders: folders,
                         onNoteTap: handleNoteTap,
                         onDeleteNotes: requestDeleteNotes,
@@ -1092,6 +1119,8 @@ struct ContentView: View {
                         notes: thisMonthNotes,
                         selectedNoteIDs: sidebarSelectedNoteIDs,
                         activeNoteID: sidebarActiveNoteID,
+                        splitNoteIDs: splitNoteIDs,
+                        onSplitIconTap: activateSplitForNote,
                         folders: folders,
                         onNoteTap: handleNoteTap,
                         onDeleteNotes: requestDeleteNotes,
@@ -1119,6 +1148,8 @@ struct ContentView: View {
                         notes: thisYearNotes,
                         selectedNoteIDs: sidebarSelectedNoteIDs,
                         activeNoteID: sidebarActiveNoteID,
+                        splitNoteIDs: splitNoteIDs,
+                        onSplitIconTap: activateSplitForNote,
                         folders: folders,
                         onNoteTap: handleNoteTap,
                         onDeleteNotes: requestDeleteNotes,
@@ -1146,6 +1177,8 @@ struct ContentView: View {
                         notes: olderNotes,
                         selectedNoteIDs: sidebarSelectedNoteIDs,
                         activeNoteID: sidebarActiveNoteID,
+                        splitNoteIDs: splitNoteIDs,
+                        onSplitIconTap: activateSplitForNote,
                         folders: folders,
                         onNoteTap: handleNoteTap,
                         onDeleteNotes: requestDeleteNotes,
@@ -1173,6 +1206,8 @@ struct ContentView: View {
                         notes: [],
                         selectedNoteIDs: sidebarSelectedNoteIDs,
                         activeNoteID: sidebarActiveNoteID,
+                        splitNoteIDs: splitNoteIDs,
+                        onSplitIconTap: activateSplitForNote,
                         folders: folders,
                         onNoteTap: handleNoteTap,
                         onDeleteNotes: requestDeleteNotes,
@@ -2929,6 +2964,8 @@ struct NotesSection: View {
     let notes: [Note]
     var selectedNoteIDs: Set<UUID> = []
     var activeNoteID: UUID? = nil
+    var splitNoteIDs: Set<UUID> = []
+    var onSplitIconTap: ((Note) -> Void)? = nil
     let folders: [Folder]
     let onNoteTap: (Note, NoteSelectionInteraction) -> Void
     let onDeleteNotes: (Set<UUID>) -> Void
@@ -2957,6 +2994,8 @@ struct NotesSection: View {
                     note: note,
                     isSelected: selectedNoteIDs.contains(note.id),
                     isActiveNote: note.id == activeNoteID,
+                    leadingIconAssetName: splitNoteIDs.contains(note.id) ? "IconArrowSplitUp" : nil,
+                    onLeadingIconTap: splitNoteIDs.contains(note.id) ? { onSplitIconTap?(note) } : nil,
                     onTap: { interaction in onNoteTap(note, interaction) },
                     onTogglePin: { shouldPin in
                         onTogglePinForNotes(contextSelection(for: note), shouldPin)
@@ -3088,11 +3127,11 @@ private struct SplitPickerOverlayRow: View {
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(Color("HoverBackgroundColor"))
                     .opacity(isHovered ? 1 : 0)
             )
-            .contentShape(RoundedRectangle(cornerRadius: 8))
+            .contentShape(RoundedRectangle(cornerRadius: 12))
             .animation(.jotHover, value: isHovered)
         }
         .buttonStyle(.plain)
@@ -3124,6 +3163,7 @@ struct NoteListCard: View {
     var getDragItems: (() -> [NoteDragItem])? = nil
     var cornerRadius: CGFloat = 12
     @State private var isHovered = false
+    @State private var isLeadingIconHovered = false
     @State private var isRenaming = false
     @State private var renamingTitle = ""
     @FocusState private var isFieldFocused: Bool
@@ -3144,8 +3184,8 @@ struct NoteListCard: View {
                             .renderingMode(.template)
                             .resizable()
                             .scaledToFit()
-                            .foregroundColor(Color("SecondaryTextColor"))
-                            .frame(width: 18, height: 18)
+                            .foregroundColor(isLeadingIconHovered && onLeadingIconTap != nil ? .white : Color("SecondaryTextColor"))
+                            .frame(width: 14, height: 14)
                             .opacity(isLeadingIconVisible && !isShowingHoverVariant ? 1 : 0)
 
                         if let hoverIcon = hoverLeadingIconAssetName {
@@ -3153,13 +3193,19 @@ struct NoteListCard: View {
                                 .renderingMode(.template)
                                 .resizable()
                                 .scaledToFit()
-                                .foregroundColor(Color("SecondaryTextColor"))
-                                .frame(width: 18, height: 18)
+                                .foregroundColor(isLeadingIconHovered && onLeadingIconTap != nil ? .white : Color("SecondaryTextColor"))
+                                .frame(width: 14, height: 14)
                                 .opacity(isLeadingIconVisible && isShowingHoverVariant ? 1 : 0)
                         }
                     }
-                    .frame(width: 20, height: 20)
-                    .contentShape(Rectangle())
+                    .padding(4)
+                    .background(
+                        RoundedRectangle(cornerRadius: 999, style: .continuous)
+                            .fill(isLeadingIconHovered && onLeadingIconTap != nil ? Color.accentColor : Color.clear)
+                    )
+                    .animation(.jotHover, value: isLeadingIconHovered)
+                    .contentShape(RoundedRectangle(cornerRadius: 8))
+                    .onHover { isLeadingIconHovered = $0 }
                     .onTapGesture {
                         onLeadingIconTap?()
                     }
@@ -3167,6 +3213,12 @@ struct NoteListCard: View {
                     .allowsHitTesting(isLeadingIconVisible && onLeadingIconTap != nil)
                     .animation(.easeInOut(duration: 0.12), value: isLeadingIconVisible)
                     .animation(.easeInOut(duration: 0.1), value: isShowingHoverVariant)
+
+                    Circle()
+                        .fill(Color("SecondaryTextColor"))
+                        .frame(width: 2, height: 2)
+                        .opacity(isLeadingIconVisible ? 1 : 0)
+                        .padding(.horizontal, -4)
                 }
 
                 if isRenaming {
@@ -3406,6 +3458,8 @@ struct PinnedNotesSection: View {
     let notes: [Note]
     var selectedNoteIDs: Set<UUID> = []
     var activeNoteID: UUID? = nil
+    var splitNoteIDs: Set<UUID> = []
+    var onSplitIconTap: ((Note) -> Void)? = nil
     let folders: [Folder]
     let onNoteTap: (Note, NoteSelectionInteraction) -> Void
     let onDeleteNotes: (Set<UUID>) -> Void
@@ -3418,20 +3472,12 @@ struct PinnedNotesSection: View {
     @Binding var isExpanded: Bool
     @Environment(\.colorScheme) private var colorScheme
 
-    private let containerShape = RoundedRectangle(cornerRadius: 12, style: .continuous)
-    /// Saturated golden yellow -- the "folder color" equivalent for the pinned section.
-    private static let pinnedBaseColor = Color(.sRGB, red: 0.98, green: 0.80, blue: 0.08, opacity: 1.0)
+    private var containerRadius: CGFloat { isExpanded ? 16 : 999 }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             // Header
             HStack(spacing: 8) {
-                Image("IconThumbtack")
-                    .resizable()
-                    .renderingMode(.template)
-                    .frame(width: 18, height: 18)
-                    .foregroundColor(Color("PinnedIconColor"))
-
                 Text("Pinned notes")
                     .font(FontManager.heading(size: 12, weight: .medium))
                     .foregroundColor(Color("SecondaryTextColor"))
@@ -3452,7 +3498,8 @@ struct PinnedNotesSection: View {
                     .frame(width: 18, height: 18)
                     .foregroundColor(Color("PinnedIconColor"))
             }
-            .padding(4)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
             .contentShape(Rectangle())
             .onTapGesture {
                 HapticManager.shared.buttonTap()
@@ -3463,49 +3510,54 @@ struct PinnedNotesSection: View {
 
             // Notes
             if isExpanded {
-                ForEach(notes, id: \.id) { note in
-                    NoteListCard(
-                        note: note,
-                        isSelected: selectedNoteIDs.contains(note.id),
-                        isActiveNote: note.id == activeNoteID,
-                        isInsideFolder: true,
-                        onTap: { interaction in onNoteTap(note, interaction) },
-                        onTogglePin: { shouldPin in
-                            onTogglePinForNotes(contextSelection(for: note), shouldPin)
-                        },
-                        onDelete: { onDeleteNotes(contextSelection(for: note)) },
-                        folders: folders,
-                        onCreateFolderWithNote: { onCreateFolderWithNotes(contextSelection(for: note)) },
-                        onMoveToFolder: { folderID in
-                            onMoveNotesToFolder(contextSelection(for: note), folderID)
-                        },
-                        onExport: { onExportNotes(contextSelection(for: note)) },
-                        onArchive: onArchiveNotes != nil ? { onArchiveNotes?(contextSelection(for: note)) } : nil,
-                        onRename: { newTitle in
-                            onRenameNote?(note, newTitle)
-                        },
-                        getDragItems: {
-                            if selectedNoteIDs.contains(note.id) {
-                                return selectedNoteIDs.map { NoteDragItem(noteID: $0) }
-                            } else {
-                                return [NoteDragItem(noteID: note.id)]
-                            }
-                        },
-                        cornerRadius: 8
-                    )
+                VStack(spacing: 0) {
+                    ForEach(notes, id: \.id) { note in
+                        NoteListCard(
+                            note: note,
+                            isSelected: selectedNoteIDs.contains(note.id),
+                            isActiveNote: note.id == activeNoteID,
+                            isInsideFolder: true,
+                            leadingIconAssetName: splitNoteIDs.contains(note.id) ? "IconArrowSplitUp" : nil,
+                            onLeadingIconTap: splitNoteIDs.contains(note.id) ? { onSplitIconTap?(note) } : nil,
+                            onTap: { interaction in onNoteTap(note, interaction) },
+                            onTogglePin: { shouldPin in
+                                onTogglePinForNotes(contextSelection(for: note), shouldPin)
+                            },
+                            onDelete: { onDeleteNotes(contextSelection(for: note)) },
+                            folders: folders,
+                            onCreateFolderWithNote: { onCreateFolderWithNotes(contextSelection(for: note)) },
+                            onMoveToFolder: { folderID in
+                                onMoveNotesToFolder(contextSelection(for: note), folderID)
+                            },
+                            onExport: { onExportNotes(contextSelection(for: note)) },
+                            onArchive: onArchiveNotes != nil ? { onArchiveNotes?(contextSelection(for: note)) } : nil,
+                            onRename: { newTitle in
+                                onRenameNote?(note, newTitle)
+                            },
+                            getDragItems: {
+                                if selectedNoteIDs.contains(note.id) {
+                                    return selectedNoteIDs.map { NoteDragItem(noteID: $0) }
+                                } else {
+                                    return [NoteDragItem(noteID: note.id)]
+                                }
+                            },
+                            cornerRadius: 12
+                        )
+                    }
                 }
+                .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .top)))
             }
         }
         .padding(4)
+        .clipShape(RoundedRectangle(cornerRadius: containerRadius, style: .continuous))
         .background(
-            containerShape
-                .fill(Self.pinnedBaseColor.solidFolderTint(for: colorScheme))
+            RoundedRectangle(cornerRadius: containerRadius, style: .continuous)
+                .fill(Color("PinnedBgColor"))
         )
         .overlay(
-            containerShape
-                .stroke(Color.primary.opacity(0.2), lineWidth: 1)
+            RoundedRectangle(cornerRadius: containerRadius, style: .continuous)
+                .stroke(Color("BorderSubtleColor"), lineWidth: 1)
         )
-        .clipShape(containerShape)
     }
 
     private func contextSelection(for note: Note) -> Set<UUID> {

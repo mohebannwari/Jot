@@ -27,6 +27,8 @@ struct FolderSection: View {
     var onArchiveFolder: ((Folder) -> Void)? = nil
     let onDeleteFolder: (Folder) -> Void
     let onDropNotesIntoFolder: (Set<UUID>, UUID) -> Bool
+    var splitNoteIDs: Set<UUID> = []
+    var onSplitIconTap: ((Note) -> Void)? = nil
 
     @Environment(\.colorScheme) private var colorScheme
     @State private var hoveredFolderID: UUID?
@@ -261,6 +263,8 @@ struct FolderSection: View {
                             isActiveNote: note.id == activeNoteID,
                             activeIconTint: folder.folderColor,
                             isInsideFolder: true,
+                            leadingIconAssetName: splitNoteIDs.contains(note.id) ? "IconArrowSplitUp" : nil,
+                            onLeadingIconTap: splitNoteIDs.contains(note.id) ? { onSplitIconTap?(note) } : nil,
                             onTap: { interaction in onOpenNote(note, interaction) },
                             onTogglePin: { shouldPin in
                                 onTogglePinForNotes(contextSelection(for: note), shouldPin)
