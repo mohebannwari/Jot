@@ -255,11 +255,6 @@ struct SettingsPage: View {
                             isOn: $themeManager.groupNotesByDate
                         )
                         settingsCheckbox(
-                            "Always resume to last Quick Note",
-                            subtitle: "When invoking Quick Note using a hot corner or keyboard shortcut, resume to last Quick Note instead of creating a new one.",
-                            isOn: $themeManager.resumeToLastQuickNote
-                        )
-                        settingsCheckbox(
                             "Automatically sort checked items",
                             subtitle: "Automatically move checklist items to the bottom of the list as they are checked.",
                             isOn: $themeManager.autoSortCheckedItems

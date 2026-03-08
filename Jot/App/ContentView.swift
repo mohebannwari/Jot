@@ -220,7 +220,7 @@ struct ContentView: View {
     private let sidebarTopBarTrafficLightGap: CGFloat = 12
     private let sidebarRowHoverInset: CGFloat = 0
     private let floatingSidebarWidth: CGFloat = 276
-    private let floatingSidebarCornerRadius: CGFloat = 16
+    private let floatingSidebarCornerRadius: CGFloat = 24
     private let floatingSidebarEdgeInset: CGFloat = 8
     private let floatingSidebarHoverTriggerWidth: CGFloat = 20
     private let floatingSidebarDismissDelay: TimeInterval = 0.3
@@ -1925,13 +1925,12 @@ struct ContentView: View {
             }
             .scrollClipDisabled()
             .scrollIndicators(.never)
-            .padding(.top, 4)
+            .padding(.top, -6)
             .padding(.bottom, 4)
 
             sidebarMenuItem(assetName: "IconSettingsGear1", label: "Settings", isActive: isSettingsPresented) {
                 presentSettings()
             }
-            .padding(.bottom, sidebarSettingsBottomPadding)
         }
         .padding(.horizontal, 8)
         .frame(width: floatingSidebarWidth)
@@ -2030,37 +2029,20 @@ struct ContentView: View {
     @ViewBuilder
     private func noteLockOverlay(for note: Note) -> some View {
         VStack(spacing: 16) {
-            if themeManager.lockPasswordType == .custom {
-                SecureField("Enter Password", text: $lockPasswordInput)
-                    .textFieldStyle(.plain)
-                    .font(FontManager.heading(size: 15, weight: .medium))
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 10)
-                    .frame(width: 260)
-                    .thinLiquidGlass(in: Capsule())
-                    .overlay(
-                        lockAuthFailed
-                            ? Capsule().stroke(Color.red.opacity(0.6), lineWidth: 1)
-                            : nil
-                    )
-                    .onSubmit { validateLockPassword(for: note) }
-            } else {
-                Button {
-                    authManager.authenticate(noteID: note.id, method: .login) { success in
-                        if !success {
-                            lockAuthFailed = true
-                        }
-                    }
-                } label: {
-                    Text("Unlock")
-                        .font(FontManager.heading(size: 14, weight: .medium))
-                        .foregroundColor(Color("PrimaryTextColor"))
-                        .padding(.horizontal, 24)
-                        .padding(.vertical, 10)
-                        .thinLiquidGlass(in: Capsule())
-                }
-                .buttonStyle(.plain)
-            }
+            SecureField("Enter Password", text: $lockPasswordInput)
+                .textFieldStyle(.plain)
+                .font(FontManager.heading(size: 15, weight: .medium))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .frame(width: 260)
+                .thinLiquidGlass(in: Capsule())
+                .overlay(
+                    lockAuthFailed
+                        ? Capsule().stroke(Color.red.opacity(0.6), lineWidth: 1)
+                        : nil
+                )
+                .onSubmit { validateLockPassword(for: note) }
 
             if themeManager.useTouchID {
                 Button {
@@ -2080,7 +2062,8 @@ struct ContentView: View {
     }
 
     private func validateLockPassword(for note: Note) {
-        authManager.authenticate(noteID: note.id, method: .custom, customPasswordInput: lockPasswordInput) { success in
+        let method: AuthMethod = themeManager.lockPasswordType == .custom ? .custom : .login
+        authManager.authenticate(noteID: note.id, method: method, customPasswordInput: lockPasswordInput) { success in
             if success {
                 lockPasswordInput = ""
                 lockAuthFailed = false
@@ -3859,8 +3842,8 @@ struct PinnedNotesSection: View {
                             leadingIconAssetName: "IconThumbtack",
                             hoverLeadingIconAssetName: "IconUnpin",
                             persistentLeadingIconBg: true,
-                            leadingIconBgColor: Color.yellow,
-                            leadingIconFgColor: Color(red: 0.6, green: 0.45, blue: 0),
+                            leadingIconBgColor: Color.yellow.opacity(0.15),
+                            leadingIconFgColor: Color.yellow,
                             onLeadingIconTap: {
                                 onTogglePinForNotes([note.id], false)
                             },

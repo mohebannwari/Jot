@@ -1,6 +1,7 @@
 import Combine
 import Foundation
 import LocalAuthentication
+import OpenDirectory
 
 enum AuthMethod {
     case login
@@ -47,7 +48,7 @@ final class NoteAuthenticationManager: ObservableObject {
     func authenticate(noteID: UUID, method: AuthMethod, customPasswordInput: String = "", completion: @escaping (Bool) -> Void) {
         switch method {
         case .login:
-            authenticateWithLogin(noteID: noteID, completion: completion)
+            authenticateWithLoginPassword(noteID: noteID, password: customPasswordInput, completion: completion)
         case .custom:
             authenticateWithCustomPassword(noteID: noteID, input: customPasswordInput, completion: completion)
         case .touchID:
@@ -55,22 +56,28 @@ final class NoteAuthenticationManager: ObservableObject {
         }
     }
 
-    private func authenticateWithLogin(noteID: UUID, completion: @escaping (Bool) -> Void) {
-        let context = LAContext()
-        var error: NSError?
-
-        guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
-            completion(false)
-            return
-        }
-
-        context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "Unlock note") { [weak self] success, _ in
-            Task { @MainActor in
-                if success {
-                    self?.unlockedNoteIDs.insert(noteID)
-                }
-                completion(success)
+    private func authenticateWithLoginPassword(noteID: UUID, password: String, completion: @escaping (Bool) -> Void) {
+        do {
+            let node = try ODNode(session: ODSession.default(), type: ODNodeType(kODNodeTypeAuthentication))
+            let query = try ODQuery(
+                node: node,
+                forRecordTypes: kODRecordTypeUsers,
+                attribute: kODAttributeTypeRecordName,
+                matchType: ODMatchType(kODMatchEqualTo),
+                queryValues: NSUserName(),
+                returnAttributes: kODAttributeTypeNativeOnly,
+                maximumResults: 1
+            )
+            let results = try query.resultsAllowingPartial(false)
+            guard let record = results.first as? ODRecord else {
+                completion(false)
+                return
             }
+            try record.verifyPassword(password)
+            unlockedNoteIDs.insert(noteID)
+            completion(true)
+        } catch {
+            completion(false)
         }
     }
 
