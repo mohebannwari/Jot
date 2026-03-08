@@ -12,7 +12,6 @@ struct ArchivedNoteRow: View {
     let onTap: () -> Void
     let onUnarchive: () -> Void
     let onDelete: () -> Void
-    var cornerRadius: CGFloat = 10
     /// When true, renders as a folder-item row: date on right, no unarchive button,
     /// delete-only context menu — matching the layout of NoteListCard inside FolderSection.
     var inFolderContext: Bool = false
@@ -43,55 +42,62 @@ struct ArchivedNoteRow: View {
             } else {
                 Spacer(minLength: 8)
 
-                Button {
-                    HapticManager.shared.buttonTap()
-                    withAnimation(.easeInOut(duration: 0.25)) {
-                        onUnarchive()
+                HStack(spacing: 2) {
+                    Button {
+                        HapticManager.shared.buttonTap()
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            onUnarchive()
+                        }
+                    } label: {
+                        Image("IconStepBack")
+                            .renderingMode(.template)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 14, height: 14)
+                            .foregroundColor(Color("SecondaryTextColor"))
+                            .padding(4)
+                            .contentShape(Circle())
                     }
-                } label: {
-                    Image("IconStepBack")
-                        .renderingMode(.template)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 18, height: 18)
-                        .foregroundColor(Color("SecondaryTextColor"))
-                }
-                .buttonStyle(.plain)
-                .subtleHoverScale(1.06)
-                .help("Unarchive Note")
-                .opacity(isHovered ? 1 : 0)
-                .allowsHitTesting(isHovered)
+                    .buttonStyle(.plain)
+                    .subtleHoverScale(1.06)
+                    .hoverContainer(cornerRadius: 999)
+                    .help("Unarchive Note")
 
-                Button {
-                    HapticManager.shared.buttonTap()
-                    withAnimation(.easeInOut(duration: 0.25)) {
-                        onDelete()
+                    Button {
+                        HapticManager.shared.buttonTap()
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            onDelete()
+                        }
+                    } label: {
+                        Image("delete")
+                            .renderingMode(.template)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 14, height: 14)
+                            .foregroundColor(.red)
+                            .padding(4)
+                            .contentShape(Circle())
                     }
-                } label: {
-                    Image("delete")
-                        .renderingMode(.template)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 18, height: 18)
-                        .foregroundColor(.red)
+                    .buttonStyle(.plain)
+                    .subtleHoverScale(1.06)
+                    .hoverContainer(cornerRadius: 999)
+                    .help("Delete Note")
                 }
-                .buttonStyle(.plain)
-                .subtleHoverScale(1.06)
-                .help("Delete Note")
                 .opacity(isHovered ? 1 : 0)
                 .allowsHitTesting(isHovered)
             }
         }
         .padding(8)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: 34)
         .background(
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            Capsule()
                 .fill(backgroundFill)
         )
         .shadow(color: isActive ? .black.opacity(0.06) : .clear, radius: 3, x: 0, y: 1)
         .shadow(color: isActive ? .black.opacity(0.03) : .clear, radius: 1, x: 0, y: 0)
         .animation(.jotHover, value: isHovered)
-        .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .contentShape(Capsule())
         .onTapGesture {
             onTap()
         }

@@ -87,6 +87,41 @@ struct FolderSection: View {
 
                             if isFolderExpanded {
                                 folderNotesList(folder)
+                            } else if let peekNote = activeNoteInFolder(folder) {
+                                NoteListCard(
+                                    note: peekNote,
+                                    isSelected: selectedNoteIDs.contains(peekNote.id),
+                                    isActiveNote: peekNote.id == activeNoteID,
+                                    activeIconTint: folder.folderColor,
+                                    isInsideFolder: true,
+                                    onTap: { interaction in onOpenNote(peekNote, interaction) },
+                                    onTogglePin: { shouldPin in
+                                        onTogglePinForNotes(contextSelection(for: peekNote), shouldPin)
+                                    },
+                                    onDelete: { onDeleteNotes(contextSelection(for: peekNote)) },
+                                    folders: allFolders,
+                                    onCreateFolderWithNote: {
+                                        onCreateFolderWithNotes(contextSelection(for: peekNote))
+                                    },
+                                    onMoveToFolder: { folderID in
+                                        onMoveNotesToFolder(contextSelection(for: peekNote), folderID)
+                                    },
+                                    onExport: { onExportNotes(contextSelection(for: peekNote)) },
+                                    onArchive: onArchiveNotes != nil ? { onArchiveNotes?(contextSelection(for: peekNote)) } : nil,
+                                    onToggleLock: onToggleLockNote != nil ? { onToggleLockNote?(peekNote.id) } : nil,
+                                    onRename: { newTitle in
+                                        onRenameNote?(peekNote, newTitle)
+                                    },
+                                    getDragItems: {
+                                        if selectedNoteIDs.contains(peekNote.id) {
+                                            return selectedNoteIDs.map { NoteDragItem(noteID: $0) }
+                                        } else {
+                                            return [NoteDragItem(noteID: peekNote.id)]
+                                        }
+                                    }
+                                )
+                                .padding(.leading, 26)
+                                .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .top)))
                             }
                         }
                         .id(folder.id)
@@ -97,7 +132,7 @@ struct FolderSection: View {
                 VStack(alignment: .leading, spacing: 4) {
                     // Folder header — tap to expand accordion + folder
                     HStack(spacing: 8) {
-                        Image("IconArrowCornerDownRight")
+                        Image("IconRedirectArrow")
                             .renderingMode(.template)
                             .resizable()
                             .scaledToFit()
@@ -407,11 +442,11 @@ struct FolderSection: View {
                                 ? "IconLock"
                                 : (splitNoteIDs.contains(note.id) ? "IconArrowSplitUp" : nil),
                             hoverLeadingIconAssetName: note.isLocked ? "IconUnlocked" : nil,
-                            persistentLeadingIconBg: note.isLocked,
-                            leadingIconBgColor: note.isLocked ? Color.red.opacity(0.15) : .accentColor,
-                            leadingIconFgColor: note.isLocked ? Color.red : .white,
-                            hoverLeadingIconBgColor: note.isLocked ? Color.green.opacity(0.15) : nil,
-                            hoverLeadingIconFgColor: note.isLocked ? Color.green : nil,
+                            persistentLeadingIconBg: note.isLocked || splitNoteIDs.contains(note.id),
+                            leadingIconBgColor: note.isLocked ? Color.red : .blue,
+                            leadingIconFgColor: .white,
+                            hoverLeadingIconBgColor: note.isLocked ? Color.green : nil,
+                            hoverLeadingIconFgColor: nil,
                             onLeadingIconTap: note.isLocked
                                 ? { onLockIconTap?(note) }
                                 : (splitNoteIDs.contains(note.id) ? { onSplitIconTap?(note) } : nil),
@@ -462,6 +497,11 @@ struct FolderSection: View {
                 .padding(.leading, 26)
             }
         }
+    }
+
+    private func activeNoteInFolder(_ folder: Folder) -> Note? {
+        guard let activeID = activeNoteID else { return nil }
+        return (notesByFolder[folder.id] ?? []).first { $0.id == activeID }
     }
 
     private var activeFolderAndNote: (Folder, Note)? {

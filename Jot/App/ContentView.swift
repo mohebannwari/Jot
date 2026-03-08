@@ -1060,6 +1060,16 @@ struct ContentView: View {
                         Image.menuIcon("IconPageTextAdd")
                     }
                 }
+
+                Button {
+                    // No functionality yet -- awaiting component design
+                } label: {
+                    Label("Import Notes...", systemImage: "square.and.arrow.down")
+                }
+            }
+            .onTapGesture(count: 2) {
+                HapticManager.shared.buttonTap()
+                createAndOpenNewNote()
             }
             .onTapGesture {
                 if isSearchPresented {
@@ -1621,46 +1631,53 @@ struct ContentView: View {
 
                                 Spacer(minLength: 8)
 
-                                Button {
-                                    HapticManager.shared.buttonTap()
-                                    withAnimation(.easeInOut(duration: 0.25)) {
-                                        notesManager.unarchiveFolder(folder)
+                                HStack(spacing: 2) {
+                                    Button {
+                                        HapticManager.shared.buttonTap()
+                                        withAnimation(.easeInOut(duration: 0.25)) {
+                                            notesManager.unarchiveFolder(folder)
+                                        }
+                                    } label: {
+                                        Image("IconStepBack")
+                                            .renderingMode(.template)
+                                            .resizable()
+                                            .scaledToFit()
+                                            .frame(width: 14, height: 14)
+                                            .foregroundColor(Color("SecondaryTextColor"))
+                                            .padding(4)
+                                            .contentShape(Circle())
                                     }
-                                } label: {
-                                    Image("IconStepBack")
-                                        .renderingMode(.template)
-                                        .resizable()
-                                        .scaledToFit()
-                                        .frame(width: 18, height: 18)
-                                        .foregroundColor(Color("SecondaryTextColor"))
-                                }
-                                .buttonStyle(.plain)
-                                .subtleHoverScale(1.06)
-                                .help("Unarchive Folder")
-                                .opacity(isHovered ? 1 : 0)
-                                .allowsHitTesting(isHovered)
+                                    .buttonStyle(.plain)
+                                    .subtleHoverScale(1.06)
+                                    .hoverContainer(cornerRadius: 999)
+                                    .help("Unarchive Folder")
 
-                                Button {
-                                    HapticManager.shared.buttonTap()
-                                    withAnimation(.easeInOut(duration: 0.25)) {
-                                        deleteFolder(folder)
+                                    Button {
+                                        HapticManager.shared.buttonTap()
+                                        withAnimation(.easeInOut(duration: 0.25)) {
+                                            deleteFolder(folder)
+                                        }
+                                    } label: {
+                                        Image("delete")
+                                            .renderingMode(.template)
+                                            .resizable()
+                                            .scaledToFit()
+                                            .frame(width: 14, height: 14)
+                                            .foregroundColor(.red)
+                                            .padding(4)
+                                            .contentShape(Circle())
                                     }
-                                } label: {
-                                    Image("delete")
-                                        .renderingMode(.template)
-                                        .resizable()
-                                        .scaledToFit()
-                                        .frame(width: 18, height: 18)
-                                        .foregroundColor(.red)
+                                    .buttonStyle(.plain)
+                                    .subtleHoverScale(1.06)
+                                    .hoverContainer(cornerRadius: 999)
+                                    .help("Delete Folder")
                                 }
-                                .buttonStyle(.plain)
-                                .subtleHoverScale(1.06)
-                                .help("Delete Folder")
                                 .opacity(isHovered ? 1 : 0)
                                 .allowsHitTesting(isHovered)
                             }
-                            .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(8)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .frame(height: 34)
                             .background(
                                 Capsule()
                                     .fill(isHovered ? Color("HoverBackgroundColor") : Color.clear)
@@ -1708,6 +1725,18 @@ struct ContentView: View {
 
                             if isExpanded && !notes.isEmpty {
                                 archivedFolderNotesList(folder: folder, notes: notes)
+                            } else if !isExpanded, let peekNote = activeArchivedNoteInFolder(folder, notes: notes) {
+                                ArchivedNoteRow(
+                                    note: peekNote,
+                                    isSelected: selectedNoteIDs.contains(peekNote.id),
+                                    isActive: peekNote.id == selectedNote?.id,
+                                    onTap: { handleNoteTap(peekNote, .plain) },
+                                    onUnarchive: { },
+                                    onDelete: { requestDeleteNotes([peekNote.id]) },
+                                    inFolderContext: true
+                                )
+                                .padding(.leading, 26)
+                                .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .top)))
                             }
                         }
                     }
@@ -1936,6 +1965,11 @@ struct ContentView: View {
         .frame(width: floatingSidebarWidth)
         .frame(maxHeight: .infinity)
         .padding(.vertical, 8)
+        .contentShape(Rectangle())
+        .onTapGesture(count: 2) {
+            HapticManager.shared.buttonTap()
+            createAndOpenNewNote()
+        }
         .liquidGlass(in: RoundedRectangle(cornerRadius: floatingSidebarCornerRadius, style: .continuous))
         .shadow(color: .black.opacity(0.04), radius: 9.5, x: 0, y: 9)
         .shadow(color: .black.opacity(0.02), radius: 17.5, x: 0, y: 35)
@@ -2967,6 +3001,11 @@ struct ContentView: View {
     }
 
     @ViewBuilder
+    private func activeArchivedNoteInFolder(_ folder: Folder, notes: [Note]) -> Note? {
+        guard let activeID = selectedNote?.id else { return nil }
+        return notes.first { $0.id == activeID }
+    }
+
     private func archivedFolderNotesList(folder: Folder, notes: [Note]) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(notes, id: \.id) { note in
@@ -2977,7 +3016,6 @@ struct ContentView: View {
                     onTap: { handleNoteTap(note, .plain) },
                     onUnarchive: { },
                     onDelete: { requestDeleteNotes([note.id]) },
-                    cornerRadius: 8,
                     inFolderContext: true
                 )
             }
@@ -3279,11 +3317,11 @@ struct NotesSection: View {
                         ? "IconLock"
                         : (splitNoteIDs.contains(note.id) ? "IconArrowSplitUp" : nil),
                     hoverLeadingIconAssetName: note.isLocked ? "IconUnlocked" : nil,
-                    persistentLeadingIconBg: note.isLocked,
-                    leadingIconBgColor: note.isLocked ? Color.red.opacity(0.15) : .accentColor,
-                    leadingIconFgColor: note.isLocked ? Color.red : .white,
-                    hoverLeadingIconBgColor: note.isLocked ? Color.green.opacity(0.15) : nil,
-                    hoverLeadingIconFgColor: note.isLocked ? Color.green : nil,
+                    persistentLeadingIconBg: note.isLocked || splitNoteIDs.contains(note.id),
+                    leadingIconBgColor: note.isLocked ? Color.red : .blue,
+                    leadingIconFgColor: .white,
+                    hoverLeadingIconBgColor: note.isLocked ? Color.green : nil,
+                    hoverLeadingIconFgColor: nil,
                     onLeadingIconTap: note.isLocked
                         ? { onLockIconTap?(note) }
                         : (splitNoteIDs.contains(note.id) ? { onSplitIconTap?(note) } : nil),
@@ -3469,7 +3507,7 @@ struct NoteListCard: View {
 
     private var leadingIconTint: Color {
         isActiveNote
-            ? (colorScheme == .light ? .white : .black)
+            ? Color("ButtonPrimaryTextColor")
             : Color("SecondaryTextColor")
     }
 
@@ -3549,7 +3587,7 @@ struct NoteListCard: View {
                     Text(note.title)
                         .font(FontManager.heading(size: 15, weight: .medium))
                         .foregroundColor(isActiveNote
-                            ? (colorScheme == .light ? Color.white : Color.black)
+                            ? Color("ButtonPrimaryTextColor")
                             : Color("PrimaryTextColor"))
                         .tracking(-0.1)
                         .lineLimit(1)
@@ -3563,7 +3601,7 @@ struct NoteListCard: View {
                 Text(Self.dateFormatter.string(from: note.date))
                     .font(FontManager.metadata(size: 11, weight: .medium))
                     .foregroundColor(isActiveNote
-                        ? (colorScheme == .light ? Color.white.opacity(0.7) : Color.black.opacity(0.5))
+                        ? Color("ButtonPrimaryTextColor").opacity(0.7)
                         : Color("SecondaryTextColor"))
             }
             .animation(.jotHover, value: isHovered)
@@ -3573,7 +3611,7 @@ struct NoteListCard: View {
             .background {
                 if isActiveNote {
                     Capsule()
-                        .fill(colorScheme == .light ? Color.black : Color.white)
+                        .fill(Color("ButtonPrimaryBgColor"))
                 } else if isSelected {
                     Capsule()
                         .fill(Color("SurfaceTranslucentColor"))
@@ -3797,6 +3835,11 @@ struct PinnedNotesSection: View {
     var onRenameNote: ((Note, String) -> Void)? = nil
     @Binding var isExpanded: Bool
 
+    private var activeNote: Note? {
+        guard let activeID = activeNoteID else { return nil }
+        return notes.first { $0.id == activeID }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Header
@@ -3842,8 +3885,8 @@ struct PinnedNotesSection: View {
                             leadingIconAssetName: "IconThumbtack",
                             hoverLeadingIconAssetName: "IconUnpin",
                             persistentLeadingIconBg: true,
-                            leadingIconBgColor: Color.yellow.opacity(0.15),
-                            leadingIconFgColor: Color.yellow,
+                            leadingIconBgColor: Color.yellow,
+                            leadingIconFgColor: .white,
                             onLeadingIconTap: {
                                 onTogglePinForNotes([note.id], false)
                             },
@@ -3873,6 +3916,54 @@ struct PinnedNotesSection: View {
                         )
                     }
                 }
+                .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .top)))
+            } else if let peekNote = activeNote {
+                HStack(alignment: .center, spacing: 6) {
+                    Image("IconRedirectArrow")
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
+                        .foregroundColor(Color("SecondaryTextColor"))
+                        .frame(width: 18, height: 18)
+
+                    NoteListCard(
+                        note: peekNote,
+                        isSelected: selectedNoteIDs.contains(peekNote.id),
+                        isActiveNote: peekNote.id == activeNoteID,
+                        leadingIconAssetName: "IconThumbtack",
+                        hoverLeadingIconAssetName: "IconUnpin",
+                        persistentLeadingIconBg: true,
+                        leadingIconBgColor: Color.yellow,
+                        leadingIconFgColor: .white,
+                        onLeadingIconTap: {
+                            onTogglePinForNotes([peekNote.id], false)
+                        },
+                        onTap: { interaction in onNoteTap(peekNote, interaction) },
+                        onTogglePin: { shouldPin in
+                            onTogglePinForNotes(contextSelection(for: peekNote), shouldPin)
+                        },
+                        onDelete: { onDeleteNotes(contextSelection(for: peekNote)) },
+                        folders: folders,
+                        onCreateFolderWithNote: { onCreateFolderWithNotes(contextSelection(for: peekNote)) },
+                        onMoveToFolder: { folderID in
+                            onMoveNotesToFolder(contextSelection(for: peekNote), folderID)
+                        },
+                        onExport: { onExportNotes(contextSelection(for: peekNote)) },
+                        onArchive: onArchiveNotes != nil ? { onArchiveNotes?(contextSelection(for: peekNote)) } : nil,
+                        onToggleLock: onToggleLockNote != nil ? { onToggleLockNote?(peekNote.id) } : nil,
+                        onRename: { newTitle in
+                            onRenameNote?(peekNote, newTitle)
+                        },
+                        getDragItems: {
+                            if selectedNoteIDs.contains(peekNote.id) {
+                                return selectedNoteIDs.map { NoteDragItem(noteID: $0) }
+                            } else {
+                                return [NoteDragItem(noteID: peekNote.id)]
+                            }
+                        }
+                    )
+                }
+                .padding(.leading, 8)
                 .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .top)))
             }
         }
@@ -3904,6 +3995,11 @@ struct LockedNotesSection: View {
     var onLockIconTap: ((Note) -> Void)? = nil
     var onRenameNote: ((Note, String) -> Void)? = nil
     @Binding var isExpanded: Bool
+
+    private var activeNote: Note? {
+        guard let activeID = activeNoteID else { return nil }
+        return notes.first { $0.id == activeID }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -3950,10 +4046,10 @@ struct LockedNotesSection: View {
                             leadingIconAssetName: "IconLock",
                             hoverLeadingIconAssetName: "IconUnlocked",
                             persistentLeadingIconBg: true,
-                            leadingIconBgColor: Color.red.opacity(0.15),
-                            leadingIconFgColor: Color.red,
-                            hoverLeadingIconBgColor: Color.green.opacity(0.15),
-                            hoverLeadingIconFgColor: Color.green,
+                            leadingIconBgColor: Color.red,
+                            leadingIconFgColor: .white,
+                            hoverLeadingIconBgColor: Color.green,
+                            hoverLeadingIconFgColor: .white,
                             onLeadingIconTap: { onLockIconTap?(note) },
                             onTap: { interaction in onNoteTap(note, interaction) },
                             onTogglePin: { shouldPin in
@@ -3981,6 +4077,54 @@ struct LockedNotesSection: View {
                         )
                     }
                 }
+                .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .top)))
+            } else if let peekNote = activeNote {
+                HStack(alignment: .center, spacing: 6) {
+                    Image("IconRedirectArrow")
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
+                        .foregroundColor(Color("SecondaryTextColor"))
+                        .frame(width: 18, height: 18)
+
+                    NoteListCard(
+                        note: peekNote,
+                        isSelected: selectedNoteIDs.contains(peekNote.id),
+                        isActiveNote: peekNote.id == activeNoteID,
+                        leadingIconAssetName: "IconLock",
+                        hoverLeadingIconAssetName: "IconUnlocked",
+                        persistentLeadingIconBg: true,
+                        leadingIconBgColor: Color.red,
+                        leadingIconFgColor: .white,
+                        hoverLeadingIconBgColor: Color.green,
+                        hoverLeadingIconFgColor: .white,
+                        onLeadingIconTap: { onLockIconTap?(peekNote) },
+                        onTap: { interaction in onNoteTap(peekNote, interaction) },
+                        onTogglePin: { shouldPin in
+                            onTogglePinForNotes(contextSelection(for: peekNote), shouldPin)
+                        },
+                        onDelete: { onDeleteNotes(contextSelection(for: peekNote)) },
+                        folders: folders,
+                        onCreateFolderWithNote: { onCreateFolderWithNotes(contextSelection(for: peekNote)) },
+                        onMoveToFolder: { folderID in
+                            onMoveNotesToFolder(contextSelection(for: peekNote), folderID)
+                        },
+                        onExport: { onExportNotes(contextSelection(for: peekNote)) },
+                        onArchive: onArchiveNotes != nil ? { onArchiveNotes?(contextSelection(for: peekNote)) } : nil,
+                        onToggleLock: onToggleLockNote != nil ? { onToggleLockNote?(peekNote.id) } : nil,
+                        onRename: { newTitle in
+                            onRenameNote?(peekNote, newTitle)
+                        },
+                        getDragItems: {
+                            if selectedNoteIDs.contains(peekNote.id) {
+                                return selectedNoteIDs.map { NoteDragItem(noteID: $0) }
+                            } else {
+                                return [NoteDragItem(noteID: peekNote.id)]
+                            }
+                        }
+                    )
+                }
+                .padding(.leading, 8)
                 .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .top)))
             }
         }

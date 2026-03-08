@@ -4727,7 +4727,7 @@ struct URLPasteOptionMenu: View {
             if let appearance = controlView?.effectiveAppearance {
                 NSAppearance.current = appearance
             }
-            let accentColor = NSColor.controlAccentColor
+            let accentColor = NSColor(named: "ButtonPrimaryBgColor") ?? NSColor.controlAccentColor
 
             let xInset = (size.width - checkSize) / 2
             let yInset = (size.height - checkSize) / 2
@@ -4742,7 +4742,7 @@ struct URLPasteOptionMenu: View {
                 // SF Symbol checkmark
                 if let symbolImage = NSImage(systemSymbolName: "checkmark", accessibilityDescription: nil) {
                     let sizeConfig = NSImage.SymbolConfiguration(pointSize: 9, weight: .bold)
-                    let colorConfig = NSImage.SymbolConfiguration(paletteColors: [.white])
+                    let colorConfig = NSImage.SymbolConfiguration(paletteColors: [NSColor(named: "ButtonPrimaryTextColor") ?? .white])
                     if let configured = symbolImage.withSymbolConfiguration(sizeConfig.applying(colorConfig)) {
                         let symSize = configured.size
                         let symX = xInset + (checkSize - symSize.width) / 2

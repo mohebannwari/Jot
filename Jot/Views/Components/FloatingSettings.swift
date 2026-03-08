@@ -39,14 +39,14 @@ struct SettingsPage: View {
     private let tabVerticalSpacing: CGFloat = 12
     private let contentVerticalPadding: CGFloat = 8
 
-    private let themeCardHeight: CGFloat = 56
+    private let themeCardHeight: CGFloat = 91
 
     private let bodyFontCardWidth: CGFloat = 122
     private let bodyFontCardHeight: CGFloat = 91
     private let bodyFontCardRadius: CGFloat = 16
 
     private let lineSpacingCardWidth: CGFloat = 122
-    private let lineSpacingCardHeight: CGFloat = 72
+    private let lineSpacingCardHeight: CGFloat = 91
     private let lineSpacingCardRadius: CGFloat = 16
 
     private let developerEmail = "mhbanwari@gmail.com"
@@ -528,7 +528,7 @@ struct SettingsPage: View {
             HStack(alignment: .top, spacing: 8) {
                 ZStack {
                     Circle()
-                        .fill(isOn.wrappedValue ? Color(nsColor: .controlAccentColor) : (colorScheme == .dark ? Color(white: 0.18) : Color.white))
+                        .fill(isOn.wrappedValue ? Color("ButtonPrimaryBgColor") : (colorScheme == .dark ? Color(white: 0.18) : Color.white))
                         .frame(width: 16, height: 16)
 
                     Circle()
@@ -538,7 +538,7 @@ struct SettingsPage: View {
                     if isOn.wrappedValue {
                         Image(systemName: "checkmark")
                             .font(.system(size: 9, weight: .bold))
-                            .foregroundColor(.white)
+                            .foregroundColor(Color("ButtonPrimaryTextColor"))
                     }
                 }
                 .padding(.top, 2)
@@ -633,14 +633,14 @@ struct SettingsPage: View {
                     .resizable()
                     .interpolation(.high)
                     .scaledToFill()
-                    .offset(y: -7)
-                    .frame(height: themeCardHeight)
                     .frame(maxWidth: .infinity)
-                    .clipShape(Capsule())
+                    .frame(height: themeCardHeight)
+                    .clipped()
+                    .clipShape(RoundedRectangle(cornerRadius: bodyFontCardRadius, style: .continuous))
                     .shadow(color: .black.opacity(0.06), radius: 3, x: 0, y: 1)
                     .shadow(color: .black.opacity(0.03), radius: 1, x: 0, y: 0)
                     .overlay {
-                        Capsule()
+                        RoundedRectangle(cornerRadius: bodyFontCardRadius, style: .continuous)
                             .stroke(
                                 Color(nsColor: NSColor.labelColor).opacity(0.09),
                                 lineWidth: 1
@@ -850,7 +850,7 @@ struct SettingsPage: View {
                 .font(FontManager.metadata(size: 13, weight: .medium))
                 .foregroundColor(
                     isSelected
-                        ? .white
+                        ? Color("ButtonPrimaryTextColor")
                         : Color("SettingsPlaceholderTextColor")
                 )
                 .frame(width: wide ? 64 : 40, height: 32)
@@ -889,7 +889,7 @@ struct SettingsPage: View {
 
         return TextField("", text: $customFontSizeText)
             .font(FontManager.metadata(size: 13, weight: .medium))
-            .foregroundColor(isCustomSelected ? .white : Color("SettingsPrimaryTextColor"))
+            .foregroundColor(isCustomSelected ? Color("ButtonPrimaryTextColor") : Color("SettingsPrimaryTextColor"))
             .multilineTextAlignment(.center)
             .frame(width: 40, height: 32)
             .background(
@@ -1210,7 +1210,7 @@ struct SettingsPage: View {
                 Text("Send")
                     .font(FontManager.heading(size: 15, weight: .medium))
                     .tracking(-0.2)
-                    .foregroundColor(.white)
+                    .foregroundColor(Color("ButtonPrimaryTextColor"))
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .background(
@@ -1284,7 +1284,7 @@ struct SettingsPage: View {
         Text(text)
             .font(FontManager.heading(size: 13, weight: .medium))
             .tracking(-0.1)
-            .foregroundColor(isSelected ? .white : Color("SettingsPrimaryTextColor"))
+            .foregroundColor(isSelected ? Color("ButtonPrimaryTextColor") : Color("SettingsPrimaryTextColor"))
             .padding(.horizontal, 10)
             .padding(.vertical, 3)
             .background(

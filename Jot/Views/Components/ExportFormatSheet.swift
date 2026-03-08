@@ -198,13 +198,13 @@ private struct FormatPillButton: View {
                     .renderingMode(.template)
                     .resizable()
                     .scaledToFit()
-                    .foregroundColor(isSelected ? .white : Color("IconSecondaryColor"))
+                    .foregroundColor(isSelected ? Color("ButtonPrimaryTextColor") : Color("IconSecondaryColor"))
                     .frame(width: 18, height: 18)
 
                 Text(format.rawValue)
                     .font(FontManager.heading(size: 13, weight: .medium))
                     .tracking(-0.1)
-                    .foregroundColor(isSelected ? .white : Color("PrimaryTextColor"))
+                    .foregroundColor(isSelected ? Color("ButtonPrimaryTextColor") : Color("PrimaryTextColor"))
             }
             .padding(12)
             .frame(maxWidth: .infinity)
