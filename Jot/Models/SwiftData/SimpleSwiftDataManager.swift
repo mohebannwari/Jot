@@ -19,6 +19,7 @@ final class SimpleSwiftDataManager: ObservableObject {
     @Published private(set) var notesByFolderID: [UUID: [Note]] = [:]
     @Published private(set) var unfiledNotes: [Note] = []
     @Published private(set) var pinnedNotes: [Note] = []
+    @Published private(set) var lockedNotes: [Note] = []
     @Published private(set) var todayNotes: [Note] = []
     @Published private(set) var thisMonthNotes: [Note] = []
     @Published private(set) var thisYearNotes: [Note] = []
@@ -174,23 +175,26 @@ final class SimpleSwiftDataManager: ObservableObject {
         pinnedNotes = unfiled.filter { $0.isPinned }.sorted(by: sortComparator)
 
         let unpinned = unfiled.filter { !$0.isPinned }
-        allUnpinnedNotes = unpinned.sorted(by: sortComparator)
+        lockedNotes = unpinned.filter { $0.isLocked }.sorted(by: sortComparator)
 
-        todayNotes = unpinned.filter { calendar.isDate(groupDate($0), inSameDayAs: now) }.sorted(by: sortComparator)
-        thisMonthNotes = unpinned.filter { note in
+        let unlocked = unpinned.filter { !$0.isLocked }
+        allUnpinnedNotes = unlocked.sorted(by: sortComparator)
+
+        todayNotes = unlocked.filter { calendar.isDate(groupDate($0), inSameDayAs: now) }.sorted(by: sortComparator)
+        thisMonthNotes = unlocked.filter { note in
             let d = groupDate(note)
             let noteDay = calendar.startOfDay(for: d)
             let noteMonth = calendar.component(.month, from: d)
             let noteYear = calendar.component(.year, from: d)
             return noteMonth == currentMonth && noteYear == currentYear && noteDay < todayStart
         }.sorted(by: sortComparator)
-        thisYearNotes = unpinned.filter { note in
+        thisYearNotes = unlocked.filter { note in
             let d = groupDate(note)
             let noteMonth = calendar.component(.month, from: d)
             let noteYear = calendar.component(.year, from: d)
             return noteYear == currentYear && noteMonth < currentMonth
         }.sorted(by: sortComparator)
-        olderNotes = unpinned.filter { note in
+        olderNotes = unlocked.filter { note in
             calendar.component(.year, from: groupDate(note)) < currentYear
         }.sorted(by: sortComparator)
     }

@@ -449,7 +449,7 @@ struct SettingsPage: View {
                         .buttonStyle(.plain)
                         .macPointingHandCursor()
                     }
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, 14)
                 }
             }
             .padding(.vertical, contentVerticalPadding)
@@ -511,10 +511,11 @@ struct SettingsPage: View {
     }
 
     private func settingsGroupedCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 18) {
             content()
         }
-        .padding(12)
+        .padding(.vertical, 12)
+        .padding(.horizontal, 14)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .fill(colorScheme == .light ? Color.white : Color("SettingsOptionCardColor"))

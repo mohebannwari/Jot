@@ -141,6 +141,8 @@ struct ContentView: View {
     @State private var expandedArchivedFolderIDs: Set<UUID> = []
     @State private var hoveredArchivedFolderID: UUID?
     @State private var isPinnedSectionExpanded: Bool = true
+    @State private var isLockedSectionExpanded: Bool = true
+    @State private var isFoldersSectionExpanded: Bool = true
     @State private var showAllNotesFolderIDs: Set<UUID> = []
     @State private var sidebarSectionFilter: SidebarSectionFilter = .all
     @State private var highlightedFolderID: UUID?
@@ -200,7 +202,7 @@ struct ContentView: View {
     private let sidebarDesignColumnWidth: CGFloat = 276
     private let sidebarMenuTop: CGFloat = 30
     private let sidebarNotesTop: CGFloat = 146
-    private let sidebarSectionSpacing: CGFloat = 16
+    private let sidebarSectionSpacing: CGFloat = 12
     private let sidebarChromeSpacing: CGFloat = 12
     private let sidebarMinWidth: CGFloat = 276
     private let sidebarMaxWidth: CGFloat = 560
@@ -1027,7 +1029,7 @@ struct ContentView: View {
                     }
                 }
                 .scrollIndicators(.never)
-                .padding(.top, 4)
+                .padding(.top, -6)
                 .padding(.bottom, 4)
 
                 // Trash -- only visible when there are deleted notes
@@ -1074,34 +1076,7 @@ struct ContentView: View {
             sidebarArchiveList
         } else {
             VStack(spacing: sidebarSectionSpacing) {
-                if shouldShowPinnedSection {
-                    PinnedNotesSection(
-                        notes: pinnedNotes,
-                        selectedNoteIDs: sidebarSelectedNoteIDs,
-                        activeNoteID: sidebarActiveNoteID,
-                        splitNoteIDs: splitNoteIDs,
-                        onSplitIconTap: activateSplitForNote,
-                        folders: folders,
-                        onNoteTap: handleNoteTap,
-                        onDeleteNotes: requestDeleteNotes,
-                        onCreateFolderWithNotes: { noteIDs in
-                            promptCreateFolder(withNoteIDs: noteIDs)
-                        },
-                        onMoveNotesToFolder: moveNotesToFolder,
-                        onTogglePinForNotes: setPinState,
-                        onExportNotes: presentExport,
-                        onArchiveNotes: archiveNotes,
-                        onToggleLockNote: { id in notesManager.toggleLock(id: id) },
-                        onLockIconTap: { note in handleLockIconTap(note) },
-                        onRenameNote: { note, newTitle in
-                            var updatedNote = note
-                            updatedNote.title = newTitle
-                            notesManager.updateNote(updatedNote)
-                        },
-                        isExpanded: $isPinnedSectionExpanded
-                    )
-                }
-
+                VStack(spacing: 4) {
                 if shouldShowFoldersSection {
                     FolderSection(
                         folders: folders,
@@ -1143,8 +1118,66 @@ struct ContentView: View {
                         onSplitIconTap: activateSplitForNote,
                         onToggleLockNote: { id in notesManager.toggleLock(id: id) },
                         onLockIconTap: { note in handleLockIconTap(note) },
-                        highlightedFolderID: highlightedFolderID
+                        highlightedFolderID: highlightedFolderID,
+                        isExpanded: $isFoldersSectionExpanded
                     )
+                }
+
+                if shouldShowPinnedSection {
+                    PinnedNotesSection(
+                        notes: pinnedNotes,
+                        selectedNoteIDs: sidebarSelectedNoteIDs,
+                        activeNoteID: sidebarActiveNoteID,
+                        splitNoteIDs: splitNoteIDs,
+                        onSplitIconTap: activateSplitForNote,
+                        folders: folders,
+                        onNoteTap: handleNoteTap,
+                        onDeleteNotes: requestDeleteNotes,
+                        onCreateFolderWithNotes: { noteIDs in
+                            promptCreateFolder(withNoteIDs: noteIDs)
+                        },
+                        onMoveNotesToFolder: moveNotesToFolder,
+                        onTogglePinForNotes: setPinState,
+                        onExportNotes: presentExport,
+                        onArchiveNotes: archiveNotes,
+                        onToggleLockNote: { id in notesManager.toggleLock(id: id) },
+                        onLockIconTap: { note in handleLockIconTap(note) },
+                        onRenameNote: { note, newTitle in
+                            var updatedNote = note
+                            updatedNote.title = newTitle
+                            notesManager.updateNote(updatedNote)
+                        },
+                        isExpanded: $isPinnedSectionExpanded
+                    )
+                }
+
+                if shouldShowLockedSection {
+                    LockedNotesSection(
+                        notes: lockedNotes,
+                        selectedNoteIDs: sidebarSelectedNoteIDs,
+                        activeNoteID: sidebarActiveNoteID,
+                        splitNoteIDs: splitNoteIDs,
+                        onSplitIconTap: activateSplitForNote,
+                        folders: folders,
+                        onNoteTap: handleNoteTap,
+                        onDeleteNotes: requestDeleteNotes,
+                        onCreateFolderWithNotes: { noteIDs in
+                            promptCreateFolder(withNoteIDs: noteIDs)
+                        },
+                        onMoveNotesToFolder: moveNotesToFolder,
+                        onTogglePinForNotes: setPinState,
+                        onExportNotes: presentExport,
+                        onArchiveNotes: archiveNotes,
+                        onToggleLockNote: { id in notesManager.toggleLock(id: id) },
+                        onLockIconTap: { note in handleLockIconTap(note) },
+                        onRenameNote: { note, newTitle in
+                            var updatedNote = note
+                            updatedNote.title = newTitle
+                            notesManager.updateNote(updatedNote)
+                        },
+                        isExpanded: $isLockedSectionExpanded
+                    )
+                }
                 }
 
                 activeSplitSidebarSection
@@ -1343,6 +1376,10 @@ struct ContentView: View {
 
     private var shouldShowPinnedSection: Bool {
         sidebarSectionFilterAllows(sidebarSectionFilter, section: .pinned) && !pinnedNotes.isEmpty
+    }
+
+    private var shouldShowLockedSection: Bool {
+        sidebarSectionFilterAllows(sidebarSectionFilter, section: .all) && !lockedNotes.isEmpty
     }
 
     private var shouldShowFoldersSection: Bool {
@@ -3155,6 +3192,7 @@ struct ContentView: View {
     private var notesByFolderID: [UUID: [Note]] { notesManager.notesByFolderID }
     private var unfiledNotes: [Note] { notesManager.unfiledNotes }
     private var pinnedNotes: [Note] { notesManager.pinnedNotes }
+    private var lockedNotes: [Note] { notesManager.lockedNotes }
     private var todayNotes: [Note] { notesManager.todayNotes }
     private var thisMonthNotes: [Note] { notesManager.thisMonthNotes }
     private var thisYearNotes: [Note] { notesManager.thisYearNotes }
@@ -3178,10 +3216,11 @@ struct ContentView: View {
 
         switch sidebarSectionFilter {
         case .all:
-            ordered.append(contentsOf: pinnedNotes)
             for folder in folders where expandedFolderIDs.contains(folder.id) {
                 ordered.append(contentsOf: visibleFolderNotes(for: folder.id))
             }
+            if isPinnedSectionExpanded { ordered.append(contentsOf: pinnedNotes) }
+            if isLockedSectionExpanded { ordered.append(contentsOf: lockedNotes) }
             ordered.append(contentsOf: todayNotes)
             ordered.append(contentsOf: thisMonthNotes)
             ordered.append(contentsOf: thisYearNotes)
@@ -3257,6 +3296,11 @@ struct NotesSection: View {
                         ? "IconLock"
                         : (splitNoteIDs.contains(note.id) ? "IconArrowSplitUp" : nil),
                     hoverLeadingIconAssetName: note.isLocked ? "IconUnlocked" : nil,
+                    persistentLeadingIconBg: note.isLocked,
+                    leadingIconBgColor: note.isLocked ? Color.red.opacity(0.15) : .accentColor,
+                    leadingIconFgColor: note.isLocked ? Color.red : .white,
+                    hoverLeadingIconBgColor: note.isLocked ? Color.green.opacity(0.15) : nil,
+                    hoverLeadingIconFgColor: note.isLocked ? Color.green : nil,
                     onLeadingIconTap: note.isLocked
                         ? { onLockIconTap?(note) }
                         : (splitNoteIDs.contains(note.id) ? { onSplitIconTap?(note) } : nil),
@@ -3415,6 +3459,11 @@ struct NoteListCard: View {
     var leadingIconAssetName: String? = nil
     var hoverLeadingIconAssetName: String? = nil
     var showLeadingIconOnHoverOnly: Bool = false
+    var persistentLeadingIconBg: Bool = false
+    var leadingIconBgColor: Color = .accentColor
+    var leadingIconFgColor: Color = .white
+    var hoverLeadingIconBgColor: Color? = nil
+    var hoverLeadingIconFgColor: Color? = nil
     var onLeadingIconTap: (() -> Void)? = nil
     let onTap: (NoteSelectionInteraction) -> Void
     let onTogglePin: (Bool) -> Void
@@ -3451,12 +3500,20 @@ struct NoteListCard: View {
                 if let icon = leadingIconAssetName {
                     let isLeadingIconVisible = !showLeadingIconOnHoverOnly || isHovered
                     let isShowingHoverVariant = isHovered && hoverLeadingIconAssetName != nil
+                    let showBg = persistentLeadingIconBg || (isLeadingIconHovered && onLeadingIconTap != nil)
+                    let currentFg = showBg
+                        ? (isShowingHoverVariant ? (hoverLeadingIconFgColor ?? leadingIconFgColor) : leadingIconFgColor)
+                        : leadingIconTint
+                    let currentBg = showBg
+                        ? (isShowingHoverVariant ? (hoverLeadingIconBgColor ?? leadingIconBgColor) : leadingIconBgColor)
+                        : Color.clear
+
                     ZStack {
                         Image(icon)
                             .renderingMode(.template)
                             .resizable()
                             .scaledToFit()
-                            .foregroundColor(isLeadingIconHovered && onLeadingIconTap != nil ? .white : leadingIconTint)
+                            .foregroundColor(currentFg)
                             .frame(width: 14, height: 14)
                             .opacity(isLeadingIconVisible && !isShowingHoverVariant ? 1 : 0)
 
@@ -3465,7 +3522,7 @@ struct NoteListCard: View {
                                 .renderingMode(.template)
                                 .resizable()
                                 .scaledToFit()
-                                .foregroundColor(isLeadingIconHovered && onLeadingIconTap != nil ? .white : leadingIconTint)
+                                .foregroundColor(currentFg)
                                 .frame(width: 14, height: 14)
                                 .opacity(isLeadingIconVisible && isShowingHoverVariant ? 1 : 0)
                         }
@@ -3473,7 +3530,7 @@ struct NoteListCard: View {
                     .padding(4)
                     .background(
                         RoundedRectangle(cornerRadius: 999, style: .continuous)
-                            .fill(isLeadingIconHovered && onLeadingIconTap != nil ? Color.accentColor : Color.clear)
+                            .fill(currentBg)
                     )
                     .animation(.jotHover, value: isLeadingIconHovered)
                     .contentShape(RoundedRectangle(cornerRadius: 8))
@@ -3490,7 +3547,7 @@ struct NoteListCard: View {
                         .fill(leadingIconTint)
                         .frame(width: 2, height: 2)
                         .opacity(isLeadingIconVisible ? 1 : 0)
-                        .padding(.horizontal, -4)
+                        .padding(.horizontal, -2)
                 }
 
                 if isRenaming {
@@ -3756,16 +3813,13 @@ struct PinnedNotesSection: View {
     var onLockIconTap: ((Note) -> Void)? = nil
     var onRenameNote: ((Note, String) -> Void)? = nil
     @Binding var isExpanded: Bool
-    @Environment(\.colorScheme) private var colorScheme
-
-    private var containerRadius: CGFloat { isExpanded ? 21 : 999 }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 0) {
             // Header
             HStack(spacing: 8) {
                 Text("Pinned notes")
-                    .font(FontManager.heading(size: 12, weight: .medium))
+                    .font(FontManager.heading(size: 13, weight: .medium))
                     .foregroundColor(Color("SecondaryTextColor"))
 
                 Circle()
@@ -3782,10 +3836,10 @@ struct PinnedNotesSection: View {
                     .resizable()
                     .renderingMode(.template)
                     .frame(width: 18, height: 18)
-                    .foregroundColor(Color("PinnedIconColor"))
+                    .foregroundColor(Color("SecondaryTextColor"))
             }
             .padding(.horizontal, 8)
-            .padding(.vertical, 4)
+            .padding(.vertical, 8)
             .contentShape(Rectangle())
             .onTapGesture {
                 HapticManager.shared.buttonTap()
@@ -3802,14 +3856,14 @@ struct PinnedNotesSection: View {
                             note: note,
                             isSelected: selectedNoteIDs.contains(note.id),
                             isActiveNote: note.id == activeNoteID,
-                            isInsideFolder: true,
-                            leadingIconAssetName: note.isLocked
-                                ? "IconLock"
-                                : (splitNoteIDs.contains(note.id) ? "IconArrowSplitUp" : nil),
-                            hoverLeadingIconAssetName: note.isLocked ? "IconUnlocked" : nil,
-                            onLeadingIconTap: note.isLocked
-                                ? { onLockIconTap?(note) }
-                                : (splitNoteIDs.contains(note.id) ? { onSplitIconTap?(note) } : nil),
+                            leadingIconAssetName: "IconThumbtack",
+                            hoverLeadingIconAssetName: "IconUnpin",
+                            persistentLeadingIconBg: true,
+                            leadingIconBgColor: Color.yellow,
+                            leadingIconFgColor: Color(red: 0.6, green: 0.45, blue: 0),
+                            onLeadingIconTap: {
+                                onTogglePinForNotes([note.id], false)
+                            },
                             onTap: { interaction in onNoteTap(note, interaction) },
                             onTogglePin: { shouldPin in
                                 onTogglePinForNotes(contextSelection(for: note), shouldPin)
@@ -3832,24 +3886,121 @@ struct PinnedNotesSection: View {
                                 } else {
                                     return [NoteDragItem(noteID: note.id)]
                                 }
-                            },
-                            cornerRadius: 12
+                            }
                         )
                     }
                 }
                 .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .top)))
             }
         }
-        .padding(4)
-        .clipShape(RoundedRectangle(cornerRadius: containerRadius, style: .continuous))
-        .background(
-            RoundedRectangle(cornerRadius: containerRadius, style: .continuous)
-                .fill(Color("PinnedBgColor"))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: containerRadius, style: .continuous)
-                .stroke(Color("BorderSubtleColor"), lineWidth: 1)
-        )
+    }
+
+    private func contextSelection(for note: Note) -> Set<UUID> {
+        if selectedNoteIDs.count > 1, selectedNoteIDs.contains(note.id) {
+            return selectedNoteIDs
+        }
+        return [note.id]
+    }
+}
+
+struct LockedNotesSection: View {
+    let notes: [Note]
+    var selectedNoteIDs: Set<UUID> = []
+    var activeNoteID: UUID? = nil
+    var splitNoteIDs: Set<UUID> = []
+    var onSplitIconTap: ((Note) -> Void)? = nil
+    let folders: [Folder]
+    let onNoteTap: (Note, NoteSelectionInteraction) -> Void
+    let onDeleteNotes: (Set<UUID>) -> Void
+    let onCreateFolderWithNotes: (Set<UUID>) -> Void
+    let onMoveNotesToFolder: (Set<UUID>, UUID?) -> Void
+    let onTogglePinForNotes: (Set<UUID>, Bool) -> Void
+    let onExportNotes: (Set<UUID>) -> Void
+    var onArchiveNotes: ((Set<UUID>) -> Void)? = nil
+    var onToggleLockNote: ((UUID) -> Void)? = nil
+    var onLockIconTap: ((Note) -> Void)? = nil
+    var onRenameNote: ((Note, String) -> Void)? = nil
+    @Binding var isExpanded: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Header
+            HStack(spacing: 8) {
+                Text("Locked notes")
+                    .font(FontManager.heading(size: 13, weight: .medium))
+                    .foregroundColor(Color("SecondaryTextColor"))
+
+                Circle()
+                    .fill(Color("SecondaryTextColor"))
+                    .frame(width: 2, height: 2)
+
+                Text("\(notes.count)")
+                    .font(FontManager.metadata(size: 11, weight: .medium))
+                    .foregroundColor(Color("SecondaryTextColor"))
+
+                Spacer(minLength: 0)
+
+                Image(isExpanded ? "IconChevronTopSmall" : "IconChevronDownSmall")
+                    .resizable()
+                    .renderingMode(.template)
+                    .frame(width: 18, height: 18)
+                    .foregroundColor(Color("SecondaryTextColor"))
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 8)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                HapticManager.shared.buttonTap()
+                withAnimation(.jotSmoothFast) {
+                    isExpanded.toggle()
+                }
+            }
+
+            // Notes
+            if isExpanded {
+                VStack(spacing: 0) {
+                    ForEach(notes, id: \.id) { note in
+                        NoteListCard(
+                            note: note,
+                            isSelected: selectedNoteIDs.contains(note.id),
+                            isActiveNote: note.id == activeNoteID,
+                            leadingIconAssetName: "IconLock",
+                            hoverLeadingIconAssetName: "IconUnlocked",
+                            persistentLeadingIconBg: true,
+                            leadingIconBgColor: Color.red.opacity(0.15),
+                            leadingIconFgColor: Color.red,
+                            hoverLeadingIconBgColor: Color.green.opacity(0.15),
+                            hoverLeadingIconFgColor: Color.green,
+                            onLeadingIconTap: { onLockIconTap?(note) },
+                            onTap: { interaction in onNoteTap(note, interaction) },
+                            onTogglePin: { shouldPin in
+                                onTogglePinForNotes(contextSelection(for: note), shouldPin)
+                            },
+                            onDelete: { onDeleteNotes(contextSelection(for: note)) },
+                            folders: folders,
+                            onCreateFolderWithNote: { onCreateFolderWithNotes(contextSelection(for: note)) },
+                            onMoveToFolder: { folderID in
+                                onMoveNotesToFolder(contextSelection(for: note), folderID)
+                            },
+                            onExport: { onExportNotes(contextSelection(for: note)) },
+                            onArchive: onArchiveNotes != nil ? { onArchiveNotes?(contextSelection(for: note)) } : nil,
+                            onToggleLock: onToggleLockNote != nil ? { onToggleLockNote?(note.id) } : nil,
+                            onRename: { newTitle in
+                                onRenameNote?(note, newTitle)
+                            },
+                            getDragItems: {
+                                if selectedNoteIDs.contains(note.id) {
+                                    return selectedNoteIDs.map { NoteDragItem(noteID: $0) }
+                                } else {
+                                    return [NoteDragItem(noteID: note.id)]
+                                }
+                            }
+                        )
+                    }
+                }
+                .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .top)))
+            }
+        }
     }
 
     private func contextSelection(for note: Note) -> Set<UUID> {

@@ -32,10 +32,12 @@ struct FolderSection: View {
     var onToggleLockNote: ((UUID) -> Void)? = nil
     var onLockIconTap: ((Note) -> Void)? = nil
     var highlightedFolderID: UUID? = nil
+    @Binding var isExpanded: Bool
 
     @Environment(\.colorScheme) private var colorScheme
     @State private var hoveredFolderID: UUID?
     @State private var dropTargetFolderID: UUID?
+    @State private var peekRevealedFolderID: UUID?
     @State private var renamingFolderID: UUID?
     @State private var renamingName: String = ""
     @FocusState private var isRenaming: Bool
@@ -43,28 +45,156 @@ struct FolderSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ForEach(folders, id: \.id) { folder in
-                let isExpanded = expandedFolderIDs.contains(folder.id)
-                VStack(alignment: .leading, spacing: 4) {
-                    folderRow(folder)
+            // Accordion header
+            HStack(spacing: 8) {
+                Text("Folders")
+                    .font(FontManager.heading(size: 13, weight: .medium))
+                    .foregroundColor(Color("SecondaryTextColor"))
 
-                    if isExpanded {
-                        folderNotesList(folder)
+                Circle()
+                    .fill(Color("SecondaryTextColor"))
+                    .frame(width: 2, height: 2)
+
+                Text("\(folders.count)")
+                    .font(FontManager.metadata(size: 11, weight: .medium))
+                    .foregroundColor(Color("SecondaryTextColor"))
+
+                Spacer(minLength: 0)
+
+                Image(isExpanded ? "IconChevronTopSmall" : "IconChevronDownSmall")
+                    .resizable()
+                    .renderingMode(.template)
+                    .frame(width: 18, height: 18)
+                    .foregroundColor(Color("SecondaryTextColor"))
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 8)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                HapticManager.shared.buttonTap()
+                withAnimation(.jotSmoothFast) {
+                    isExpanded.toggle()
+                }
+            }
+
+            // Folder rows
+            if isExpanded {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(folders, id: \.id) { folder in
+                        let isFolderExpanded = expandedFolderIDs.contains(folder.id)
+                        VStack(alignment: .leading, spacing: 4) {
+                            folderRow(folder)
+
+                            if isFolderExpanded {
+                                folderNotesList(folder)
+                            }
+                        }
+                        .id(folder.id)
                     }
                 }
-                .id(folder.id)
+                .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .top)))
+            } else if let (peekFolder, peekNote) = activeFolderAndNote {
+                VStack(alignment: .leading, spacing: 4) {
+                    // Folder header — tap to expand accordion + folder
+                    HStack(spacing: 8) {
+                        Image("IconArrowCornerDownRight")
+                            .renderingMode(.template)
+                            .resizable()
+                            .scaledToFit()
+                            .foregroundColor(Color("SecondaryTextColor"))
+                            .frame(width: 18, height: 18)
+
+                        Image("IconFolder1")
+                            .renderingMode(.template)
+                            .resizable()
+                            .scaledToFit()
+                            .foregroundColor(peekFolder.folderColor)
+                            .frame(width: 18, height: 18)
+
+                        Text(peekFolder.name)
+                            .font(FontManager.heading(size: 15, weight: .medium))
+                            .foregroundColor(Color("PrimaryTextColor"))
+                            .tracking(-0.1)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+
+                        Circle()
+                            .fill(Color("SecondaryTextColor"))
+                            .frame(width: 2, height: 2)
+
+                        Text("\((notesByFolder[peekFolder.id] ?? []).count)")
+                            .font(FontManager.metadata(size: 11, weight: .medium))
+                            .foregroundColor(Color("SecondaryTextColor"))
+
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        HapticManager.shared.buttonTap()
+                        withAnimation(.jotSmoothFast) {
+                            peekRevealedFolderID = peekRevealedFolderID == peekFolder.id ? nil : peekFolder.id
+                        }
+                    }
+
+                    if peekRevealedFolderID == peekFolder.id {
+                        // All notes in this folder
+                        folderNotesList(peekFolder)
+                            .padding(.leading, 26)
+                    } else {
+                        // Active note only
+                        NoteListCard(
+                            note: peekNote,
+                            isSelected: selectedNoteIDs.contains(peekNote.id),
+                            isActiveNote: peekNote.id == activeNoteID,
+                            activeIconTint: peekFolder.folderColor,
+                            isInsideFolder: true,
+                            onTap: { interaction in onOpenNote(peekNote, interaction) },
+                            onTogglePin: { shouldPin in
+                                onTogglePinForNotes(contextSelection(for: peekNote), shouldPin)
+                            },
+                            onDelete: { onDeleteNotes(contextSelection(for: peekNote)) },
+                            folders: allFolders,
+                            onCreateFolderWithNote: {
+                                onCreateFolderWithNotes(contextSelection(for: peekNote))
+                            },
+                            onMoveToFolder: { folderID in
+                                onMoveNotesToFolder(contextSelection(for: peekNote), folderID)
+                            },
+                            onExport: { onExportNotes(contextSelection(for: peekNote)) },
+                            onArchive: onArchiveNotes != nil ? { onArchiveNotes?(contextSelection(for: peekNote)) } : nil,
+                            onToggleLock: onToggleLockNote != nil ? { onToggleLockNote?(peekNote.id) } : nil,
+                            onRename: { newTitle in
+                                onRenameNote?(peekNote, newTitle)
+                            },
+                            getDragItems: {
+                                if selectedNoteIDs.contains(peekNote.id) {
+                                    return selectedNoteIDs.map { NoteDragItem(noteID: $0) }
+                                } else {
+                                    return [NoteDragItem(noteID: peekNote.id)]
+                                }
+                            }
+                        )
+                        .padding(.leading, 52)
+                    }
+                }
+                .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .top)))
+                .onChange(of: activeNoteID) {
+                    peekRevealedFolderID = nil
+                }
             }
         }
     }
 
     private func folderRow(_ folder: Folder) -> some View {
-        let isExpanded = expandedFolderIDs.contains(folder.id)
+        let isFolderOpen = expandedFolderIDs.contains(folder.id)
         let isHovered = hoveredFolderID == folder.id
         let isDropTarget = dropTargetFolderID == folder.id
         let shouldShowActions = isHovered
         let isRenamingThisFolder = renamingFolderID == folder.id
         let noteCount = (notesByFolder[folder.id] ?? []).count
-        let leadingAsset = noteCount == 0 ? "IconFolder1" : (isExpanded ? "IconFolderOpen" : "IconFolder1")
+        let leadingAsset = noteCount == 0 ? "IconFolder1" : (isFolderOpen ? "IconFolderOpen" : "IconFolder1")
 
         return HStack(spacing: 8) {
             Image(leadingAsset)
@@ -277,6 +407,11 @@ struct FolderSection: View {
                                 ? "IconLock"
                                 : (splitNoteIDs.contains(note.id) ? "IconArrowSplitUp" : nil),
                             hoverLeadingIconAssetName: note.isLocked ? "IconUnlocked" : nil,
+                            persistentLeadingIconBg: note.isLocked,
+                            leadingIconBgColor: note.isLocked ? Color.red.opacity(0.15) : .accentColor,
+                            leadingIconFgColor: note.isLocked ? Color.red : .white,
+                            hoverLeadingIconBgColor: note.isLocked ? Color.green.opacity(0.15) : nil,
+                            hoverLeadingIconFgColor: note.isLocked ? Color.green : nil,
                             onLeadingIconTap: note.isLocked
                                 ? { onLockIconTap?(note) }
                                 : (splitNoteIDs.contains(note.id) ? { onSplitIconTap?(note) } : nil),
@@ -327,6 +462,17 @@ struct FolderSection: View {
                 .padding(.leading, 26)
             }
         }
+    }
+
+    private var activeFolderAndNote: (Folder, Note)? {
+        guard let activeID = activeNoteID else { return nil }
+        for folder in folders {
+            if let notes = notesByFolder[folder.id],
+               let note = notes.first(where: { $0.id == activeID }) {
+                return (folder, note)
+            }
+        }
+        return nil
     }
 
     private func rowBackgroundColor(isDropTarget: Bool, isHovered: Bool) -> Color {
