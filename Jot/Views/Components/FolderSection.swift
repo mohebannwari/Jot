@@ -29,6 +29,9 @@ struct FolderSection: View {
     let onDropNotesIntoFolder: (Set<UUID>, UUID) -> Bool
     var splitNoteIDs: Set<UUID> = []
     var onSplitIconTap: ((Note) -> Void)? = nil
+    var onToggleLockNote: ((UUID) -> Void)? = nil
+    var onLockIconTap: ((Note) -> Void)? = nil
+    var highlightedFolderID: UUID? = nil
 
     @Environment(\.colorScheme) private var colorScheme
     @State private var hoveredFolderID: UUID?
@@ -49,6 +52,7 @@ struct FolderSection: View {
                         folderNotesList(folder)
                     }
                 }
+                .id(folder.id)
             }
         }
     }
@@ -86,7 +90,7 @@ struct FolderSection: View {
                 Text(folder.name)
                     .font(FontManager.heading(size: 15, weight: .medium))
                     .foregroundColor(Color("PrimaryTextColor"))
-                    .tracking(-0.4)
+                    .tracking(-0.1)
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .onTapGesture(count: 2) {
@@ -172,11 +176,17 @@ struct FolderSection: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(8)
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            Capsule()
                 .fill(rowBackgroundColor(isDropTarget: isDropTarget, isHovered: isHovered))
                 .padding(.horizontal, rowHoverHorizontalInset)
         )
-        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay {
+            if highlightedFolderID == folder.id {
+                FolderHighlightPulse(color: folder.folderColor)
+                    .padding(.horizontal, rowHoverHorizontalInset)
+            }
+        }
+        .contentShape(Capsule())
         .animation(.jotHover, value: isHovered)
         .onTapGesture {
             HapticManager.shared.buttonTap()
@@ -263,8 +273,13 @@ struct FolderSection: View {
                             isActiveNote: note.id == activeNoteID,
                             activeIconTint: folder.folderColor,
                             isInsideFolder: true,
-                            leadingIconAssetName: splitNoteIDs.contains(note.id) ? "IconArrowSplitUp" : nil,
-                            onLeadingIconTap: splitNoteIDs.contains(note.id) ? { onSplitIconTap?(note) } : nil,
+                            leadingIconAssetName: note.isLocked
+                                ? "IconLock"
+                                : (splitNoteIDs.contains(note.id) ? "IconArrowSplitUp" : nil),
+                            hoverLeadingIconAssetName: note.isLocked ? "IconUnlocked" : nil,
+                            onLeadingIconTap: note.isLocked
+                                ? { onLockIconTap?(note) }
+                                : (splitNoteIDs.contains(note.id) ? { onSplitIconTap?(note) } : nil),
                             onTap: { interaction in onOpenNote(note, interaction) },
                             onTogglePin: { shouldPin in
                                 onTogglePinForNotes(contextSelection(for: note), shouldPin)
@@ -279,6 +294,7 @@ struct FolderSection: View {
                             },
                             onExport: { onExportNotes(contextSelection(for: note)) },
                             onArchive: onArchiveNotes != nil ? { onArchiveNotes?(contextSelection(for: note)) } : nil,
+                            onToggleLock: onToggleLockNote != nil ? { onToggleLockNote?(note.id) } : nil,
                             onRename: { newTitle in
                                 onRenameNote?(note, newTitle)
                             },
@@ -364,5 +380,24 @@ struct FolderSection: View {
     private func cancelRename() {
         renamingFolderID = nil
         isRenaming = false
+    }
+}
+
+private struct FolderHighlightPulse: View {
+    let color: Color
+    @State private var trigger = false
+
+    var body: some View {
+        Capsule()
+            .fill(color)
+            .phaseAnimator(
+                [0.0, 0.22, 0.0, 0.22, 0.0],
+                trigger: trigger
+            ) { content, opacity in
+                content.opacity(opacity)
+            } animation: { _ in
+                .easeInOut(duration: 0.45)
+            }
+            .onAppear { trigger.toggle() }
     }
 }

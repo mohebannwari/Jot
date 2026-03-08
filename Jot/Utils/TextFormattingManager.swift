@@ -24,7 +24,7 @@ class TextFormattingManager: ObservableObject {
 
             var fontSize: CGFloat {
                 switch self {
-                case .none: return 16
+                case .none: return ThemeManager.currentBodyFontSize()
                 case .h1: return 32
                 case .h2: return 24
                 case .h3: return 20

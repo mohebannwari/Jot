@@ -451,6 +451,7 @@ struct NoteDetailView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .showCommandMenu))
         { notification in
+            if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
             DispatchQueue.main.async {
                 if let info = notification.object as? [String: Any],
                     let needsSpace = info["needsSpace"] as? Bool
@@ -462,7 +463,8 @@ struct NoteDetailView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .hideCommandMenu))
-        { _ in
+        { notification in
+            if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
             DispatchQueue.main.async {
                 withAnimation(.easeOut(duration: 0.15)) {
                     self.commandMenuNeedsSpace = false
@@ -550,7 +552,7 @@ struct NoteDetailView: View {
                 )
                 .position(x: clampedCenterX, y: centerY)
                 .transition(.scale(scale: 0.9).combined(with: .opacity))
-                .zIndex(100)
+                .zIndex(101)
 
                 // Color picker — positioned ABOVE the toolbar, centered, with 4px gap
                 let colorPillWidth: CGFloat = 186
@@ -571,7 +573,7 @@ struct NoteDetailView: View {
                 })
                 .position(x: clampedColorX, y: colorPickerY)
                 .transition(.scale(scale: 0.9).combined(with: .opacity))
-                .zIndex(100)
+                .zIndex(99)
             }
         }
     }

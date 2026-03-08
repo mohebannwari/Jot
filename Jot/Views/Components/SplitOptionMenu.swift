@@ -38,7 +38,7 @@ struct SplitOptionMenu: View {
                 Text(label)
                     .font(.system(size: 13, weight: .medium))
                     .foregroundColor(.primary)
-                    .tracking(-0.4)
+                    .tracking(-0.1)
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 4)

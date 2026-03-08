@@ -469,25 +469,6 @@ struct FloatingEditToolbar: View {
                     }
                 }
             )
-            
-            FloatingToolButton(
-                tool: .divider,
-                assetName: "IconDivider",
-                isSelected: selectedTool == .divider,
-                isHovered: hoveredTool == .divider,
-                action: { handleToolAction(.divider) },
-                onHoverChange: { hovering, frame in
-                    hoveredTool = hovering ? .divider : nil
-                    tooltipFrame = frame
-                    if hovering {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                            if hoveredTool == .divider { showTooltip = true }
-                        }
-                    } else {
-                        showTooltip = false
-                    }
-                }
-            )
         }
     }
     

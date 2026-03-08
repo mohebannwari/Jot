@@ -65,7 +65,7 @@ struct TrashSheet: View {
             Text("Trash")
                 .font(FontManager.heading(size: 15, weight: .semibold))
                 .foregroundColor(Color("PrimaryTextColor"))
-                .tracking(-0.4)
+                .tracking(-0.1)
 
             Circle()
                 .fill(Color("SecondaryTextColor"))
@@ -116,7 +116,7 @@ struct TrashSheet: View {
             Text("Trash is empty")
                 .font(FontManager.heading(size: 14, weight: .medium))
                 .foregroundColor(Color("SecondaryTextColor"))
-                .tracking(-0.3)
+                .tracking(0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -127,7 +127,7 @@ struct TrashSheet: View {
                 Text(note.title.isEmpty ? "Untitled" : note.title)
                     .font(FontManager.heading(size: 13, weight: .medium))
                     .foregroundColor(Color("PrimaryTextColor"))
-                    .tracking(-0.3)
+                    .tracking(0)
                     .lineLimit(1)
 
                 if let deletedDate = note.deletedDate {
@@ -202,7 +202,7 @@ struct TrashSheet: View {
             } label: {
                 Text("Delete All")
                     .font(FontManager.heading(size: 12, weight: .semibold))
-                    .tracking(-0.3)
+                    .tracking(0)
                     .foregroundColor(.red)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 12)

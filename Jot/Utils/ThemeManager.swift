@@ -38,9 +38,71 @@ enum BodyFontStyle: String, CaseIterable {
     }
 }
 
+enum LineSpacing: String, CaseIterable {
+    case compact = "compact"
+    case `default` = "default"
+    case relaxed = "relaxed"
+
+    var displayName: String {
+        switch self {
+        case .compact: return "Compact"
+        case .default: return "Default"
+        case .relaxed: return "Relaxed"
+        }
+    }
+
+    var multiplier: CGFloat {
+        switch self {
+        case .compact: return 1.0
+        case .default: return 1.2
+        case .relaxed: return 1.5
+        }
+    }
+}
+
+enum NoteSortOrder: String, CaseIterable {
+    case dateEdited = "dateEdited"
+    case dateCreated = "dateCreated"
+    case title = "title"
+
+    var displayName: String {
+        switch self {
+        case .dateEdited: return "Date Edited"
+        case .dateCreated: return "Date Created"
+        case .title: return "Title"
+        }
+    }
+}
+
+enum LockPasswordType: String, CaseIterable {
+    case login = "login"
+    case custom = "custom"
+
+    var displayName: String {
+        switch self {
+        case .login: return "Use Login Password"
+        case .custom: return "Use Custom Password"
+        }
+    }
+}
+
 final class ThemeManager: ObservableObject {
     static let themeDefaultsKey = "AppTheme"
     static let bodyFontStyleDefaultsKey = "AppBodyFontStyle"
+    static let spellCheckKey = "EditorSpellCheck"
+    static let autocorrectKey = "EditorAutocorrect"
+    static let smartQuotesKey = "EditorSmartQuotes"
+    static let smartDashesKey = "EditorSmartDashes"
+    static let lineSpacingKey = "EditorLineSpacing"
+    static let fontSizeKey = "EditorFontSize"
+    static let noteSortOrderKey = "NoteSortOrder"
+    static let groupNotesByDateKey = "GroupNotesByDate"
+    static let resumeToLastQuickNoteKey = "ResumeToLastQuickNote"
+    static let autoSortCheckedItemsKey = "AutoSortCheckedItems"
+    static let useTouchIDKey = "LockedNotesUseTouchID"
+    static let lockPasswordTypeKey = "LockPasswordType"
+
+    static let editorSettingsChangedNotification = Notification.Name("EditorSettingsChanged")
 
     private let userDefaults: UserDefaults
     private var appearanceObserver: NSKeyValueObservation?
@@ -63,16 +125,123 @@ final class ThemeManager: ObservableObject {
         }
     }
 
+    @Published var spellCheckEnabled: Bool {
+        didSet {
+            userDefaults.set(spellCheckEnabled, forKey: Self.spellCheckKey)
+            notifyEditorSettingsChanged()
+        }
+    }
+
+    @Published var autocorrectEnabled: Bool {
+        didSet {
+            userDefaults.set(autocorrectEnabled, forKey: Self.autocorrectKey)
+            notifyEditorSettingsChanged()
+        }
+    }
+
+    @Published var smartQuotesEnabled: Bool {
+        didSet {
+            userDefaults.set(smartQuotesEnabled, forKey: Self.smartQuotesKey)
+            notifyEditorSettingsChanged()
+        }
+    }
+
+    @Published var smartDashesEnabled: Bool {
+        didSet {
+            userDefaults.set(smartDashesEnabled, forKey: Self.smartDashesKey)
+            notifyEditorSettingsChanged()
+        }
+    }
+
+    @Published var lineSpacing: LineSpacing {
+        didSet {
+            userDefaults.set(lineSpacing.rawValue, forKey: Self.lineSpacingKey)
+            notifyEditorSettingsChanged()
+        }
+    }
+
+    @Published var bodyFontSize: CGFloat {
+        didSet {
+            userDefaults.set(bodyFontSize, forKey: Self.fontSizeKey)
+            notifyEditorSettingsChanged()
+        }
+    }
+
+    @Published var noteSortOrder: NoteSortOrder {
+        didSet {
+            userDefaults.set(noteSortOrder.rawValue, forKey: Self.noteSortOrderKey)
+        }
+    }
+
+    @Published var groupNotesByDate: Bool {
+        didSet {
+            userDefaults.set(groupNotesByDate, forKey: Self.groupNotesByDateKey)
+        }
+    }
+
+    @Published var resumeToLastQuickNote: Bool {
+        didSet {
+            userDefaults.set(resumeToLastQuickNote, forKey: Self.resumeToLastQuickNoteKey)
+        }
+    }
+
+    @Published var autoSortCheckedItems: Bool {
+        didSet {
+            userDefaults.set(autoSortCheckedItems, forKey: Self.autoSortCheckedItemsKey)
+        }
+    }
+
+    @Published var useTouchID: Bool {
+        didSet {
+            userDefaults.set(useTouchID, forKey: Self.useTouchIDKey)
+        }
+    }
+
+    @Published var lockPasswordType: LockPasswordType {
+        didSet {
+            userDefaults.set(lockPasswordType.rawValue, forKey: Self.lockPasswordTypeKey)
+        }
+    }
+
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
 
         let savedTheme =
-            userDefaults.string(forKey: Self.themeDefaultsKey) ?? AppTheme.system.rawValue
-        self.currentTheme = AppTheme(rawValue: savedTheme) ?? .system
+            userDefaults.string(forKey: Self.themeDefaultsKey) ?? AppTheme.light.rawValue
+        self.currentTheme = AppTheme(rawValue: savedTheme) ?? .light
 
         let savedBodyFontStyle =
             userDefaults.string(forKey: Self.bodyFontStyleDefaultsKey) ?? BodyFontStyle.default.rawValue
         self.currentBodyFontStyle = BodyFontStyle(rawValue: savedBodyFontStyle) ?? .default
+
+        self.spellCheckEnabled = userDefaults.bool(forKey: Self.spellCheckKey)
+        self.autocorrectEnabled = userDefaults.bool(forKey: Self.autocorrectKey)
+        self.smartQuotesEnabled = userDefaults.bool(forKey: Self.smartQuotesKey)
+        self.smartDashesEnabled = userDefaults.bool(forKey: Self.smartDashesKey)
+
+        let savedLineSpacing = userDefaults.string(forKey: Self.lineSpacingKey) ?? LineSpacing.default.rawValue
+        self.lineSpacing = LineSpacing(rawValue: savedLineSpacing) ?? .default
+
+        let savedFontSize = userDefaults.object(forKey: Self.fontSizeKey) as? CGFloat
+        self.bodyFontSize = savedFontSize ?? 16
+
+        let savedSortOrder = userDefaults.string(forKey: Self.noteSortOrderKey) ?? NoteSortOrder.dateEdited.rawValue
+        self.noteSortOrder = NoteSortOrder(rawValue: savedSortOrder) ?? .dateEdited
+
+        // Bool defaults: true when not yet set
+        userDefaults.register(defaults: [
+            Self.groupNotesByDateKey: true,
+            Self.resumeToLastQuickNoteKey: true,
+            Self.autoSortCheckedItemsKey: true,
+            Self.useTouchIDKey: false,
+        ])
+        self.groupNotesByDate = userDefaults.bool(forKey: Self.groupNotesByDateKey)
+        self.resumeToLastQuickNote = userDefaults.bool(forKey: Self.resumeToLastQuickNoteKey)
+        self.autoSortCheckedItems = userDefaults.bool(forKey: Self.autoSortCheckedItemsKey)
+        self.useTouchID = userDefaults.bool(forKey: Self.useTouchIDKey)
+
+        let savedLockType = userDefaults.string(forKey: Self.lockPasswordTypeKey) ?? LockPasswordType.login.rawValue
+        self.lockPasswordType = LockPasswordType(rawValue: savedLockType) ?? .login
 
         // didSet doesn't fire during init — apply manually
         applyAppKitAppearance(self.currentTheme)
@@ -87,10 +256,7 @@ final class ThemeManager: ObservableObject {
     }
 
     func toggleTheme() {
-        let sequence = orderedThemes()
-        guard let currentIndex = sequence.firstIndex(of: currentTheme) else { return }
-        let nextIndex = (currentIndex + 1) % sequence.count
-        currentTheme = sequence[nextIndex]
+        currentTheme = (currentTheme == .light) ? .dark : .light
     }
 
     func setTheme(_ theme: AppTheme) {
@@ -133,12 +299,20 @@ final class ThemeManager: ObservableObject {
         }
     }
 
-    private func orderedThemes() -> [AppTheme] {
-        let systemScheme = Self.resolveColorScheme(for: .system)
-        if systemScheme == .light {
-            return [.system, .dark, .light]
-        } else {
-            return [.system, .light, .dark]
-        }
+    private func notifyEditorSettingsChanged() {
+        NotificationCenter.default.post(name: Self.editorSettingsChangedNotification, object: nil)
     }
+
+    // MARK: - Static Accessors (for non-reactive contexts like NSTextView setup)
+
+    static func currentLineSpacing(userDefaults: UserDefaults = .standard) -> LineSpacing {
+        let raw = userDefaults.string(forKey: lineSpacingKey) ?? LineSpacing.default.rawValue
+        return LineSpacing(rawValue: raw) ?? .default
+    }
+
+    static func currentBodyFontSize(userDefaults: UserDefaults = .standard) -> CGFloat {
+        let size = userDefaults.object(forKey: fontSizeKey) as? CGFloat
+        return size ?? 16
+    }
+
 }

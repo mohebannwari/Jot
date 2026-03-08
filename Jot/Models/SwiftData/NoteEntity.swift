@@ -11,6 +11,7 @@ final class NoteEntity {
     var modifiedAt: Date
     var isPinned: Bool = false
     var isArchived: Bool = false
+    var isLocked: Bool = false
     var isDeleted: Bool = false
     var deletedDate: Date?
     var folderID: UUID?
@@ -70,6 +71,7 @@ final class NoteEntity {
         modifiedAt: Date,
         isPinned: Bool = false,
         isArchived: Bool = false,
+        isLocked: Bool = false,
         isDeleted: Bool = false,
         deletedDate: Date? = nil,
         folderID: UUID? = nil
@@ -81,6 +83,7 @@ final class NoteEntity {
         self.modifiedAt = modifiedAt
         self.isPinned = isPinned
         self.isArchived = isArchived
+        self.isLocked = isLocked
         self.isDeleted = isDeleted
         self.deletedDate = deletedDate
         self.folderID = folderID
@@ -103,9 +106,11 @@ final class NoteEntity {
             modifiedAt: note.date,
             isPinned: note.isPinned,
             isArchived: note.isArchived,
+            isLocked: note.isLocked,
             folderID: note.folderID
         )
         self.id = note.id
+        self.isLocked = note.isLocked
 
         // Extract web clip data from content if present
         self.extractWebClipData()
@@ -163,9 +168,10 @@ final class NoteEntity {
 
     // MARK: - Export/Conversion
     func toNote() -> Note {
-        var note = Note(title: title, content: content, tags: [], isPinned: isPinned, folderID: folderID, isArchived: isArchived, isDeleted: isDeleted, deletedDate: deletedDate)
+        var note = Note(title: title, content: content, tags: [], isPinned: isPinned, folderID: folderID, isArchived: isArchived, isLocked: isLocked, isDeleted: isDeleted, deletedDate: deletedDate)
         note.id = id
         note.date = modifiedAt
+        note.createdAt = createdAt
         return note
     }
 }

@@ -31,7 +31,7 @@ struct ArchivedNoteRow: View {
             Text(note.title)
                 .font(FontManager.heading(size: 15, weight: .medium))
                 .foregroundColor(Color("PrimaryTextColor"))
-                .tracking(-0.4)
+                .tracking(-0.1)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)

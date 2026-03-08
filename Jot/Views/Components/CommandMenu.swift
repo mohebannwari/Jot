@@ -30,16 +30,14 @@ enum CommandMenuLayout {
 
 /// Command menu displaying editing tools in a vertical list
 /// Appears when user types "/" and supports arrow key navigation
-/// Uses the same Liquid Glass effect as EditToolbar for consistency
+/// Uses Liquid Glass with native .materialize transition
 struct CommandMenu: View {
-    // Available tools to display
     let tools: [EditTool]
-
-    // Currently selected index for keyboard navigation
     @Binding var selectedIndex: Int
-
-    // Callback when a tool is selected
+    @Binding var isRevealed: Bool
     var onSelect: ((EditTool) -> Void)?
+
+    private let glassShape = RoundedRectangle(cornerRadius: 28, style: .continuous)
 
     var body: some View {
         VStack(spacing: 0) {
@@ -48,6 +46,13 @@ struct CommandMenu: View {
                     tool: tool,
                     isSelected: index == selectedIndex
                 )
+                .opacity(isRevealed ? 1 : 0)
+                .offset(y: isRevealed ? 0 : 8)
+                .scaleEffect(isRevealed ? 1 : 0.92, anchor: .top)
+                .animation(
+                    .bouncy(duration: 0.4).delay(Double(index) * 0.04),
+                    value: isRevealed
+                )
                 .contentShape(Rectangle())
                 .onTapGesture {
                     onSelect?(tool)
@@ -55,10 +60,31 @@ struct CommandMenu: View {
             }
         }
         .frame(width: CommandMenuLayout.width)
-        .padding(CommandMenuLayout.outerPadding)  // Proper padding for concentricity
-        .liquidGlass(in: RoundedRectangle(cornerRadius: 28, style: .continuous))  // Corner radius adapts to padding (12 + 4 = 16)
+        .padding(CommandMenuLayout.outerPadding)
+        .materializingGlass(in: glassShape)
         .shadow(color: .black.opacity(0.12), radius: 24, x: 0, y: 12)
-        .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 4)
+        .shadow(color: .black.opacity(0.05), radius: 6, x: 0, y: 2)
+        // Scale + opacity in local coordinate space -- .top IS the cursor position
+        .scaleEffect(isRevealed ? 1.0 : 0.35, anchor: .top)
+        .opacity(isRevealed ? 1 : 0)
+    }
+}
+
+// MARK: - Glass with Materialize Transition
+
+private extension View {
+    /// Applies liquid glass with native materialize transition on macOS 26+, fallback on older
+    @ViewBuilder
+    func materializingGlass(in shape: some Shape) -> some View {
+        if #available(macOS 26.0, iOS 26.0, *) {
+            self
+                .glassEffect(.regular.interactive(true), in: shape)
+                .glassEffectTransition(.materialize)
+        } else {
+            self
+                .background(.ultraThinMaterial, in: shape)
+                .overlay(shape.stroke(Color.primary.opacity(0.06), lineWidth: 0.5))
+        }
     }
 }
 
@@ -118,15 +144,11 @@ struct CommandMenuItem: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 10)
         .background(
-            Group {
-                if isSelected {
-                    RoundedRectangle(cornerRadius: 999, style: .continuous)
-                        .fill(selectedBackgroundColor)
-                } else {
-                    Color.clear
-                }
-            }
+            RoundedRectangle(cornerRadius: 999, style: .continuous)
+                .fill(selectedBackgroundColor)
+                .opacity(isSelected ? 1 : 0)
         )
+        .animation(.snappy(duration: 0.15), value: isSelected)
         .contentShape(Rectangle())
     }
 }
@@ -209,6 +231,7 @@ struct CommandMenu_Previews: PreviewProvider {
             CommandMenu(
                 tools: [.imageUpload, .voiceRecord, .link],
                 selectedIndex: .constant(0),
+                isRevealed: .constant(true),
                 onSelect: { tool in
                     print("Selected: \(tool.name)")
                 }

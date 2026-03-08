@@ -23,6 +23,7 @@ final class SimpleSwiftDataManager: ObservableObject {
     @Published private(set) var thisMonthNotes: [Note] = []
     @Published private(set) var thisYearNotes: [Note] = []
     @Published private(set) var olderNotes: [Note] = []
+    @Published private(set) var allUnpinnedNotes: [Note] = []
     @Published private(set) var hasLoadedInitialNotes = false
     @Published private(set) var hasCompletedMigrationCheck = false
 
@@ -144,6 +145,19 @@ final class SimpleSwiftDataManager: ObservableObject {
     // Recomputes all derived note collections in a single pass over notes.
     // Called only when notes array changes — not on every UI render.
     private func recomputeDerivedNotes() {
+        let sortOrderRaw = UserDefaults.standard.string(forKey: ThemeManager.noteSortOrderKey) ?? "dateEdited"
+        let sortOrder = NoteSortOrder(rawValue: sortOrderRaw) ?? .dateEdited
+
+        let sortComparator: (Note, Note) -> Bool = {
+            switch sortOrder {
+            case .dateEdited: return { $0.date > $1.date }
+            case .dateCreated: return { $0.createdAt > $1.createdAt }
+            case .title: return { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+            }
+        }()
+
+        let groupDate: (Note) -> Date = sortOrder == .dateCreated ? { $0.createdAt } : { $0.date }
+
         let calendar = Calendar.current
         let now = Date()
         let todayStart = calendar.startOfDay(for: now)
@@ -153,28 +167,37 @@ final class SimpleSwiftDataManager: ObservableObject {
         notesByFolderID = Dictionary(
             grouping: notes.filter { $0.folderID != nil },
             by: { $0.folderID! }
-        ).mapValues { $0.sorted { $0.date > $1.date } }
+        ).mapValues { $0.sorted(by: sortComparator) }
 
         let unfiled = notes.filter { $0.folderID == nil }
         unfiledNotes = unfiled
-        pinnedNotes = unfiled.filter { $0.isPinned }
+        pinnedNotes = unfiled.filter { $0.isPinned }.sorted(by: sortComparator)
 
         let unpinned = unfiled.filter { !$0.isPinned }
-        todayNotes = unpinned.filter { calendar.isDate($0.date, inSameDayAs: now) }
+        allUnpinnedNotes = unpinned.sorted(by: sortComparator)
+
+        todayNotes = unpinned.filter { calendar.isDate(groupDate($0), inSameDayAs: now) }.sorted(by: sortComparator)
         thisMonthNotes = unpinned.filter { note in
-            let noteDay = calendar.startOfDay(for: note.date)
-            let noteMonth = calendar.component(.month, from: note.date)
-            let noteYear = calendar.component(.year, from: note.date)
+            let d = groupDate(note)
+            let noteDay = calendar.startOfDay(for: d)
+            let noteMonth = calendar.component(.month, from: d)
+            let noteYear = calendar.component(.year, from: d)
             return noteMonth == currentMonth && noteYear == currentYear && noteDay < todayStart
-        }
+        }.sorted(by: sortComparator)
         thisYearNotes = unpinned.filter { note in
-            let noteMonth = calendar.component(.month, from: note.date)
-            let noteYear = calendar.component(.year, from: note.date)
+            let d = groupDate(note)
+            let noteMonth = calendar.component(.month, from: d)
+            let noteYear = calendar.component(.year, from: d)
             return noteYear == currentYear && noteMonth < currentMonth
-        }
+        }.sorted(by: sortComparator)
         olderNotes = unpinned.filter { note in
-            calendar.component(.year, from: note.date) < currentYear
-        }
+            calendar.component(.year, from: groupDate(note)) < currentYear
+        }.sorted(by: sortComparator)
+    }
+
+    /// Re-sorts derived note collections when user changes sort preference.
+    func refreshSorting() {
+        recomputeDerivedNotes()
     }
 
     private func loadFolders() {
@@ -297,6 +320,7 @@ final class SimpleSwiftDataManager: ObservableObject {
             noteEntity.updateContent(updatedNote.content)
             noteEntity.folderID = updatedNote.folderID
             noteEntity.isPinned = updatedNote.folderID == nil ? updatedNote.isPinned : false
+            noteEntity.isLocked = updatedNote.isLocked
 
 
             try modelContext.save()
@@ -540,6 +564,31 @@ final class SimpleSwiftDataManager: ObservableObject {
             logger.info("Restored all \(entities.count) notes from trash")
         } catch {
             logger.error("Failed to restore all from trash: \(error)")
+        }
+    }
+
+    func toggleLock(id: UUID) {
+        do {
+            let predicate = #Predicate<NoteEntity> { $0.id == id }
+            let descriptor = FetchDescriptor(predicate: predicate)
+            let entities = try modelContext.fetch(descriptor)
+
+            guard let noteEntity = entities.first else {
+                logger.warning("Note with ID \(id) not found for toggle lock")
+                return
+            }
+
+            noteEntity.isLocked.toggle()
+            try modelContext.save()
+
+            if let index = notes.firstIndex(where: { $0.id == id }) {
+                notes[index].isLocked.toggle()
+            }
+
+            logger.info("Toggled lock for note with ID: \(id)")
+
+        } catch {
+            logger.error("Failed to toggle lock: \(error)")
         }
     }
 

@@ -131,7 +131,7 @@ struct ExportFormatSheet: View {
             } label: {
                 Text("Export")
                     .font(FontManager.heading(size: 12, weight: .semibold))
-                    .tracking(-0.3)
+                    .tracking(0)
                     .foregroundColor(Color("ButtonPrimaryTextColor"))
                     .frame(height: 44)
                     .frame(maxWidth: .infinity)
@@ -147,7 +147,7 @@ struct ExportFormatSheet: View {
             } label: {
                 Text("Cancel")
                     .font(FontManager.heading(size: 12, weight: .semibold))
-                    .tracking(-0.3)
+                    .tracking(0)
                     .foregroundColor(Color("PrimaryTextColor"))
                     .frame(height: 36)
                     .frame(maxWidth: .infinity)
@@ -198,26 +198,28 @@ private struct FormatPillButton: View {
                     .renderingMode(.template)
                     .resizable()
                     .scaledToFit()
-                    .foregroundColor(Color("IconSecondaryColor"))
+                    .foregroundColor(isSelected ? .white : Color("IconSecondaryColor"))
                     .frame(width: 18, height: 18)
 
                 Text(format.rawValue)
                     .font(FontManager.heading(size: 13, weight: .medium))
-                    .tracking(-0.4)
-                    .foregroundColor(Color("PrimaryTextColor"))
+                    .tracking(-0.1)
+                    .foregroundColor(isSelected ? .white : Color("PrimaryTextColor"))
             }
             .padding(12)
             .frame(maxWidth: .infinity)
-            .background(pillBackground)
+            .background(isSelected ? Color("SettingsSelectionOrange") : pillBackground)
             .clipShape(Capsule())
-            .overlay(
+            .overlay {
                 Capsule()
-                    .strokeBorder(
-                        isSelected ? Color("SettingsSelectionOrange") : Color.clear,
-                        lineWidth: 2.5
+                    .stroke(
+                        isSelected
+                            ? Color.clear
+                            : Color(nsColor: NSColor.labelColor).opacity(0.09),
+                        lineWidth: 1
                     )
                     .animation(.jotBounce, value: isSelected)
-            )
+            }
             .shadow(color: Color.black.opacity(0.08), radius: 12, x: 0, y: 4)
             .shadow(color: Color.black.opacity(0.04), radius: 3, x: 0, y: 1)
             .animation(.jotHover, value: isHovered)

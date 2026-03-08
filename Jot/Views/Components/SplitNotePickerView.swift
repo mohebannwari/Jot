@@ -64,7 +64,7 @@ struct SplitNotePickerView: View {
                     Text("Close splitview")
                         .font(.system(size: 13, weight: .medium))
                         .foregroundColor(Color("SecondaryTextColor"))
-                        .tracking(-0.3)
+                        .tracking(0)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 12)
                 }
@@ -98,7 +98,7 @@ private struct PickerNoteRow: View {
                 Text(note.title.isEmpty ? "Untitled" : note.title)
                     .font(.system(size: 15, weight: .medium))
                     .foregroundColor(.primary)
-                    .tracking(-0.5)
+                    .tracking(-0.2)
                     .lineLimit(1)
                 Spacer(minLength: 0)
             }
@@ -106,11 +106,11 @@ private struct PickerNoteRow: View {
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                Capsule()
                     .fill(Color("HoverBackgroundColor"))
                     .opacity(isHovered ? 1 : 0)
             )
-            .contentShape(RoundedRectangle(cornerRadius: 12))
+            .contentShape(Capsule())
             .animation(.jotHover, value: isHovered)
         }
         .buttonStyle(.plain)

@@ -542,32 +542,38 @@ struct TodoRichTextEditor: View {
 
     // Command menu state (triggered by "/" character)
     @State private var showCommandMenu = false
+    @State private var commandMenuRevealed = false
     @State private var commandMenuPosition: CGPoint = .zero
     @State private var commandMenuSelectedIndex = 0
     @State private var commandSlashLocation: Int = -1
+    @State private var commandMenuFilterText = ""
 
     // URL paste option menu state
     @State private var showURLPasteMenu = false
     @State private var urlPasteMenuPosition: CGPoint = .zero
     @State private var urlPasteURL: String = ""
     @State private var urlPasteRange: NSRange = NSRange(location: 0, length: 0)
-    fileprivate static let commandMenuActions: [EditTool] = [.imageUpload, .voiceRecord, .link, .todo]
-    fileprivate static let commandMenuBaseWidth: CGFloat = CommandMenuLayout.width
+    fileprivate static let commandMenuActions: [EditTool] = [.imageUpload, .voiceRecord, .link, .todo, .bulletList, .divider]
     fileprivate static let commandMenuOuterPadding: CGFloat = CommandMenuLayout.outerPadding
     fileprivate static let commandMenuHorizontalPadding = commandMenuOuterPadding * 2
     fileprivate static let commandMenuVerticalPadding = commandMenuOuterPadding * 2
-    fileprivate static let commandMenuContentHeight: CGFloat = CommandMenuLayout.idealHeight(
-        for: TodoRichTextEditor.commandMenuActions.count)
     fileprivate static let commandMenuTotalWidth: CGFloat =
-        commandMenuBaseWidth + commandMenuHorizontalPadding
-    fileprivate static let commandMenuTotalHeight: CGFloat =
-        commandMenuContentHeight + commandMenuVerticalPadding
-    private let commandMenuTools = TodoRichTextEditor.commandMenuActions
+        CommandMenuLayout.width + commandMenuHorizontalPadding
 
-    // Static accessor for command menu showing flag (used by keyboard handlers)
-    static var isCommandMenuShowing: Bool {
-        get { InlineNSTextView.isCommandMenuShowing }
-        set { InlineNSTextView.isCommandMenuShowing = newValue }
+    private var filteredCommandMenuTools: [EditTool] {
+        if commandMenuFilterText.isEmpty {
+            return Self.commandMenuActions
+        }
+        return Self.commandMenuActions.filter {
+            $0.name.localizedCaseInsensitiveContains(commandMenuFilterText)
+        }
+    }
+
+    /// When true, the text view shows arrow cursor instead of I-beam.
+    /// Set by ContentView when a full-screen panel overlay is open.
+    static var isPanelOverlayActive: Bool {
+        get { InlineNSTextView.isPanelOverlayActive }
+        set { InlineNSTextView.isPanelOverlayActive = newValue }
     }
 
 
@@ -601,22 +607,19 @@ struct TodoRichTextEditor: View {
         .background(Color.clear)
         .overlay(alignment: .topLeading) {
             GeometryReader { geometry in
-                if showCommandMenu {
+                if showCommandMenu && !filteredCommandMenuTools.isEmpty {
                     CommandMenu(
-                        tools: commandMenuTools,
+                        tools: filteredCommandMenuTools,
                         selectedIndex: $commandMenuSelectedIndex,
+                        isRevealed: $commandMenuRevealed,
                         onSelect: { tool in handleCommandMenuSelection(tool) }
                     )
                     .offset(
                         x: clampedCommandMenuPosition(for: geometry.size).x,
                         y: clampedCommandMenuPosition(for: geometry.size).y
                     )
-                    .transition(
-                        .asymmetric(
-                            insertion: .scale(scale: 0.92, anchor: .top).combined(with: .opacity),
-                            removal: .scale(scale: 0.96, anchor: .top).combined(with: .opacity)
-                        )
-                    )
+                    .allowsHitTesting(commandMenuRevealed)
+                    .transition(.identity)
                     .zIndex(1000)
                 }
             }
@@ -675,6 +678,7 @@ struct TodoRichTextEditor: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("ShowCommandMenu")))
         { notification in
+            if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
             if let info = notification.object as? [String: Any],
                 let position = info["position"] as? CGPoint,
                 let slashLocation = info["slashLocation"] as? Int
@@ -682,41 +686,62 @@ struct TodoRichTextEditor: View {
                 commandMenuPosition = position
                 commandSlashLocation = slashLocation
                 commandMenuSelectedIndex = 0
+                commandMenuFilterText = ""
 
-                withAnimation(.smooth(duration: 0.2)) {
-                    showCommandMenu = true
+                // Show the view in the hierarchy
+                showCommandMenu = true
+                // Animate the reveal (scale up from cursor + item cascade)
+                withAnimation(.bouncy(duration: 0.45)) {
+                    commandMenuRevealed = true
                 }
 
-                    InlineNSTextView.isCommandMenuShowing = true
+                InlineNSTextView.isCommandMenuShowing = true
+                InlineNSTextView.commandSlashLocation = slashLocation
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("HideCommandMenu")))
-        { _ in
-            withAnimation(.smooth(duration: 0.15)) {
-                showCommandMenu = false
-            }
-            commandSlashLocation = -1
+        { notification in
+            if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
+            dismissCommandMenu()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("CommandMenuFilterUpdate")))
+        { notification in
+            if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
+            guard showCommandMenu else { return }
+            let filter = (notification.object as? String) ?? ""
+            commandMenuFilterText = filter
+            commandMenuSelectedIndex = 0
 
-                InlineNSTextView.isCommandMenuShowing = false
+            // Auto-hide if no matches
+            let matches = Self.commandMenuActions.filter {
+                $0.name.localizedCaseInsensitiveContains(filter)
+            }
+            if !filter.isEmpty && matches.isEmpty {
+                dismissCommandMenu()
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("CommandMenuNavigateUp")))
-        { _ in
+        { notification in
+            if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
             if showCommandMenu && commandMenuSelectedIndex > 0 {
                 commandMenuSelectedIndex -= 1
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("CommandMenuNavigateDown")))
-        { _ in
-            let maxIndex = max(0, commandMenuTools.count - 1)
+        { notification in
+            if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
+            let maxIndex = max(0, filteredCommandMenuTools.count - 1)
             if showCommandMenu && commandMenuSelectedIndex < maxIndex {
                 commandMenuSelectedIndex += 1
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("CommandMenuSelect")))
-        { _ in
+        { notification in
+            if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
             if showCommandMenu {
-                if commandMenuSelectedIndex < commandMenuTools.count {
-                    handleCommandMenuSelection(commandMenuTools[commandMenuSelectedIndex])
+                let tools = filteredCommandMenuTools
+                if commandMenuSelectedIndex < tools.count {
+                    handleCommandMenuSelection(tools[commandMenuSelectedIndex])
                 }
             }
         }
@@ -752,28 +777,48 @@ struct TodoRichTextEditor: View {
 
     // MARK: - Command Menu Handlers
 
-    private func handleCommandMenuSelection(_ tool: EditTool) {
-        withAnimation(.smooth(duration: 0.15)) {
-            showCommandMenu = false
+    /// Two-phase dismiss: reverse entrance animation, then remove from hierarchy
+    private func dismissCommandMenu() {
+        // Immediately stop keyboard interception
+        InlineNSTextView.isCommandMenuShowing = false
+        InlineNSTextView.commandSlashLocation = -1
+
+        // Phase 1: animate reverse entrance (scale down to cursor, items cascade out)
+        withAnimation(.smooth(duration: 0.25)) {
+            commandMenuRevealed = false
         }
 
-            InlineNSTextView.isCommandMenuShowing = false
+        // Phase 2: remove from hierarchy after exit animation settles
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            guard !self.commandMenuRevealed else { return }
+            self.showCommandMenu = false
+            self.commandSlashLocation = -1
+            self.commandMenuFilterText = ""
+        }
+    }
+
+    private func handleCommandMenuSelection(_ tool: EditTool) {
+        let filterLength = commandMenuFilterText.count
+        let slashLoc = commandSlashLocation
+
+        dismissCommandMenu()
 
         NotificationCenter.default.post(
             name: .applyCommandMenuTool,
-            object: ["tool": tool, "slashLocation": commandSlashLocation]
+            object: ["tool": tool, "slashLocation": slashLoc, "filterLength": filterLength],
+            userInfo: editorInstanceID.map { ["editorInstanceID": $0] }
         )
 
         if let onCommandMenuSelection {
             onCommandMenuSelection(tool)
         }
-
-        commandSlashLocation = -1
     }
 
     private func clampedCommandMenuPosition(for containerSize: CGSize) -> CGPoint {
-        let maxX = max(0, containerSize.width - TodoRichTextEditor.commandMenuTotalWidth)
-        let maxY = max(0, containerSize.height - TodoRichTextEditor.commandMenuTotalHeight)
+        let contentHeight = CommandMenuLayout.idealHeight(for: filteredCommandMenuTools.count)
+        let totalHeight = contentHeight + Self.commandMenuVerticalPadding
+        let maxX = max(0, containerSize.width - Self.commandMenuTotalWidth)
+        let maxY = max(0, containerSize.height - totalHeight)
         let clampedX = min(max(commandMenuPosition.x, 0), maxX)
         let clampedY = min(max(commandMenuPosition.y, 0), maxY)
         return CGPoint(x: clampedX, y: clampedY)
@@ -896,7 +941,7 @@ struct URLPasteOptionMenu: View {
             textView.backgroundColor = .clear
             textView.drawsBackground = false
             // Use Charter for body text as per design requirements
-            textView.font = FontManager.bodyNS(size: 16, weight: .regular)
+            textView.font = FontManager.bodyNS(size: ThemeManager.currentBodyFontSize(), weight: .regular)
             textView.textContainerInset = NSSize(width: 0, height: 16)
             textView.linkTextAttributes = [
                 .underlineStyle: 0,
@@ -909,10 +954,11 @@ struct URLPasteOptionMenu: View {
             textView.autoresizingMask = [.width]
 
             // Ensure text view can receive focus and input
-            textView.isAutomaticQuoteSubstitutionEnabled = false
-            textView.isAutomaticDashSubstitutionEnabled = false
-            textView.isContinuousSpellCheckingEnabled = false
-            textView.isAutomaticSpellingCorrectionEnabled = false
+            let defaults = UserDefaults.standard
+            textView.isAutomaticQuoteSubstitutionEnabled = defaults.bool(forKey: ThemeManager.smartQuotesKey)
+            textView.isAutomaticDashSubstitutionEnabled = defaults.bool(forKey: ThemeManager.smartDashesKey)
+            textView.isContinuousSpellCheckingEnabled = defaults.bool(forKey: ThemeManager.spellCheckKey)
+            textView.isAutomaticSpellingCorrectionEnabled = defaults.bool(forKey: ThemeManager.autocorrectKey)
 
             // Critical: Ensure text view accepts text input
             textView.insertionPointColor = NSColor.controlAccentColor
@@ -1223,10 +1269,15 @@ struct URLPasteOptionMenu: View {
             private var lastKnownSelectionWindowRect: CGRect = .zero
 
             // Use Charter for body text as per design requirements
-            private static var textFont: NSFont { FontManager.bodyNS(size: 16, weight: .regular) }
-            private static let baseLineHeight: CGFloat = 24
+            private static var textFont: NSFont {
+                FontManager.bodyNS(size: ThemeManager.currentBodyFontSize(), weight: .regular)
+            }
+            private static var baseLineHeight: CGFloat {
+                ThemeManager.currentBodyFontSize() * 1.5
+            }
             private static let todoLineHeight: CGFloat = 24
-            private static let checkboxIconSize: CGFloat = 18
+            private static let checkboxIconSize: CGFloat = 32
+            private static let checkboxAttachmentWidth: CGFloat = 22
             private static let baseBaselineOffset: CGFloat = 0.0
             private static let todoBaselineOffset: CGFloat = {
                 return 0.0
@@ -1690,24 +1741,28 @@ struct URLPasteOptionMenu: View {
                 let applyCommandMenuTool = NotificationCenter.default.addObserver(
                     forName: .applyCommandMenuTool, object: nil, queue: .main
                 ) { [weak self] notification in
+                    if let nid = notification.userInfo?["editorInstanceID"] as? UUID,
+                       let myID = self?.editorInstanceID, nid != myID { return }
                     // Extract notification data before passing to MainActor context
                     guard let info = notification.object as? [String: Any],
                           let tool = info["tool"] as? EditTool,
                           let slashLocation = info["slashLocation"] as? Int else {
                         return
                     }
+                    let filterLength = (info["filterLength"] as? Int) ?? 0
                     Task { @MainActor [weak self] in
                         guard let self = self,
                               let textView = self.textView,
                               let textStorage = textView.textStorage else {
                             return
                         }
-                        
-                        // Remove the "/" character that triggered the menu
-                        if slashLocation >= 0 && slashLocation < textStorage.length {
-                            let slashRange = NSRange(location: slashLocation, length: 1)
-                            if textView.shouldChangeText(in: slashRange, replacementString: "") {
-                                textStorage.replaceCharacters(in: slashRange, with: "")
+
+                        // Remove the "/" character and any filter text that follows it
+                        let deleteLength = min(1 + filterLength, textStorage.length - slashLocation)
+                        if slashLocation >= 0 && slashLocation < textStorage.length && deleteLength > 0 {
+                            let deleteRange = NSRange(location: slashLocation, length: deleteLength)
+                            if textView.shouldChangeText(in: deleteRange, replacementString: "") {
+                                textStorage.replaceCharacters(in: deleteRange, with: "")
                                 textView.didChangeText()
                             }
                         }
@@ -1849,14 +1904,72 @@ struct URLPasteOptionMenu: View {
                     }
                 }
 
+                let settingsObserver = NotificationCenter.default.addObserver(
+                    forName: ThemeManager.editorSettingsChangedNotification,
+                    object: nil,
+                    queue: .main
+                ) { [weak self] _ in
+                    MainActor.assumeIsolated {
+                        self?.applyEditorSettings()
+                    }
+                }
+
                 observers = [
                     windowKey,
                     insertTodo, insertLink, insertVoiceTranscript, insertImage, applyTool, applyCommandMenuTool,
                     highlightSearch, clearSearch,
                     proofreadShow, proofreadClear, proofreadApply, captureSelection,
                     urlPasteMention, urlPasteSelectPlainLink, urlPasteDismiss,
-                    applyColor,
+                    applyColor, settingsObserver,
                 ]
+            }
+
+            private func applyEditorSettings() {
+                guard let textView = self.textView else { return }
+                let defaults = UserDefaults.standard
+                textView.isAutomaticQuoteSubstitutionEnabled = defaults.bool(forKey: ThemeManager.smartQuotesKey)
+                textView.isAutomaticDashSubstitutionEnabled = defaults.bool(forKey: ThemeManager.smartDashesKey)
+                textView.isContinuousSpellCheckingEnabled = defaults.bool(forKey: ThemeManager.spellCheckKey)
+                textView.isAutomaticSpellingCorrectionEnabled = defaults.bool(forKey: ThemeManager.autocorrectKey)
+
+                // Update typing attributes with current font + paragraph style
+                let newBaseStyle = Self.baseParagraphStyle()
+                textView.defaultParagraphStyle = newBaseStyle
+                textView.typingAttributes = Self.baseTypingAttributes(for: nil)
+
+                // Re-apply font size to existing body text (skip headings)
+                let bodySize = ThemeManager.currentBodyFontSize()
+                let headingSizes: Set<CGFloat> = [
+                    TextFormattingManager.HeadingLevel.h1.fontSize,
+                    TextFormattingManager.HeadingLevel.h2.fontSize,
+                    TextFormattingManager.HeadingLevel.h3.fontSize,
+                ]
+                if let storage = textView.textStorage {
+                    storage.beginEditing()
+                    storage.enumerateAttribute(.font, in: NSRange(location: 0, length: storage.length), options: []) { value, range, _ in
+                        guard let font = value as? NSFont else { return }
+                        if headingSizes.contains(font.pointSize) { return }
+                        let updated = FontManager.bodyNS(size: bodySize, weight: font.fontDescriptor.symbolicTraits.contains(.bold) ? .bold : .regular)
+                        // Preserve italic trait
+                        let finalFont: NSFont
+                        if font.fontDescriptor.symbolicTraits.contains(.italic) {
+                            finalFont = NSFontManager.shared.convert(updated, toHaveTrait: .italicFontMask)
+                        } else {
+                            finalFont = updated
+                        }
+                        storage.addAttribute(.font, value: finalFont, range: range)
+                    }
+                    storage.endEditing()
+                }
+
+                // Re-apply paragraph styles to all existing text
+                styleTodoParagraphs()
+
+                // Force layout + redraw
+                if let layoutManager = textView.layoutManager, let container = textView.textContainer {
+                    layoutManager.ensureLayout(for: container)
+                }
+                textView.needsDisplay = true
             }
 
             /// Registers a bounds-change observer on the text view's clip view so
@@ -2531,6 +2644,41 @@ struct URLPasteOptionMenu: View {
 
                 // Check for Enter key in todo paragraph
                 if replacementString == "\n", isInTodoParagraph(range: affectedCharRange) {
+                    // If the current todo is empty, exit todo mode instead of creating another
+                    let storage = textView.textStorage!
+                    let loc = max(0, min(storage.length, affectedCharRange.location))
+                    let paraRange = (storage.string as NSString).paragraphRange(
+                        for: NSRange(location: loc, length: 0))
+                    // Todo structure: [attachment][space][space][text...]\n
+                    let contentStart = paraRange.location + 3
+                    let contentText: String
+                    if contentStart < NSMaxRange(paraRange) && contentStart < storage.length {
+                        let contentRange = NSRange(
+                            location: contentStart,
+                            length: NSMaxRange(paraRange) - contentStart)
+                        contentText = (storage.string as NSString)
+                            .substring(with: contentRange)
+                            .trimmingCharacters(in: .whitespacesAndNewlines)
+                    } else {
+                        contentText = ""
+                    }
+
+                    if contentText.isEmpty {
+                        // Empty todo — remove it and insert a plain newline to exit todo mode
+                        isUpdating = true
+                        let deleteStart = paraRange.location > 0 ? paraRange.location - 1 : paraRange.location
+                        let deleteLen = min(
+                            paraRange.length + (paraRange.location > 0 ? 1 : 0),
+                            storage.length - deleteStart)
+                        storage.replaceCharacters(
+                            in: NSRange(location: deleteStart, length: deleteLen),
+                            with: "\n")
+                        textView.setSelectedRange(NSRange(location: deleteStart + 1, length: 0))
+                        isUpdating = false
+                        syncText()
+                        return false
+                    }
+
                     insertTodo()
                     return false
                 }
@@ -2587,11 +2735,44 @@ struct URLPasteOptionMenu: View {
             }
 
             func handleReturn(in textView: NSTextView) -> Bool {
-                if isInTodoParagraph(range: textView.selectedRange()) {
-                    insertTodo()
+                let sel = textView.selectedRange()
+                guard isInTodoParagraph(range: sel),
+                      let storage = textView.textStorage else { return false }
+
+                let loc = max(0, min(storage.length, sel.location))
+                let paraRange = (storage.string as NSString).paragraphRange(
+                    for: NSRange(location: loc, length: 0))
+                let contentStart = paraRange.location + 3
+                let contentText: String
+                if contentStart < NSMaxRange(paraRange) && contentStart < storage.length {
+                    let contentRange = NSRange(
+                        location: contentStart,
+                        length: NSMaxRange(paraRange) - contentStart)
+                    contentText = (storage.string as NSString)
+                        .substring(with: contentRange)
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                } else {
+                    contentText = ""
+                }
+
+                if contentText.isEmpty {
+                    // Exit todo mode
+                    isUpdating = true
+                    let deleteStart = paraRange.location > 0 ? paraRange.location - 1 : paraRange.location
+                    let deleteLen = min(
+                        paraRange.length + (paraRange.location > 0 ? 1 : 0),
+                        storage.length - deleteStart)
+                    storage.replaceCharacters(
+                        in: NSRange(location: deleteStart, length: deleteLen),
+                        with: "\n")
+                    textView.setSelectedRange(NSRange(location: deleteStart + 1, length: 0))
+                    isUpdating = false
+                    syncText()
                     return true
                 }
-                return false
+
+                insertTodo()
+                return true
             }
 
             // MARK: - Command Menu Handling
@@ -2620,7 +2801,8 @@ struct URLPasteOptionMenu: View {
                 // Menu dimensions
                 let menuGap: CGFloat = 4
                 let safetyMargin: CGFloat = 20
-                let menuHeight = TodoRichTextEditor.commandMenuTotalHeight
+                let menuContentHeight = CommandMenuLayout.idealHeight(for: TodoRichTextEditor.commandMenuActions.count)
+                let menuHeight = menuContentHeight + TodoRichTextEditor.commandMenuVerticalPadding
                 let menuWidth = TodoRichTextEditor.commandMenuTotalWidth
 
                 // Get the visible rect to check against actual viewport, not total text view bounds
@@ -2679,7 +2861,8 @@ struct URLPasteOptionMenu: View {
                         "position": menuPosition,
                         "slashLocation": insertLocation,
                         "needsSpace": needsExtraSpace
-                    ]
+                    ],
+                    userInfo: editorInstanceID.map { ["editorInstanceID": $0] }
                 )
             }
 
@@ -2723,7 +2906,7 @@ struct URLPasteOptionMenu: View {
                 let cell = TodoCheckboxAttachmentCell(isChecked: false)
                 attachment.attachmentCell = cell
                 attachment.bounds = CGRect(
-                    x: 0, y: Self.checkboxAttachmentYOffset, width: Self.checkboxIconSize,
+                    x: 0, y: Self.checkboxAttachmentYOffset, width: Self.checkboxAttachmentWidth,
                     height: Self.checkboxIconSize)
 
                 let todoAttachment = NSMutableAttributedString(attachment: attachment)
@@ -2880,6 +3063,15 @@ struct URLPasteOptionMenu: View {
             private func insertImage(filename: String) {
                 guard let textView = textView,
                       let textStorage = textView.textStorage else { return }
+
+                // Pre-cache the image so makeImageAttachment uses the real aspect ratio
+                // instead of the 4:3 fallback.
+                let cacheKey = filename as NSString
+                if Self.inlineImageCache.object(forKey: cacheKey) == nil,
+                   let url = ImageStorageManager.shared.getImageURL(for: filename),
+                   let img = NSImage(contentsOf: url) {
+                    Self.inlineImageCache.setObject(img, forKey: cacheKey)
+                }
 
                 let baseAttrs = Self.baseTypingAttributes(for: currentColorScheme)
                 let composed = NSMutableAttributedString()
@@ -3066,24 +3258,26 @@ struct URLPasteOptionMenu: View {
                     seenIDs.insert(id)
 
                     // ── Recalculate stale attachment bounds ──
-                    // During makeNSView, containerWidth is 0 (replaceLayoutManager resets it).
-                    // Attachments created then get bounds={0,0}. Once the real width is known,
-                    // recalculate bounds so the layout manager allocates proper glyph space.
+                    // Bounds may be wrong because:
+                    //   (a) containerWidth was 0 during makeNSView (replaceLayoutManager resets it)
+                    //   (b) image wasn't cached at insert time, so a 4:3 fallback AR was used
+                    // Recalculate whenever width OR aspect ratio diverges from expected values.
                     if containerWidth > 1 {
                         let expectedWidth = containerWidth * attachment.widthRatio
-                        if abs(attachment.bounds.width - expectedWidth) > 1 {
-                            let aspectRatio: CGFloat
-                            let cacheKey = filename as NSString
-                            if let cachedImg = Self.inlineImageCache.object(forKey: cacheKey) {
-                                aspectRatio = cachedImg.size.height / cachedImg.size.width
-                            } else if let overlay = imageOverlays[id], let img = overlay.image {
-                                aspectRatio = img.size.height / img.size.width
-                            } else {
-                                // Use default ratio; the async overlay load will correct
-                                // bounds once the image arrives — no synchronous disk I/O.
-                                aspectRatio = 3.0 / 4.0
-                            }
-                            let newSize = CGSize(width: expectedWidth, height: expectedWidth * aspectRatio)
+                        let aspectRatio: CGFloat
+                        let cacheKey = filename as NSString
+                        if let cachedImg = Self.inlineImageCache.object(forKey: cacheKey) {
+                            aspectRatio = cachedImg.size.height / cachedImg.size.width
+                        } else if let overlay = imageOverlays[id], let img = overlay.image {
+                            aspectRatio = img.size.height / img.size.width
+                        } else {
+                            aspectRatio = 3.0 / 4.0
+                        }
+                        let expectedHeight = expectedWidth * aspectRatio
+                        let widthDrift = abs(attachment.bounds.width - expectedWidth)
+                        let heightDrift = abs(attachment.bounds.height - expectedHeight)
+                        if widthDrift > 1 || heightDrift > 1 {
+                            let newSize = CGSize(width: expectedWidth, height: expectedHeight)
                             attachment.attachmentCell = ImageSizeAttachmentCell(size: newSize)
                             attachment.bounds = CGRect(origin: .zero, size: newSize)
                             layoutManager.invalidateLayout(forCharacterRange: range, actualCharacterRange: nil)
@@ -3137,14 +3331,19 @@ struct URLPasteOptionMenu: View {
                         if let cached = Self.inlineImageCache.object(forKey: cacheKey) {
                             overlay.image = cached
                         } else {
-                            Task.detached(priority: .userInitiated) { [weak overlay] in
+                            Task.detached(priority: .userInitiated) { [weak overlay, weak self, weak textView] in
                                 guard let url = ImageStorageManager.shared.getImageURL(for: filename),
                                       let img = NSImage(contentsOf: url) else {
                                     return
                                 }
                                 Self.inlineImageCache.setObject(img, forKey: cacheKey)
-                                let overlayAlive = overlay != nil
-                                await MainActor.run { overlay?.image = img }
+                                await MainActor.run {
+                                    overlay?.image = img
+                                    // Recalculate attachment bounds now that we have the real AR
+                                    if let tv = textView, let self = self {
+                                        self.updateImageOverlays(in: tv)
+                                    }
+                                }
                             }
                         }
 
@@ -3391,7 +3590,7 @@ struct URLPasteOptionMenu: View {
                             else { return }
                             attachment.bounds = CGRect(
                                 x: 0, y: Self.checkboxAttachmentYOffset,
-                                width: Self.checkboxIconSize, height: Self.checkboxIconSize)
+                                width: Self.checkboxAttachmentWidth, height: Self.checkboxIconSize)
                             textStorage.addAttribute(
                                 .baselineOffset, value: Self.checkboxBaselineOffset,
                                 range: attachmentRange)
@@ -3603,7 +3802,7 @@ struct URLPasteOptionMenu: View {
                         let attachment = NSTextAttachment()
                         attachment.attachmentCell = TodoCheckboxAttachmentCell(isChecked: isChecked)
                         attachment.bounds = CGRect(
-                            x: 0, y: Self.checkboxAttachmentYOffset, width: Self.checkboxIconSize,
+                            x: 0, y: Self.checkboxAttachmentYOffset, width: Self.checkboxAttachmentWidth,
                             height: Self.checkboxIconSize)
                         let attString = NSMutableAttributedString(attachment: attachment)
                         attString.addAttribute(
@@ -3944,22 +4143,29 @@ struct URLPasteOptionMenu: View {
             // MARK: - Helpers
 
             static func baseParagraphStyle() -> NSParagraphStyle {
+                let spacing = ThemeManager.currentLineSpacing()
+                // Scale min/max line height proportionally so the multiplier
+                // actually produces visible differences (1.2x is the reference).
+                let scaledHeight = baseLineHeight * spacing.multiplier / 1.2
                 let style = NSMutableParagraphStyle()
-                style.lineHeightMultiple = 1.2
-                style.minimumLineHeight = baseLineHeight
-                style.maximumLineHeight = baseLineHeight + 4
+                style.lineHeightMultiple = spacing.multiplier
+                style.minimumLineHeight = scaledHeight
+                style.maximumLineHeight = scaledHeight + 4
                 style.paragraphSpacing = 8
                 return style
             }
 
             static func todoParagraphStyle() -> NSParagraphStyle {
+                let spacing = ThemeManager.currentLineSpacing()
+                // Never shrink below checkboxIconSize or the checkbox clips
+                let scaledHeight = max(checkboxIconSize, checkboxIconSize * spacing.multiplier / 1.2)
                 let style = NSMutableParagraphStyle()
-                style.lineHeightMultiple = 1.2
-                style.minimumLineHeight = todoLineHeight
-                style.maximumLineHeight = todoLineHeight + 4
+                style.lineHeightMultiple = spacing.multiplier
+                style.minimumLineHeight = scaledHeight
+                style.maximumLineHeight = scaledHeight + 4
                 style.paragraphSpacing = 10
                 style.firstLineHeadIndent = 0
-                style.headIndent = 30
+                style.headIndent = checkboxAttachmentWidth + 2
                 return style
             }
 
@@ -4071,6 +4277,11 @@ struct URLPasteOptionMenu: View {
     final class InlineNSTextView: NSTextView {
         // Static flag to track command menu visibility for keyboard event handling
         static var isCommandMenuShowing = false
+        static var commandSlashLocation: Int = -1
+
+        /// When true, mouseMoved sets arrow cursor instead of allowing NSTextView's I-beam.
+        /// Set by ContentView when any full-screen panel overlay (settings, search, trash) is open.
+        static var isPanelOverlayActive = false
 
         weak var actionDelegate: TodoEditorRepresentable.Coordinator?
         var editorInstanceID: UUID?
@@ -4183,6 +4394,20 @@ struct URLPasteOptionMenu: View {
         }
 
         override func mouseMoved(with event: NSEvent) {
+            // When a full-screen panel (settings/search/trash) covers the editor,
+            // suppress the I-beam entirely — show arrow instead.
+            if Self.isPanelOverlayActive {
+                NSCursor.arrow.set()
+                return
+            }
+            // If another view (e.g., overlay toolbar buttons) owns this point,
+            // don't force I-beam — let that view's cursor rects take effect.
+            if let contentView = window?.contentView {
+                let hitView = contentView.hitTest(event.locationInWindow)
+                if let hitView, hitView !== self, !hitView.isDescendant(of: self) {
+                    return
+                }
+            }
             // Check image overlay edges BEFORE calling super — NSTextView's
             // mouseMoved forcibly resets the cursor to i-beam, overriding any
             // cursor rects on subviews. Suppressing super is the only way to win.
@@ -4279,45 +4504,56 @@ struct URLPasteOptionMenu: View {
                 return
             }
 
+            let eidInfo: [String: Any]? = editorInstanceID.map { ["editorInstanceID": $0] }
+
             // Handle special keys for command menu navigation
             // keyCode 126 = Up Arrow, 125 = Down Arrow, 36 = Return, 53 = Escape
             switch event.keyCode {
             case 126:  // Up Arrow
-                // Post notification to navigate up in command menu
-                NotificationCenter.default.post(name: .commandMenuNavigateUp, object: nil)
-                return  // Don't pass to super to prevent cursor movement
+                NotificationCenter.default.post(name: .commandMenuNavigateUp, object: nil, userInfo: eidInfo)
+                return
 
             case 125:  // Down Arrow
-                // Post notification to navigate down in command menu
-                NotificationCenter.default.post(name: .commandMenuNavigateDown, object: nil)
-                return  // Don't pass to super to prevent cursor movement
+                NotificationCenter.default.post(name: .commandMenuNavigateDown, object: nil, userInfo: eidInfo)
+                return
 
             case 36, 76:  // Return or Enter key
-                // Post notification to select current command menu item
-                NotificationCenter.default.post(name: .commandMenuSelect, object: nil)
-                // If command menu handles it, don't pass to super
-                // The notification handler will determine if it was consumed
+                NotificationCenter.default.post(name: .commandMenuSelect, object: nil, userInfo: eidInfo)
                 return
 
             case 53:  // Escape key
-                // Post notification to hide command menu
-                NotificationCenter.default.post(name: .hideCommandMenu, object: nil)
+                NotificationCenter.default.post(name: .hideCommandMenu, object: nil, userInfo: eidInfo)
+                return
+
+            case 51:  // Backspace
+                super.keyDown(with: event)
+                let cursor = selectedRange().location
+                let slashLoc = InlineNSTextView.commandSlashLocation
+                if cursor <= slashLoc || slashLoc < 0 {
+                    NotificationCenter.default.post(name: .hideCommandMenu, object: nil, userInfo: eidInfo)
+                } else {
+                    let filterText = readCommandFilterText()
+                    NotificationCenter.default.post(
+                        name: Notification.Name("CommandMenuFilterUpdate"), object: filterText, userInfo: eidInfo)
+                }
                 return
 
             default:
-                // For all other keys, check if we should hide the command menu
-                // Any character input (other than arrow keys) should hide the menu
-                if event.characters != nil && event.characters != "" {
-                    NotificationCenter.default.post(name: .hideCommandMenu, object: nil)
-                }
                 super.keyDown(with: event)
             }
         }
 
         @available(macOS 10.11, *)
         override func insertText(_ string: Any, replacementRange: NSRange) {
+            let eidInfo: [String: Any]? = editorInstanceID.map { ["editorInstanceID": $0] }
+
             // Check if we're inserting "/" to trigger command menu
             if let str = string as? String, str == "/" {
+                // If menu is already showing, hide it and start fresh
+                if InlineNSTextView.isCommandMenuShowing {
+                    NotificationCenter.default.post(name: .hideCommandMenu, object: nil, userInfo: eidInfo)
+                }
+
                 // Get the cursor position before insertion
                 let location = selectedRange().location
 
@@ -4326,8 +4562,6 @@ struct URLPasteOptionMenu: View {
 
                 // Then show the command menu at that position
                 if actionDelegate != nil {
-                    // Post notification to show command menu
-                    // We need to get the rect for the inserted "/" character
                     if let layoutManager = self.layoutManager,
                         let textContainer = self.textContainer
                     {
@@ -4340,21 +4574,40 @@ struct URLPasteOptionMenu: View {
                         let cursorY = glyphRect.origin.y + self.textContainerOrigin.y
                         let cursorHeight = glyphRect.height
 
-                        let xPosition = cursorX
-                        let yPosition = cursorY + cursorHeight + 4
-
-                        let menuPosition = CGPoint(x: xPosition, y: yPosition)
+                        let menuPosition = CGPoint(x: cursorX, y: cursorY + cursorHeight + 4)
 
                         NotificationCenter.default.post(
                             name: .showCommandMenu,
-                            object: ["position": menuPosition, "slashLocation": location]
+                            object: ["position": menuPosition, "slashLocation": location],
+                            userInfo: eidInfo
                         )
                     }
                 }
                 return
             }
 
+            // If command menu is showing, insert the character and update the filter
+            if InlineNSTextView.isCommandMenuShowing {
+                super.insertText(string, replacementRange: replacementRange)
+                let filterText = readCommandFilterText()
+                NotificationCenter.default.post(
+                    name: Notification.Name("CommandMenuFilterUpdate"), object: filterText, userInfo: eidInfo)
+                return
+            }
+
             super.insertText(string, replacementRange: replacementRange)
+        }
+
+        /// Reads the text typed after the slash character to use as a filter
+        private func readCommandFilterText() -> String {
+            let slashLoc = InlineNSTextView.commandSlashLocation
+            guard slashLoc >= 0,
+                  let textStorage = self.textStorage else { return "" }
+            let cursor = selectedRange().location
+            let filterStart = slashLoc + 1  // skip the "/" itself
+            guard filterStart < cursor && cursor <= textStorage.length else { return "" }
+            let filterRange = NSRange(location: filterStart, length: cursor - filterStart)
+            return (textStorage.string as NSString).substring(with: filterRange)
         }
         
         // MARK: - Context Menu Implementation
@@ -4414,7 +4667,10 @@ struct URLPasteOptionMenu: View {
 
     private final class TodoCheckboxAttachmentCell: NSTextAttachmentCell {
         var isChecked: Bool
-        private let size = NSSize(width: 18, height: 18)
+        private let size = NSSize(width: 20, height: 32)
+        private let checkSize: CGFloat = 16
+        private let cornerRadius: CGFloat = 8  // checkSize / 2 → fully circular
+        private let borderWidth: CGFloat = 1.5
 
         init(isChecked: Bool = false) {
             self.isChecked = isChecked
@@ -4428,38 +4684,18 @@ struct URLPasteOptionMenu: View {
 
         override var cellSize: NSSize { size }
 
-        // CRITICAL: Override cellBaselineOffset to control vertical positioning
-        // This is what actually determines where the attachment sits relative to the baseline
         override nonisolated func cellBaselineOffset() -> NSPoint {
-            // Use the actual font metrics for perfect alignment
-            // Use Charter for body text alignment calculations
-            // Using inline font creation to avoid actor isolation issues in nonisolated context
             let font = NSFont(name: "Charter", size: 16) ?? NSFont.systemFont(ofSize: 16)
-
-            // Center the checkbox with the cap height (height of capital letters)
-            // This provides the best optical alignment with mixed-case text
-            // Formula from Apple docs: (capHeight - imageHeight) / 2
             let offset = (font.capHeight - size.height) / 2
-
             return NSPoint(x: 0, y: offset)
         }
 
         override func draw(withFrame cellFrame: NSRect, in controlView: NSView?) {
-            guard let image = image(for: controlView) else { return }
-            // Draw the image directly at the cellFrame position
-            // The attachment.bounds.origin.y already handles vertical positioning
-            // Don't add extra centering here - it causes misalignment
-            let target = NSRect(
-                x: cellFrame.minX,
-                y: cellFrame.minY,
-                width: size.width,
-                height: size.height)
-            image.draw(in: target)
+            guard let img = renderImage(for: controlView) else { return }
+            img.draw(in: cellFrame)
         }
 
-        override func wantsToTrackMouse() -> Bool {
-            true
-        }
+        override func wantsToTrackMouse() -> Bool { true }
 
         override func trackMouse(
             with event: NSEvent, in cellFrame: NSRect, of controlView: NSView?,
@@ -4467,21 +4703,17 @@ struct URLPasteOptionMenu: View {
         ) -> Bool {
             isChecked.toggle()
             if let textView = controlView as? NSTextView {
-                let range = NSRange(location: charIndex, length: 1)
-                textView.layoutManager?.invalidateDisplay(forGlyphRange: range)
                 textView.didChangeText()
-                NotificationCenter.default.post(
-                    name: NSText.didChangeNotification, object: textView)
+                NotificationCenter.default.post(name: NSText.didChangeNotification, object: textView)
             }
             return true
         }
 
-        func invalidateAppearance() {
-            // no-op placeholder to keep API symmetrical with iOS implementation
-        }
+        func invalidateAppearance() {}
 
-        private func image(for controlView: NSView?) -> NSImage? {
-            // Detect dark mode
+        // MARK: - Rendering
+
+        private func renderImage(for controlView: NSView?) -> NSImage? {
             let isDark: Bool
             if let appearance = controlView?.effectiveAppearance {
                 isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
@@ -4489,47 +4721,54 @@ struct URLPasteOptionMenu: View {
                 isDark = false
             }
 
-            // Use SF Symbols for perfect alignment and consistency
-            let symbolName = isChecked ? "checkmark.circle.fill" : "circle"
-            let config = NSImage.SymbolConfiguration(pointSize: 20, weight: .regular)
+            let image = NSImage(size: size)
+            image.lockFocus()
 
-            // Create the image with proper configuration
-            guard
-                let baseImage = NSImage(
-                    systemSymbolName: symbolName, accessibilityDescription: nil)?
-                    .withSymbolConfiguration(config)
-            else { return nil }
+            if let appearance = controlView?.effectiveAppearance {
+                NSAppearance.current = appearance
+            }
+            let accentColor = NSColor.controlAccentColor
 
-            // Create tinted version
-            let tinted = NSImage(size: baseImage.size)
-            tinted.lockFocus()
-
-            let rect = NSRect(origin: .zero, size: baseImage.size)
+            let xInset = (size.width - checkSize) / 2
+            let yInset = (size.height - checkSize) / 2
+            let checkRect = NSRect(x: xInset, y: yInset, width: checkSize, height: checkSize)
 
             if isChecked {
-                // Checked state: black in light mode, white in dark mode
-                if isDark {
-                    NSColor.white.set()
-                } else {
-                    NSColor.black.set()
+                // Filled accent circle
+                let fillPath = NSBezierPath(roundedRect: checkRect, xRadius: cornerRadius, yRadius: cornerRadius)
+                accentColor.setFill()
+                fillPath.fill()
+
+                // SF Symbol checkmark
+                if let symbolImage = NSImage(systemSymbolName: "checkmark", accessibilityDescription: nil) {
+                    let sizeConfig = NSImage.SymbolConfiguration(pointSize: 9, weight: .bold)
+                    let colorConfig = NSImage.SymbolConfiguration(paletteColors: [.white])
+                    if let configured = symbolImage.withSymbolConfiguration(sizeConfig.applying(colorConfig)) {
+                        let symSize = configured.size
+                        let symX = xInset + (checkSize - symSize.width) / 2
+                        let symY = yInset + (checkSize - symSize.height) / 2
+                        configured.draw(in: NSRect(x: symX, y: symY, width: symSize.width, height: symSize.height))
+                    }
                 }
             } else {
-                // Unchecked state: adapt to color scheme
-                if isDark {
-                    // White/light gray circle in dark mode for visibility
-                    NSColor(white: 0.85, alpha: 1.0).set()
-                } else {
-                    // Dark gray circle in light mode
-                    NSColor(white: 0.3, alpha: 1.0).set()
-                }
+                // Empty circle with border
+                let fillPath = NSBezierPath(roundedRect: checkRect, xRadius: cornerRadius, yRadius: cornerRadius)
+                (isDark ? NSColor(white: 0.18, alpha: 1) : NSColor.white).setFill()
+                fillPath.fill()
+
+                let bInset = borderWidth / 2
+                let strokeRect = checkRect.insetBy(dx: bInset, dy: bInset)
+                let strokePath = NSBezierPath(
+                    roundedRect: strokeRect,
+                    xRadius: cornerRadius - bInset,
+                    yRadius: cornerRadius - bInset)
+                strokePath.lineWidth = borderWidth
+                (isDark ? NSColor(white: 0.45, alpha: 1) : NSColor(white: 0.72, alpha: 1)).setStroke()
+                strokePath.stroke()
             }
 
-            // Draw the symbol with the color
-            baseImage.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1.0)
-            rect.fill(using: .sourceAtop)
-
-            tinted.unlockFocus()
-            return tinted
+            image.unlockFocus()
+            return image
         }
     }
 

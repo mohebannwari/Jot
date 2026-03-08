@@ -129,7 +129,7 @@ struct FloatingSearch: View {
 
                 TextField("Search", text: $searchText)
                     .font(FontManager.heading(size: 13, weight: .medium))
-                    .tracking(-0.4)
+                    .tracking(-0.1)
                     .foregroundColor(Color("PrimaryTextColor"))
                     .focused($isSearchFocused)
                     .textFieldStyle(.plain)
@@ -203,7 +203,7 @@ struct FloatingSearch: View {
 
                                 Text(query)
                                     .font(FontManager.heading(size: 15, weight: .medium))
-                                    .tracking(-0.5)
+                                    .tracking(-0.2)
                                     .foregroundColor(Color("PrimaryTextColor"))
                                     .lineLimit(1)
                                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -211,10 +211,10 @@ struct FloatingSearch: View {
                             .padding(.horizontal, 8)
                             .padding(.vertical, 8)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .contentShape(RoundedRectangle(cornerRadius: resultItemCornerRadius, style: .continuous))
+                            .contentShape(Capsule())
                         }
                         .buttonStyle(.plain)
-                        .hoverContainer(cornerRadius: resultItemCornerRadius)
+                        .hoverContainer(cornerRadius: 999)
                     }
                 }
             }
@@ -264,7 +264,7 @@ struct FloatingSearch: View {
 
                     Text(result.title)
                         .font(FontManager.heading(size: 15, weight: .medium))
-                        .tracking(-0.4)
+                        .tracking(-0.1)
                         .foregroundColor(Color("PrimaryTextColor"))
                         .lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -296,12 +296,20 @@ struct FloatingSearch: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: resultItemCornerRadius, style: .continuous)
-                    .fill(Color("HoverBackgroundColor"))
-                    .opacity(isHovered || isSelected ? 1 : 0)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: resultItemCornerRadius, style: .continuous))
+            .background {
+                if belongsToFolder {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color("HoverBackgroundColor"))
+                        .opacity(isHovered || isSelected ? 1 : 0)
+                } else {
+                    Capsule()
+                        .fill(Color("HoverBackgroundColor"))
+                        .opacity(isHovered || isSelected ? 1 : 0)
+                }
+            }
+            .contentShape(belongsToFolder
+                ? AnyShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                : AnyShape(Capsule()))
             .animation(.jotHover, value: isHovered)
             .animation(.jotHover, value: isSelected)
         }

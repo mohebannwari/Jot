@@ -11,6 +11,7 @@ import SwiftUI
 struct JotApp: App {
     @StateObject private var notesManager: SimpleSwiftDataManager
     @StateObject private var themeManager = ThemeManager()
+    @StateObject private var authManager = NoteAuthenticationManager()
 
     init() {
         // Initialize SwiftData manager with error handling
@@ -76,6 +77,7 @@ struct JotApp: App {
                 .frame(minWidth: 815, minHeight: 600)
                 .environmentObject(notesManager)
                 .environmentObject(themeManager)
+                .environmentObject(authManager)
                 .preferredColorScheme(themeManager.resolvedColorScheme)
                 .containerShape(.rect(cornerRadius: 16))
         }

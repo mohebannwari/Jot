@@ -12,10 +12,12 @@ struct Note: Identifiable, Codable, Equatable {
     var title: String
     var content: String
     var date: Date
+    var createdAt: Date = Date()
     var tags: [String]
     var isPinned: Bool = false
     var folderID: UUID?
     var isArchived: Bool = false
+    var isLocked: Bool = false
     var isDeleted: Bool = false
     var deletedDate: Date?
 
@@ -26,6 +28,7 @@ struct Note: Identifiable, Codable, Equatable {
         isPinned: Bool = false,
         folderID: UUID? = nil,
         isArchived: Bool = false,
+        isLocked: Bool = false,
         isDeleted: Bool = false,
         deletedDate: Date? = nil
     ) {
@@ -37,6 +40,7 @@ struct Note: Identifiable, Codable, Equatable {
         self.isPinned = isPinned
         self.folderID = folderID
         self.isArchived = isArchived
+        self.isLocked = isLocked
         self.isDeleted = isDeleted
         self.deletedDate = deletedDate
     }

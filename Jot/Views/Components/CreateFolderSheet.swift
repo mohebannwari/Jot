@@ -65,7 +65,7 @@ struct CreateFolderSheet: View {
         HStack(spacing: 8) {
             TextField("Folder name", text: $folderName)
                 .font(FontManager.heading(size: 15, weight: .medium))
-                .tracking(-0.5)
+                .tracking(-0.2)
                 .foregroundColor(Color("PrimaryTextColor"))
                 .textFieldStyle(.plain)
                 .focused($isNameFieldFocused)
@@ -108,7 +108,7 @@ struct CreateFolderSheet: View {
                 Text("Choose folder color")
                     .font(FontManager.heading(size: 13, weight: .medium))
                     .foregroundColor(Color("PrimaryTextColor"))
-                    .tracking(-0.4)
+                    .tracking(-0.1)
             }
             .padding(.horizontal, 4)
 
@@ -202,7 +202,7 @@ struct CreateFolderSheet: View {
             } label: {
                 Text(isEditing ? "Save" : "Create")
                     .font(FontManager.heading(size: 12, weight: .semibold))
-                    .tracking(-0.3)
+                    .tracking(0)
                     .foregroundColor(Color("ButtonPrimaryTextColor"))
                     .frame(height: 44)
                     .frame(maxWidth: .infinity)
@@ -219,7 +219,7 @@ struct CreateFolderSheet: View {
             } label: {
                 Text("Cancel")
                     .font(FontManager.heading(size: 12, weight: .semibold))
-                    .tracking(-0.3)
+                    .tracking(0)
                     .foregroundColor(Color("PrimaryTextColor"))
                     .frame(height: 36)
                     .frame(maxWidth: .infinity)

@@ -75,13 +75,19 @@ private struct SplitDropDelegate: DropDelegate {
 
 
 /// Makes the hosting NSWindow transparent so liquid glass is the sole background layer.
+/// On pre-macOS 26, the window stays opaque — glass isn't available, so blur materials
+/// handle the translucent surfaces instead.
 struct WindowTransparencyView: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
         DispatchQueue.main.async {
             guard let window = view.window else { return }
-            window.isOpaque = false
-            window.backgroundColor = .clear
+            if #available(macOS 26.0, *) {
+                window.isOpaque = false
+                window.backgroundColor = .clear
+            } else {
+                window.isOpaque = true
+            }
         }
         return view
     }
@@ -121,6 +127,10 @@ struct ContentView: View {
     // Search is powered by SearchEngine
     @StateObject private var searchEngine = SearchEngine()
     @EnvironmentObject private var notesManager: SimpleSwiftDataManager
+    @EnvironmentObject private var themeManager: ThemeManager
+    @EnvironmentObject private var authManager: NoteAuthenticationManager
+    @State private var lockPasswordInput: String = ""
+    @State private var lockAuthFailed: Bool = false
     @State private var selectedNote: Note?
     @State private var selectedNoteIDs: Set<UUID> = []
     @State private var selectionAnchorID: UUID?
@@ -133,6 +143,7 @@ struct ContentView: View {
     @State private var isPinnedSectionExpanded: Bool = true
     @State private var showAllNotesFolderIDs: Set<UUID> = []
     @State private var sidebarSectionFilter: SidebarSectionFilter = .all
+    @State private var highlightedFolderID: UUID?
     @State private var sidebarWidth: CGFloat = 276
     @State private var sidebarDragStartWidth: CGFloat?
     @State private var detailFocusRequestID = UUID()
@@ -202,7 +213,7 @@ struct ContentView: View {
     )
     private let detailToggleToContentExtraSpacingWhenSidebarHidden: CGFloat = 16
     private let sidebarIconSize: CGFloat = 18
-    private let sidebarTopIconSpacingCollapsed: CGFloat = 8
+    private let sidebarTopIconSpacingCollapsed: CGFloat = 2
     private let sidebarTopBarButtonSize: CGFloat = 26
     private let sidebarTopBarTrafficLightGap: CGFloat = 12
     private let sidebarRowHoverInset: CGFloat = 0
@@ -278,7 +289,7 @@ struct ContentView: View {
     /// Returns nil while the split layout is showing so regular sections
     /// don't highlight a note that's already represented in the Active Split container.
     private var sidebarActiveNoteID: UUID? {
-        shouldShowSplitLayout ? nil : selectedNote?.id
+        (shouldShowSplitLayout || isSettingsPresented) ? nil : selectedNote?.id
     }
 
     /// Selection set for sidebar cards.
@@ -439,6 +450,10 @@ struct ContentView: View {
                 withAnimation(.jotSpring) { isFloatingSidebarVisible = false }
             }
         }
+        .onChange(of: anyPanelOverlayActive) { TodoRichTextEditor.isPanelOverlayActive = $1 }
+        .onChange(of: themeManager.noteSortOrder) { _, _ in
+            notesManager.refreshSorting()
+        }
     }
 
     @ViewBuilder
@@ -514,7 +529,7 @@ struct ContentView: View {
         let availableWidth = geometry.size.width - (effectivePadding * 2)
         let sidebarDetailGap: CGFloat = isSidebarVisible ? windowContentPadding : 0
         let resolvedSidebarWidth = clampedSidebarWidth(sidebarWidth, totalWidth: availableWidth)
-        let expandedSidebarWidth = selectedNote == nil ? availableWidth : resolvedSidebarWidth
+        let expandedSidebarWidth = (selectedNote == nil && !isSettingsPresented) ? availableWidth : resolvedSidebarWidth
         let visibleSidebarWidth = isSidebarVisible ? expandedSidebarWidth : 0
         ZStack {
             ZStack {
@@ -523,9 +538,8 @@ struct ContentView: View {
                         .frame(width: visibleSidebarWidth)
                         .opacity(isSidebarVisible ? 1 : 0)
                         .allowsHitTesting(isSidebarVisible)
-                        .clipped()
                         .overlay(alignment: .trailing) {
-                            if selectedNote != nil && isSidebarVisible {
+                            if (selectedNote != nil || isSettingsPresented) && isSidebarVisible {
                                 sidebarResizeHandle(totalWidth: availableWidth)
                                     .padding(.top, sidebarResizeHandleTopInset)
                                     .frame(maxHeight: .infinity, alignment: .top)
@@ -559,7 +573,6 @@ struct ContentView: View {
                     .zIndex(199)
             }
             appCenteredSearchOverlay().zIndex(3)
-            appWindowSettingsOverlay().zIndex(4)
             appWindowTrashOverlay().zIndex(5)
         }
         .coordinateSpace(name: "contentArea")
@@ -583,7 +596,29 @@ struct ContentView: View {
         visibleSidebarWidth: CGFloat,
         sidebarDetailGap: CGFloat
     ) -> some View {
-        if let note = selectedNote {
+        if isSettingsPresented {
+            let totalDetailWidth: CGFloat = isSidebarVisible
+                ? max(0, availableWidth - visibleSidebarWidth - sidebarDetailGap)
+                : availableWidth
+            let cornerRadius: CGFloat = isSidebarVisible
+                ? windowCornerRadius - windowContentPadding : 0
+
+            let settingsBg = colorScheme == .dark
+                ? Color(red: 28/255.0, green: 28/255.0, blue: 28/255.0)
+                : detailBg
+
+            SettingsPage(isPresented: $isSettingsPresented)
+                .environmentObject(themeManager)
+                .frame(width: totalDetailWidth)
+                .frame(maxHeight: .infinity)
+                .background(
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(settingsBg)
+                )
+                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                .splitPaneShadow(isActive: colorScheme == .light, cornerRadius: cornerRadius, backgroundColor: settingsBg, colorScheme: colorScheme)
+                .padding(.leading, sidebarDetailGap)
+        } else if let note = selectedNote {
             let needsPendingPadding = isActiveSplitPending && !isSidebarVisible
             let totalDetailWidth: CGFloat = isSidebarVisible
                 ? max(0, availableWidth - visibleSidebarWidth - sidebarDetailGap)
@@ -801,14 +836,23 @@ struct ContentView: View {
     private func secondaryNotePane(note: Note, width: CGFloat, cornerRadius: CGFloat, primaryNote: Note) -> some View {
         let position = activeSplit?.position ?? .right
         let isLeftPane = (position == .left)
+        let isSplitLocked = note.isLocked && !authManager.isUnlocked(note.id)
 
-        NoteDetailView(
-            note: note,
-            editorInstanceID: splitEditorID,
-            focusRequestID: splitFocusRequestID,
-            contentTopInsetAdjustment: detailToggleToContentExtraSpacingWhenSidebarHidden,
-            stickyHeaderTopPadding: splitControlsTopPadding
-        ) { saveSplitNote($0) }
+        ZStack {
+            NoteDetailView(
+                note: note,
+                editorInstanceID: splitEditorID,
+                focusRequestID: splitFocusRequestID,
+                contentTopInsetAdjustment: detailToggleToContentExtraSpacingWhenSidebarHidden,
+                stickyHeaderTopPadding: splitControlsTopPadding
+            ) { saveSplitNote($0) }
+            .blur(radius: isSplitLocked ? 20 : 0)
+            .allowsHitTesting(!isSplitLocked)
+
+            if isSplitLocked {
+                noteLockOverlay(for: note)
+            }
+        }
         .frame(width: width)
         .frame(maxHeight: .infinity)
         .background(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).fill(detailBg))
@@ -971,7 +1015,16 @@ struct ContentView: View {
                     .padding(.top, sidebarMenuToNotesGap)
 
                 ScrollView {
-                    sidebarNotesList
+                    ScrollViewReader { proxy in
+                        sidebarNotesList
+                            .onChange(of: highlightedFolderID) { _, folderID in
+                                if let folderID {
+                                    withAnimation(.jotSpring) {
+                                        proxy.scrollTo(folderID, anchor: .center)
+                                    }
+                                }
+                            }
+                    }
                 }
                 .scrollIndicators(.never)
                 .padding(.top, 4)
@@ -986,7 +1039,7 @@ struct ContentView: View {
                 }
 
                 // Settings -- sits below scroll, content clips naturally
-                sidebarMenuItem(assetName: "IconSettingsGear1", label: "Settings") {
+                sidebarMenuItem(assetName: "IconSettingsGear1", label: "Settings", isActive: isSettingsPresented) {
                     presentSettings()
                 }
                 .padding(.bottom, sidebarSettingsBottomPadding)
@@ -1038,6 +1091,8 @@ struct ContentView: View {
                         onTogglePinForNotes: setPinState,
                         onExportNotes: presentExport,
                         onArchiveNotes: archiveNotes,
+                        onToggleLockNote: { id in notesManager.toggleLock(id: id) },
+                        onLockIconTap: { note in handleLockIconTap(note) },
                         onRenameNote: { note, newTitle in
                             var updatedNote = note
                             updatedNote.title = newTitle
@@ -1085,11 +1140,45 @@ struct ContentView: View {
                             batchMoveNotes(noteIDs, toFolderID: folderID)
                         },
                         splitNoteIDs: splitNoteIDs,
-                        onSplitIconTap: activateSplitForNote
+                        onSplitIconTap: activateSplitForNote,
+                        onToggleLockNote: { id in notesManager.toggleLock(id: id) },
+                        onLockIconTap: { note in handleLockIconTap(note) },
+                        highlightedFolderID: highlightedFolderID
                     )
                 }
 
                 activeSplitSidebarSection
+
+                if shouldShowFlatNotesSection {
+                    NotesSection(
+                        title: "Notes",
+                        notes: allUnpinnedNotes,
+                        selectedNoteIDs: sidebarSelectedNoteIDs,
+                        activeNoteID: sidebarActiveNoteID,
+                        splitNoteIDs: splitNoteIDs,
+                        onSplitIconTap: activateSplitForNote,
+                        folders: folders,
+                        onNoteTap: handleNoteTap,
+                        onDeleteNotes: requestDeleteNotes,
+                        onCreateFolderWithNotes: { noteIDs in
+                            promptCreateFolder(withNoteIDs: noteIDs)
+                        },
+                        onMoveNotesToFolder: moveNotesToFolder,
+                        onTogglePinForNotes: setPinState,
+                        onExportNotes: presentExport,
+                        onArchiveNotes: archiveNotes,
+                        onToggleLockNote: { id in notesManager.toggleLock(id: id) },
+                        onLockIconTap: { note in handleLockIconTap(note) },
+                        onDropNoteToUnfiled: { noteID in
+                            moveNote(noteID: noteID, toFolderID: nil)
+                        },
+                        onRenameNote: { note, newTitle in
+                            var updatedNote = note
+                            updatedNote.title = newTitle
+                            notesManager.updateNote(updatedNote)
+                        }
+                    )
+                }
 
                 if shouldShowTodaySection {
                     NotesSection(
@@ -1109,6 +1198,8 @@ struct ContentView: View {
                         onTogglePinForNotes: setPinState,
                         onExportNotes: presentExport,
                         onArchiveNotes: archiveNotes,
+                        onToggleLockNote: { id in notesManager.toggleLock(id: id) },
+                        onLockIconTap: { note in handleLockIconTap(note) },
                         onDropNoteToUnfiled: { noteID in
                             moveNote(noteID: noteID, toFolderID: nil)
                         },
@@ -1138,6 +1229,8 @@ struct ContentView: View {
                         onTogglePinForNotes: setPinState,
                         onExportNotes: presentExport,
                         onArchiveNotes: archiveNotes,
+                        onToggleLockNote: { id in notesManager.toggleLock(id: id) },
+                        onLockIconTap: { note in handleLockIconTap(note) },
                         onDropNoteToUnfiled: { noteID in
                             moveNote(noteID: noteID, toFolderID: nil)
                         },
@@ -1167,6 +1260,8 @@ struct ContentView: View {
                         onTogglePinForNotes: setPinState,
                         onExportNotes: presentExport,
                         onArchiveNotes: archiveNotes,
+                        onToggleLockNote: { id in notesManager.toggleLock(id: id) },
+                        onLockIconTap: { note in handleLockIconTap(note) },
                         onDropNoteToUnfiled: { noteID in
                             moveNote(noteID: noteID, toFolderID: nil)
                         },
@@ -1196,6 +1291,8 @@ struct ContentView: View {
                         onTogglePinForNotes: setPinState,
                         onExportNotes: presentExport,
                         onArchiveNotes: archiveNotes,
+                        onToggleLockNote: { id in notesManager.toggleLock(id: id) },
+                        onLockIconTap: { note in handleLockIconTap(note) },
                         onDropNoteToUnfiled: { noteID in
                             moveNote(noteID: noteID, toFolderID: nil)
                         },
@@ -1225,6 +1322,8 @@ struct ContentView: View {
                         onTogglePinForNotes: setPinState,
                         onExportNotes: presentExport,
                         onArchiveNotes: archiveNotes,
+                        onToggleLockNote: { id in notesManager.toggleLock(id: id) },
+                        onLockIconTap: { note in handleLockIconTap(note) },
                         onDropNoteToUnfiled: { noteID in
                             moveNote(noteID: noteID, toFolderID: nil)
                         },
@@ -1251,33 +1350,37 @@ struct ContentView: View {
     }
 
     private var shouldShowTodaySection: Bool {
-        sidebarSectionFilterAllows(sidebarSectionFilter, section: .today) && !todayNotes.isEmpty
+        isDateGroupingActive && sidebarSectionFilterAllows(sidebarSectionFilter, section: .today) && !todayNotes.isEmpty
     }
 
     private var shouldShowThisMonthSection: Bool {
-        sidebarSectionFilterAllows(sidebarSectionFilter, section: .thisMonth) && !thisMonthNotes.isEmpty
+        isDateGroupingActive && sidebarSectionFilterAllows(sidebarSectionFilter, section: .thisMonth) && !thisMonthNotes.isEmpty
     }
 
     private var shouldShowThisYearSection: Bool {
-        sidebarSectionFilterAllows(sidebarSectionFilter, section: .thisYear) && !thisYearNotes.isEmpty
+        isDateGroupingActive && sidebarSectionFilterAllows(sidebarSectionFilter, section: .thisYear) && !thisYearNotes.isEmpty
     }
 
     private var shouldShowOlderSection: Bool {
-        sidebarSectionFilterAllows(sidebarSectionFilter, section: .older) && !olderNotes.isEmpty
+        isDateGroupingActive && sidebarSectionFilterAllows(sidebarSectionFilter, section: .older) && !olderNotes.isEmpty
+    }
+
+    private var shouldShowFlatNotesSection: Bool {
+        !isDateGroupingActive && !allUnpinnedNotes.isEmpty
     }
 
     private var shouldShowUnfiledPlaceholderSection: Bool {
-        sidebarSectionFilter == .all && !hasVisibleUnfiledSections && !displayedNotes.isEmpty
+        sidebarSectionFilter == .all && !hasVisibleUnfiledSections && !shouldShowFlatNotesSection && !displayedNotes.isEmpty
     }
 
     private var sidebarTitleBarRow: some View {
         HStack(spacing: sidebarTopIconSpacingCollapsed) {
-            sidebarTopBarIcon(assetName: "IconLayoutAlignLeft", withHoverBox: false) {
+            sidebarTopBarIcon(assetName: "IconLayoutAlignLeft") {
                 withAnimation(sidebarVisibilityAnimation) {
                     isSidebarVisible = false
                 }
             }
-            splitMenuIconButton(withHoverBox: false)
+            splitMenuIconButton()
         }
         .padding(.leading, iconLeading - windowContentPadding)
         .frame(width: sidebarDesignColumnWidth, height: sidebarTopBarButtonSize, alignment: .leading)
@@ -1310,17 +1413,25 @@ struct ContentView: View {
         assetName: String,
         label: String,
         flipIcon: Bool = false,
+        isActive: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
             HStack(spacing: 8) {
-                sidebarAssetIcon(assetName: assetName, tint: Color("SecondaryTextColor"))
-                    .scaleEffect(x: flipIcon ? -1 : 1, y: 1)
+                sidebarAssetIcon(
+                    assetName: assetName,
+                    tint: isActive
+                        ? (colorScheme == .light ? Color.white : Color.black)
+                        : Color("SecondaryTextColor")
+                )
+                .scaleEffect(x: flipIcon ? -1 : 1, y: 1)
 
                 Text(label)
                     .font(FontManager.heading(size: 15, weight: .medium))
-                    .foregroundColor(Color("PrimaryTextColor"))
-                    .tracking(-0.4)
+                    .foregroundColor(isActive
+                        ? (colorScheme == .light ? Color.white : Color.black)
+                        : Color("PrimaryTextColor"))
+                    .tracking(-0.1)
                     .lineLimit(1)
 
                 Spacer(minLength: 0)
@@ -1332,8 +1443,14 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
             .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(hoveredSidebarMenuLabel == label ? Color("HoverBackgroundColor") : Color.clear)
+                Capsule()
+                    .fill(
+                        isActive
+                            ? (colorScheme == .light ? Color.black : Color.white)
+                            : hoveredSidebarMenuLabel == label
+                                ? Color("HoverBackgroundColor")
+                                : Color.clear
+                    )
                     .padding(.horizontal, sidebarRowHoverInset)
             )
         }
@@ -1350,7 +1467,7 @@ struct ContentView: View {
     }
 
     private var sidebarNotesHeader: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 2) {
             Text(isShowingArchive ? "Archive" : "Notes")
                 .font(FontManager.heading(size: 13, weight: .medium))
                 .foregroundColor(Color("SecondaryTextColor"))
@@ -1385,11 +1502,12 @@ struct ContentView: View {
                     }
                 } label: {
                     sidebarAssetIcon(assetName: "IconFilterCircle", tint: Color("SecondaryTextColor"))
-                        .contentShape(Rectangle().inset(by: -6))
+                        .padding(4)
+                        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .macPointingHandCursor()
-                .subtleHoverScale(1.06)
+                .hoverContainer(cornerRadius: 8)
             }
         }
         .padding(.leading, sidebarItemLeadingPadding)
@@ -1404,13 +1522,14 @@ struct ContentView: View {
     ) -> some View {
         Button(action: action) {
             sidebarAssetIcon(assetName: assetName, tint: Color("SecondaryTextColor"))
-                .contentShape(Rectangle().inset(by: -6))
+                .padding(4)
+                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(.plain)
         .macPointingHandCursor()
         .disabled(disabled)
         .opacity(disabled ? 0.5 : 1)
-        .subtleHoverScale(1.06)
+        .hoverContainer(cornerRadius: 8)
     }
 
     private var sidebarArchiveList: some View {
@@ -1450,7 +1569,7 @@ struct ContentView: View {
                                 Text(folder.name)
                                     .font(FontManager.heading(size: 15, weight: .medium))
                                     .foregroundColor(Color("PrimaryTextColor"))
-                                    .tracking(-0.4)
+                                    .tracking(-0.1)
                                     .lineLimit(1)
                                     .truncationMode(.tail)
 
@@ -1506,10 +1625,10 @@ struct ContentView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(8)
                             .background(
-                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                Capsule()
                                     .fill(isHovered ? Color("HoverBackgroundColor") : Color.clear)
                             )
-                            .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .contentShape(Capsule())
                             .animation(.jotHover, value: isHovered)
                             .onTapGesture {
                                 HapticManager.shared.buttonTap()
@@ -1603,6 +1722,14 @@ struct ContentView: View {
         }
     }
 
+    private var anyPanelOverlayActive: Bool {
+        isSearchPresented || isTrashPresented
+        || isCreateFolderAlertPresented || pendingFolderToEdit != nil
+        || isBatchDeleteConfirmationPresented || isBatchMoveAlertPresented
+        || isBatchExportSheetPresented || isSplitMenuVisible
+        || splitPickerOverlayPane != nil || quickLookContext != nil
+    }
+
     @ViewBuilder
     private func appCenteredSearchOverlay() -> some View {
         ZStack {
@@ -1630,27 +1757,6 @@ struct ContentView: View {
             .padding(.top, 182)
         }
         .animation(.easeInOut(duration: 0.2), value: isSearchPresented)
-    }
-
-    @ViewBuilder
-    private func appWindowSettingsOverlay() -> some View {
-        ZStack {
-            Color.black
-                .opacity(isSettingsPresented ? 0.001 : 0)
-                .allowsHitTesting(isSettingsPresented)
-                .onTapGesture {
-                    if isSettingsPresented {
-                        isSettingsPresented = false
-                    }
-                }
-
-            FloatingSettings(isPresented: $isSettingsPresented)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                .opacity(isSettingsPresented ? 1 : 0)
-                .allowsHitTesting(isSettingsPresented)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: windowCornerRadius, style: .continuous))
-        .animation(.easeInOut(duration: 0.18), value: isSettingsPresented)
     }
 
     @ViewBuilder
@@ -1769,13 +1875,23 @@ struct ContentView: View {
                 .padding(.top, sidebarMenuToNotesGap)
 
             ScrollView {
-                sidebarNotesList
+                ScrollViewReader { proxy in
+                    sidebarNotesList
+                        .onChange(of: highlightedFolderID) { _, folderID in
+                            if let folderID {
+                                withAnimation(.jotSpring) {
+                                    proxy.scrollTo(folderID, anchor: .center)
+                                }
+                            }
+                        }
+                }
             }
+            .scrollClipDisabled()
             .scrollIndicators(.never)
             .padding(.top, 4)
             .padding(.bottom, 4)
 
-            sidebarMenuItem(assetName: "IconSettingsGear1", label: "Settings") {
+            sidebarMenuItem(assetName: "IconSettingsGear1", label: "Settings", isActive: isSettingsPresented) {
                 presentSettings()
             }
             .padding(.bottom, sidebarSettingsBottomPadding)
@@ -1852,14 +1968,122 @@ struct ContentView: View {
 
     @ViewBuilder
     private func detailPane(note: Note) -> some View {
-        NoteDetailView(
-            note: note,
-            editorInstanceID: primaryEditorID,
-            focusRequestID: detailFocusRequestID,
-            contentTopInsetAdjustment: isSidebarVisible ? 0 : detailToggleToContentExtraSpacingWhenSidebarHidden,
-            stickyHeaderTopPadding: splitControlsTopPadding
-        ) { updated in
-            saveUpdatedNote(updated)
+        let isNoteLocked = note.isLocked && !authManager.isUnlocked(note.id)
+        ZStack {
+            NoteDetailView(
+                note: note,
+                editorInstanceID: primaryEditorID,
+                focusRequestID: detailFocusRequestID,
+                contentTopInsetAdjustment: isSidebarVisible ? 0 : detailToggleToContentExtraSpacingWhenSidebarHidden,
+                stickyHeaderTopPadding: splitControlsTopPadding
+            ) { updated in
+                saveUpdatedNote(updated)
+            }
+            .blur(radius: isNoteLocked ? 20 : 0)
+            .allowsHitTesting(!isNoteLocked)
+
+            if isNoteLocked {
+                noteLockOverlay(for: note)
+            }
+        }
+    }
+
+    // MARK: - Note Lock
+
+    @ViewBuilder
+    private func noteLockOverlay(for note: Note) -> some View {
+        VStack(spacing: 16) {
+            if themeManager.lockPasswordType == .custom {
+                SecureField("Enter Password", text: $lockPasswordInput)
+                    .textFieldStyle(.plain)
+                    .font(FontManager.heading(size: 15, weight: .medium))
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .frame(width: 260)
+                    .thinLiquidGlass(in: Capsule())
+                    .overlay(
+                        lockAuthFailed
+                            ? Capsule().stroke(Color.red.opacity(0.6), lineWidth: 1)
+                            : nil
+                    )
+                    .onSubmit { validateLockPassword(for: note) }
+            } else {
+                Button {
+                    authManager.authenticate(noteID: note.id, method: .login) { success in
+                        if !success {
+                            lockAuthFailed = true
+                        }
+                    }
+                } label: {
+                    Text("Unlock")
+                        .font(FontManager.heading(size: 14, weight: .medium))
+                        .foregroundColor(Color("PrimaryTextColor"))
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 10)
+                        .thinLiquidGlass(in: Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+
+            if themeManager.useTouchID {
+                Button {
+                    authManager.authenticate(noteID: note.id, method: .touchID) { success in
+                        if !success {
+                            lockAuthFailed = true
+                        }
+                    }
+                } label: {
+                    Text("Use Touch ID")
+                        .font(FontManager.heading(size: 14, weight: .medium))
+                        .foregroundColor(Color("SecondaryTextColor"))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func validateLockPassword(for note: Note) {
+        authManager.authenticate(noteID: note.id, method: .custom, customPasswordInput: lockPasswordInput) { success in
+            if success {
+                lockPasswordInput = ""
+                lockAuthFailed = false
+            } else {
+                lockAuthFailed = true
+            }
+        }
+    }
+
+    private func handleLockIconTap(_ note: Note) {
+        if themeManager.lockPasswordType == .custom {
+            let alert = NSAlert()
+            alert.messageText = "Remove Lock"
+            alert.informativeText = "Enter your password to permanently remove the lock from this note."
+
+            let passwordField = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
+            alert.accessoryView = passwordField
+            alert.addButton(withTitle: "Unlock")
+            alert.addButton(withTitle: "Cancel")
+
+            if let okButton = alert.buttons.first {
+                okButton.hasDestructiveAction = false
+                okButton.bezelColor = NSColor.controlAccentColor
+            }
+
+            alert.window.initialFirstResponder = passwordField
+
+            let response = alert.runModal()
+            if response == .alertFirstButtonReturn {
+                let input = passwordField.stringValue
+                if let stored = KeychainManager.loadPassword(), stored == input {
+                    notesManager.toggleLock(id: note.id)
+                }
+            }
+        } else {
+            authManager.authenticate(noteID: note.id, method: .login) { success in
+                if success {
+                    notesManager.toggleLock(id: note.id)
+                }
+            }
         }
     }
 
@@ -1955,13 +2179,14 @@ struct ContentView: View {
                                     .scaledToFit()
                                     .foregroundColor(Color("SecondaryTextColor"))
                                     .frame(width: 18, height: 18)
+                                    .padding(4)
+                                    .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                             }
                         }
-                        .frame(height: 18)
                     }
                     .buttonStyle(.plain)
                     .macPointingHandCursor()
-                    .subtleHoverScale(1.08)
+                    .hoverContainer(cornerRadius: 8)
                 }
                 .padding(.horizontal, 8)
 
@@ -1983,13 +2208,14 @@ struct ContentView: View {
         let sNote = notesManager.notes.first(where: { $0.id == session.secondaryNoteID })
         let primaryTitle = (pNote?.title.isEmpty == false ? pNote!.title : "Untitled")
         let secondaryTitle = (sNote?.title.isEmpty == false ? sNote!.title : "Untitled")
+        // Active: inverted note cards (black card in LM, white card in DM)
         let indicatorColor = Color("IconSecondaryColor")
         let textColor: Color = isActive
-            ? .black                                                          // b&w/black
-            : Color("SecondaryTextColor")                                     // text/placeholder
+            ? (colorScheme == .dark ? .black : .white)
+            : Color("SecondaryTextColor")
         let cardFill: Color = isActive
-            ? .white                                                          // b&w/white
-            : colorScheme == .dark                                            // bg/translucent
+            ? (colorScheme == .dark ? .white : .black)
+            : colorScheme == .dark
                 ? Color(red: 26/255, green: 26/255, blue: 26/255).opacity(0.48)
                 : Color.white.opacity(0.6)
 
@@ -2011,20 +2237,17 @@ struct ContentView: View {
 
                 Text(primaryTitle)
                     .font(.system(size: 15, weight: .medium))
-                    .tracking(-0.5)
+                    .tracking(-0.2)
                     .foregroundColor(textColor)
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 8)
+                    .padding(.horizontal, 12)
                     .frame(height: 34)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(cardFill)
-                    )
+                    .background(Capsule().fill(cardFill))
                     .overlay {
                         if !isActive {
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            Capsule()
                                 .strokeBorder(Color("IconSecondaryColor").opacity(0.3), lineWidth: 0.5)
                         }
                     }
@@ -2033,27 +2256,24 @@ struct ContentView: View {
 
                 Text(secondaryTitle)
                     .font(.system(size: 15, weight: .medium))
-                    .tracking(-0.5)
+                    .tracking(-0.2)
                     .foregroundColor(textColor)
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 8)
+                    .padding(.horizontal, 12)
                     .frame(height: 34)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(cardFill)
-                    )
+                    .background(Capsule().fill(cardFill))
                     .overlay {
                         if !isActive {
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            Capsule()
                                 .strokeBorder(Color("IconSecondaryColor").opacity(0.3), lineWidth: 0.5)
                         }
                     }
                     .shadow(color: .black.opacity(0.06), radius: 3, x: 0, y: 1)
                     .shadow(color: .black.opacity(0.03), radius: 1, x: 0, y: 0)
             }
-            .contentShape(RoundedRectangle(cornerRadius: 16))
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .macPointingHandCursor()
@@ -2111,7 +2331,6 @@ struct ContentView: View {
                     pendingSplitSlot(note: sNote)
                 }
             }
-            .frame(height: 34)
         }
     }
 
@@ -2121,24 +2340,24 @@ struct ContentView: View {
             let title = note.title.isEmpty ? "Untitled" : note.title
             Text(title)
                 .font(.system(size: 15, weight: .medium))
-                .tracking(-0.5)
-                .foregroundColor(.black)
+                .tracking(-0.2)
+                .foregroundColor(colorScheme == .dark ? .black : .white)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 8)
+                .padding(.horizontal, 12)
                 .frame(height: 34)
                 .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(.white)
+                    Capsule()
+                        .fill(colorScheme == .dark ? .white : .black)
                 )
                 .shadow(color: .black.opacity(0.06), radius: 3, x: 0, y: 1)
                 .shadow(color: .black.opacity(0.03), radius: 1, x: 0, y: 0)
         } else {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            Capsule()
                 .fill(Color.gray.opacity(0.12))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    Capsule()
                         .strokeBorder(
                             style: StrokeStyle(
                                 lineWidth: 1.5,
@@ -2409,9 +2628,25 @@ struct ContentView: View {
             HapticManager.shared.noteInteraction()
         }
 
+        if isSettingsPresented {
+            isSettingsPresented = false
+        }
+
+        // Schedule re-lock for the note we're leaving (if it was locked + unlocked)
+        if let prev = selectedNote, prev.id != note.id, prev.isLocked, authManager.isUnlocked(prev.id) {
+            authManager.scheduleRelock(for: prev.id)
+        }
+
+        // Cancel re-lock timer if we're returning to this note
+        if note.isLocked, authManager.isUnlocked(note.id) {
+            authManager.cancelRelock(for: note.id)
+        }
+
         selectedNote = note
         selectedNoteIDs = [note.id]
         selectionAnchorID = note.id
+        lockPasswordInput = ""
+        lockAuthFailed = false
 
         hasAppliedInitialLaunchSelection = true
         if focusEditor {
@@ -2426,10 +2661,16 @@ struct ContentView: View {
 
         withAnimation(.jotSpring) {
             isShowingArchive = false
-            sidebarSectionFilter = .folders
             expandedFolderIDs.insert(folder.id)
             showAllNotesFolderIDs.insert(folder.id)
             isSidebarVisible = true
+            highlightedFolderID = folder.id
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+            withAnimation(.easeOut(duration: 0.4)) {
+                highlightedFolderID = nil
+            }
         }
 
         if let firstNote = (notesByFolderID[folder.id] ?? []).first {
@@ -2877,6 +3118,10 @@ struct ContentView: View {
             return
         }
 
+        if isSettingsPresented {
+            isSettingsPresented = false
+        }
+
         let previousID = selectedNote?.id
         selectedNote = resolvedNote
 
@@ -2914,6 +3159,11 @@ struct ContentView: View {
     private var thisMonthNotes: [Note] { notesManager.thisMonthNotes }
     private var thisYearNotes: [Note] { notesManager.thisYearNotes }
     private var olderNotes: [Note] { notesManager.olderNotes }
+    private var allUnpinnedNotes: [Note] { notesManager.allUnpinnedNotes }
+
+    private var isDateGroupingActive: Bool {
+        themeManager.groupNotesByDate && themeManager.noteSortOrder != .title
+    }
 
     private var hasVisibleUnfiledSections: Bool {
         !todayNotes.isEmpty || !thisMonthNotes.isEmpty || !thisYearNotes.isEmpty || !olderNotes.isEmpty
@@ -2981,6 +3231,8 @@ struct NotesSection: View {
     let onTogglePinForNotes: (Set<UUID>, Bool) -> Void
     let onExportNotes: (Set<UUID>) -> Void
     var onArchiveNotes: ((Set<UUID>) -> Void)? = nil
+    var onToggleLockNote: ((UUID) -> Void)? = nil
+    var onLockIconTap: ((Note) -> Void)? = nil
     var onDropNoteToUnfiled: ((UUID) -> Bool)? = nil
     var onRenameNote: ((Note, String) -> Void)? = nil
 
@@ -3001,8 +3253,13 @@ struct NotesSection: View {
                     note: note,
                     isSelected: selectedNoteIDs.contains(note.id),
                     isActiveNote: note.id == activeNoteID,
-                    leadingIconAssetName: splitNoteIDs.contains(note.id) ? "IconArrowSplitUp" : nil,
-                    onLeadingIconTap: splitNoteIDs.contains(note.id) ? { onSplitIconTap?(note) } : nil,
+                    leadingIconAssetName: note.isLocked
+                        ? "IconLock"
+                        : (splitNoteIDs.contains(note.id) ? "IconArrowSplitUp" : nil),
+                    hoverLeadingIconAssetName: note.isLocked ? "IconUnlocked" : nil,
+                    onLeadingIconTap: note.isLocked
+                        ? { onLockIconTap?(note) }
+                        : (splitNoteIDs.contains(note.id) ? { onSplitIconTap?(note) } : nil),
                     onTap: { interaction in onNoteTap(note, interaction) },
                     onTogglePin: { shouldPin in
                         onTogglePinForNotes(contextSelection(for: note), shouldPin)
@@ -3015,6 +3272,7 @@ struct NotesSection: View {
                     },
                     onExport: { onExportNotes(contextSelection(for: note)) },
                     onArchive: onArchiveNotes != nil ? { onArchiveNotes?(contextSelection(for: note)) } : nil,
+                    onToggleLock: onToggleLockNote != nil ? { onToggleLockNote?(note.id) } : nil,
                     onRename: { newTitle in
                         onRenameNote?(note, newTitle)
                     },
@@ -3029,7 +3287,7 @@ struct NotesSection: View {
             }
         }
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            Capsule()
                 .fill(isDropTargeted ? Color("SurfaceTranslucentColor") : Color.clear)
         )
         .if(onDropNoteToUnfiled != nil) { view in
@@ -3126,7 +3384,7 @@ private struct SplitPickerOverlayRow: View {
                 Text(note.title.isEmpty ? "Untitled" : note.title)
                     .font(.system(size: 15, weight: .medium))
                     .foregroundColor(.primary)
-                    .tracking(-0.5)
+                    .tracking(-0.2)
                     .lineLimit(1)
                 Spacer(minLength: 0)
             }
@@ -3134,11 +3392,11 @@ private struct SplitPickerOverlayRow: View {
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                Capsule()
                     .fill(Color("HoverBackgroundColor"))
                     .opacity(isHovered ? 1 : 0)
             )
-            .contentShape(RoundedRectangle(cornerRadius: 12))
+            .contentShape(Capsule())
             .animation(.jotHover, value: isHovered)
         }
         .buttonStyle(.plain)
@@ -3166,6 +3424,7 @@ struct NoteListCard: View {
     let onMoveToFolder: (UUID?) -> Void
     let onExport: () -> Void
     var onArchive: (() -> Void)? = nil
+    var onToggleLock: (() -> Void)? = nil
     var onRename: ((String) -> Void)? = nil
     var getDragItems: (() -> [NoteDragItem])? = nil
     var cornerRadius: CGFloat = 12
@@ -3175,6 +3434,12 @@ struct NoteListCard: View {
     @State private var renamingTitle = ""
     @FocusState private var isFieldFocused: Bool
     @Environment(\.colorScheme) private var colorScheme
+
+    private var leadingIconTint: Color {
+        isActiveNote
+            ? (colorScheme == .light ? .white : .black)
+            : Color("SecondaryTextColor")
+    }
 
     var body: some View {
         Button {
@@ -3191,7 +3456,7 @@ struct NoteListCard: View {
                             .renderingMode(.template)
                             .resizable()
                             .scaledToFit()
-                            .foregroundColor(isLeadingIconHovered && onLeadingIconTap != nil ? .white : Color("SecondaryTextColor"))
+                            .foregroundColor(isLeadingIconHovered && onLeadingIconTap != nil ? .white : leadingIconTint)
                             .frame(width: 14, height: 14)
                             .opacity(isLeadingIconVisible && !isShowingHoverVariant ? 1 : 0)
 
@@ -3200,7 +3465,7 @@ struct NoteListCard: View {
                                 .renderingMode(.template)
                                 .resizable()
                                 .scaledToFit()
-                                .foregroundColor(isLeadingIconHovered && onLeadingIconTap != nil ? .white : Color("SecondaryTextColor"))
+                                .foregroundColor(isLeadingIconHovered && onLeadingIconTap != nil ? .white : leadingIconTint)
                                 .frame(width: 14, height: 14)
                                 .opacity(isLeadingIconVisible && isShowingHoverVariant ? 1 : 0)
                         }
@@ -3222,7 +3487,7 @@ struct NoteListCard: View {
                     .animation(.easeInOut(duration: 0.1), value: isShowingHoverVariant)
 
                     Circle()
-                        .fill(Color("SecondaryTextColor"))
+                        .fill(leadingIconTint)
                         .frame(width: 2, height: 2)
                         .opacity(isLeadingIconVisible ? 1 : 0)
                         .padding(.horizontal, -4)
@@ -3243,8 +3508,10 @@ struct NoteListCard: View {
                 } else {
                     Text(note.title)
                         .font(FontManager.heading(size: 15, weight: .medium))
-                        .foregroundColor(Color("PrimaryTextColor"))
-                        .tracking(-0.4)
+                        .foregroundColor(isActiveNote
+                            ? (colorScheme == .light ? Color.white : Color.black)
+                            : Color("PrimaryTextColor"))
+                        .tracking(-0.1)
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -3255,7 +3522,9 @@ struct NoteListCard: View {
 
                 Text(Self.dateFormatter.string(from: note.date))
                     .font(FontManager.metadata(size: 11, weight: .medium))
-                    .foregroundColor(Color("SecondaryTextColor"))
+                    .foregroundColor(isActiveNote
+                        ? (colorScheme == .light ? Color.white.opacity(0.7) : Color.black.opacity(0.5))
+                        : Color("SecondaryTextColor"))
             }
             .animation(.jotHover, value: isHovered)
             .padding(8)
@@ -3263,25 +3532,23 @@ struct NoteListCard: View {
             .frame(height: 34)
             .background {
                 if isActiveNote {
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(colorScheme == .light ? Color.white : Color(red: 0.047, green: 0.039, blue: 0.035))
+                    Capsule()
+                        .fill(colorScheme == .light ? Color.black : Color.white)
                 } else if isSelected {
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    Capsule()
                         .fill(Color("SurfaceTranslucentColor"))
                 } else if isHovered {
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    Capsule()
                         .fill(Color("HoverBackgroundColor"))
                 }
             }
-            .shadow(color: isActiveNote ? .black.opacity(0.06) : .clear, radius: 3, x: 0, y: 1)
-            .shadow(color: isActiveNote ? .black.opacity(0.03) : .clear, radius: 1, x: 0, y: 0)
-            .contentShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .onHover { hovering in
             isHovered = hovering
         }
-        .contentShape(.dragPreview, RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .contentShape(.dragPreview, Capsule())
         .draggable(
             TransferablePayload(items: getDragItems?() ?? [NoteDragItem(noteID: note.id)])
         ) {
@@ -3296,11 +3563,8 @@ struct NoteListCard: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(Color(nsColor: .controlBackgroundColor))
-            )
-            .contentShape(.dragPreview, RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .background(Capsule().fill(Color(nsColor: .controlBackgroundColor)))
+            .contentShape(.dragPreview, Capsule())
         }
         .contextMenu {
             if note.folderID == nil {
@@ -3392,6 +3656,19 @@ struct NoteListCard: View {
                 }
             }
 
+            if let onToggleLock {
+                Button {
+                    HapticManager.shared.buttonTap()
+                    onToggleLock()
+                } label: {
+                    Label {
+                        Text(note.isLocked ? "Remove Lock" : "Lock Note")
+                    } icon: {
+                        Image.menuIcon(note.isLocked ? "IconUnlocked" : "IconLock")
+                    }
+                }
+            }
+
             Divider()
 
             if let onArchive {
@@ -3475,11 +3752,13 @@ struct PinnedNotesSection: View {
     let onTogglePinForNotes: (Set<UUID>, Bool) -> Void
     let onExportNotes: (Set<UUID>) -> Void
     var onArchiveNotes: ((Set<UUID>) -> Void)? = nil
+    var onToggleLockNote: ((UUID) -> Void)? = nil
+    var onLockIconTap: ((Note) -> Void)? = nil
     var onRenameNote: ((Note, String) -> Void)? = nil
     @Binding var isExpanded: Bool
     @Environment(\.colorScheme) private var colorScheme
 
-    private var containerRadius: CGFloat { isExpanded ? 16 : 999 }
+    private var containerRadius: CGFloat { isExpanded ? 21 : 999 }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -3524,8 +3803,13 @@ struct PinnedNotesSection: View {
                             isSelected: selectedNoteIDs.contains(note.id),
                             isActiveNote: note.id == activeNoteID,
                             isInsideFolder: true,
-                            leadingIconAssetName: splitNoteIDs.contains(note.id) ? "IconArrowSplitUp" : nil,
-                            onLeadingIconTap: splitNoteIDs.contains(note.id) ? { onSplitIconTap?(note) } : nil,
+                            leadingIconAssetName: note.isLocked
+                                ? "IconLock"
+                                : (splitNoteIDs.contains(note.id) ? "IconArrowSplitUp" : nil),
+                            hoverLeadingIconAssetName: note.isLocked ? "IconUnlocked" : nil,
+                            onLeadingIconTap: note.isLocked
+                                ? { onLockIconTap?(note) }
+                                : (splitNoteIDs.contains(note.id) ? { onSplitIconTap?(note) } : nil),
                             onTap: { interaction in onNoteTap(note, interaction) },
                             onTogglePin: { shouldPin in
                                 onTogglePinForNotes(contextSelection(for: note), shouldPin)
@@ -3538,6 +3822,7 @@ struct PinnedNotesSection: View {
                             },
                             onExport: { onExportNotes(contextSelection(for: note)) },
                             onArchive: onArchiveNotes != nil ? { onArchiveNotes?(contextSelection(for: note)) } : nil,
+                            onToggleLock: onToggleLockNote != nil ? { onToggleLockNote?(note.id) } : nil,
                             onRename: { newTitle in
                                 onRenameNote?(note, newTitle)
                             },
@@ -3587,6 +3872,7 @@ struct PinnedNoteChip: View {
     let onMoveToFolder: (UUID?) -> Void
     let onExport: () -> Void
     var onArchive: (() -> Void)? = nil
+    var onToggleLock: (() -> Void)? = nil
 
     var body: some View {
         Button {
@@ -3615,7 +3901,7 @@ struct PinnedNoteChip: View {
                 )
                 .contentShape(.dragPreview, Capsule())
         }
-        .glassEffect(.regular.interactive(true), in: Capsule())
+        .liquidGlass(in: Capsule())
         .overlay(
             Capsule()
                 .strokeBorder(Color("BorderSubtleColor"), lineWidth: isSelected ? 1 : 0)
@@ -3691,6 +3977,19 @@ struct PinnedNoteChip: View {
                     Text("Export Note...")
                 } icon: {
                     Image.menuIcon("export note")
+                }
+            }
+
+            if let onToggleLock {
+                Button {
+                    HapticManager.shared.buttonTap()
+                    onToggleLock()
+                } label: {
+                    Label {
+                        Text(note.isLocked ? "Remove Lock" : "Lock Note")
+                    } icon: {
+                        Image.menuIcon(note.isLocked ? "IconUnlocked" : "IconLock")
+                    }
                 }
             }
 
