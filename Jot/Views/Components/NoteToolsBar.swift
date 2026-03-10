@@ -29,6 +29,9 @@ struct NoteToolsBar: View {
             toolButton(icon: "todo-list", tooltip: "To-Do") {
                 postToolAction(.todo)
             }
+            toolButton(icon: "IconTable", tooltip: "Table") {
+                postToolAction(.table)
+            }
             toolButton(icon: "insert link", tooltip: "Insert Link") {
                 postToolAction(.link)
             }
@@ -41,6 +44,8 @@ struct NoteToolsBar: View {
                 .padding(4)
                 .hoverContainer(cornerRadius: 8)
             #endif
+
+            Spacer()
         }
     }
 

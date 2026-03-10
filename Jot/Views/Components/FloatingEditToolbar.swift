@@ -51,10 +51,26 @@ struct FloatingEditToolbar: View {
                 listTool
                     .opacity(toolsVisible ? 1 : 0)
                     .scaleEffect(toolsVisible ? 1 : 0.8)
-                
+
                 // Divider
                 toolDivider
-                
+
+                // Code tools
+                codeTools
+                    .opacity(toolsVisible ? 1 : 0)
+                    .scaleEffect(toolsVisible ? 1 : 0.8)
+
+                // Divider
+                toolDivider
+
+                // Block-level tools (block quote, highlight)
+                blockLevelTools
+                    .opacity(toolsVisible ? 1 : 0)
+                    .scaleEffect(toolsVisible ? 1 : 0.8)
+
+                // Divider
+                toolDivider
+
                 // Indentation tools
                 indentationTools
                     .opacity(toolsVisible ? 1 : 0)
@@ -288,6 +304,25 @@ struct FloatingEditToolbar: View {
             )
             
             FloatingToolButton(
+                tool: .numberedList,
+                assetName: "IconNumberedList",
+                isSelected: selectedTool == .numberedList,
+                isHovered: hoveredTool == .numberedList,
+                action: { handleToolAction(.numberedList) },
+                onHoverChange: { hovering, frame in
+                    hoveredTool = hovering ? .numberedList : nil
+                    tooltipFrame = frame
+                    if hovering {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                            if hoveredTool == .numberedList { showTooltip = true }
+                        }
+                    } else {
+                        showTooltip = false
+                    }
+                }
+            )
+
+            FloatingToolButton(
                 tool: .todo,
                 assetName: "IconTodos",
                 isSelected: selectedTool == .todo,
@@ -307,7 +342,54 @@ struct FloatingEditToolbar: View {
             )
         }
     }
-    
+
+    private var codeTools: some View {
+        HStack(spacing: 2) {
+            FloatingToolButton(
+                tool: .codeBlock,
+                assetName: "IconCode",
+                isSelected: selectedTool == .codeBlock,
+                isHovered: hoveredTool == .codeBlock,
+                action: { handleToolAction(.codeBlock) },
+                onHoverChange: { hovering, frame in
+                    hoveredTool = hovering ? .codeBlock : nil
+                    tooltipFrame = frame
+                    if hovering {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                            if hoveredTool == .codeBlock { showTooltip = true }
+                        }
+                    } else {
+                        showTooltip = false
+                    }
+                }
+            )
+
+        }
+    }
+
+    private var blockLevelTools: some View {
+        HStack(spacing: 2) {
+            FloatingToolButton(
+                tool: .blockQuote,
+                assetName: "IconTextBlock",
+                isSelected: selectedTool == .blockQuote,
+                isHovered: hoveredTool == .blockQuote,
+                action: { handleToolAction(.blockQuote) },
+                onHoverChange: { hovering, frame in
+                    hoveredTool = hovering ? .blockQuote : nil
+                    tooltipFrame = frame
+                    if hovering {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                            if hoveredTool == .blockQuote { showTooltip = true }
+                        }
+                    } else {
+                        showTooltip = false
+                    }
+                }
+            )
+        }
+    }
+
     private var indentationTools: some View {
         HStack(spacing: 2) {
             FloatingToolButton(
@@ -554,7 +636,7 @@ enum EditTool: String, CaseIterable {
     case titleCase
     case h1, h2, h3
     case bold, italic, underline, strikethrough
-    case bulletList, todo
+    case bulletList, numberedList, todo
     case indentLeft, indentRight
     case alignLeft, alignCenter, alignRight, alignJustify
     case lineBreak
@@ -563,10 +645,16 @@ enum EditTool: String, CaseIterable {
     case imageUpload
     case voiceRecord
     case searchOnPage
+    case table
+    case codeBlock
+    case blockQuote
+    case highlight
+    case callout
 
     var isToggleable: Bool {
         switch self {
-        case .bold, .italic, .underline, .strikethrough, .bulletList, .todo:
+        case .bold, .italic, .underline, .strikethrough, .bulletList, .numberedList, .todo,
+             .codeBlock, .blockQuote:
             return true
         default:
             return false
@@ -584,6 +672,7 @@ enum EditTool: String, CaseIterable {
         case .underline: return "Underline"
         case .strikethrough: return "Strikethrough"
         case .bulletList: return "Bullet List"
+        case .numberedList: return "Numbered List"
         case .todo: return "To-Do"
         case .indentLeft: return "Decrease Indent"
         case .indentRight: return "Increase Indent"
@@ -598,6 +687,11 @@ enum EditTool: String, CaseIterable {
         case .imageUpload: return "Image Upload"
         case .voiceRecord: return "Voice Record"
         case .searchOnPage: return "Search on Page"
+        case .table: return "Table"
+        case .codeBlock: return "Code Block"
+        case .blockQuote: return "Block Quote"
+        case .highlight: return "Highlight"
+        case .callout: return "Callout"
         }
     }
 

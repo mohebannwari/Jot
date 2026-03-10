@@ -28,12 +28,14 @@ extension NoteDetailView {
                     aiSummaryText = result
                     aiPanelState = .none
                 }
+                scheduleAutosave()
             case .keyPoints:
                 let points = try await AppleIntelligenceService.shared.keyPoints(text: content)
                 withAnimation(.jotSpring) {
                     aiKeyPointsItems = points
                     aiPanelState = .none
                 }
+                scheduleAutosave()
             case .proofread:
                 let textToProofread = capturedSelectionText.isEmpty ? content : capturedSelectionText
                 let rawAnnotations = try await AppleIntelligenceService.shared.proofread(text: textToProofread)
@@ -285,6 +287,9 @@ extension NoteDetailView {
         searchOnPageMatches = []
         searchOnPageCurrentIndex = 0
         isSearchOnPageFocused = false
+        replaceText = ""
+        showReplaceField = false
+        isReplaceFocused = false
         NotificationCenter.default.post(name: .clearSearchHighlights, object: nil, userInfo: ["editorInstanceID": editorInstanceID])
     }
 
@@ -349,5 +354,60 @@ extension NoteDetailView {
                 "editorInstanceID": editorInstanceID
             ]
         )
+    }
+
+    // MARK: - Find & Replace
+
+    func toggleReplaceField() {
+        showReplaceField.toggle()
+        if showReplaceField {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                isReplaceFocused = true
+            }
+        }
+    }
+
+    func replaceCurrentMatch() {
+        guard !searchOnPageMatches.isEmpty, !searchOnPageQuery.isEmpty else { return }
+
+        NotificationCenter.default.post(
+            name: .replaceCurrentSearchMatch,
+            object: nil,
+            userInfo: [
+                "query": searchOnPageQuery,
+                "replacement": replaceText,
+                "matchIndex": searchOnPageCurrentIndex,
+                "editorInstanceID": editorInstanceID
+            ]
+        )
+
+        // After replacement, re-run search after a brief delay to let syncText propagate
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            self.performInNoteSearch(self.searchOnPageQuery)
+            // Clamp index to the new match count
+            if self.searchOnPageCurrentIndex >= self.searchOnPageMatches.count {
+                self.searchOnPageCurrentIndex = max(0, self.searchOnPageMatches.count - 1)
+            }
+            self.postSearchNavigationUpdate()
+        }
+    }
+
+    func replaceAllMatches() {
+        guard !searchOnPageMatches.isEmpty, !searchOnPageQuery.isEmpty else { return }
+
+        NotificationCenter.default.post(
+            name: .replaceAllSearchMatches,
+            object: nil,
+            userInfo: [
+                "query": searchOnPageQuery,
+                "replacement": replaceText,
+                "editorInstanceID": editorInstanceID
+            ]
+        )
+
+        // After replacement, re-run search (should find 0 matches)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            self.performInNoteSearch(self.searchOnPageQuery)
+        }
     }
 }

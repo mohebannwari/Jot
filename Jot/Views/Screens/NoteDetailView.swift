@@ -19,6 +19,9 @@ struct NoteDetailView: View {
     let contentTopInsetAdjustment: CGFloat
     let stickyHeaderTopPadding: CGFloat
     var onSave: (Note) -> Void
+    var availableNotes: [NotePickerItem] = []
+    var onNavigateToNote: ((UUID) -> Void)?
+    var backlinks: [BacklinkItem] = []
 
     // MARK: - Environment
     @Environment(\.colorScheme) private var colorScheme
@@ -52,11 +55,16 @@ struct NoteDetailView: View {
     @State var searchOnPageMatches: [NSRange] = []
     @State var searchOnPageCurrentIndex: Int = 0
     @FocusState var isSearchOnPageFocused: Bool
+    @State var replaceText = ""
+    @State var showReplaceField = false
+    @FocusState var isReplaceFocused: Bool
 
     // MARK: - Apple Intelligence state
     @State var aiPanelState: AIPanelState = .none   // loading / proofread / editPreview / error
     @State var aiSummaryText: String? = nil          // independent — not cleared by other tools
     @State var aiKeyPointsItems: [String]? = nil     // independent — not cleared by other tools
+    /// Tracks whether AI results were loaded from persisted content (prevents re-save on init).
+    @State private var aiBlockLoadedFromContent = false
     @State var aiIsProcessing: Bool = false
     @State private var aiStateCache: [UUID: AIPanelState] = [:]
     @State var currentProofreadIndex: Int = 0
@@ -108,7 +116,10 @@ struct NoteDetailView: View {
         focusRequestID: UUID,
         contentTopInsetAdjustment: CGFloat = 0,
         stickyHeaderTopPadding: CGFloat = 12,
-        onSave: @escaping (Note) -> Void
+        onSave: @escaping (Note) -> Void,
+        availableNotes: [NotePickerItem] = [],
+        onNavigateToNote: ((UUID) -> Void)? = nil,
+        backlinks: [BacklinkItem] = []
     ) {
         self.note = note
         self.editorInstanceID = editorInstanceID
@@ -116,12 +127,21 @@ struct NoteDetailView: View {
         self.contentTopInsetAdjustment = contentTopInsetAdjustment
         self.stickyHeaderTopPadding = stickyHeaderTopPadding
         self.onSave = onSave
+        self.availableNotes = availableNotes
+        self.onNavigateToNote = onNavigateToNote
+        self.backlinks = backlinks
         self._editedTitle = State(initialValue: note.title)
-        self._editedContent = State(initialValue: note.content)
+        // Strip AI block from persisted content so the editor never sees AI tags.
+        // AI results are restored into their own @State vars.
+        let parsed = NoteDetailView.stripAIBlock(note.content)
+        self._editedContent = State(initialValue: parsed.content)
         self._lastSavedSnapshot = State(
             initialValue: DraftSnapshot(title: note.title, content: note.content)
         )
         self._noteForPersist = State(initialValue: note)
+        self._aiSummaryText = State(initialValue: parsed.summary)
+        self._aiKeyPointsItems = State(initialValue: parsed.keyPoints)
+        self._aiBlockLoadedFromContent = State(initialValue: parsed.summary != nil || parsed.keyPoints != nil)
     }
 
     // MARK: - Body
@@ -136,6 +156,111 @@ struct NoteDetailView: View {
         noteContentEvents
     }
 
+    // Extracted to reduce type-checker pressure on noteContentLayout
+    @ViewBuilder
+    private var editorScrollContent: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Text(noteDateString)
+                    .font(FontManager.metadata(size: 11, weight: .medium))
+                    .foregroundColor(Color("SecondaryTextColor"))
+                    .kerning(-0.25)
+
+                if note.isArchived {
+                    Circle()
+                        .fill(Color("SecondaryTextColor"))
+                        .frame(width: 2, height: 2)
+
+                    Text("Archived")
+                        .font(FontManager.metadata(size: 11, weight: .medium))
+                        .foregroundColor(Color("SecondaryTextColor"))
+                        .kerning(-0.25)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.bottom, 0)
+
+            titleField
+                .background(
+                    GeometryReader { geo in
+                        Color.clear
+                            .onChange(of: geo.frame(in: .named("scroll")).minY) {
+                                oldValue, newValue in
+                                titleOffset = newValue
+                                let shouldShow = newValue < 0
+                                if shouldShow != showStickyHeader {
+                                    withAnimation(.smooth(duration: 0.3)) {
+                                        showStickyHeader = shouldShow
+                                    }
+                                }
+                            }
+                    }
+                )
+            if let summaryText = aiSummaryText {
+                AIResultPanel(
+                    state: .summary(summaryText),
+                    onDismiss: {
+                        withAnimation(.jotSpring) { aiSummaryText = nil }
+                        scheduleAutosave()
+                    }
+                )
+                .transition(.opacity.combined(with: .offset(y: -8)))
+            }
+            if let keyPointsItems = aiKeyPointsItems {
+                AIResultPanel(
+                    state: .keyPoints(keyPointsItems),
+                    onDismiss: {
+                        withAnimation(.jotSpring) { aiKeyPointsItems = nil }
+                        scheduleAutosave()
+                    }
+                )
+                .transition(.opacity.combined(with: .offset(y: -8)))
+            }
+            if shouldShowTopPanel {
+                AIResultPanel(
+                    state: aiPanelState,
+                    onDismiss: {
+                        withAnimation(.jotSpring) { aiPanelState = .none }
+                    }
+                )
+                .transition(.opacity.combined(with: .offset(y: -8)))
+            }
+            TodoRichTextEditor(
+                text: $editedContent,
+                focusRequestID: localEditorFocusID ?? focusRequestID,
+                editorInstanceID: editorInstanceID,
+                onToolbarAction: handleEditToolAction,
+                onCommandMenuSelection: handleCommandMenuSelection,
+                availableNotes: availableNotes,
+                onNavigateToNote: onNavigateToNote
+            )
+            .id(editorIdentity)
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            // Backlinks section
+            if !backlinks.isEmpty {
+                backlinksSection
+            }
+
+            if commandMenuNeedsSpace {
+                Color.clear
+                    .frame(height: 320)
+                    .id("menuSpacer")
+            }
+        }
+        .padding(.top, 48 + contentTopInsetAdjustment)
+        .padding(.horizontal, 60)
+        .frame(maxWidth: .infinity, minHeight: scrollViewHeight, alignment: .topLeading)
+        .background(
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    titleFocused = false
+                    localEditorFocusID = UUID()
+                }
+        )
+    }
+
     private var noteContentLayout: some View {
         ZStack(alignment: .topLeading) {
             Color.clear
@@ -143,93 +268,7 @@ struct NoteDetailView: View {
 
             ScrollViewReader { proxy in
                 ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack(spacing: 6) {
-                            Text(noteDateString)
-                                .font(FontManager.metadata(size: 11, weight: .medium))
-                                .foregroundColor(Color("SecondaryTextColor"))
-                                .kerning(-0.25)
-
-                            if note.isArchived {
-                                Circle()
-                                    .fill(Color("SecondaryTextColor"))
-                                    .frame(width: 2, height: 2)
-
-                                Text("Archived")
-                                    .font(FontManager.metadata(size: 11, weight: .medium))
-                                    .foregroundColor(Color("SecondaryTextColor"))
-                                    .kerning(-0.25)
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.bottom, 0)
-
-                        titleField
-                            .background(
-                                GeometryReader { geo in
-                                    Color.clear
-                                        .onChange(of: geo.frame(in: .named("scroll")).minY) {
-                                            oldValue, newValue in
-                                            titleOffset = newValue
-                                            let shouldShow = newValue < 0
-                                            if shouldShow != showStickyHeader {
-                                                withAnimation(.smooth(duration: 0.3)) {
-                                                    showStickyHeader = shouldShow
-                                                }
-                                            }
-                                        }
-                                }
-                            )
-                        if let summaryText = aiSummaryText {
-                            AIResultPanel(
-                                state: .summary(summaryText),
-                                onDismiss: { withAnimation(.jotSpring) { aiSummaryText = nil } }
-                            )
-                            .transition(.opacity.combined(with: .offset(y: -8)))
-                        }
-                        if let keyPointsItems = aiKeyPointsItems {
-                            AIResultPanel(
-                                state: .keyPoints(keyPointsItems),
-                                onDismiss: { withAnimation(.jotSpring) { aiKeyPointsItems = nil } }
-                            )
-                            .transition(.opacity.combined(with: .offset(y: -8)))
-                        }
-                        if shouldShowTopPanel {
-                            AIResultPanel(
-                                state: aiPanelState,
-                                onDismiss: {
-                                    withAnimation(.jotSpring) { aiPanelState = .none }
-                                }
-                            )
-                            .transition(.opacity.combined(with: .offset(y: -8)))
-                        }
-                        TodoRichTextEditor(
-                            text: $editedContent,
-                            focusRequestID: localEditorFocusID ?? focusRequestID,
-                            editorInstanceID: editorInstanceID,
-                            onToolbarAction: handleEditToolAction,
-                            onCommandMenuSelection: handleCommandMenuSelection
-                        )
-                        .id(editorIdentity)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-
-                        if commandMenuNeedsSpace {
-                            Color.clear
-                                .frame(height: 320)
-                                .id("menuSpacer")
-                        }
-                    }
-                    .padding(.top, 48 + contentTopInsetAdjustment)
-                    .padding(.horizontal, 60)
-                    .frame(maxWidth: .infinity, minHeight: scrollViewHeight, alignment: .topLeading)
-                    .background(
-                        Color.clear
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                titleFocused = false
-                                localEditorFocusID = UUID()
-                            }
-                    )
+                    editorScrollContent
                 }
                 .scrollClipDisabled()
                 .coordinateSpace(name: "scroll")
@@ -356,9 +395,20 @@ struct NoteDetailView: View {
         }
         .onChange(of: note.id) { oldNoteID, newNoteID in
             autosaveWorkItem?.cancel()
-            persistIfNeeded()
-            // Advance noteForPersist to the new note AFTER the save above.
-            // persistIfNeeded() must see the OLD note (via noteForPersist) to save correctly.
+            // Capture old-note state for deferred save — don't block the switch path
+            // with synchronous SwiftData I/O (fetch + save + recomputeDerivedNotes).
+            let contentWithAI = editedContent + Self.buildAIBlock(summary: aiSummaryText, keyPoints: aiKeyPointsItems)
+            let oldSnapshot = DraftSnapshot(title: editedTitle, content: contentWithAI)
+            let oldNote = noteForPersist
+            if oldSnapshot != lastSavedSnapshot {
+                DispatchQueue.main.async {
+                    var updated = oldNote
+                    updated.title = oldSnapshot.title
+                    updated.content = oldSnapshot.content
+                    updated.date = Date()
+                    onSave(updated)
+                }
+            }
             noteForPersist = note
 
             // Cache current state (don't cache editPreview — it's contextual to a selection)
@@ -371,14 +421,15 @@ struct NoteDetailView: View {
             // Tear down transient overlays
             aiIsProcessing = false
             showEditContentPanel = false
-            aiSummaryText = nil
-            aiKeyPointsItems = nil
             currentProofreadIndex = 0
             NotificationCenter.default.post(name: .aiProofreadClearOverlays, object: nil, userInfo: ["editorInstanceID": editorInstanceID])
 
-            // Restore standard note fields
+            // Strip AI block from new note content and restore AI results
+            let parsed = NoteDetailView.stripAIBlock(note.content)
             editedTitle = note.title
-            editedContent = note.content
+            editedContent = parsed.content
+            aiSummaryText = parsed.summary
+            aiKeyPointsItems = parsed.keyPoints
             lastSavedSnapshot = DraftSnapshot(title: note.title, content: note.content)
             if isNewNote {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
@@ -448,6 +499,11 @@ struct NoteDetailView: View {
         .onReceive(NotificationCenter.default.publisher(for: .showInNoteSearch)) { notification in
             if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
             presentSearchOnPage()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .showInNoteSearchAndReplace)) { notification in
+            if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
+            presentSearchOnPage()
+            showReplaceField = true
         }
         .onReceive(NotificationCenter.default.publisher(for: .showCommandMenu))
         { notification in
@@ -642,7 +698,6 @@ struct NoteDetailView: View {
 
     var shouldShowTopPanel: Bool {
         switch aiPanelState {
-        case .error: return true
         case .loading(let tool):
             return tool == .summary || tool == .keyPoints
         default: return false
@@ -686,14 +741,12 @@ struct NoteDetailView: View {
         if reduceTransparency || colorScheme == .dark {
             Rectangle().fill(detailPaneDarkBackground)
         } else {
-            Rectangle()
-                .fill(.ultraThickMaterial)
-                .overlay(Rectangle().fill(Color("BackgroundColor").opacity(0.70)))
+            Rectangle().fill(Color(red: 0.906, green: 0.898, blue: 0.894))
         }
     }
 
     private var detailPaneDarkBackground: Color {
-        Color(red: 0.047, green: 0.039, blue: 0.035)
+        Color(red: 0.110, green: 0.098, blue: 0.090)
     }
 
     private var headerMaskGradient: LinearGradient {
@@ -740,9 +793,13 @@ struct NoteDetailView: View {
         }()
         let showProofreadSuggestions = !(proofreadAnnotations?.isEmpty ?? true)
         let showProofreadSuccess = proofreadAnnotations?.isEmpty == true
+        let showAIError: Bool = {
+            if case .error = aiPanelState { return true }
+            return false
+        }()
         let showAnyOverlay = showVoiceRecorderOverlay || showLinkInputOverlay
             || showSearchOnPageOverlay || showProofreadLoading
-            || showProofreadSuggestions || showProofreadSuccess
+            || showProofreadSuggestions || showProofreadSuccess || showAIError
 
         if showAnyOverlay {
             VStack(spacing: 12) {
@@ -799,6 +856,15 @@ struct NoteDetailView: View {
                         Spacer()
                     }
                 }
+
+                if showAIError, case .error(let errorMessage) = aiPanelState {
+                    HStack {
+                        Spacer()
+                        aiErrorPill(message: errorMessage)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                        Spacer()
+                    }
+                }
             }
             .padding(.horizontal, 24)
             .padding(.bottom, 18)
@@ -808,6 +874,7 @@ struct NoteDetailView: View {
             .animation(.jotSpring, value: showProofreadLoading)
             .animation(.jotSpring, value: showProofreadSuggestions)
             .animation(.jotSpring, value: showProofreadSuccess)
+            .animation(.jotSpring, value: showAIError)
         }
     }
 
@@ -825,6 +892,30 @@ struct NoteDetailView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
+    }
+
+    private func aiErrorPill(message: String) -> some View {
+        HStack(spacing: 8) {
+            Text(message)
+                .font(FontManager.heading(size: 12, weight: .medium))
+                .foregroundColor(Color.red.opacity(0.8))
+                .lineLimit(1)
+
+            Button(action: {
+                withAnimation(.jotSpring) { aiPanelState = .none }
+            }) {
+                Image("IconXMark")
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .foregroundColor(Color("SecondaryTextColor"))
+                    .frame(width: 14, height: 14)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .liquidGlass(in: RoundedRectangle(cornerRadius: 100, style: .continuous))
     }
 
     private func proofreadSuggestionsBar(annotations: [ProofreadAnnotation]) -> some View {
@@ -993,68 +1084,217 @@ struct NoteDetailView: View {
     }
 
     private var searchOnPagePrompt: some View {
-        HStack(spacing: 8) {
-            Text(searchCountLabel)
-                .font(FontManager.heading(size: 12, weight: .medium))
-                .foregroundColor(Color("SecondaryTextColor"))
-                .monospacedDigit()
-                .frame(minWidth: 28, alignment: .trailing)
+        VStack(spacing: 0) {
+            // Find row
+            HStack(spacing: 8) {
+                Text(searchCountLabel)
+                    .font(FontManager.heading(size: 12, weight: .medium))
+                    .foregroundColor(Color("SecondaryTextColor"))
+                    .monospacedDigit()
+                    .frame(minWidth: 28, alignment: .trailing)
 
-            TextField("Search", text: $searchOnPageQuery)
-                .textFieldStyle(.plain)
-                .font(FontManager.heading(size: 12, weight: .medium))
-                .foregroundColor(Color("PrimaryTextColor"))
-                .focused($isSearchOnPageFocused)
-                .onChange(of: searchOnPageQuery) { _, newValue in
-                    performInNoteSearch(newValue)
-                }
-                .onSubmit { navigateToNextMatch() }
+                TextField("Search", text: $searchOnPageQuery)
+                    .textFieldStyle(.plain)
+                    .font(FontManager.heading(size: 12, weight: .medium))
+                    .foregroundColor(Color("PrimaryTextColor"))
+                    .focused($isSearchOnPageFocused)
+                    .onChange(of: searchOnPageQuery) { _, newValue in
+                        performInNoteSearch(newValue)
+                    }
+                    .onSubmit { navigateToNextMatch() }
 
-            HStack(spacing: 4) {
-                Button(action: navigateToPreviousMatch) {
-                    Image("IconChevronTopSmall")
-                        .renderingMode(.template)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 18, height: 18)
-                        .foregroundColor(Color("SecondaryTextColor"))
-                }
-                .buttonStyle(.plain)
-                .disabled(searchOnPageMatches.isEmpty)
+                HStack(spacing: 4) {
+                    Button(action: navigateToPreviousMatch) {
+                        Image("IconChevronTopSmall")
+                            .renderingMode(.template)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 18, height: 18)
+                            .foregroundColor(Color("SecondaryTextColor"))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(searchOnPageMatches.isEmpty)
 
-                Button(action: navigateToNextMatch) {
-                    Image("IconChevronDownSmall")
-                        .renderingMode(.template)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 18, height: 18)
-                        .foregroundColor(Color("SecondaryTextColor"))
+                    Button(action: navigateToNextMatch) {
+                        Image("IconChevronDownSmall")
+                            .renderingMode(.template)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 18, height: 18)
+                            .foregroundColor(Color("SecondaryTextColor"))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(searchOnPageMatches.isEmpty)
+
+                    // Toggle replace field
+                    Button(action: toggleReplaceField) {
+                        Image(systemName: "arrow.2.squarepath")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(showReplaceField ? Color("PrimaryTextColor") : Color("SecondaryTextColor"))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Find & Replace")
                 }
-                .buttonStyle(.plain)
-                .disabled(searchOnPageMatches.isEmpty)
+            }
+
+            // Replace row (expandable)
+            if showReplaceField {
+                HStack(spacing: 8) {
+                    TextField("Replace", text: $replaceText)
+                        .textFieldStyle(.plain)
+                        .font(FontManager.heading(size: 12, weight: .medium))
+                        .foregroundColor(Color("PrimaryTextColor"))
+                        .focused($isReplaceFocused)
+                        .onSubmit { replaceCurrentMatch() }
+
+                    HStack(spacing: 4) {
+                        Button(action: replaceCurrentMatch) {
+                            Text("Replace")
+                                .font(FontManager.heading(size: 11, weight: .medium))
+                                .foregroundColor(Color("SecondaryTextColor"))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(searchOnPageMatches.isEmpty)
+
+                        Button(action: replaceAllMatches) {
+                            Text("All")
+                                .font(FontManager.heading(size: 11, weight: .medium))
+                                .foregroundColor(Color("SecondaryTextColor"))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(searchOnPageMatches.isEmpty)
+                    }
+                }
+                .padding(.top, 6)
+                .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .liquidGlass(in: Capsule())
-        .frame(maxWidth: 240)
+        .liquidGlass(in: RoundedRectangle(cornerRadius: showReplaceField ? 20 : 100, style: .continuous))
+        .frame(maxWidth: showReplaceField ? 300 : 240)
+        .animation(.jotSpring, value: showReplaceField)
         .onExitCommand {
             dismissSearchOnPage()
         }
     }
 
+    // MARK: - Backlinks
+
+    @ViewBuilder
+    private var backlinksSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Divider
+            Rectangle()
+                .fill(Color.primary.opacity(0.08))
+                .frame(height: 0.5)
+                .padding(.vertical, 8)
+
+            Text("Referenced by")
+                .font(FontManager.metadata(size: 11, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+                .tracking(0.5)
+
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(backlinks) { backlink in
+                    Button {
+                        onNavigateToNote?(backlink.id)
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.turn.up.left")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(.secondary)
+                            Text(backlink.title)
+                                .font(FontManager.body(size: 13, weight: .regular))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(Color.primary.opacity(0.04))
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(.top, 24)
+        .padding(.bottom, 16)
+        .transition(.opacity)
+    }
+
+    // MARK: - AI Block Persistence
+
+    /// Sentinel tag that delimits AI-generated metadata appended to note content.
+    private static let aiBlockStart = "\n[[ai-block]]"
+    private static let aiBlockEnd = "[[/ai-block]]"
+
+    /// Strips the `[[ai-block]]...[[/ai-block]]` from a content string and returns
+    /// the clean content plus any extracted AI summary and key points.
+    static func stripAIBlock(_ content: String) -> (content: String, summary: String?, keyPoints: [String]?) {
+        guard let startRange = content.range(of: "\n[[ai-block]]") ?? content.range(of: "[[ai-block]]") else {
+            return (content, nil, nil)
+        }
+        let cleanContent = String(content[content.startIndex..<startRange.lowerBound])
+        let aiSection = String(content[startRange.upperBound...])
+
+        var summary: String?
+        var keyPoints: [String]?
+
+        // Extract summary
+        if let sStart = aiSection.range(of: "[[ai-summary]]"),
+           let sEnd = aiSection.range(of: "[[/ai-summary]]") {
+            summary = String(aiSection[sStart.upperBound..<sEnd.lowerBound])
+            if summary?.isEmpty == true { summary = nil }
+        }
+
+        // Extract key points (newline-separated, with \n escape handling)
+        if let kStart = aiSection.range(of: "[[ai-keypoints]]"),
+           let kEnd = aiSection.range(of: "[[/ai-keypoints]]") {
+            let raw = String(aiSection[kStart.upperBound..<kEnd.lowerBound])
+            let items = raw.components(separatedBy: "\n")
+                .map { $0.replacingOccurrences(of: "\\n", with: "\n") }
+                .filter { !$0.isEmpty }
+            if !items.isEmpty { keyPoints = items }
+        }
+
+        return (cleanContent, summary, keyPoints)
+    }
+
+    /// Builds the AI block string to append to note content for persistence.
+    static func buildAIBlock(summary: String?, keyPoints: [String]?) -> String {
+        guard summary != nil || keyPoints != nil else { return "" }
+        var block = Self.aiBlockStart + "\n"
+        if let summary = summary {
+            block += "[[ai-summary]]\(summary)[[/ai-summary]]\n"
+        }
+        if let keyPoints = keyPoints, !keyPoints.isEmpty {
+            let escaped = keyPoints.map { $0.replacingOccurrences(of: "\n", with: "\\n") }
+            block += "[[ai-keypoints]]\(escaped.joined(separator: "\n"))[[/ai-keypoints]]\n"
+        }
+        block += Self.aiBlockEnd
+        return block
+    }
+
     // MARK: - Helpers
 
     private func persistIfNeeded() {
+        // Merge AI block into content for persistence
+        let contentWithAI = editedContent + Self.buildAIBlock(
+            summary: aiSummaryText, keyPoints: aiKeyPointsItems)
+
         let snapshot = DraftSnapshot(
             title: editedTitle,
-            content: editedContent
+            content: contentWithAI
         )
         guard snapshot != lastSavedSnapshot else { return }
 
         var updatedNote = noteForPersist
         updatedNote.title = editedTitle
-        updatedNote.content = editedContent
+        updatedNote.content = contentWithAI
         updatedNote.date = Date()
 
         onSave(updatedNote)

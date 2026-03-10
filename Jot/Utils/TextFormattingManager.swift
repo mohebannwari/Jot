@@ -79,6 +79,7 @@ class TextFormattingManager: ObservableObject {
             // Some tools don't require text selection
             let toolsNotRequiringSelection: [EditTool] = [
                 .textSelect, .divider, .lineBreak, .todo, .imageUpload, .voiceRecord,
+                .bulletList, .numberedList, .h1, .h2, .h3, .blockQuote,
             ]
 
             if selectedRange.length == 0 && !toolsNotRequiringSelection.contains(tool) {
@@ -106,6 +107,8 @@ class TextFormattingManager: ObservableObject {
                 toggleStrikethrough(in: textView, range: selectedRange)
             case .bulletList:
                 toggleBulletList(to: textView, in: selectedRange)
+            case .numberedList:
+                toggleNumberedList(to: textView, in: selectedRange)
             case .todo:
                 insertTodo(to: textView)
             case .indentLeft:
@@ -128,7 +131,11 @@ class TextFormattingManager: ObservableObject {
                 insertDivider(to: textView)
             case .link:
                 insertLink(to: textView, in: selectedRange)
-            case .searchOnPage:
+            case .blockQuote:
+                toggleBlockQuote(to: textView, in: selectedRange)
+            case .highlight:
+                return  // Highlight requires a color parameter — handled separately via applyHighlight()
+            case .searchOnPage, .table, .callout, .codeBlock:
                 return
             }
 
@@ -322,6 +329,155 @@ class TextFormattingManager: ObservableObject {
 
             textStorage.endEditing()
             textView.didChangeText()
+        }
+
+        private func toggleNumberedList(to textView: NSTextView, in range: NSRange) {
+            guard let textStorage = textView.textStorage else { return }
+
+            let paragraphRange = (textStorage.string as NSString).paragraphRange(for: range)
+            let text = (textStorage.string as NSString).substring(with: paragraphRange)
+
+            // Check if already a numbered list (has orderedListNumber attribute at start)
+            let hasOL = paragraphRange.length > 0
+                && textStorage.attribute(.orderedListNumber, at: paragraphRange.location, effectiveRange: nil) != nil
+
+            textStorage.beginEditing()
+
+            if hasOL {
+                // Remove numbered prefix — find the "N. " prefix length
+                if let dotRange = text.range(of: ". ") {
+                    let prefixLen = text.distance(from: text.startIndex, to: dotRange.upperBound)
+                    let removeRange = NSRange(location: paragraphRange.location, length: prefixLen)
+                    if textView.shouldChangeText(in: removeRange, replacementString: "") {
+                        textStorage.replaceCharacters(in: removeRange, with: "")
+                    }
+                }
+            } else {
+                // Remove bullet if present, then add numbered prefix
+                var insertText = text
+                if insertText.hasPrefix("• ") {
+                    insertText = String(insertText.dropFirst(2))
+                }
+                let prefix = "1. "
+                let newText = prefix + insertText
+                if textView.shouldChangeText(in: paragraphRange, replacementString: newText) {
+                    textView.replaceCharacters(in: paragraphRange, with: newText)
+                    // Mark the prefix with the orderedListNumber attribute
+                    let prefixRange = NSRange(location: paragraphRange.location, length: prefix.count)
+                    textStorage.addAttribute(.orderedListNumber, value: 1, range: prefixRange)
+                }
+            }
+
+            textStorage.endEditing()
+            textView.didChangeText()
+        }
+
+        // MARK: - Block Quote
+
+        func toggleBlockQuote(to textView: NSTextView, in range: NSRange) {
+            guard let textStorage = textView.textStorage else { return }
+
+            let paragraphRange = (textStorage.string as NSString).paragraphRange(for: range)
+
+            // Check if already a block quote
+            let hasQuote = paragraphRange.length > 0
+                && textStorage.attribute(.blockQuote, at: paragraphRange.location, effectiveRange: nil) as? Bool == true
+
+            let snapshot = captureSnapshot(textStorage, range: paragraphRange)
+            textStorage.beginEditing()
+
+            if hasQuote {
+                // Remove block quote formatting
+                textStorage.removeAttribute(.blockQuote, range: paragraphRange)
+                // Reset paragraph indent
+                textStorage.enumerateAttribute(.paragraphStyle, in: paragraphRange, options: []) { value, subRange, _ in
+                    let style = (value as? NSParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle
+                        ?? NSMutableParagraphStyle()
+                    style.firstLineHeadIndent = 0
+                    style.headIndent = 0
+                    textStorage.addAttribute(.paragraphStyle, value: style, range: subRange)
+                }
+                // Restore label color
+                textStorage.addAttribute(.foregroundColor, value: NSColor.labelColor, range: paragraphRange)
+            } else {
+                // Apply block quote formatting with full paragraph style (line height + indent)
+                textStorage.addAttribute(.blockQuote, value: true, range: paragraphRange)
+                let style = NSMutableParagraphStyle()
+                let spacing = ThemeManager.currentLineSpacing()
+                let baseLineHeight: CGFloat = FontManager.bodyNS().pointSize * 1.2
+                let scaledHeight = baseLineHeight * spacing.multiplier / 1.2
+                style.lineHeightMultiple = spacing.multiplier
+                style.minimumLineHeight = scaledHeight
+                style.maximumLineHeight = scaledHeight + 4
+                style.paragraphSpacing = 8
+                style.firstLineHeadIndent = 20
+                style.headIndent = 20
+                textStorage.addAttribute(.paragraphStyle, value: style, range: paragraphRange)
+                textStorage.addAttribute(
+                    .foregroundColor,
+                    value: NSColor.labelColor.withAlphaComponent(0.7),
+                    range: paragraphRange)
+            }
+
+            textStorage.endEditing()
+            registerUndo(textView: textView, snapshot: snapshot, actionName: "Block Quote")
+
+            // Set typing attributes so the first character typed gets the full quote style
+            var typingAttrs = textView.typingAttributes
+            typingAttrs[.blockQuote] = hasQuote ? nil : true
+            if hasQuote {
+                typingAttrs[.foregroundColor] = NSColor.labelColor
+                let resetStyle = NSMutableParagraphStyle()
+                typingAttrs[.paragraphStyle] = resetStyle
+            } else {
+                typingAttrs[.foregroundColor] = NSColor.labelColor.withAlphaComponent(0.7)
+                let spacing = ThemeManager.currentLineSpacing()
+                let baseLineHeight: CGFloat = FontManager.bodyNS().pointSize * 1.2
+                let scaledHeight = baseLineHeight * spacing.multiplier / 1.2
+                let quoteStyle = NSMutableParagraphStyle()
+                quoteStyle.lineHeightMultiple = spacing.multiplier
+                quoteStyle.minimumLineHeight = scaledHeight
+                quoteStyle.maximumLineHeight = scaledHeight + 4
+                quoteStyle.paragraphSpacing = 8
+                quoteStyle.firstLineHeadIndent = 20
+                quoteStyle.headIndent = 20
+                typingAttrs[.paragraphStyle] = quoteStyle
+            }
+            textView.typingAttributes = typingAttrs
+        }
+
+        // MARK: - Text Highlight
+
+        func applyHighlight(hex: String, range: NSRange, to textView: NSTextView) {
+            guard range.length > 0, range.location != NSNotFound else { return }
+            guard let storage = textView.textStorage else { return }
+            guard NSMaxRange(range) <= storage.length else { return }
+
+            let snapshot = captureSnapshot(storage, range: range)
+            let bgColor = Self.nsColorFromHex(hex).withAlphaComponent(0.35)
+
+            storage.beginEditing()
+            storage.addAttribute(.backgroundColor, value: bgColor, range: range)
+            storage.addAttribute(.highlightColor, value: hex, range: range)
+            storage.endEditing()
+
+            textView.needsDisplay = true
+            registerUndo(textView: textView, snapshot: snapshot, actionName: "Highlight")
+        }
+
+        func removeHighlight(range: NSRange, from textView: NSTextView) {
+            guard range.length > 0, let storage = textView.textStorage else { return }
+            guard NSMaxRange(range) <= storage.length else { return }
+
+            let snapshot = captureSnapshot(storage, range: range)
+
+            storage.beginEditing()
+            storage.removeAttribute(.backgroundColor, range: range)
+            storage.removeAttribute(.highlightColor, range: range)
+            storage.endEditing()
+
+            textView.needsDisplay = true
+            registerUndo(textView: textView, snapshot: snapshot, actionName: "Remove Highlight")
         }
 
         // MARK: - Indentation

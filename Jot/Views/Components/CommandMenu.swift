@@ -9,22 +9,18 @@
 import SwiftUI
 
 enum CommandMenuLayout {
-    static let itemHeight: CGFloat = 36  // Updated to match padding(.vertical, 10) + content height
-    static let itemSpacing: CGFloat = 0  // Spacing between items
-    static let defaultMaxHeight: CGFloat = 280
+    static let itemHeight: CGFloat = 36
+    static let itemSpacing: CGFloat = 0
+    static let maxVisibleItems: Int = 7
     static let width: CGFloat = 150
     static let outerPadding: CGFloat = 12
+    static let scrollIndicatorSize: CGFloat = 24
 
-    // Calculate the ideal height to fit content without extra space
-    // The outer padding is handled by the .padding(CommandMenuLayout.outerPadding) modifier on the menu itself
-    static func idealHeight(for itemCount: Int, maxHeight: CGFloat = defaultMaxHeight) -> CGFloat {
-        guard itemCount > 0 else {
-            return 0  // Return 0 when no items, let the padding handle minimum size
-        }
-        // Calculate exact height needed for items
-        // Each item is itemHeight tall, with itemSpacing between them
-        let contentHeight = CGFloat(itemCount) * itemHeight + CGFloat(max(0, itemCount - 1)) * itemSpacing
-        return min(maxHeight, contentHeight)
+    /// Height that fits up to `maxVisibleItems` rows — anything beyond scrolls.
+    static func idealHeight(for itemCount: Int) -> CGFloat {
+        guard itemCount > 0 else { return 0 }
+        let visibleCount = min(itemCount, maxVisibleItems)
+        return CGFloat(visibleCount) * itemHeight
     }
 }
 
@@ -38,25 +34,79 @@ struct CommandMenu: View {
     var onSelect: ((EditTool) -> Void)?
 
     private let glassShape = RoundedRectangle(cornerRadius: 28, style: .continuous)
+    @State private var isAtBottom = false
+    @State private var chevronBounce = false
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var visibleContentHeight: CGFloat {
+        CommandMenuLayout.idealHeight(for: tools.count)
+    }
+
+    private var needsScrolling: Bool {
+        tools.count > CommandMenuLayout.maxVisibleItems
+    }
+
+    private var showScrollIndicator: Bool {
+        isRevealed && needsScrolling && !isAtBottom
+    }
 
     var body: some View {
-        VStack(spacing: 0) {
-            ForEach(Array(tools.enumerated()), id: \.element.rawValue) { index, tool in
-                CommandMenuItem(
-                    tool: tool,
-                    isSelected: index == selectedIndex
-                )
-                .opacity(isRevealed ? 1 : 0)
-                .offset(y: isRevealed ? 0 : 8)
-                .scaleEffect(isRevealed ? 1 : 0.92, anchor: .top)
-                .animation(
-                    .bouncy(duration: 0.4).delay(Double(index) * 0.04),
-                    value: isRevealed
-                )
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    onSelect?(tool)
+        ZStack(alignment: .bottom) {
+            ScrollViewReader { proxy in
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(spacing: 0) {
+                        ForEach(Array(tools.enumerated()), id: \.element.rawValue) { index, tool in
+                            CommandMenuItem(
+                                tool: tool,
+                                isSelected: index == selectedIndex
+                            )
+                            .id(index)
+                            .opacity(isRevealed ? 1 : 0)
+                            .offset(y: isRevealed ? 0 : 8)
+                            .scaleEffect(isRevealed ? 1 : 0.92, anchor: .top)
+                            .animation(
+                                .bouncy(duration: 0.4).delay(Double(index) * 0.04),
+                                value: isRevealed
+                            )
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                onSelect?(tool)
+                            }
+                        }
+                    }
                 }
+                .frame(height: visibleContentHeight)
+                .onScrollGeometryChange(for: Bool.self, of: { geo in
+                    let maxOffset = geo.contentSize.height - geo.containerSize.height
+                    return maxOffset <= 0 || geo.contentOffset.y >= maxOffset - 2
+                }, action: { _, atBottom in
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        isAtBottom = atBottom
+                    }
+                })
+                .onChange(of: selectedIndex) { _, newIndex in
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        proxy.scrollTo(newIndex, anchor: .center)
+                    }
+                }
+            }
+
+            // Scroll-more indicator — liquid glass circle with chevron
+            if showScrollIndicator {
+                scrollDownIndicator
+                    .offset(y: chevronBounce ? 6 : -3)
+                    .transition(.blurReplace.combined(with: .opacity))
+                    .allowsHitTesting(false)
+                    .padding(.bottom, 2)
+                    .onAppear {
+                        withAnimation(.easeOut(duration: 0.4).delay(0.3)) {
+                            chevronBounce = true
+                        }
+                        withAnimation(.easeInOut(duration: 0.5).delay(0.7)) {
+                            chevronBounce = false
+                        }
+                    }
+                    .onDisappear { chevronBounce = false }
             }
         }
         .frame(width: CommandMenuLayout.width)
@@ -67,6 +117,25 @@ struct CommandMenu: View {
         // Scale + opacity in local coordinate space -- .top IS the cursor position
         .scaleEffect(isRevealed ? 1.0 : 0.35, anchor: .top)
         .opacity(isRevealed ? 1 : 0)
+    }
+
+    @ViewBuilder
+    private var scrollDownIndicator: some View {
+        let strokeOpacity: Double = colorScheme == .dark ? 0.22 : 0.08
+        let chevron = Image(systemName: "chevron.down")
+            .font(.system(size: 10, weight: .bold))
+            .foregroundStyle(.secondary)
+            .frame(width: CommandMenuLayout.scrollIndicatorSize, height: CommandMenuLayout.scrollIndicatorSize)
+
+        if #available(macOS 26.0, iOS 26.0, *) {
+            chevron
+                .glassEffect(.regular, in: Circle())
+                .overlay(Circle().stroke(Color.primary.opacity(strokeOpacity), lineWidth: 0.5))
+        } else {
+            chevron
+                .background(.ultraThinMaterial, in: Circle())
+                .overlay(Circle().stroke(Color.primary.opacity(strokeOpacity), lineWidth: 0.5))
+        }
     }
 }
 
@@ -93,19 +162,22 @@ struct CommandMenuItem: View {
     let tool: EditTool
     let isSelected: Bool
 
+    @State private var isHovered = false
     @Environment(\.colorScheme) private var colorScheme
 
-    private var selectedForegroundColor: Color {
+    private var isHighlighted: Bool { isSelected || isHovered }
+
+    private var highlightedForegroundColor: Color {
         colorScheme == .dark ? .white : Color("PrimaryTextColor")
     }
 
-    private var selectedShortcutColor: Color {
+    private var highlightedShortcutColor: Color {
         colorScheme == .dark
             ? Color.white.opacity(0.84)
             : Color("PrimaryTextColor").opacity(0.72)
     }
 
-    private var selectedBackgroundColor: Color {
+    private var highlightedBackgroundColor: Color {
         Color("HoverBackgroundColor").opacity(colorScheme == .dark ? 0.95 : 1.0)
     }
 
@@ -124,13 +196,13 @@ struct CommandMenuItem: View {
                         .symbolRenderingMode(.monochrome)
                 }
             }
-            .foregroundStyle(isSelected ? selectedForegroundColor : Color("IconSecondaryColor"))
+            .foregroundStyle(isHighlighted ? highlightedForegroundColor : Color("IconSecondaryColor"))
             .frame(width: 18, height: 18)
 
             // Tool name
             Text(tool.name)
                 .font(FontManager.heading(size: 13, weight: .regular))
-                .foregroundStyle(isSelected ? selectedForegroundColor : .primary)
+                .foregroundStyle(isHighlighted ? highlightedForegroundColor : .primary)
 
             Spacer(minLength: 0)
 
@@ -138,18 +210,21 @@ struct CommandMenuItem: View {
             if let shortcut = tool.keyboardShortcut {
                 Text("⌘\(shortcut.character.uppercased())")
                     .font(FontManager.metadata(size: 11, weight: .regular))
-                    .foregroundStyle(isSelected ? selectedShortcutColor : .secondary)
+                    .foregroundStyle(isHighlighted ? highlightedShortcutColor : .secondary)
             }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 10)
         .background(
             RoundedRectangle(cornerRadius: 999, style: .continuous)
-                .fill(selectedBackgroundColor)
-                .opacity(isSelected ? 1 : 0)
+                .fill(highlightedBackgroundColor)
+                .opacity(isHighlighted ? 1 : 0)
         )
-        .animation(.snappy(duration: 0.15), value: isSelected)
+        .animation(.snappy(duration: 0.15), value: isHighlighted)
         .contentShape(Rectangle())
+        .onHover { hovering in
+            isHovered = hovering
+        }
     }
 }
 
@@ -182,6 +257,12 @@ extension EditTool {
         case .imageUpload: return "gallery"
         case .voiceRecord: return "mic-recording"
         case .searchOnPage: return "IconPageTextSearch"
+        case .table: return "IconTable"
+        case .numberedList: return "IconNumberedList"
+        case .codeBlock: return "IconCode"
+        case .blockQuote: return "IconTextBlock"
+        case .highlight: return nil
+        case .callout: return "IconFormRectangle"
         }
     }
 
@@ -211,6 +292,12 @@ extension EditTool {
         case .imageUpload: return "photo.on.rectangle.angled"
         case .voiceRecord: return "mic"
         case .searchOnPage: return "magnifyingglass"
+        case .table: return "tablecells"
+        case .numberedList: return "list.number"
+        case .codeBlock: return "chevron.left.forwardslash.chevron.right"
+        case .blockQuote: return "text.quote"
+        case .highlight: return "highlighter"
+        case .callout: return "info.circle.fill"
         }
     }
 }

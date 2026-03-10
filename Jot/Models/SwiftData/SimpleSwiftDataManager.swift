@@ -8,23 +8,31 @@ import OSLog
 final class SimpleSwiftDataManager: ObservableObject {
 
     @Published var notes: [Note] = [] {
-        didSet { recomputeDerivedNotes() }
+        didSet {
+            guard !suppressDerivedRecompute else { return }
+            recomputeDerivedNotes()
+        }
     }
+    /// When true, `notes` didSet skips recomputeDerivedNotes().
+    /// Used for content-only saves where sidebar groupings don't change.
+    private var suppressDerivedRecompute = false
     @Published var archivedNotes: [Note] = []
     @Published var deletedNotes: [Note] = []
     @Published var folders: [Folder] = []
     @Published var archivedFolders: [Folder] = []
 
-    // Sidebar groupings — recomputed only when notes change, not on every UI state change
-    @Published private(set) var notesByFolderID: [UUID: [Note]] = [:]
-    @Published private(set) var unfiledNotes: [Note] = []
-    @Published private(set) var pinnedNotes: [Note] = []
-    @Published private(set) var lockedNotes: [Note] = []
-    @Published private(set) var todayNotes: [Note] = []
-    @Published private(set) var thisMonthNotes: [Note] = []
-    @Published private(set) var thisYearNotes: [Note] = []
-    @Published private(set) var olderNotes: [Note] = []
-    @Published private(set) var allUnpinnedNotes: [Note] = []
+    // Sidebar groupings — recomputed only when notes change, not on every UI state change.
+    // NOT @Published — objectWillChange is sent once manually in recomputeDerivedNotes()
+    // to avoid 9 separate SwiftUI invalidation passes per note save.
+    private(set) var notesByFolderID: [UUID: [Note]] = [:]
+    private(set) var unfiledNotes: [Note] = []
+    private(set) var pinnedNotes: [Note] = []
+    private(set) var lockedNotes: [Note] = []
+    private(set) var todayNotes: [Note] = []
+    private(set) var thisMonthNotes: [Note] = []
+    private(set) var thisYearNotes: [Note] = []
+    private(set) var olderNotes: [Note] = []
+    private(set) var allUnpinnedNotes: [Note] = []
     @Published private(set) var hasLoadedInitialNotes = false
     @Published private(set) var hasCompletedMigrationCheck = false
 
@@ -320,6 +328,15 @@ final class SimpleSwiftDataManager: ObservableObject {
                 return
             }
 
+            // Check if sidebar-relevant metadata changed before touching the entity,
+            // so we can skip the expensive recomputeDerivedNotes() for content-only saves.
+            let existingNote = notes.first(where: { $0.id == updatedNote.id })
+            let metadataChanged = existingNote.map { existing in
+                existing.isPinned != updatedNote.isPinned
+                || existing.isLocked != updatedNote.isLocked
+                || existing.folderID != updatedNote.folderID
+            } ?? true
+
             noteEntity.updateTitle(updatedNote.title)
             noteEntity.updateContent(updatedNote.content)
             noteEntity.folderID = updatedNote.folderID
@@ -329,13 +346,17 @@ final class SimpleSwiftDataManager: ObservableObject {
 
             try modelContext.save()
 
-            // Update local array
+            // Update local array — skip the expensive recomputeDerivedNotes() for content-only saves
             if let index = notes.firstIndex(where: { $0.id == updatedNote.id }) {
                 var localNote = updatedNote
                 if localNote.folderID != nil {
                     localNote.isPinned = false
                 }
+                if !metadataChanged {
+                    suppressDerivedRecompute = true
+                }
                 notes[index] = localNote
+                suppressDerivedRecompute = false
             }
 
             logger.info("Updated note: \(updatedNote.title)")

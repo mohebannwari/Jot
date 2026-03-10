@@ -182,6 +182,8 @@ struct ContentView: View {
     @State private var isSplitHandleDragging = false
     @State private var isSplitHandleHovered = false
     @State private var isDragSplitTargeted = false
+    @State private var isDragImportOverlayVisible = false
+    @State private var importProgress: ImportProgress? = nil
     @State private var activeSplitPane: SplitPickerPane? = nil
     @State private var splitAiToolsState: AIToolsState = .collapsed
     @State private var splitFocusRequestID = UUID()
@@ -331,6 +333,43 @@ struct ContentView: View {
         Array(notesManager.notes.lazy.filter { $0.id != note.id }.prefix(10))
     }
 
+    /// Build picker items for the `@` note linking menu, excluding the current note.
+    private func notePickerItems(excluding noteID: UUID) -> [NotePickerItem] {
+        notesManager.notes
+            .filter { $0.id != noteID }
+            .map { note in
+                let preview = String(note.content.prefix(40))
+                    .replacingOccurrences(of: "\n", with: " ")
+                return NotePickerItem(
+                    id: note.id,
+                    title: note.title.isEmpty ? "Untitled" : note.title,
+                    preview: preview
+                )
+            }
+    }
+
+    /// Navigate to a note by ID (from notelink click).
+    private func navigateToNote(_ noteID: UUID) {
+        guard let target = notesManager.notes.first(where: { $0.id == noteID }) else { return }
+        withAnimation(.jotSpring) {
+            selectedNote = target
+            selectedNoteIDs = [target.id]
+        }
+    }
+
+    /// Find all notes that contain a `[[notelink|targetID|...]]` reference to the given note.
+    private func backlinks(for noteID: UUID) -> [BacklinkItem] {
+        let searchToken = "[[notelink|\(noteID.uuidString)"
+        return notesManager.notes.compactMap { note in
+            guard note.id != noteID,
+                  note.content.contains(searchToken) else { return nil }
+            return BacklinkItem(
+                id: note.id,
+                title: note.title.isEmpty ? "Untitled" : note.title
+            )
+        }
+    }
+
     var body: some View {
         contentWithBehaviors
             .overlay { folderSheetsOverlayView }
@@ -344,6 +383,27 @@ struct ContentView: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .center)))
                 }
             }
+            .overlay {
+                if isDragImportOverlayVisible {
+                    FileDropOverlay()
+                        .allowsHitTesting(false)
+                        .transition(.opacity)
+                }
+            }
+            .overlay {
+                if let progress = importProgress {
+                    ImportProgressOverlay(progress: progress)
+                        .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                }
+            }
+            .overlay {
+                ImportDropTarget(
+                    isTargeted: $isDragImportOverlayVisible,
+                    onDrop: { urls in handleImportDrop(urls: urls) }
+                )
+            }
+            .animation(.jotSpring, value: isDragImportOverlayVisible)
+            .animation(.jotSpring, value: importProgress != nil)
             .animation(.jotSpring, value: quickLookContext != nil)
             .animation(.jotSpring, value: isBatchExportSheetPresented)
             .animation(.spring(response: 0.3, dampingFraction: 0.85), value: isCreateFolderAlertPresented)
@@ -605,9 +665,7 @@ struct ContentView: View {
             let cornerRadius: CGFloat = isSidebarVisible
                 ? windowCornerRadius - windowContentPadding : 0
 
-            let settingsBg = colorScheme == .dark
-                ? Color(red: 28/255.0, green: 28/255.0, blue: 28/255.0)
-                : detailBg
+            let settingsBg = detailBg
 
             SettingsPage(isPresented: $isSettingsPresented)
                 .environmentObject(themeManager)
@@ -618,7 +676,7 @@ struct ContentView: View {
                         .fill(settingsBg)
                 )
                 .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-                .splitPaneShadow(isActive: colorScheme == .light, cornerRadius: cornerRadius, backgroundColor: settingsBg, colorScheme: colorScheme)
+                .splitPaneShadow(isActive: true, cornerRadius: cornerRadius, backgroundColor: settingsBg, colorScheme: .light)
                 .padding(.leading, sidebarDetailGap)
         } else if let note = selectedNote {
             let needsPendingPadding = isActiveSplitPending && !isSidebarVisible
@@ -673,7 +731,7 @@ struct ContentView: View {
 
     private var detailBg: Color {
         colorScheme == .dark
-            ? Color(red: 0.047, green: 0.039, blue: 0.035)
+            ? Color(red: 0.110, green: 0.098, blue: 0.090)
             : Color(red: 0.906, green: 0.898, blue: 0.894)
     }
 
@@ -707,7 +765,7 @@ struct ContentView: View {
             .frame(maxHeight: .infinity)
             .background(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).fill(detailBg))
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            .splitPaneShadow(isActive: colorScheme == .light && !shouldShowSplitLayout, cornerRadius: cornerRadius, backgroundColor: detailBg, colorScheme: colorScheme)
+            .splitPaneShadow(isActive: !shouldShowSplitLayout, cornerRadius: cornerRadius, backgroundColor: detailBg, colorScheme: .light)
             .onPreferenceChange(BottomOverlayActivePreferenceKey.self) { primaryBottomOverlayActive = $0 }
             .onPreferenceChange(BottomInputOverlayActivePreferenceKey.self) { primaryBottomInputOverlayActive = $0 }
             .overlay(alignment: .bottomTrailing) {
@@ -846,8 +904,12 @@ struct ContentView: View {
                 editorInstanceID: splitEditorID,
                 focusRequestID: splitFocusRequestID,
                 contentTopInsetAdjustment: detailToggleToContentExtraSpacingWhenSidebarHidden,
-                stickyHeaderTopPadding: splitControlsTopPadding
-            ) { saveSplitNote($0) }
+                stickyHeaderTopPadding: splitControlsTopPadding,
+                onSave: { saveSplitNote($0) },
+                availableNotes: notePickerItems(excluding: note.id),
+                onNavigateToNote: navigateToNote,
+                backlinks: backlinks(for: note.id)
+            )
             .blur(radius: isSplitLocked ? 20 : 0)
             .allowsHitTesting(!isSplitLocked)
 
@@ -1057,14 +1119,25 @@ struct ContentView: View {
                     Label {
                         Text("Create New Folder...")
                     } icon: {
-                        Image.menuIcon("IconPageTextAdd")
+                        Image.menuIcon("IconFolderAddRight")
                     }
                 }
 
                 Button {
-                    // No functionality yet -- awaiting component design
+                    HapticManager.shared.buttonTap()
+                    Task {
+                        let imported = await NoteImportService.shared.presentImportPanel(
+                            into: notesManager,
+                            onProgress: importProgressHandler
+                        )
+                        finishImport(imported)
+                    }
                 } label: {
-                    Label("Import Notes...", systemImage: "square.and.arrow.down")
+                    Label {
+                        Text("Import Notes...")
+                    } icon: {
+                        Image.menuIcon("IconImportNotes")
+                    }
                 }
             }
             .onTapGesture(count: 2) {
@@ -1788,12 +1861,43 @@ struct ContentView: View {
         }
     }
 
+    private func handleImportDrop(urls: [URL]) {
+        let supported = urls.filter { NoteImportFormat.from(url: $0) != nil }
+        guard !supported.isEmpty else { return }
+
+        Task {
+            let imported = await NoteImportService.shared.importFiles(
+                at: supported,
+                into: notesManager,
+                onProgress: importProgressHandler
+            )
+            finishImport(imported)
+        }
+    }
+
+    private var importProgressHandler: (Int, Int, String) -> Void {
+        { current, total, filename in
+            importProgress = ImportProgress(
+                current: current, total: total, currentFilename: filename
+            )
+        }
+    }
+
+    private func finishImport(_ imported: [Note]) {
+        importProgress = nil
+        if let first = imported.first {
+            selectedNote = first
+            selectedNoteIDs = [first.id]
+        }
+    }
+
     private var anyPanelOverlayActive: Bool {
         isSearchPresented || isTrashPresented
         || isCreateFolderAlertPresented || pendingFolderToEdit != nil
         || isBatchDeleteConfirmationPresented || isBatchMoveAlertPresented
         || isBatchExportSheetPresented || isSplitMenuVisible
         || splitPickerOverlayPane != nil || quickLookContext != nil
+        || isDragImportOverlayVisible
     }
 
     @ViewBuilder
@@ -1857,6 +1961,14 @@ struct ContentView: View {
             .keyboardShortcut("f", modifiers: [.command])
             .opacity(0.001)
 
+            // Cmd+H -> find & replace in note
+            Button(action: { presentInNoteSearchAndReplace() }) {
+                Color.clear.frame(width: 1, height: 1)
+            }
+            .buttonStyle(.plain)
+            .keyboardShortcut("h", modifiers: [.command])
+            .opacity(0.001)
+
             // Cmd+Shift+F -> global search
             Button(action: presentSearch) {
                 Color.clear.frame(width: 1, height: 1)
@@ -1897,6 +2009,17 @@ struct ContentView: View {
             ? (activeSplitPane == .primary ? primaryEditorID : splitEditorID)
             : primaryEditorID
         NotificationCenter.default.post(name: .showInNoteSearch, object: nil, userInfo: ["editorInstanceID": eid])
+    }
+
+    private func presentInNoteSearchAndReplace() {
+        guard selectedNote != nil else {
+            presentSearch()
+            return
+        }
+        let eid = shouldShowSplitLayout
+            ? (activeSplitPane == .primary ? primaryEditorID : splitEditorID)
+            : primaryEditorID
+        NotificationCenter.default.post(name: .showInNoteSearchAndReplace, object: nil, userInfo: ["editorInstanceID": eid])
     }
 
     private var collapsedTopBarRow: some View {
@@ -2045,10 +2168,12 @@ struct ContentView: View {
                 editorInstanceID: primaryEditorID,
                 focusRequestID: detailFocusRequestID,
                 contentTopInsetAdjustment: isSidebarVisible ? 0 : detailToggleToContentExtraSpacingWhenSidebarHidden,
-                stickyHeaderTopPadding: splitControlsTopPadding
-            ) { updated in
-                saveUpdatedNote(updated)
-            }
+                stickyHeaderTopPadding: splitControlsTopPadding,
+                onSave: { updated in saveUpdatedNote(updated) },
+                availableNotes: notePickerItems(excluding: note.id),
+                onNavigateToNote: navigateToNote,
+                backlinks: backlinks(for: note.id)
+            )
             .blur(radius: isNoteLocked ? 20 : 0)
             .allowsHitTesting(!isNoteLocked)
 
@@ -3730,7 +3855,7 @@ struct NoteListCard: View {
                 Label {
                     Text("Export Note...")
                 } icon: {
-                    Image.menuIcon("export note")
+                    Image.menuIcon("IconFileDownload")
                 }
             }
 
@@ -3886,7 +4011,7 @@ struct PinnedNotesSection: View {
                             hoverLeadingIconAssetName: "IconUnpin",
                             persistentLeadingIconBg: true,
                             leadingIconBgColor: Color.yellow,
-                            leadingIconFgColor: .white,
+                            leadingIconFgColor: .black,
                             onLeadingIconTap: {
                                 onTogglePinForNotes([note.id], false)
                             },
@@ -3934,7 +4059,7 @@ struct PinnedNotesSection: View {
                         hoverLeadingIconAssetName: "IconUnpin",
                         persistentLeadingIconBg: true,
                         leadingIconBgColor: Color.yellow,
-                        leadingIconFgColor: .white,
+                        leadingIconFgColor: .black,
                         onLeadingIconTap: {
                             onTogglePinForNotes([peekNote.id], false)
                         },
@@ -4254,7 +4379,7 @@ struct PinnedNoteChip: View {
                 Label {
                     Text("Export Note...")
                 } icon: {
-                    Image.menuIcon("export note")
+                    Image.menuIcon("IconFileDownload")
                 }
             }
 

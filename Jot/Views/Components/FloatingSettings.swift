@@ -82,19 +82,6 @@ struct SettingsPage: View {
             }
         }
 
-        func selectedBorder(for scheme: ColorScheme) -> Color {
-            switch self {
-            case .bug:
-                return scheme == .dark
-                    ? Color(red: 0xef/255, green: 0x44/255, blue: 0x44/255)
-                    : Color(red: 0xdc/255, green: 0x26/255, blue: 0x26/255)
-            case .featureRequest:
-                return scheme == .dark
-                    ? Color(red: 0x22/255, green: 0xc5/255, blue: 0x5e/255)
-                    : Color(red: 0x16/255, green: 0xa3/255, blue: 0x4a/255)
-            }
-        }
-
         func selectedText(for scheme: ColorScheme) -> Color {
             switch self {
             case .bug:
@@ -449,6 +436,7 @@ struct SettingsPage: View {
             }
             .padding(.vertical, contentVerticalPadding)
         }
+        .scrollClipDisabled()
     }
 
     // MARK: - General Panel Helpers
@@ -501,7 +489,7 @@ struct SettingsPage: View {
         )
         .overlay(
             Capsule()
-                .stroke(Color(nsColor: NSColor.labelColor).opacity(0.09), lineWidth: 1)
+                .stroke(colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.08), lineWidth: 1)
         )
     }
 
@@ -517,7 +505,7 @@ struct SettingsPage: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color(nsColor: NSColor.labelColor).opacity(0.09), lineWidth: 1)
+                .stroke(colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.08), lineWidth: 1)
         )
     }
 
@@ -591,6 +579,7 @@ struct SettingsPage: View {
             }
             .padding(.vertical, contentVerticalPadding)
         }
+        .scrollClipDisabled()
     }
 
     // MARK: - Theme Section
@@ -637,15 +626,12 @@ struct SettingsPage: View {
                     .frame(height: themeCardHeight)
                     .clipped()
                     .clipShape(RoundedRectangle(cornerRadius: bodyFontCardRadius, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: bodyFontCardRadius, style: .continuous)
+                            .stroke(colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.08), lineWidth: 1)
+                    )
                     .shadow(color: .black.opacity(0.06), radius: 3, x: 0, y: 1)
                     .shadow(color: .black.opacity(0.03), radius: 1, x: 0, y: 0)
-                    .overlay {
-                        RoundedRectangle(cornerRadius: bodyFontCardRadius, style: .continuous)
-                            .stroke(
-                                Color(nsColor: NSColor.labelColor).opacity(0.09),
-                                lineWidth: 1
-                            )
-                    }
 
                 settingsSelectionLabel(label, isSelected: isSelected)
             }
@@ -709,15 +695,12 @@ struct SettingsPage: View {
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: bodyFontCardHeight)
+                .overlay(
+                    RoundedRectangle(cornerRadius: bodyFontCardRadius, style: .continuous)
+                        .stroke(colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.08), lineWidth: 1)
+                )
                 .shadow(color: .black.opacity(0.06), radius: 3, x: 0, y: 1)
                 .shadow(color: .black.opacity(0.03), radius: 1, x: 0, y: 0)
-                .overlay {
-                    RoundedRectangle(cornerRadius: bodyFontCardRadius, style: .continuous)
-                        .stroke(
-                            Color(nsColor: NSColor.labelColor).opacity(0.09),
-                            lineWidth: 1
-                        )
-                }
 
                 settingsSelectionLabel(title, isSelected: isSelected)
             }
@@ -763,15 +746,12 @@ struct SettingsPage: View {
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: lineSpacingCardHeight)
+                .overlay(
+                    RoundedRectangle(cornerRadius: lineSpacingCardRadius, style: .continuous)
+                        .stroke(colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.08), lineWidth: 1)
+                )
                 .shadow(color: .black.opacity(0.06), radius: 3, x: 0, y: 1)
                 .shadow(color: .black.opacity(0.03), radius: 1, x: 0, y: 0)
-                .overlay {
-                    RoundedRectangle(cornerRadius: lineSpacingCardRadius, style: .continuous)
-                        .stroke(
-                            Color(nsColor: NSColor.labelColor).opacity(0.09),
-                            lineWidth: 1
-                        )
-                }
 
                 settingsSelectionLabel(spacing.displayName, isSelected: isSelected)
             }
@@ -860,12 +840,7 @@ struct SettingsPage: View {
                 )
                 .overlay(
                     Capsule()
-                        .stroke(
-                            isSelected
-                                ? Color.clear
-                                : Color(nsColor: NSColor.labelColor).opacity(0.09),
-                            lineWidth: 1
-                        )
+                        .stroke(colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.08), lineWidth: 1)
                 )
                 .shadow(color: .black.opacity(0.06), radius: 3, x: 0, y: 1)
                 .shadow(color: .black.opacity(0.03), radius: 1, x: 0, y: 0)
@@ -898,12 +873,7 @@ struct SettingsPage: View {
             )
             .overlay(
                 Capsule()
-                    .stroke(
-                        isCustomSelected
-                            ? Color.clear
-                            : Color(nsColor: NSColor.labelColor).opacity(0.09),
-                        lineWidth: 1
-                    )
+                    .stroke(colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.08), lineWidth: 1)
             )
             .shadow(color: .black.opacity(0.06), radius: 3, x: 0, y: 1)
             .shadow(color: .black.opacity(0.03), radius: 1, x: 0, y: 0)
@@ -959,7 +929,7 @@ struct SettingsPage: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color(nsColor: NSColor.labelColor).opacity(0.09), lineWidth: 1)
+                .stroke(colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.08), lineWidth: 1)
         )
     }
 
@@ -981,6 +951,7 @@ struct SettingsPage: View {
             }
             .padding(.vertical, contentVerticalPadding)
         }
+        .scrollClipDisabled()
     }
 
     // MARK: - Email Section
@@ -1050,10 +1021,6 @@ struct SettingsPage: View {
                 Capsule()
                     .fill(colorScheme == .light ? Color.white : Color("SettingsOptionCardColor"))
             )
-            .overlay(
-                Capsule()
-                    .stroke(Color(nsColor: NSColor.labelColor).opacity(0.09), lineWidth: 1)
-            )
         }
     }
 
@@ -1117,18 +1084,6 @@ struct SettingsPage: View {
                                 : Color(nsColor: NSColor.labelColor).opacity(0.04)
                     )
             )
-            .overlay(
-                Capsule()
-                    .stroke(
-                        isSelected
-                            ? type.selectedBorder(for: colorScheme)
-                            : Color(nsColor: NSColor.labelColor).opacity(0.09),
-                        style: StrokeStyle(
-                            lineWidth: 1,
-                            dash: isSelected ? [4, 4] : []
-                        )
-                    )
-            )
         }
         .buttonStyle(.plain)
         .macPointingHandCursor()
@@ -1170,7 +1125,7 @@ struct SettingsPage: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color(nsColor: NSColor.labelColor).opacity(0.09), lineWidth: 1)
+                .stroke(colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.08), lineWidth: 1)
         )
     }
 

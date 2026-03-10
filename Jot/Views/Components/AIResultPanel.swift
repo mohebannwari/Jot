@@ -11,6 +11,7 @@ import SwiftUI
 struct AIResultPanel: View {
     let state: AIPanelState
     let onDismiss: () -> Void
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -19,7 +20,14 @@ struct AIResultPanel: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
-        .liquidGlass(in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(colorScheme == .dark ? Color(red: 12/255, green: 10/255, blue: 9/255) : Color.white)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.08), lineWidth: 1)
+        )
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 

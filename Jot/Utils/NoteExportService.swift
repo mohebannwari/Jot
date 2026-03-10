@@ -16,6 +16,7 @@ enum NoteExportFormat: String, CaseIterable, Identifiable {
     case pdf = "PDF"
     case markdown = "Markdown"
     case html = "HTML"
+    case plainText = "Plain Text"
 
     var id: String { rawValue }
 
@@ -24,6 +25,7 @@ enum NoteExportFormat: String, CaseIterable, Identifiable {
         case .pdf: return "pdf"
         case .markdown: return "md"
         case .html: return "html"
+        case .plainText: return "txt"
         }
     }
 
@@ -32,6 +34,7 @@ enum NoteExportFormat: String, CaseIterable, Identifiable {
         case .pdf: return "doc"
         case .markdown: return "doc.text"
         case .html: return "globe"
+        case .plainText: return "doc.plaintext"
         }
     }
 
@@ -40,6 +43,7 @@ enum NoteExportFormat: String, CaseIterable, Identifiable {
         case .pdf: return "IconFilePdf"
         case .markdown: return "IconMarkdown"
         case .html: return "IconWebsite"
+        case .plainText: return "IconNoteText"
         }
     }
 }
@@ -64,6 +68,8 @@ final class NoteExportService {
             return await exportToMarkdown(notes: [note], filename: sanitizeFilename(note.title))
         case .html:
             return await exportToHTML(notes: [note], filename: sanitizeFilename(note.title))
+        case .plainText:
+            return await exportToPlainText(notes: [note], filename: sanitizeFilename(note.title))
         }
     }
 
@@ -78,6 +84,8 @@ final class NoteExportService {
             return await exportToMarkdown(notes: notes, filename: filename)
         case .html:
             return await exportToHTML(notes: notes, filename: filename)
+        case .plainText:
+            return await exportToPlainText(notes: notes, filename: filename)
         }
     }
 
@@ -111,7 +119,9 @@ final class NoteExportService {
             NSGraphicsContext.saveGraphicsState()
             NSGraphicsContext.current = nsGraphicsContext
 
-            let (cleanContent, imageFilenames) = extractImages(from: note.content.strippingColorMarkup)
+            // Extract image filenames from raw content, convert text to plain readable form
+            let (_, imageFilenames) = extractImages(from: note.content)
+            let cleanContent = convertMarkupToPlainText(note.content)
 
             NSColor.white.setFill()
             NSBezierPath(rect: pageRect).fill()
@@ -214,6 +224,8 @@ final class NoteExportService {
             return generateTextPreviewImage(buildMarkdownString(notes: [note]))
         case .html:
             return generateTextPreviewImage(buildHTMLString(notes: [note], title: note.title))
+        case .plainText:
+            return generateTextPreviewImage(buildPlainTextString(notes: [note]))
         }
     }
 
@@ -281,14 +293,7 @@ final class NoteExportService {
                 markdown += "**Tags:** \(note.tags.map { "#\($0)" }.joined(separator: " "))\n\n"
             }
 
-            let (cleanContent, imageFilenames) = extractImages(from: note.content.strippingColorMarkup)
-            markdown += cleanContent + "\n\n"
-
-            for imageFilename in imageFilenames {
-                if ImageStorageManager.shared.getImageURL(for: imageFilename) != nil {
-                    markdown += "![Image](\(imageFilename))\n\n"
-                }
-            }
+            markdown += convertMarkupToMarkdown(note.content) + "\n\n"
         }
 
         return markdown
@@ -359,6 +364,43 @@ final class NoteExportService {
                     border-top: 1px solid #ddd;
                     margin: 40px 0;
                 }
+                pre {
+                    background: #f4f4f5;
+                    border-radius: 8px;
+                    padding: 16px;
+                    overflow-x: auto;
+                    border-left: 3px solid #d4d4d8;
+                }
+                pre code {
+                    font-family: 'SF Mono', Menlo, Monaco, monospace;
+                    font-size: 13px;
+                    background: none;
+                    padding: 0;
+                }
+                code {
+                    font-family: 'SF Mono', Menlo, Monaco, monospace;
+                    font-size: 0.9em;
+                    background: #f0f0f0;
+                    padding: 2px 6px;
+                    border-radius: 4px;
+                }
+                blockquote {
+                    border-left: 3px solid #a1a1aa;
+                    margin: 12px 0;
+                    padding: 8px 16px;
+                    color: #52525b;
+                }
+                mark {
+                    padding: 1px 3px;
+                    border-radius: 2px;
+                }
+                .file-attachment {
+                    display: inline-block;
+                    background: #f0f0f0;
+                    padding: 4px 10px;
+                    border-radius: 6px;
+                    font-size: 13px;
+                }
             </style>
         </head>
         <body>
@@ -384,17 +426,7 @@ final class NoteExportService {
                 html += "</div>\n"
             }
 
-            let (cleanContent, imageFilenames) = extractImages(from: note.content.strippingColorMarkup)
-            html += "<div class=\"content\">\(escapeHTML(cleanContent))</div>\n"
-
-            for imageFilename in imageFilenames {
-                if let imageURL = ImageStorageManager.shared.getImageURL(for: imageFilename),
-                   let imageData = try? Data(contentsOf: imageURL) {
-                    let base64String = imageData.base64EncodedString()
-                    let mimeType = "image/jpeg"
-                    html += "<img src=\"data:\(mimeType);base64,\(base64String)\" alt=\"Image\">\n"
-                }
-            }
+            html += "<div class=\"content\">\(convertMarkupToHTML(note.content))</div>\n"
         }
 
         html += """
@@ -403,6 +435,255 @@ final class NoteExportService {
         """
 
         return html
+    }
+
+    // MARK: - Plain Text Export
+
+    private func exportToPlainText(notes: [Note], filename: String) async -> Bool {
+        let text = buildPlainTextString(notes: notes)
+        guard let data = text.data(using: .utf8) else { return false }
+        return saveFile(data: data, filename: filename, fileExtension: "txt")
+    }
+
+    func buildPlainTextString(notes: [Note]) -> String {
+        var result = ""
+        for (index, note) in notes.enumerated() {
+            if index > 0 { result += "\n\n---\n\n" }
+            result += note.title + "\n\n"
+            result += convertMarkupToPlainText(note.content)
+        }
+        return result
+    }
+
+    // MARK: - Markup Conversion Engine
+
+    /// Convert serialized [[...]] markup to plain text (strip all formatting)
+    func convertMarkupToPlainText(_ content: String) -> String {
+        // Strip AI metadata block — it's internal persistence, not user content
+        var text = NoteDetailView.stripAIBlock(content).content
+        // Strip formatting tag pairs
+        let tagPairs = ["b", "i", "u", "s", "h1", "h2", "h3", "code", "ic", "quote"]
+        for tag in tagPairs {
+            text = text.replacingOccurrences(of: "[[\(tag)]]", with: "")
+            text = text.replacingOccurrences(of: "[[/\(tag)]]", with: "")
+        }
+        // Strip align tags
+        if let regex = try? NSRegularExpression(pattern: #"\[\[align:[a-z]+\]\]"#) {
+            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "")
+        }
+        text = text.replacingOccurrences(of: "[[/align]]", with: "")
+        // Strip color tags
+        if let regex = try? NSRegularExpression(pattern: #"\[\[color\|[0-9a-fA-F]{6}\]\]"#) {
+            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "")
+        }
+        text = text.replacingOccurrences(of: "[[/color]]", with: "")
+        // Strip highlight tags
+        if let regex = try? NSRegularExpression(pattern: #"\[\[hl\|[0-9a-fA-F]{6}\]\]"#) {
+            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "")
+        }
+        text = text.replacingOccurrences(of: "[[/hl]]", with: "")
+        // Convert ordered list prefixes to "N. "
+        if let regex = try? NSRegularExpression(pattern: #"\[\[ol\|(\d+)\]\]"#) {
+            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "$1. ")
+        }
+        // Convert checkboxes
+        text = text.replacingOccurrences(of: "[x] ", with: "[done] ")
+        text = text.replacingOccurrences(of: "[ ] ", with: "[todo] ")
+        // Convert dividers
+        text = text.replacingOccurrences(of: "[[divider]]", with: "---")
+        // Convert links
+        if let regex = try? NSRegularExpression(pattern: #"\[\[link\|([^|]+)\|([^\]]+)\]\]"#) {
+            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "$2 ($1)")
+        }
+        // Convert images to placeholder
+        if let regex = try? NSRegularExpression(pattern: #"\[\[image\|\|\|[^\]]+\]\]"#) {
+            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "[Image]")
+        }
+        // Convert file attachments to placeholder
+        if let regex = try? NSRegularExpression(pattern: #"\[\[file\|[^|]+\|([^|]+)\|[^\]]*\]\]"#) {
+            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "[File: $1]")
+        }
+        // Convert web clips
+        if let regex = try? NSRegularExpression(pattern: #"\[\[webclip\|([^|]*)\|([^|]*)\|[^|]*\|[^\]]*\]\]"#) {
+            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "$2 ($1)")
+        }
+        // Strip table markup (just show raw cell text)
+        if let regex = try? NSRegularExpression(pattern: #"\[\[table\|[^\]]*\]\]"#) {
+            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "[Table]")
+        }
+        return text
+    }
+
+    /// Convert serialized [[...]] markup to Markdown
+    func convertMarkupToMarkdown(_ content: String) -> String {
+        // Strip AI metadata block — it's internal persistence, not user content
+        var text = NoteDetailView.stripAIBlock(content).content
+        // Headings — must be converted BEFORE stripping inline tags
+        text = text.replacingOccurrences(of: "[[h1]]", with: "# ")
+        text = text.replacingOccurrences(of: "[[/h1]]", with: "")
+        text = text.replacingOccurrences(of: "[[h2]]", with: "## ")
+        text = text.replacingOccurrences(of: "[[/h2]]", with: "")
+        text = text.replacingOccurrences(of: "[[h3]]", with: "### ")
+        text = text.replacingOccurrences(of: "[[/h3]]", with: "")
+        // Bold / italic / strikethrough
+        text = text.replacingOccurrences(of: "[[b]]", with: "**")
+        text = text.replacingOccurrences(of: "[[/b]]", with: "**")
+        text = text.replacingOccurrences(of: "[[i]]", with: "*")
+        text = text.replacingOccurrences(of: "[[/i]]", with: "*")
+        text = text.replacingOccurrences(of: "[[s]]", with: "~~")
+        text = text.replacingOccurrences(of: "[[/s]]", with: "~~")
+        // Underline has no markdown equivalent — strip
+        text = text.replacingOccurrences(of: "[[u]]", with: "")
+        text = text.replacingOccurrences(of: "[[/u]]", with: "")
+        // Code blocks
+        text = text.replacingOccurrences(of: "[[code]]", with: "```\n")
+        text = text.replacingOccurrences(of: "[[/code]]", with: "\n```")
+        // Block quotes — convert to "> " prefix per line
+        text = text.replacingOccurrences(of: "[[quote]]", with: "> ")
+        text = text.replacingOccurrences(of: "[[/quote]]", with: "")
+        // Ordered list prefix
+        if let regex = try? NSRegularExpression(pattern: #"\[\[ol\|(\d+)\]\]"#) {
+            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "$1. ")
+        }
+        // Checkboxes
+        text = text.replacingOccurrences(of: "[x] ", with: "- [x] ")
+        text = text.replacingOccurrences(of: "[ ] ", with: "- [ ] ")
+        // Dividers
+        text = text.replacingOccurrences(of: "[[divider]]", with: "\n---\n")
+        // Links
+        if let regex = try? NSRegularExpression(pattern: #"\[\[link\|([^|]+)\|([^\]]+)\]\]"#) {
+            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "[$2]($1)")
+        }
+        // Images
+        if let regex = try? NSRegularExpression(pattern: #"\[\[image\|\|\|([^\]|]+)(?:\|\|\|[0-9]*\.?[0-9]+)?\]\]"#) {
+            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "![Image]($1)")
+        }
+        // File attachments
+        if let regex = try? NSRegularExpression(pattern: #"\[\[file\|[^|]+\|([^|]+)\|[^\]]*\]\]"#) {
+            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "[$1]")
+        }
+        // Web clips
+        if let regex = try? NSRegularExpression(pattern: #"\[\[webclip\|([^|]*)\|([^|]*)\|[^|]*\|[^\]]*\]\]"#) {
+            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "[$2]($1)")
+        }
+        // Strip alignment (no markdown equivalent)
+        if let regex = try? NSRegularExpression(pattern: #"\[\[align:[a-z]+\]\]"#) {
+            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "")
+        }
+        text = text.replacingOccurrences(of: "[[/align]]", with: "")
+        // Strip color (no markdown equivalent)
+        if let regex = try? NSRegularExpression(pattern: #"\[\[color\|[0-9a-fA-F]{6}\]\]"#) {
+            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "")
+        }
+        text = text.replacingOccurrences(of: "[[/color]]", with: "")
+        // Strip highlight (no markdown equivalent)
+        if let regex = try? NSRegularExpression(pattern: #"\[\[hl\|[0-9a-fA-F]{6}\]\]"#) {
+            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "")
+        }
+        text = text.replacingOccurrences(of: "[[/hl]]", with: "")
+        // Table markup
+        if let regex = try? NSRegularExpression(pattern: #"\[\[table\|[^\]]*\]\]"#) {
+            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "[Table]")
+        }
+        return text
+    }
+
+    /// Convert serialized [[...]] markup to HTML
+    func convertMarkupToHTML(_ content: String) -> String {
+        // Strip AI metadata block — it's internal persistence, not user content
+        let cleanContent = NoteDetailView.stripAIBlock(content).content
+        var text = escapeHTML(cleanContent)
+        // Need to use escaped versions for tag matching since we escaped first
+        // Actually, let's convert BEFORE escaping for structural tags, then escape content
+        // Re-approach: convert tags first on raw content, then escape only the text portions
+        // This is complex — simpler to work on raw content and escape selectively
+
+        // Reset — work on raw content
+        text = cleanContent
+        // Headings
+        text = text.replacingOccurrences(of: "[[h1]]", with: "<h1>")
+        text = text.replacingOccurrences(of: "[[/h1]]", with: "</h1>")
+        text = text.replacingOccurrences(of: "[[h2]]", with: "<h2>")
+        text = text.replacingOccurrences(of: "[[/h2]]", with: "</h2>")
+        text = text.replacingOccurrences(of: "[[h3]]", with: "<h3>")
+        text = text.replacingOccurrences(of: "[[/h3]]", with: "</h3>")
+        // Bold / italic / underline / strikethrough
+        text = text.replacingOccurrences(of: "[[b]]", with: "<strong>")
+        text = text.replacingOccurrences(of: "[[/b]]", with: "</strong>")
+        text = text.replacingOccurrences(of: "[[i]]", with: "<em>")
+        text = text.replacingOccurrences(of: "[[/i]]", with: "</em>")
+        text = text.replacingOccurrences(of: "[[u]]", with: "<u>")
+        text = text.replacingOccurrences(of: "[[/u]]", with: "</u>")
+        text = text.replacingOccurrences(of: "[[s]]", with: "<s>")
+        text = text.replacingOccurrences(of: "[[/s]]", with: "</s>")
+        // Code blocks
+        text = text.replacingOccurrences(of: "[[code]]", with: "<pre><code>")
+        text = text.replacingOccurrences(of: "[[/code]]", with: "</code></pre>")
+        // Block quotes
+        text = text.replacingOccurrences(of: "[[quote]]", with: "<blockquote>")
+        text = text.replacingOccurrences(of: "[[/quote]]", with: "</blockquote>")
+        // Ordered list prefix
+        if let regex = try? NSRegularExpression(pattern: #"\[\[ol\|(\d+)\]\]"#) {
+            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "<li>")
+        }
+        // Color
+        if let regex = try? NSRegularExpression(pattern: #"\[\[color\|([0-9a-fA-F]{6})\]\]"#) {
+            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "<span style=\"color:#$1\">")
+        }
+        text = text.replacingOccurrences(of: "[[/color]]", with: "</span>")
+        // Highlight
+        if let regex = try? NSRegularExpression(pattern: #"\[\[hl\|([0-9a-fA-F]{6})\]\]"#) {
+            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "<mark style=\"background-color:#$1\">")
+        }
+        text = text.replacingOccurrences(of: "[[/hl]]", with: "</mark>")
+        // Alignment
+        if let regex = try? NSRegularExpression(pattern: #"\[\[align:(center|right|justify)\]\]"#) {
+            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "<div style=\"text-align:$1\">")
+        }
+        text = text.replacingOccurrences(of: "[[/align]]", with: "</div>")
+        // Checkboxes
+        text = text.replacingOccurrences(of: "[x] ", with: "<input type=\"checkbox\" checked disabled> ")
+        text = text.replacingOccurrences(of: "[ ] ", with: "<input type=\"checkbox\" disabled> ")
+        // Dividers
+        text = text.replacingOccurrences(of: "[[divider]]", with: "<hr>")
+        // Links
+        if let regex = try? NSRegularExpression(pattern: #"\[\[link\|([^|]+)\|([^\]]+)\]\]"#) {
+            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "<a href=\"$1\">$2</a>")
+        }
+        // Images (embed as base64 if available, otherwise reference)
+        if let regex = try? NSRegularExpression(pattern: #"\[\[image\|\|\|([^\]|]+)(?:\|\|\|[0-9]*\.?[0-9]+)?\]\]"#) {
+            let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
+            for match in matches.reversed() {
+                if let filenameRange = Range(match.range(at: 1), in: text),
+                   let fullRange = Range(match.range, in: text) {
+                    let filename = String(text[filenameRange])
+                    if let imageURL = ImageStorageManager.shared.getImageURL(for: filename),
+                       let imageData = try? Data(contentsOf: imageURL) {
+                        let base64 = imageData.base64EncodedString()
+                        text = text.replacingCharacters(in: fullRange,
+                            with: "<img src=\"data:image/jpeg;base64,\(base64)\" alt=\"Image\" style=\"max-width:100%\">")
+                    } else {
+                        text = text.replacingCharacters(in: fullRange, with: "<img src=\"\(filename)\" alt=\"Image\">")
+                    }
+                }
+            }
+        }
+        // File attachments
+        if let regex = try? NSRegularExpression(pattern: #"\[\[file\|[^|]+\|([^|]+)\|[^\]]*\]\]"#) {
+            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "<span class=\"file-attachment\">$1</span>")
+        }
+        // Web clips
+        if let regex = try? NSRegularExpression(pattern: #"\[\[webclip\|([^|]*)\|([^|]*)\|([^|]*)\|([^\]]*)\]\]"#) {
+            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "<a href=\"$1\" class=\"webclip\">$2</a>")
+        }
+        // Table markup
+        if let regex = try? NSRegularExpression(pattern: #"\[\[table\|[^\]]*\]\]"#) {
+            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "<p>[Table]</p>")
+        }
+        // Convert remaining newlines to <br> (except inside pre blocks)
+        // Simple approach: just add <br> for non-block newlines
+        text = text.replacingOccurrences(of: "\n", with: "<br>\n")
+        return text
     }
 
     // MARK: - Helper Methods

@@ -193,6 +193,8 @@ struct QuickLookOverlayView: View {
             rawContent = NoteExportService.shared.buildMarkdownString(notes: notes)
         case .html:
             rawContent = NoteExportService.shared.buildHTMLString(notes: notes, title: note.title)
+        case .plainText:
+            rawContent = NoteExportService.shared.buildPlainTextString(notes: notes)
         }
 
         isLoading = false

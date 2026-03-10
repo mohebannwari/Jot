@@ -24,6 +24,11 @@ extension NSAttributedString.Key {
     fileprivate static let fileOriginalFilename = NSAttributedString.Key("FileOriginalFilename")
     fileprivate static let fileTypeIdentifier = NSAttributedString.Key("FileTypeIdentifier")
     fileprivate static let fileDisplayLabel = NSAttributedString.Key("FileDisplayLabel")
+    static let orderedListNumber = NSAttributedString.Key("OrderedListNumber")
+    static let blockQuote = NSAttributedString.Key("BlockQuote")
+    static let highlightColor = NSAttributedString.Key("HighlightColor")
+    static let notelinkID = NSAttributedString.Key("NotelinkID")
+    static let notelinkTitle = NSAttributedString.Key("NotelinkTitle")
 }
 
 private enum AttachmentMarkup {
@@ -213,6 +218,43 @@ fileprivate final class TypingAnimationLayoutManager: NSLayoutManager {
             }
         }
     }
+
+    // MARK: Custom Background Drawing
+
+    override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
+        super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
+
+        // Block quote left bar (drawn after super, on top)
+        guard let textStorage = textStorage, let textContainer = textContainers.first else { return }
+        let charRange = characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
+
+        // Expand each .blockQuote attribute run to its full paragraph range(s),
+        // then coalesce adjacent quote paragraphs into one continuous bar.
+        var coveredRanges: [NSRange] = []
+        textStorage.enumerateAttribute(.blockQuote, in: charRange, options: []) { value, attrRange, _ in
+            guard value as? Bool == true else { return }
+            let expandedRange = (textStorage.string as NSString).paragraphRange(for: attrRange)
+            if let last = coveredRanges.last, NSMaxRange(last) >= expandedRange.location {
+                coveredRanges[coveredRanges.count - 1] = NSUnionRange(last, expandedRange)
+            } else {
+                coveredRanges.append(expandedRange)
+            }
+        }
+
+        let barWidth: CGFloat = 3.0
+        for range in coveredRanges {
+            let quoteGlyphRange = glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+            guard quoteGlyphRange.length > 0 else { continue }
+            let rect = boundingRect(forGlyphRange: quoteGlyphRange, in: textContainer)
+            let barRect = CGRect(
+                x: origin.x + 6,
+                y: origin.y + rect.origin.y,
+                width: barWidth,
+                height: rect.height)
+            NSColor.labelColor.withAlphaComponent(0.2).setFill()
+            NSBezierPath(roundedRect: barRect, xRadius: 1.5, yRadius: 1.5).fill()
+        }
+    }
 }
 
 /// Dedicated attachment type so that we never lose the stored filename during round-trips.
@@ -260,6 +302,209 @@ private final class ImageSizeAttachmentCell: NSTextAttachmentCell {
     }
 }
 
+private final class NoteTableAttachment: NSTextAttachment {
+    var tableData: NoteTableData
+    let tableID = UUID()
+
+    init(tableData: NoteTableData) {
+        self.tableData = tableData
+        super.init(data: nil, ofType: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("NoteTableAttachment does not support init(coder:)")
+    }
+}
+
+/// Cell that allocates space for a table attachment but draws nothing visible.
+/// The NoteTableOverlayView handles rendering.
+private final class TableSizeAttachmentCell: NSTextAttachmentCell {
+    let displaySize: CGSize
+
+    init(size: CGSize) {
+        self.displaySize = size
+        super.init(imageCell: nil)
+    }
+
+    @available(*, unavailable)
+    required init(coder: NSCoder) {
+        fatalError("TableSizeAttachmentCell does not support init(coder:)")
+    }
+
+    override var cellSize: NSSize { displaySize }
+
+    override nonisolated func cellBaselineOffset() -> NSPoint { .zero }
+
+    override func draw(withFrame cellFrame: NSRect, in controlView: NSView?) {
+        // Intentionally empty — overlay view renders the table
+    }
+
+    override func draw(withFrame cellFrame: NSRect, in controlView: NSView?, characterIndex charIndex: Int, layoutManager: NSLayoutManager) {
+        // Intentionally empty — overlay view renders the table
+    }
+}
+
+// MARK: - Callout Attachment
+
+private final class NoteCalloutAttachment: NSTextAttachment {
+    var calloutData: CalloutData
+    let calloutID = UUID()
+
+    init(calloutData: CalloutData) {
+        self.calloutData = calloutData
+        super.init(data: nil, ofType: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("NoteCalloutAttachment does not support init(coder:)")
+    }
+}
+
+private final class CalloutSizeAttachmentCell: NSTextAttachmentCell {
+    let displaySize: CGSize
+
+    init(size: CGSize) {
+        self.displaySize = size
+        super.init(imageCell: nil)
+    }
+
+    @available(*, unavailable)
+    required init(coder: NSCoder) {
+        fatalError("CalloutSizeAttachmentCell does not support init(coder:)")
+    }
+
+    override var cellSize: NSSize { displaySize }
+    override nonisolated func cellBaselineOffset() -> NSPoint { .zero }
+
+    override func draw(withFrame cellFrame: NSRect, in controlView: NSView?) {
+        // Intentionally empty — overlay view renders the callout
+    }
+
+    override func draw(withFrame cellFrame: NSRect, in controlView: NSView?, characterIndex charIndex: Int, layoutManager: NSLayoutManager) {
+        // Intentionally empty — overlay view renders the callout
+    }
+}
+
+// MARK: - Code Block Attachment
+
+private final class NoteCodeBlockAttachment: NSTextAttachment {
+    var codeBlockData: CodeBlockData
+    let codeBlockID = UUID()
+
+    init(codeBlockData: CodeBlockData) {
+        self.codeBlockData = codeBlockData
+        super.init(data: nil, ofType: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("NoteCodeBlockAttachment does not support init(coder:)")
+    }
+}
+
+private final class CodeBlockSizeAttachmentCell: NSTextAttachmentCell {
+    let displaySize: CGSize
+
+    init(size: CGSize) {
+        self.displaySize = size
+        super.init(imageCell: nil)
+    }
+
+    @available(*, unavailable)
+    required init(coder: NSCoder) {
+        fatalError("CodeBlockSizeAttachmentCell does not support init(coder:)")
+    }
+
+    override var cellSize: NSSize { displaySize }
+    override nonisolated func cellBaselineOffset() -> NSPoint { .zero }
+
+    override func draw(withFrame cellFrame: NSRect, in controlView: NSView?) {}
+    override func draw(withFrame cellFrame: NSRect, in controlView: NSView?,
+                       characterIndex charIndex: Int, layoutManager: NSLayoutManager) {}
+}
+
+// MARK: - Notelink Attachment
+
+private final class NotelinkAttachment: NSTextAttachment {
+    let noteID: String
+    let noteTitle: String
+
+    init(noteID: String, noteTitle: String) {
+        self.noteID = noteID
+        self.noteTitle = noteTitle
+        super.init(data: nil, ofType: nil)
+        self.attachmentCell = NotelinkAttachmentCell(noteTitle: noteTitle)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("NotelinkAttachment does not support init(coder:)")
+    }
+}
+
+private final class NotelinkAttachmentCell: NSTextAttachmentCell {
+    private let noteTitle: String
+    private static let pillColor = NSColor(red: 0.145, green: 0.388, blue: 0.922, alpha: 1.0)
+    private static let textFont = NSFont.systemFont(ofSize: 12, weight: .medium)
+    private static let hPad: CGFloat = 8
+    private static let vPad: CGFloat = 4
+
+    init(noteTitle: String) {
+        self.noteTitle = noteTitle
+        super.init(imageCell: nil)
+    }
+
+    @available(*, unavailable)
+    required init(coder: NSCoder) {
+        fatalError("NotelinkAttachmentCell does not support init(coder:)")
+    }
+
+    private var displayText: String {
+        "@\(noteTitle.isEmpty ? "Untitled" : noteTitle)"
+    }
+
+    private var textAttributes: [NSAttributedString.Key: Any] {
+        [.font: Self.textFont, .foregroundColor: NSColor.white]
+    }
+
+    override var cellSize: NSSize {
+        let textSize = (displayText as NSString).size(withAttributes: textAttributes)
+        return NSSize(
+            width: ceil(textSize.width + Self.hPad * 2),
+            height: ceil(textSize.height + Self.vPad * 2)
+        )
+    }
+
+    override nonisolated func cellBaselineOffset() -> NSPoint {
+        NSPoint(x: 0, y: -4)
+    }
+
+    override func draw(withFrame cellFrame: NSRect, in controlView: NSView?) {
+        drawPill(in: cellFrame)
+    }
+
+    override func draw(withFrame cellFrame: NSRect, in controlView: NSView?, characterIndex charIndex: Int, layoutManager: NSLayoutManager) {
+        drawPill(in: cellFrame)
+    }
+
+    private func drawPill(in frame: NSRect) {
+        let path = NSBezierPath(roundedRect: frame, xRadius: frame.height / 2, yRadius: frame.height / 2)
+        Self.pillColor.setFill()
+        path.fill()
+
+        let textSize = (displayText as NSString).size(withAttributes: textAttributes)
+        let textRect = NSRect(
+            x: frame.origin.x + (frame.width - textSize.width) / 2,
+            y: frame.origin.y + (frame.height - textSize.height) / 2,
+            width: textSize.width,
+            height: textSize.height
+        )
+        (displayText as NSString).draw(in: textRect, withAttributes: textAttributes)
+    }
+}
+
 /// Floating view hosted in the scroll view's clip view that renders an image
 /// with rounded corners, drop shadow, subtle border, and edge-based resizing.
 /// No visible handle — resize is indicated purely by cursor changes on the
@@ -284,9 +529,7 @@ private final class InlineImageOverlayView: NSView {
     private let edgeZone: CGFloat = 40
 
     /// Corner radius scales proportionally with image width.
-    private var computedCornerRadius: CGFloat {
-        min(24, max(12, bounds.width * 0.06))
-    }
+    private var computedCornerRadius: CGFloat { 16 }
 
     private enum ResizeEdge { case right, bottom, corner }
     private var isDragging = false
@@ -353,7 +596,7 @@ private final class InlineImageOverlayView: NSView {
         borderLayer.borderColor = isDark
             ? NSColor.white.withAlphaComponent(0.12).cgColor
             : NSColor.black.withAlphaComponent(0.08).cgColor
-        shadowLayer.shadowOpacity = isDark ? 0.18 : 0.25
+        shadowLayer.shadowOpacity = 0
         CATransaction.commit()
     }
 
@@ -525,18 +768,25 @@ struct TodoRichTextEditor: View {
     @Environment(\.colorScheme) private var colorScheme
     private let baseBottomInset: CGFloat = 0
 
+    var availableNotes: [NotePickerItem] = []
+    var onNavigateToNote: ((UUID) -> Void)?
+
     init(
         text: Binding<String>,
         focusRequestID: UUID? = nil,
         editorInstanceID: UUID? = nil,
         onToolbarAction: ((EditTool) -> Void)? = nil,
-        onCommandMenuSelection: ((EditTool) -> Void)? = nil
+        onCommandMenuSelection: ((EditTool) -> Void)? = nil,
+        availableNotes: [NotePickerItem] = [],
+        onNavigateToNote: ((UUID) -> Void)? = nil
     ) {
         self._text = text
         self.focusRequestID = focusRequestID
         self.editorInstanceID = editorInstanceID
         self.onToolbarAction = onToolbarAction
         self.onCommandMenuSelection = onCommandMenuSelection
+        self.availableNotes = availableNotes
+        self.onNavigateToNote = onNavigateToNote
     }
 
 
@@ -548,12 +798,30 @@ struct TodoRichTextEditor: View {
     @State private var commandSlashLocation: Int = -1
     @State private var commandMenuFilterText = ""
 
+    // Note picker state (triggered by "@" character)
+    @State private var showNotePicker = false
+    @State private var notePickerRevealed = false
+    @State private var notePickerPosition: CGPoint = .zero
+    @State private var notePickerSelectedIndex = 0
+    @State private var notePickerAtLocation: Int = -1
+    @State private var notePickerFilterText = ""
+    @State private var notePickerItems: [NotePickerItem] = []
+
+    private var filteredNotePickerItems: [NotePickerItem] {
+        if notePickerFilterText.isEmpty {
+            return notePickerItems
+        }
+        return notePickerItems.filter {
+            $0.title.localizedCaseInsensitiveContains(notePickerFilterText)
+        }
+    }
+
     // URL paste option menu state
     @State private var showURLPasteMenu = false
     @State private var urlPasteMenuPosition: CGPoint = .zero
     @State private var urlPasteURL: String = ""
     @State private var urlPasteRange: NSRange = NSRange(location: 0, length: 0)
-    fileprivate static let commandMenuActions: [EditTool] = [.imageUpload, .voiceRecord, .link, .todo, .bulletList, .divider]
+    fileprivate static let commandMenuActions: [EditTool] = [.imageUpload, .voiceRecord, .link, .todo, .bulletList, .numberedList, .blockQuote, .codeBlock, .callout, .divider, .table]
     fileprivate static let commandMenuOuterPadding: CGFloat = CommandMenuLayout.outerPadding
     fileprivate static let commandMenuHorizontalPadding = commandMenuOuterPadding * 2
     fileprivate static let commandMenuVerticalPadding = commandMenuOuterPadding * 2
@@ -600,7 +868,8 @@ struct TodoRichTextEditor: View {
                     colorScheme: colorScheme,
                     bottomInset: bottomInset,
                     focusRequestID: focusRequestID,
-                    editorInstanceID: editorInstanceID
+                    editorInstanceID: editorInstanceID,
+                    onNavigateToNote: onNavigateToNote
                 )
         }
         .frame(maxWidth: .infinity)  // Natural height based on content
@@ -608,6 +877,12 @@ struct TodoRichTextEditor: View {
         .overlay(alignment: .topLeading) {
             GeometryReader { geometry in
                 if showCommandMenu && !filteredCommandMenuTools.isEmpty {
+                    // Tap-outside scrim to dismiss
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture { dismissCommandMenu() }
+                        .zIndex(999)
+
                     CommandMenu(
                         tools: filteredCommandMenuTools,
                         selectedIndex: $commandMenuSelectedIndex,
@@ -621,6 +896,25 @@ struct TodoRichTextEditor: View {
                     .allowsHitTesting(commandMenuRevealed)
                     .transition(.identity)
                     .zIndex(1000)
+                }
+            }
+        }
+        .overlay(alignment: .topLeading) {
+            GeometryReader { geometry in
+                if showNotePicker && !filteredNotePickerItems.isEmpty {
+                    NotePickerMenu(
+                        notes: filteredNotePickerItems,
+                        selectedIndex: $notePickerSelectedIndex,
+                        isRevealed: $notePickerRevealed,
+                        onSelect: { note in handleNotePickerSelection(note) }
+                    )
+                    .offset(
+                        x: clampedNotePickerPosition(for: geometry.size).x,
+                        y: clampedNotePickerPosition(for: geometry.size).y
+                    )
+                    .allowsHitTesting(notePickerRevealed)
+                    .transition(.identity)
+                    .zIndex(1001)
                 }
             }
         }
@@ -745,6 +1039,78 @@ struct TodoRichTextEditor: View {
                 }
             }
         }
+        // Note picker notifications (triggered by "@")
+        .onReceive(NotificationCenter.default.publisher(for: .showNotePicker))
+        { notification in
+            if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
+            if let info = notification.object as? [String: Any],
+                let position = info["position"] as? CGPoint,
+                let atLocation = info["atLocation"] as? Int
+            {
+                // Filter out the current note from the picker list
+                let notes = availableNotes
+                guard !notes.isEmpty else { return }
+
+                notePickerPosition = position
+                notePickerAtLocation = atLocation
+                notePickerSelectedIndex = 0
+                notePickerFilterText = ""
+                notePickerItems = notes
+
+                showNotePicker = true
+                withAnimation(.bouncy(duration: 0.45)) {
+                    notePickerRevealed = true
+                }
+
+                InlineNSTextView.isNotePickerShowing = true
+                InlineNSTextView.notePickerAtLocation = atLocation
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .hideNotePicker))
+        { notification in
+            if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
+            dismissNotePicker()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .notePickerFilterUpdate))
+        { notification in
+            if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
+            guard showNotePicker else { return }
+            let filter = (notification.object as? String) ?? ""
+            notePickerFilterText = filter
+            notePickerSelectedIndex = 0
+
+            let matches = notePickerItems.filter {
+                $0.title.localizedCaseInsensitiveContains(filter)
+            }
+            if !filter.isEmpty && matches.isEmpty {
+                dismissNotePicker()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .notePickerNavigateUp))
+        { notification in
+            if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
+            if showNotePicker && notePickerSelectedIndex > 0 {
+                notePickerSelectedIndex -= 1
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .notePickerNavigateDown))
+        { notification in
+            if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
+            let maxIndex = max(0, filteredNotePickerItems.count - 1)
+            if showNotePicker && notePickerSelectedIndex < maxIndex {
+                notePickerSelectedIndex += 1
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .notePickerSelect))
+        { notification in
+            if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
+            if showNotePicker {
+                let notes = filteredNotePickerItems
+                if notePickerSelectedIndex < notes.count {
+                    handleNotePickerSelection(notes[notePickerSelectedIndex])
+                }
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .urlPasteDetected)) { notification in
             guard let info = notification.object as? [String: Any],
                   let url = info["url"] as? String,
@@ -831,6 +1197,55 @@ struct TodoRichTextEditor: View {
         let maxY = max(0, containerSize.height - menuHeight)
         let clampedX = min(max(urlPasteMenuPosition.x, 0), maxX)
         let clampedY = min(max(urlPasteMenuPosition.y, 0), maxY)
+        return CGPoint(x: clampedX, y: clampedY)
+    }
+
+    // MARK: - Note Picker Helpers
+
+    private func dismissNotePicker() {
+        InlineNSTextView.isNotePickerShowing = false
+        InlineNSTextView.notePickerAtLocation = -1
+
+        withAnimation(.smooth(duration: 0.25)) {
+            notePickerRevealed = false
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            guard !self.notePickerRevealed else { return }
+            self.showNotePicker = false
+            self.notePickerAtLocation = -1
+            self.notePickerFilterText = ""
+            self.notePickerItems = []
+        }
+    }
+
+    private func handleNotePickerSelection(_ note: NotePickerItem) {
+        let filterLength = notePickerFilterText.count
+        let atLoc = notePickerAtLocation
+
+        dismissNotePicker()
+
+        NotificationCenter.default.post(
+            name: .applyNotePickerSelection,
+            object: [
+                "noteID": note.id.uuidString,
+                "noteTitle": note.title,
+                "atLocation": atLoc,
+                "filterLength": filterLength,
+            ] as [String: Any],
+            userInfo: editorInstanceID.map { ["editorInstanceID": $0] }
+        )
+    }
+
+    private func clampedNotePickerPosition(for containerSize: CGSize) -> CGPoint {
+        let outerPadding = NotePickerLayout.outerPadding * 2
+        let contentHeight = NotePickerLayout.idealHeight(for: filteredNotePickerItems.count)
+        let totalHeight = contentHeight + outerPadding
+        let totalWidth = NotePickerLayout.width + outerPadding
+        let maxX = max(0, containerSize.width - totalWidth)
+        let maxY = max(0, containerSize.height - totalHeight)
+        let clampedX = min(max(notePickerPosition.x, 0), maxX)
+        let clampedY = min(max(notePickerPosition.y, 0), maxY)
         return CGPoint(x: clampedX, y: clampedY)
     }
 
@@ -926,6 +1341,7 @@ struct URLPasteOptionMenu: View {
         let bottomInset: CGFloat
         let focusRequestID: UUID?
         let editorInstanceID: UUID?
+        var onNavigateToNote: ((UUID) -> Void)?
         private let unlimitedDimension = CGFloat.greatestFiniteMagnitude
 
         func makeNSView(context: Context) -> InlineNSTextView {
@@ -1049,6 +1465,9 @@ struct URLPasteOptionMenu: View {
                 }
             }
 
+            // Sync navigate callback
+            context.coordinator.onNavigateToNote = onNavigateToNote
+
             // Only update text if it has actually changed
             context.coordinator.updateIfNeeded(with: text)
             context.coordinator.requestFocusIfNeeded(focusRequestID)
@@ -1058,9 +1477,15 @@ struct URLPasteOptionMenu: View {
             // By the time SwiftUI calls updateNSView the view IS hosted — finish setup.
             context.coordinator.completeDeferredSetup(in: textView)
 
-            // Reposition overlays on every SwiftUI layout pass — catches frame
-            // changes from sizeThatFits, AI panel insertion/removal, etc.
-            context.coordinator.updateImageOverlays(in: textView)
+            // Reposition overlays only when the frame has actually changed — avoids
+            // redundant full-storage enumeration on every SwiftUI layout pass.
+            if context.coordinator.lastKnownTextViewWidth != textView.bounds.width {
+                context.coordinator.lastKnownTextViewWidth = textView.bounds.width
+                context.coordinator.updateImageOverlays(in: textView)
+                context.coordinator.updateTableOverlays(in: textView)
+                context.coordinator.updateCalloutOverlays(in: textView)
+                context.coordinator.updateCodeBlockOverlays(in: textView)
+            }
         }
 
         // Report dynamic size to SwiftUI so the editor grows with its content naturally
@@ -1139,7 +1564,7 @@ struct URLPasteOptionMenu: View {
             private weak var textView: NSTextView?
             private var observers: [NSObjectProtocol] = []
             private var lastSerialized = ""
-            private let formatter = TextFormattingManager()
+            fileprivate let formatter = TextFormattingManager()
             private var isUpdating = false
             private var textBinding: Binding<String>
             private var lastHandledFocusRequestID: UUID?
@@ -1158,12 +1583,19 @@ struct URLPasteOptionMenu: View {
 
             // MARK: - Inline image overlay tracking
             private var imageOverlays: [ObjectIdentifier: InlineImageOverlayView] = [:]
+            private var tableOverlays: [ObjectIdentifier: NoteTableOverlayView] = [:]
+            private var calloutOverlays: [ObjectIdentifier: CalloutOverlayView] = [:]
+            private var codeBlockOverlays: [ObjectIdentifier: CodeBlockOverlayView] = [:]
             private weak var overlayHostView: NSView?
             /// True when applyInitialText ran but the view was not in the hierarchy
             /// yet (no enclosingScrollView), so overlay creation was deferred.
             private var needsDeferredOverlaySetup = false
+            var onNavigateToNote: ((UUID) -> Void)?
+            var lastKnownTextViewWidth: CGFloat = 0
             /// True once the bounds-change observer on the clip view has been registered.
             private var hasBoundsObserver = false
+            /// True once ancestor clipping has been disabled for overlay overflow.
+            private var hasDisabledAncestorClipping = false
 
 
             private static let inlineImageCache: NSCache<NSString, NSImage> = {
@@ -1626,6 +2058,8 @@ struct URLPasteOptionMenu: View {
                 observers.removeAll()
                 imageOverlays.values.forEach { $0.removeFromSuperview() }
                 imageOverlays.removeAll()
+                tableOverlays.values.forEach { $0.removeFromSuperview() }
+                tableOverlays.removeAll()
             }
 
             func configure(with textView: NSTextView) {
@@ -1640,6 +2074,8 @@ struct URLPasteOptionMenu: View {
                 if overlayHostView !== newHost {
                     imageOverlays.values.forEach { $0.removeFromSuperview() }
                     imageOverlays.removeAll()
+                    tableOverlays.values.forEach { $0.removeFromSuperview() }
+                    tableOverlays.removeAll()
                     overlayHostView = newHost
                 }
                 // Register as layout manager delegate for overlay position tracking
@@ -1732,9 +2168,17 @@ struct URLPasteOptionMenu: View {
                     guard let tool = EditTool(rawValue: raw) else { return }
                     Task { @MainActor [weak self] in
                         guard let self = self, let textView = self.textView else { return }
-                        self.formatter.applyFormatting(to: textView, tool: tool)
-                        self.styleTodoParagraphs()
-                        self.syncText()
+                        if tool == .table {
+                            self.insertTable()
+                        } else if tool == .callout {
+                            self.insertCallout()
+                        } else if tool == .codeBlock {
+                            self.insertCodeBlock()
+                        } else {
+                            self.formatter.applyFormatting(to: textView, tool: tool)
+                            self.styleTodoParagraphs()
+                            self.syncText()
+                        }
                     }
                 }
 
@@ -1768,15 +2212,46 @@ struct URLPasteOptionMenu: View {
                         }
 
                         // Apply the selected tool
-                        // Special handling for todo checkbox to use proper attachment instead of text
+                        // Special handling for todo/table to use proper attachment instead of text
                         if tool == .todo {
                             self.insertTodo()
+                        } else if tool == .table {
+                            self.insertTable()
+                        } else if tool == .callout {
+                            self.insertCallout()
+                        } else if tool == .codeBlock {
+                            self.insertCodeBlock()
                         } else {
                             self.formatter.applyFormatting(to: textView, tool: tool)
                         }
 
                         // Sync the text back
                         self.syncText()
+                    }
+                }
+
+                let applyNotePickerSelection = NotificationCenter.default.addObserver(
+                    forName: .applyNotePickerSelection, object: nil, queue: .main
+                ) { [weak self] notification in
+                    if let nid = notification.userInfo?["editorInstanceID"] as? UUID,
+                       let myID = self?.editorInstanceID, nid != myID { return }
+                    guard let info = notification.object as? [String: Any],
+                          let noteIDStr = info["noteID"] as? String,
+                          let noteID = UUID(uuidString: noteIDStr),
+                          let noteTitle = info["noteTitle"] as? String,
+                          let atLocation = info["atLocation"] as? Int else { return }
+                    let filterLength = (info["filterLength"] as? Int) ?? 0
+                    Task { @MainActor [weak self] in
+                        self?.insertNoteLink(noteID: noteID, title: noteTitle, atLocation: atLocation, filterLength: filterLength)
+                    }
+                }
+
+                let navigateNoteLink = NotificationCenter.default.addObserver(
+                    forName: .navigateToNoteLink, object: nil, queue: .main
+                ) { [weak self] notification in
+                    guard let noteID = notification.userInfo?["noteID"] as? UUID else { return }
+                    Task { @MainActor [weak self] in
+                        self?.onNavigateToNote?(noteID)
                     }
                 }
 
@@ -1914,10 +2389,40 @@ struct URLPasteOptionMenu: View {
                     }
                 }
 
+                // MARK: Replace search match
+                let replaceMatch = NotificationCenter.default.addObserver(
+                    forName: .replaceCurrentSearchMatch, object: nil, queue: .main
+                ) { [weak self] notification in
+                    if let nid = notification.userInfo?["editorInstanceID"] as? UUID,
+                       let myID = self?.editorInstanceID, nid != myID { return }
+                    guard let userInfo = notification.userInfo,
+                          let query = userInfo["query"] as? String,
+                          let replacement = userInfo["replacement"] as? String,
+                          let matchIndex = userInfo["matchIndex"] as? Int else { return }
+                    Task { @MainActor [weak self] in
+                        self?.replaceSearchMatch(query: query, replacement: replacement, matchIndex: matchIndex)
+                    }
+                }
+
+                // MARK: Replace all search matches
+                let replaceAll = NotificationCenter.default.addObserver(
+                    forName: .replaceAllSearchMatches, object: nil, queue: .main
+                ) { [weak self] notification in
+                    if let nid = notification.userInfo?["editorInstanceID"] as? UUID,
+                       let myID = self?.editorInstanceID, nid != myID { return }
+                    guard let userInfo = notification.userInfo,
+                          let query = userInfo["query"] as? String,
+                          let replacement = userInfo["replacement"] as? String else { return }
+                    Task { @MainActor [weak self] in
+                        self?.replaceAllSearchMatches(query: query, replacement: replacement)
+                    }
+                }
+
                 observers = [
                     windowKey,
                     insertTodo, insertLink, insertVoiceTranscript, insertImage, applyTool, applyCommandMenuTool,
-                    highlightSearch, clearSearch,
+                    applyNotePickerSelection, navigateNoteLink,
+                    highlightSearch, clearSearch, replaceMatch, replaceAll,
                     proofreadShow, proofreadClear, proofreadApply, captureSelection,
                     urlPasteMention, urlPasteSelectPlainLink, urlPasteDismiss,
                     applyColor, settingsObserver,
@@ -1989,6 +2494,9 @@ struct URLPasteOptionMenu: View {
                     Task { @MainActor [weak self] in
                         if let tv = self?.textView {
                             self?.updateImageOverlays(in: tv)
+                            self?.updateTableOverlays(in: tv)
+                            self?.updateCalloutOverlays(in: tv)
+                            self?.updateCodeBlockOverlays(in: tv)
                         }
                     }
                 }
@@ -2004,6 +2512,26 @@ struct URLPasteOptionMenu: View {
                     registerBoundsObserverIfNeeded(for: textView)
                 }
 
+                // Disable layer clipping on the text view and its immediate
+                // SwiftUI hosting ancestors so table/callout/code-block overlays
+                // can extend beyond the text view frame (e.g. add-column button).
+                if !hasDisabledAncestorClipping {
+                    hasDisabledAncestorClipping = true
+                    textView.clipsToBounds = false
+                    var ancestor: NSView? = textView.superview
+                    for _ in 0..<4 {
+                        guard let view = ancestor else { break }
+                        // Stop before disabling clipping on scroll views —
+                        // they need it for vertical content scrolling.
+                        if view is NSScrollView || view is NSClipView { break }
+                        view.clipsToBounds = false
+                        if view.wantsLayer, let layer = view.layer {
+                            layer.masksToBounds = false
+                        }
+                        ancestor = view.superview
+                    }
+                }
+
                 // Ensure overlay host is the text view (may still be nil from
                 // initial configure if called before the view was in hierarchy).
                 if overlayHostView !== textView {
@@ -2014,6 +2542,9 @@ struct URLPasteOptionMenu: View {
                 if needsDeferredOverlaySetup {
                     needsDeferredOverlaySetup = false
                     updateImageOverlays(in: textView)
+                    updateTableOverlays(in: textView)
+                    updateCalloutOverlays(in: textView)
+                    updateCodeBlockOverlays(in: textView)
                 }
             }
 
@@ -2151,6 +2682,65 @@ struct URLPasteOptionMenu: View {
                     object: nil,
                     userInfo: info
                 )
+            }
+
+            // MARK: - Search Replace
+
+            /// Replace a single search match at the given index in the text storage.
+            func replaceSearchMatch(query: String, replacement: String, matchIndex: Int) {
+                guard let textView = self.textView,
+                      let storage = textView.textStorage else { return }
+
+                // Find all matches in the text storage (not editedContent) to get correct ranges
+                let fullString = storage.string as NSString
+                var ranges: [NSRange] = []
+                var searchRange = NSRange(location: 0, length: fullString.length)
+                while searchRange.location < fullString.length {
+                    let found = fullString.range(of: query, options: [.caseInsensitive, .diacriticInsensitive], range: searchRange)
+                    guard found.location != NSNotFound else { break }
+                    ranges.append(found)
+                    searchRange.location = found.location + found.length
+                    searchRange.length = fullString.length - searchRange.location
+                }
+
+                guard matchIndex >= 0, matchIndex < ranges.count else { return }
+                let targetRange = ranges[matchIndex]
+
+                if textView.shouldChangeText(in: targetRange, replacementString: replacement) {
+                    storage.replaceCharacters(in: targetRange, with: replacement)
+                    textView.didChangeText()
+                }
+                syncText()
+            }
+
+            /// Replace all occurrences of query with replacement in a single undo group.
+            func replaceAllSearchMatches(query: String, replacement: String) {
+                guard let textView = self.textView,
+                      let storage = textView.textStorage else { return }
+
+                let fullString = storage.string as NSString
+                var ranges: [NSRange] = []
+                var searchRange = NSRange(location: 0, length: fullString.length)
+                while searchRange.location < fullString.length {
+                    let found = fullString.range(of: query, options: [.caseInsensitive, .diacriticInsensitive], range: searchRange)
+                    guard found.location != NSNotFound else { break }
+                    ranges.append(found)
+                    searchRange.location = found.location + found.length
+                    searchRange.length = fullString.length - searchRange.location
+                }
+
+                guard !ranges.isEmpty else { return }
+
+                // Replace in reverse order to preserve earlier range positions
+                textView.undoManager?.beginUndoGrouping()
+                for range in ranges.reversed() {
+                    if textView.shouldChangeText(in: range, replacementString: replacement) {
+                        storage.replaceCharacters(in: range, with: replacement)
+                        textView.didChangeText()
+                    }
+                }
+                textView.undoManager?.endUndoGrouping()
+                syncText()
             }
 
             // MARK: - Search Highlighting
@@ -2357,10 +2947,16 @@ struct URLPasteOptionMenu: View {
             }
 
             func canHandleFileDrop(_ info: NSDraggingInfo, in textView: NSTextView) -> Bool {
-                guard let urls = fileURLs(from: info) else {
+                guard let urls = fileURLs(from: info), !urls.isEmpty else {
                     return false
                 }
-                return !urls.isEmpty
+                // CSV files are handled inline as tables. Other importable note
+                // formats (PDF, Markdown, etc.) go through NoteImportService.
+                let hasNonCSVImportable = urls.contains { url in
+                    guard let format = NoteImportFormat.from(url: url) else { return false }
+                    return format != .csv
+                }
+                return !hasNonCSVImportable
             }
 
             func handleFileDrop(_ info: NSDraggingInfo, in textView: NSTextView) -> Bool {
@@ -2411,12 +3007,35 @@ struct URLPasteOptionMenu: View {
                     }
                 }
 
+                // CSV files → inline table conversion
+                if url.pathExtension.lowercased() == "csv" {
+                    if let tableData = tableDataFromCSV(at: url) {
+                        insertTable(with: tableData)
+                        return
+                    }
+                }
+
                 if let storedFile = await FileAttachmentStorageManager.shared.saveFile(from: url) {
                     insertFileAttachment(using: storedFile)
                     return
                 }
 
                 NSLog("📄 ingestDroppedURL: Unhandled file type for %@", url.path)
+            }
+
+            /// Parse a CSV file into NoteTableData for inline table insertion.
+            private func tableDataFromCSV(at url: URL) -> NoteTableData? {
+                guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+                let rows = text.components(separatedBy: .newlines).filter { !$0.isEmpty }
+                guard !rows.isEmpty else { return nil }
+
+                let parsedRows = rows.map { NoteImportService.parseCSVRow($0) }
+                let maxColumns = parsedRows.map { $0.count }.max() ?? 1
+                let normalizedRows = parsedRows.map { row in
+                    row + Array(repeating: "", count: max(0, maxColumns - row.count))
+                }
+                let widths = Array(repeating: NoteTableData.defaultColumnWidth, count: maxColumns)
+                return NoteTableData(columns: maxColumns, cells: normalizedRows, columnWidths: widths)
             }
 
             private func isImageURL(_ url: URL) -> Bool {
@@ -2546,6 +3165,9 @@ struct URLPasteOptionMenu: View {
                 // Mark deferred so completeDeferredSetup can upgrade the host later
                 // if an NSScrollView appears (better coordinate system).
                 updateImageOverlays(in: textView)
+                updateTableOverlays(in: textView)
+                updateCalloutOverlays(in: textView)
+                updateCodeBlockOverlays(in: textView)
                 needsDeferredOverlaySetup = true
             }
 
@@ -2576,8 +3198,11 @@ struct URLPasteOptionMenu: View {
                 textView.setSelectedRange(selectedRange)
 
                 isUpdating = false
-                // Ensure image overlays are created for deserialized attachments
+                // Ensure overlays are created for deserialized attachments
                 updateImageOverlays(in: textView)
+                updateTableOverlays(in: textView)
+                updateCalloutOverlays(in: textView)
+                updateCodeBlockOverlays(in: textView)
             }
 
             func textDidChange(_ notification: Notification) {
@@ -2612,11 +3237,31 @@ struct URLPasteOptionMenu: View {
                     // inherits the formatting of its immediate left neighbour.
                     if let storage = textView.textStorage, storage.length > 0 {
                         let sel = textView.selectedRange()
-                        let loc = sel.location > 0 ? min(sel.location - 1, storage.length - 1) : 0
+                        var loc = sel.location > 0 ? min(sel.location - 1, storage.length - 1) : 0
+                        // When cursor is at a paragraph boundary (right after \n),
+                        // loc points to the previous paragraph. If the CURRENT paragraph
+                        // is a block quote, we must read from the current paragraph instead
+                        // so the indent / block quote attributes aren't lost.
+                        let str = storage.string as NSString
+                        if sel.location > 0,
+                           sel.location < storage.length,
+                           str.character(at: sel.location - 1) == 0x0A,
+                           storage.attribute(.blockQuote, at: sel.location, effectiveRange: nil) as? Bool == true {
+                            loc = sel.location
+                        }
                         var attrs = storage.attributes(at: loc, effectiveRange: nil)
+                        // Strip notelink attributes so typed text after a mention
+                        // doesn't inherit them — prevents ghost duplication on serialize.
+                        attrs.removeValue(forKey: .notelinkID)
+                        attrs.removeValue(forKey: .notelinkTitle)
                         // Ensure adaptive text color for non-custom ranges
                         if attrs[TextFormattingManager.customTextColorKey] as? Bool != true {
-                            attrs[.foregroundColor] = NSColor.labelColor
+                            // Block quote text uses muted color — preserve it
+                            if attrs[.blockQuote] as? Bool == true {
+                                attrs[.foregroundColor] = NSColor.labelColor.withAlphaComponent(0.7)
+                            } else {
+                                attrs[.foregroundColor] = NSColor.labelColor
+                            }
                         }
                         textView.typingAttributes = attrs
                     } else {
@@ -2634,6 +3279,13 @@ struct URLPasteOptionMenu: View {
                 _ textView: NSTextView, shouldChangeTextIn affectedCharRange: NSRange,
                 replacementString: String?
             ) -> Bool {
+                // Check for "@" to trigger note picker
+                if replacementString == "@" {
+                    showNotePickerAtCursor(
+                        textView: textView, insertLocation: affectedCharRange.location)
+                    return true  // Allow the "@" to be typed
+                }
+
                 // Check for "/" to trigger command menu
                 if replacementString == "/" {
                     // Show command menu at cursor position
@@ -2683,6 +3335,190 @@ struct URLPasteOptionMenu: View {
                     return false
                 }
 
+                // Check for Enter key in numbered list paragraph
+                if replacementString == "\n", let olNum = orderedListNumber(at: affectedCharRange) {
+                    let storage = textView.textStorage!
+                    let loc = max(0, min(storage.length, affectedCharRange.location))
+                    let paraRange = (storage.string as NSString).paragraphRange(
+                        for: NSRange(location: loc, length: 0))
+                    let prefixLen = orderedListPrefixLength(for: olNum)
+                    let contentStart = paraRange.location + prefixLen
+                    let contentText: String
+                    if contentStart < NSMaxRange(paraRange) && contentStart < storage.length {
+                        let contentRange = NSRange(
+                            location: contentStart,
+                            length: NSMaxRange(paraRange) - contentStart)
+                        contentText = (storage.string as NSString)
+                            .substring(with: contentRange)
+                            .trimmingCharacters(in: .whitespacesAndNewlines)
+                    } else {
+                        contentText = ""
+                    }
+
+                    if contentText.isEmpty {
+                        // Empty numbered list item — exit list mode
+                        isUpdating = true
+                        let deleteStart = paraRange.location > 0 ? paraRange.location - 1 : paraRange.location
+                        let deleteLen = min(
+                            paraRange.length + (paraRange.location > 0 ? 1 : 0),
+                            storage.length - deleteStart)
+                        storage.replaceCharacters(
+                            in: NSRange(location: deleteStart, length: deleteLen),
+                            with: "\n")
+                        textView.setSelectedRange(NSRange(location: deleteStart + 1, length: 0))
+                        isUpdating = false
+                        syncText()
+                        return false
+                    }
+
+                    // Insert next numbered list item
+                    let nextNum = olNum + 1
+                    let nextPrefix = "\(nextNum). "
+                    let insertionPoint = affectedCharRange.location
+                    isUpdating = true
+                    storage.beginEditing()
+                    storage.replaceCharacters(
+                        in: NSRange(location: insertionPoint, length: 0),
+                        with: "\n" + nextPrefix)
+                    let prefixRange = NSRange(
+                        location: insertionPoint + 1,
+                        length: nextPrefix.count)
+                    storage.addAttribute(.orderedListNumber, value: nextNum, range: prefixRange)
+                    // Apply body font to the prefix
+                    let bodyFont = FontManager.bodyNS()
+                    storage.addAttribute(.font, value: bodyFont, range: prefixRange)
+                    storage.addAttribute(.foregroundColor, value: NSColor.labelColor, range: prefixRange)
+                    storage.endEditing()
+                    textView.setSelectedRange(
+                        NSRange(location: insertionPoint + 1 + nextPrefix.count, length: 0))
+                    isUpdating = false
+                    syncText()
+                    return false
+                }
+
+                // Check for Enter key in bullet list paragraph
+                if replacementString == "\n", isInBulletParagraph(range: affectedCharRange) {
+                    let storage = textView.textStorage!
+                    let loc = max(0, min(storage.length, affectedCharRange.location))
+                    let paraRange = (storage.string as NSString).paragraphRange(
+                        for: NSRange(location: loc, length: 0))
+                    // Bullet structure: "• " + text + optional "\n"
+                    let bulletPrefixLen = 2
+                    let contentStart = paraRange.location + bulletPrefixLen
+                    let contentText: String
+                    if contentStart < NSMaxRange(paraRange) && contentStart < storage.length {
+                        let contentRange = NSRange(
+                            location: contentStart,
+                            length: NSMaxRange(paraRange) - contentStart)
+                        contentText = (storage.string as NSString)
+                            .substring(with: contentRange)
+                            .trimmingCharacters(in: .whitespacesAndNewlines)
+                    } else {
+                        contentText = ""
+                    }
+
+                    if contentText.isEmpty {
+                        // Empty bullet — remove it and exit bullet mode
+                        isUpdating = true
+                        let deleteStart = paraRange.location > 0 ? paraRange.location - 1 : paraRange.location
+                        let deleteLen = min(
+                            paraRange.length + (paraRange.location > 0 ? 1 : 0),
+                            storage.length - deleteStart)
+                        storage.replaceCharacters(
+                            in: NSRange(location: deleteStart, length: deleteLen),
+                            with: "\n")
+                        textView.setSelectedRange(NSRange(location: deleteStart + 1, length: 0))
+                        isUpdating = false
+                        syncText()
+                        return false
+                    }
+
+                    // Insert new bullet on next line
+                    let bulletPrefix = "• "
+                    let insertionPoint = affectedCharRange.location
+                    isUpdating = true
+                    storage.beginEditing()
+                    storage.replaceCharacters(
+                        in: NSRange(location: insertionPoint, length: 0),
+                        with: "\n" + bulletPrefix)
+                    let prefixRange = NSRange(
+                        location: insertionPoint + 1,
+                        length: bulletPrefix.count)
+                    let bodyFont = FontManager.bodyNS()
+                    storage.addAttribute(.font, value: bodyFont, range: prefixRange)
+                    storage.addAttribute(.foregroundColor, value: NSColor.labelColor, range: prefixRange)
+                    storage.endEditing()
+                    textView.setSelectedRange(
+                        NSRange(location: insertionPoint + 1 + bulletPrefix.count, length: 0))
+                    isUpdating = false
+                    syncText()
+                    return false
+                }
+
+                // Check for Enter key in block quote paragraph
+                if replacementString == "\n",
+                   isInBlockQuoteParagraph(range: affectedCharRange) {
+                    let storage = textView.textStorage!
+                    let loc = max(0, min(storage.length, affectedCharRange.location))
+                    let paraRange = (storage.string as NSString).paragraphRange(
+                        for: NSRange(location: loc, length: 0))
+
+                    // Content is everything in the paragraph except the trailing \n
+                    let contentLen = max(0, paraRange.length - 1)
+                    let contentText = contentLen > 0
+                        ? (storage.string as NSString)
+                            .substring(with: NSRange(location: paraRange.location, length: contentLen))
+                            .trimmingCharacters(in: .whitespacesAndNewlines)
+                        : ""
+
+                    if contentText.isEmpty {
+                        // Empty block quote line — exit quote mode
+                        isUpdating = true
+                        storage.beginEditing()
+                        storage.removeAttribute(.blockQuote, range: paraRange)
+                        let resetStyle = Self.baseParagraphStyle().mutableCopy() as! NSMutableParagraphStyle
+                        storage.addAttribute(.paragraphStyle, value: resetStyle, range: paraRange)
+                        storage.addAttribute(.foregroundColor, value: NSColor.labelColor, range: paraRange)
+                        storage.endEditing()
+                        textView.setSelectedRange(NSRange(location: paraRange.location, length: 0))
+                        isUpdating = false
+                        syncText()
+                        return false
+                    }
+
+                    // Non-empty line — insert \n and apply block quote to the new paragraph
+                    let insertionPoint = affectedCharRange.location
+                    isUpdating = true
+                    storage.beginEditing()
+                    storage.replaceCharacters(
+                        in: NSRange(location: insertionPoint, length: 0), with: "\n")
+                    let newParaStart = insertionPoint + 1
+                    let safeLen = min(1, storage.length - newParaStart)
+                    if safeLen > 0 {
+                        let newRange = NSRange(location: newParaStart, length: safeLen)
+                        storage.addAttribute(.blockQuote, value: true, range: newRange)
+                        storage.addAttribute(
+                            .paragraphStyle,
+                            value: Self.blockQuoteParagraphStyle(),
+                            range: newRange)
+                        storage.addAttribute(
+                            .foregroundColor,
+                            value: NSColor.labelColor.withAlphaComponent(0.7),
+                            range: newRange)
+                    }
+                    storage.endEditing()
+                    textView.setSelectedRange(NSRange(location: newParaStart, length: 0))
+                    // Set typing attributes so next typed character inherits quote style
+                    var typingAttrs = Self.baseTypingAttributes(for: currentColorScheme)
+                    typingAttrs[.blockQuote] = true
+                    typingAttrs[.paragraphStyle] = Self.blockQuoteParagraphStyle()
+                    typingAttrs[.foregroundColor] = NSColor.labelColor.withAlphaComponent(0.7)
+                    textView.typingAttributes = typingAttrs
+                    isUpdating = false
+                    syncText()
+                    return false
+                }
+
                 // Smart backspace: delete an empty todo paragraph entirely
                 if replacementString == "" {
                     let storage = textView.textStorage!
@@ -2713,6 +3549,90 @@ struct URLPasteOptionMenu: View {
                             isUpdating = true
                             storage.replaceCharacters(in: safeRange, with: "")
                             textView.setSelectedRange(NSRange(location: safeRange.location, length: 0))
+                            isUpdating = false
+                            syncText()
+                            return false
+                        }
+                    }
+
+                    // Smart backspace for numbered list: remove prefix when cursor is at or before content
+                    if let olNum = orderedListNumber(at: affectedCharRange) {
+                        let loc = max(0, min(storage.length, affectedCharRange.location))
+                        let paraRange = (storage.string as NSString).paragraphRange(
+                            for: NSRange(location: loc, length: 0))
+                        let prefixLen = orderedListPrefixLength(for: olNum)
+                        let contentStart = paraRange.location + prefixLen
+                        let cursorAtOrBeforeContent = affectedCharRange.location <= contentStart
+
+                        if cursorAtOrBeforeContent {
+                            // Remove the "N. " prefix, keep the content
+                            let prefixRange = NSRange(location: paraRange.location, length: min(prefixLen, paraRange.length))
+                            isUpdating = true
+                            storage.replaceCharacters(in: prefixRange, with: "")
+                            textView.setSelectedRange(NSRange(location: paraRange.location, length: 0))
+                            isUpdating = false
+                            syncText()
+                            return false
+                        }
+                    }
+
+                    // Smart backspace for bullet list: remove "• " prefix when cursor is at or before content
+                    if isInBulletParagraph(range: affectedCharRange) {
+                        let loc = max(0, min(storage.length, affectedCharRange.location))
+                        let paraRange = (storage.string as NSString).paragraphRange(
+                            for: NSRange(location: loc, length: 0))
+                        let bulletPrefixLen = 2
+                        let contentStart = paraRange.location + bulletPrefixLen
+                        let cursorAtOrBeforeContent = affectedCharRange.location <= contentStart
+
+                        if cursorAtOrBeforeContent {
+                            let prefixRange = NSRange(location: paraRange.location, length: min(bulletPrefixLen, paraRange.length))
+                            isUpdating = true
+                            storage.replaceCharacters(in: prefixRange, with: "")
+                            textView.setSelectedRange(NSRange(location: paraRange.location, length: 0))
+                            isUpdating = false
+                            syncText()
+                            return false
+                        }
+                    }
+
+                    // Smart backspace for block quote: strip formatting when paragraph is empty
+                    // or cursor is at the very start of the paragraph.
+                    //
+                    // Must use the CURSOR position (selectedRange), NOT affectedCharRange.
+                    // When cursor is at the start of a block quote, affectedCharRange points
+                    // to the previous paragraph's trailing \n, which has no .blockQuote
+                    // attribute — causing the entire handler to be skipped and the wrong
+                    // character to be deleted instead.
+                    let cursorPos = textView.selectedRange().location
+                    if cursorPos > 0,
+                       isInBlockQuoteParagraph(range: NSRange(location: cursorPos, length: 0)) {
+                        let paLoc = max(0, min(storage.length, cursorPos))
+                        let paraRange = (storage.string as NSString).paragraphRange(
+                            for: NSRange(location: paLoc, length: 0))
+                        let contentLen = max(0, paraRange.length - 1)
+                        let contentText = contentLen > 0
+                            ? (storage.string as NSString).substring(with: NSRange(location: paraRange.location, length: contentLen))
+                            : ""
+                        // cursorAtStart: cursor is at or before the first character of the paragraph.
+                        // Use cursorPos (not affectedCharRange.location) to avoid the off-by-one
+                        // that fires on deletion of the first actual character in the paragraph.
+                        let cursorAtStart = cursorPos <= paraRange.location
+
+                        if contentText.isEmpty || cursorAtStart {
+                            isUpdating = true
+                            storage.beginEditing()
+                            storage.removeAttribute(.blockQuote, range: paraRange)
+                            storage.enumerateAttribute(.paragraphStyle, in: paraRange, options: []) { value, subRange, _ in
+                                let style = (value as? NSParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle
+                                    ?? NSMutableParagraphStyle()
+                                style.firstLineHeadIndent = 0
+                                style.headIndent = 0
+                                storage.addAttribute(.paragraphStyle, value: style, range: subRange)
+                            }
+                            storage.addAttribute(.foregroundColor, value: NSColor.labelColor, range: paraRange)
+                            storage.endEditing()
+                            textView.setSelectedRange(NSRange(location: paraRange.location, length: 0))
                             isUpdating = false
                             syncText()
                             return false
@@ -2756,16 +3676,17 @@ struct URLPasteOptionMenu: View {
                 }
 
                 if contentText.isEmpty {
-                    // Exit todo mode
+                    // Exit todo mode: strip the checkbox content from this paragraph,
+                    // keeping the trailing newline so the empty line stays visible as a
+                    // regular paragraph. Deleting the whole paragraph would collapse the
+                    // line and shrink the editor — the opposite of what pressing Enter
+                    // on an empty line should do.
                     isUpdating = true
-                    let deleteStart = paraRange.location > 0 ? paraRange.location - 1 : paraRange.location
-                    let deleteLen = min(
-                        paraRange.length + (paraRange.location > 0 ? 1 : 0),
-                        storage.length - deleteStart)
+                    let contentOnlyLen = max(0, paraRange.length - 1)  // exclude trailing \n
                     storage.replaceCharacters(
-                        in: NSRange(location: deleteStart, length: deleteLen),
-                        with: "\n")
-                    textView.setSelectedRange(NSRange(location: deleteStart + 1, length: 0))
+                        in: NSRange(location: paraRange.location, length: contentOnlyLen),
+                        with: "")
+                    textView.setSelectedRange(NSRange(location: paraRange.location, length: 0))
                     isUpdating = false
                     syncText()
                     return true
@@ -2866,6 +3787,114 @@ struct URLPasteOptionMenu: View {
                 )
             }
 
+            /// Shows the note picker at the current cursor position
+            private func showNotePickerAtCursor(textView: NSTextView, insertLocation: Int) {
+                guard let layoutManager = textView.layoutManager,
+                    let textContainer = textView.textContainer
+                else { return }
+
+                let glyphIndex = layoutManager.glyphIndexForCharacter(at: insertLocation)
+                let glyphRect = layoutManager.boundingRect(
+                    forGlyphRange: NSRange(location: glyphIndex, length: 1), in: textContainer)
+
+                let cursorX = glyphRect.origin.x + textView.textContainerOrigin.x
+                let cursorY = glyphRect.origin.y + textView.textContainerOrigin.y
+                let cursorHeight = glyphRect.height
+
+                let visibleRect = textView.visibleRect
+                let menuGap: CGFloat = 4
+                let safetyMargin: CGFloat = 20
+                let menuContentHeight = NotePickerLayout.idealHeight(for: 6)  // assume ~6 items
+                let menuHeight = menuContentHeight + NotePickerLayout.outerPadding * 2
+                let menuWidth = NotePickerLayout.width + NotePickerLayout.outerPadding * 2
+
+                let cursorBottomY = cursorY + cursorHeight
+                let spaceBelow = visibleRect.maxY - cursorBottomY
+                let shouldShowAbove = spaceBelow < (menuHeight + menuGap + safetyMargin)
+
+                var xPosition = cursorX
+                var yPosition: CGFloat
+                if shouldShowAbove {
+                    yPosition = cursorY - menuHeight - menuGap
+                } else {
+                    yPosition = cursorY + cursorHeight + menuGap
+                }
+
+                // Clamp X
+                let minX = visibleRect.minX + safetyMargin
+                let maxX = visibleRect.maxX - menuWidth - safetyMargin
+                if minX <= maxX {
+                    xPosition = min(max(xPosition, minX), maxX)
+                } else {
+                    xPosition = max(visibleRect.minX + menuGap, visibleRect.maxX - menuWidth - menuGap)
+                }
+
+                // Clamp Y
+                let minY = visibleRect.minY + safetyMargin
+                let maxY = visibleRect.maxY - menuHeight - safetyMargin
+                if minY <= maxY {
+                    yPosition = min(max(yPosition, minY), maxY)
+                } else {
+                    yPosition = max(visibleRect.minY + menuGap, visibleRect.maxY - menuHeight - menuGap)
+                }
+
+                let menuPosition = CGPoint(x: xPosition, y: yPosition)
+
+                NotificationCenter.default.post(
+                    name: .showNotePicker,
+                    object: [
+                        "position": menuPosition,
+                        "atLocation": insertLocation
+                    ],
+                    userInfo: editorInstanceID.map { ["editorInstanceID": $0] }
+                )
+            }
+
+            /// Inserts a notelink at the position where "@" was typed, replacing "@" + filter text
+            private func insertNoteLink(noteID: UUID, title: String, atLocation: Int, filterLength: Int) {
+                guard let textView = self.textView,
+                      let textStorage = textView.textStorage else { return }
+
+                // Validate the deletion range before touching the storage
+                let deleteLength = min(1 + filterLength, textStorage.length - atLocation)
+                guard atLocation >= 0 && atLocation < textStorage.length && deleteLength > 0 else { return }
+
+                // Build the notelink attachment (atomic pill badge)
+                let attachment = NotelinkAttachment(noteID: noteID.uuidString, noteTitle: title)
+                let notelinkString = NSMutableAttributedString(attachment: attachment)
+                notelinkString.addAttributes([
+                    .notelinkID: noteID.uuidString,
+                    .notelinkTitle: title,
+                ], range: NSRange(location: 0, length: notelinkString.length))
+
+                let spaceStr = NSAttributedString(string: " ", attributes: Self.baseTypingAttributes(for: nil))
+                let combined = NSMutableAttributedString()
+                combined.append(notelinkString)
+                combined.append(spaceStr)
+
+                // Single atomic edit: delete "@" + filter, then insert attachment + space.
+                // Wrapping in isUpdating prevents textDidChange → syncText() from firing
+                // mid-operation, which caused the double-rendering bug.
+                let deleteRange = NSRange(location: atLocation, length: deleteLength)
+                if textView.shouldChangeText(in: deleteRange, replacementString: combined.string) {
+                    isUpdating = true
+                    textStorage.beginEditing()
+                    textStorage.replaceCharacters(in: deleteRange, with: combined)
+                    textStorage.endEditing()
+                    textView.didChangeText()
+                    isUpdating = false
+                }
+
+                // Move cursor to after the trailing space
+                let newCursorPos = atLocation + combined.length
+                textView.setSelectedRange(NSRange(location: newCursorPos, length: 0))
+
+                // Reset typing attributes to normal body text
+                textView.typingAttributes = Self.baseTypingAttributes(for: nil)
+
+                syncText()
+            }
+
             /// Handles command menu tool application
             private func handleCommandMenuToolApplication(_ notification: Notification) {
                 guard let info = notification.object as? [String: Any],
@@ -2900,7 +3929,7 @@ struct URLPasteOptionMenu: View {
 
             // MARK: - Todo Handling
 
-            private func insertTodo() {
+            fileprivate func insertTodo() {
                 guard let textView = textView else { return }
                 let attachment = NSTextAttachment()
                 let cell = TodoCheckboxAttachmentCell(isChecked: false)
@@ -3109,6 +4138,204 @@ struct URLPasteOptionMenu: View {
                 syncText()
             }
 
+            // MARK: - Table Attachment
+
+            private func makeTableAttachment(tableData: NoteTableData) -> NSMutableAttributedString {
+                var containerWidth = textView?.textContainer?.containerSize.width ?? 400
+                if containerWidth < 1 { containerWidth = 400 }
+                let tableWidth = min(tableData.contentWidth, containerWidth)
+
+                let rowHeight: CGFloat = 36
+                let tableHeight = CGFloat(tableData.rows) * rowHeight + 1  // +1 for border
+
+                let attachment = NoteTableAttachment(tableData: tableData)
+                let cellSize = CGSize(width: tableWidth, height: tableHeight)
+                attachment.attachmentCell = TableSizeAttachmentCell(size: cellSize)
+                attachment.bounds = CGRect(origin: .zero, size: cellSize)
+
+                let attributed = NSMutableAttributedString(attachment: attachment)
+                let range = NSRange(location: 0, length: attributed.length)
+
+                // Block paragraph style — spacingBefore must accommodate the column grab handles
+                // that render above the table (overlayInsets.top = 26pt)
+                let blockStyle = NSMutableParagraphStyle()
+                blockStyle.alignment = .left
+                blockStyle.paragraphSpacing = 8
+                blockStyle.paragraphSpacingBefore = 30
+                attributed.addAttribute(.paragraphStyle, value: blockStyle, range: range)
+
+                return attributed
+            }
+
+            private func insertTable() {
+                insertTable(with: NoteTableData.empty())
+            }
+
+            private func insertTable(with tableData: NoteTableData) {
+                guard let textView = textView,
+                      let textStorage = textView.textStorage else { return }
+
+                let baseAttrs = Self.baseTypingAttributes(for: currentColorScheme)
+                let composed = NSMutableAttributedString()
+
+                let insertAt = min(textView.selectedRange().location, textStorage.length)
+                let nsString = textStorage.string as NSString
+
+                // Ensure we start on a new line
+                if insertAt > 0 {
+                    let prevChar = nsString.character(at: insertAt - 1)
+                    if let scalar = Unicode.Scalar(prevChar),
+                       !CharacterSet.newlines.contains(scalar) {
+                        composed.append(NSAttributedString(string: "\n", attributes: baseAttrs))
+                    }
+                }
+
+                // Block-level table attachment
+                let tableAttrib = makeTableAttachment(tableData: tableData)
+                composed.append(tableAttrib)
+
+                // Newline after so the cursor lands on the next line
+                composed.append(NSAttributedString(string: "\n", attributes: baseAttrs))
+
+                let replaceRange = NSRange(location: insertAt, length: 0)
+                if textView.shouldChangeText(in: replaceRange, replacementString: composed.string) {
+                    isUpdating = true
+                    textStorage.beginEditing()
+                    textStorage.replaceCharacters(in: replaceRange, with: composed)
+                    textStorage.endEditing()
+                    textView.setSelectedRange(NSRange(location: insertAt + composed.length, length: 0))
+                    textView.didChangeText()
+                    isUpdating = false
+                }
+
+                updateTableOverlays(in: textView)
+                syncText()
+            }
+
+            // MARK: - Callout Insertion
+
+            private func makeCalloutAttachment(calloutData: CalloutData, initialWidth: CGFloat? = nil) -> NSMutableAttributedString {
+                // Fill container width; minimum 400pt
+                var containerWidth = textView?.textContainer?.containerSize.width ?? CalloutOverlayView.minWidth
+                if containerWidth < 1 { containerWidth = CalloutOverlayView.minWidth }
+                let calloutWidth = max(CalloutOverlayView.minWidth, containerWidth)
+
+                let calloutHeight = CalloutOverlayView.heightForData(calloutData, width: calloutWidth)
+
+                let attachment = NoteCalloutAttachment(calloutData: calloutData)
+                let cellSize = CGSize(width: calloutWidth, height: calloutHeight)
+                attachment.attachmentCell = CalloutSizeAttachmentCell(size: cellSize)
+                attachment.bounds = CGRect(origin: .zero, size: cellSize)
+
+                let attributed = NSMutableAttributedString(attachment: attachment)
+                let range = NSRange(location: 0, length: attributed.length)
+
+                let blockStyle = NSMutableParagraphStyle()
+                blockStyle.alignment = .left
+                blockStyle.paragraphSpacing = 8
+                blockStyle.paragraphSpacingBefore = 8
+                attributed.addAttribute(.paragraphStyle, value: blockStyle, range: range)
+
+                return attributed
+            }
+
+            private func insertCallout(type: CalloutData.CalloutType = .info) {
+                let data = CalloutData.empty(type: type)
+                guard let textView = textView,
+                      let textStorage = textView.textStorage else { return }
+
+                let baseAttrs = Self.baseTypingAttributes(for: currentColorScheme)
+                let composed = NSMutableAttributedString()
+
+                let insertAt = min(textView.selectedRange().location, textStorage.length)
+                let nsString = textStorage.string as NSString
+
+                if insertAt > 0 {
+                    let prevChar = nsString.character(at: insertAt - 1)
+                    if let scalar = Unicode.Scalar(prevChar),
+                       !CharacterSet.newlines.contains(scalar) {
+                        composed.append(NSAttributedString(string: "\n", attributes: baseAttrs))
+                    }
+                }
+
+                let calloutAttrib = makeCalloutAttachment(calloutData: data)
+                composed.append(calloutAttrib)
+                composed.append(NSAttributedString(string: "\n", attributes: baseAttrs))
+
+                let replaceRange = NSRange(location: insertAt, length: 0)
+                if textView.shouldChangeText(in: replaceRange, replacementString: composed.string) {
+                    isUpdating = true
+                    textStorage.beginEditing()
+                    textStorage.replaceCharacters(in: replaceRange, with: composed)
+                    textStorage.endEditing()
+                    textView.setSelectedRange(NSRange(location: insertAt + composed.length, length: 0))
+                    textView.didChangeText()
+                    isUpdating = false
+                }
+
+                updateCalloutOverlays(in: textView)
+                updateCodeBlockOverlays(in: textView)
+                syncText()
+            }
+
+            // MARK: - Code Block Insertion
+
+            private func makeCodeBlockAttachment(codeBlockData: CodeBlockData) -> NSMutableAttributedString {
+                var containerWidth = textView?.textContainer?.containerSize.width ?? CodeBlockOverlayView.minWidth
+                if containerWidth < 1 { containerWidth = CodeBlockOverlayView.minWidth }
+                let blockWidth = max(CodeBlockOverlayView.minWidth, containerWidth)
+                let size = CGSize(width: blockWidth, height: CodeBlockOverlayView.defaultHeight)
+                let attachment = NoteCodeBlockAttachment(codeBlockData: codeBlockData)
+                attachment.attachmentCell = CodeBlockSizeAttachmentCell(size: size)
+                attachment.bounds = CGRect(origin: .zero, size: size)
+
+                let attributed = NSMutableAttributedString(attachment: attachment)
+                let range = NSRange(location: 0, length: attributed.length)
+                let blockStyle = NSMutableParagraphStyle()
+                blockStyle.alignment = .left
+                blockStyle.paragraphSpacing = 8
+                blockStyle.paragraphSpacingBefore = 8
+                attributed.addAttribute(.paragraphStyle, value: blockStyle, range: range)
+                return attributed
+            }
+
+            private func insertCodeBlock() {
+                let data = CodeBlockData.empty()
+                guard let textView = textView,
+                      let textStorage = textView.textStorage else { return }
+
+                let baseAttrs = Self.baseTypingAttributes(for: currentColorScheme)
+                let composed = NSMutableAttributedString()
+
+                let insertAt = min(textView.selectedRange().location, textStorage.length)
+                let nsString = textStorage.string as NSString
+
+                if insertAt > 0 {
+                    let prevChar = nsString.character(at: insertAt - 1)
+                    if let scalar = Unicode.Scalar(prevChar),
+                       !CharacterSet.newlines.contains(scalar) {
+                        composed.append(NSAttributedString(string: "\n", attributes: baseAttrs))
+                    }
+                }
+
+                composed.append(makeCodeBlockAttachment(codeBlockData: data))
+                composed.append(NSAttributedString(string: "\n", attributes: baseAttrs))
+
+                let replaceRange = NSRange(location: insertAt, length: 0)
+                if textView.shouldChangeText(in: replaceRange, replacementString: composed.string) {
+                    isUpdating = true
+                    textStorage.beginEditing()
+                    textStorage.replaceCharacters(in: replaceRange, with: composed)
+                    textStorage.endEditing()
+                    textView.setSelectedRange(NSRange(location: insertAt + composed.length, length: 0))
+                    textView.didChangeText()
+                    isUpdating = false
+                }
+
+                updateCodeBlockOverlays(in: textView)
+                syncText()
+            }
+
             private func insertFileAttachment(
                 using storedFile: FileAttachmentStorageManager.StoredFile
             ) {
@@ -3217,6 +4444,9 @@ struct URLPasteOptionMenu: View {
                 textBinding.wrappedValue = lastSerialized
                 isUpdating = false
                 updateImageOverlays(in: textView)
+                updateTableOverlays(in: textView)
+                updateCalloutOverlays(in: textView)
+                updateCodeBlockOverlays(in: textView)
             }
 
             // MARK: - Inline Image Overlay Management
@@ -3363,6 +4593,418 @@ struct URLPasteOptionMenu: View {
                 }
             }
 
+            // MARK: - Inline Table Overlay Management
+
+            func updateTableOverlays(in textView: NSTextView) {
+                guard let textStorage = textView.textStorage,
+                      let layoutManager = textView.layoutManager,
+                      let textContainer = textView.textContainer else {
+                    return
+                }
+
+                let hostView: NSView = textView
+
+                var seenIDs = Set<ObjectIdentifier>()
+                let fullRange = NSRange(location: 0, length: textStorage.length)
+                guard fullRange.length > 0 else {
+                    tableOverlays.values.forEach { $0.removeFromSuperview() }
+                    tableOverlays.removeAll()
+                    return
+                }
+
+                let rowHeight: CGFloat = 36
+
+                textStorage.enumerateAttribute(.attachment, in: fullRange, options: []) { val, range, _ in
+                    guard let attachment = val as? NoteTableAttachment else { return }
+                    let id = ObjectIdentifier(attachment)
+                    seenIDs.insert(id)
+
+                    // Correct size drift (row/column count may have changed).
+                    let containerWidth = textContainer.containerSize.width > 0 ? textContainer.containerSize.width : 400
+                    let expectedWidth = min(attachment.tableData.contentWidth, containerWidth)
+                    let expectedHeight = CGFloat(attachment.tableData.rows) * rowHeight + 1
+                    let sizeDrift = abs(attachment.bounds.height - expectedHeight) + abs(attachment.bounds.width - expectedWidth)
+                    if sizeDrift > 1 {
+                        let newSize = CGSize(width: expectedWidth, height: expectedHeight)
+                        attachment.attachmentCell = TableSizeAttachmentCell(size: newSize)
+                        attachment.bounds = CGRect(origin: .zero, size: newSize)
+                        layoutManager.invalidateLayout(forCharacterRange: range, actualCharacterRange: nil)
+                    }
+
+                    let glyphRange = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+                    if glyphRange.length > 0 {
+                        layoutManager.ensureLayout(forGlyphRange: glyphRange)
+                    }
+
+                    guard glyphRange.length > 0 else { return }
+                    let glyphRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+
+                    let overlayRect = CGRect(
+                        x: glyphRect.origin.x + textView.textContainerOrigin.x,
+                        y: glyphRect.origin.y + textView.textContainerOrigin.y,
+                        width: attachment.bounds.width,
+                        height: attachment.bounds.height
+                    )
+
+                    // Create or reuse overlay
+                    let overlay: NoteTableOverlayView
+                    if let existing = tableOverlays[id] {
+                        overlay = existing
+                        overlay.tableData = attachment.tableData
+                    } else {
+                        overlay = NoteTableOverlayView(tableData: attachment.tableData)
+                        overlay.parentTextView = textView
+
+                        overlay.onDataChanged = { [weak self, weak textStorage, weak textView, weak attachment] newData in
+                            guard let self = self, let ts = textStorage, let tv = textView, let att = attachment else { return }
+                            att.tableData = newData
+
+                            // Recalculate attachment size from content width
+                            let newHeight = CGFloat(newData.rows) * rowHeight + 1
+                            let containerWidth = tv.textContainer?.containerSize.width ?? 400
+                            let newWidth = min(newData.contentWidth, containerWidth)
+                            let newSize = CGSize(width: newWidth, height: newHeight)
+                            att.attachmentCell = TableSizeAttachmentCell(size: newSize)
+                            att.bounds = CGRect(origin: .zero, size: newSize)
+
+                            // Invalidate layout for the attachment character
+                            let fr = NSRange(location: 0, length: ts.length)
+                            ts.enumerateAttribute(.attachment, in: fr, options: []) { val, charRange, stop in
+                                if val as AnyObject === att {
+                                    tv.layoutManager?.invalidateLayout(forCharacterRange: charRange, actualCharacterRange: nil)
+                                    stop.pointee = true
+                                }
+                            }
+
+                            self.syncText()
+                        }
+
+                        overlay.onDeleteTable = { [weak self, weak textStorage, weak textView, weak attachment] in
+                            guard let self = self, let ts = textStorage, let tv = textView, let att = attachment else { return }
+                            let fr = NSRange(location: 0, length: ts.length)
+                            ts.enumerateAttribute(.attachment, in: fr, options: []) { val, charRange, stop in
+                                if val as AnyObject === att {
+                                    // Delete attachment char and surrounding newlines
+                                    var deleteStart = charRange.location
+                                    var deleteEnd = charRange.location + charRange.length
+                                    let nsString = ts.string as NSString
+                                    if deleteStart > 0 {
+                                        let prev = nsString.character(at: deleteStart - 1)
+                                        if let scalar = Unicode.Scalar(prev), CharacterSet.newlines.contains(scalar) {
+                                            deleteStart -= 1
+                                        }
+                                    }
+                                    if deleteEnd < nsString.length {
+                                        let next = nsString.character(at: deleteEnd)
+                                        if let scalar = Unicode.Scalar(next), CharacterSet.newlines.contains(scalar) {
+                                            deleteEnd += 1
+                                        }
+                                    }
+                                    let deleteRange = NSRange(location: deleteStart, length: deleteEnd - deleteStart)
+                                    if tv.shouldChangeText(in: deleteRange, replacementString: "") {
+                                        ts.replaceCharacters(in: deleteRange, with: "")
+                                        tv.didChangeText()
+                                    }
+                                    stop.pointee = true
+                                }
+                            }
+                            self.syncText()
+                        }
+
+                        hostView.addSubview(overlay)
+                        tableOverlays[id] = overlay
+                    }
+
+                    // Expand frame to cover interactive handle areas outside the table rect.
+                    // Without this, NSView.hitTest is never called for out-of-frame handle clicks.
+                    let insets = NoteTableOverlayView.overlayInsets
+                    let expandedRect = CGRect(
+                        x: overlayRect.origin.x - insets.left,
+                        y: overlayRect.origin.y - insets.top,
+                        width: overlayRect.width + insets.left + insets.right,
+                        height: overlayRect.height + insets.top + insets.bottom
+                    )
+                    overlay.frame = expandedRect.integral
+                    overlay.bounds.origin = CGPoint(x: -insets.left, y: -insets.top)
+                    overlay.tableWidth = attachment.bounds.width
+                }
+
+                // Remove overlays for deleted attachments
+                let toRemove = tableOverlays.keys.filter { !seenIDs.contains($0) }
+                for key in toRemove {
+                    tableOverlays[key]?.removeFromSuperview()
+                    tableOverlays.removeValue(forKey: key)
+                }
+            }
+
+            // MARK: - Callout Overlay Management
+
+            func updateCalloutOverlays(in textView: NSTextView) {
+                guard let textStorage = textView.textStorage,
+                      let layoutManager = textView.layoutManager,
+                      let textContainer = textView.textContainer else { return }
+
+                let hostView: NSView = textView
+                var seenIDs = Set<ObjectIdentifier>()
+                let fullRange = NSRange(location: 0, length: textStorage.length)
+                guard fullRange.length > 0 else {
+                    calloutOverlays.values.forEach { $0.removeFromSuperview() }
+                    calloutOverlays.removeAll()
+                    return
+                }
+
+                textStorage.enumerateAttribute(.attachment, in: fullRange, options: []) { val, range, _ in
+                    guard let attachment = val as? NoteCalloutAttachment else { return }
+                    let id = ObjectIdentifier(attachment)
+                    seenIDs.insert(id)
+
+                    // Clamp width to valid range; preserve user-resized width if within bounds
+                    let containerW = max(textContainer.containerSize.width, 100)
+                    let currentWidth = attachment.bounds.width
+                    let needsWidthCorrection = currentWidth < CalloutOverlayView.minWidth || currentWidth > containerW
+                    let correctedWidth = needsWidthCorrection
+                        ? max(CalloutOverlayView.minWidth, min(containerW, currentWidth))
+                        : currentWidth
+                    let expectedHeight = CalloutOverlayView.heightForData(
+                        attachment.calloutData, width: max(correctedWidth, CalloutOverlayView.minWidth))
+                    let heightDrift = abs(attachment.bounds.height - expectedHeight) > 1
+                    if needsWidthCorrection || heightDrift {
+                        let newSize = CGSize(width: correctedWidth, height: expectedHeight)
+                        attachment.attachmentCell = CalloutSizeAttachmentCell(size: newSize)
+                        attachment.bounds = CGRect(origin: .zero, size: newSize)
+                        layoutManager.invalidateLayout(forCharacterRange: range, actualCharacterRange: nil)
+                    }
+
+                    let glyphRange = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+                    if glyphRange.length > 0 { layoutManager.ensureLayout(forGlyphRange: glyphRange) }
+                    guard glyphRange.length > 0 else { return }
+                    let glyphRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+
+                    let overlayRect = CGRect(
+                        x: glyphRect.origin.x + textView.textContainerOrigin.x,
+                        y: glyphRect.origin.y + textView.textContainerOrigin.y,
+                        width: attachment.bounds.width,
+                        height: attachment.bounds.height
+                    )
+
+                    let overlay: CalloutOverlayView
+                    if let existing = calloutOverlays[id] {
+                        overlay = existing
+                        overlay.calloutData = attachment.calloutData
+                    } else {
+                        overlay = CalloutOverlayView(calloutData: attachment.calloutData)
+                        overlay.parentTextView = textView
+
+                        overlay.onDataChanged = { [weak self, weak textStorage, weak attachment] newData in
+                            guard let self = self, let ts = textStorage, let att = attachment else { return }
+                            att.calloutData = newData
+                            let newHeight = CalloutOverlayView.heightForData(newData, width: att.bounds.width)
+                            let newSize = CGSize(width: att.bounds.width, height: newHeight)
+                            att.attachmentCell = CalloutSizeAttachmentCell(size: newSize)
+                            att.bounds = CGRect(origin: .zero, size: newSize)
+                            let fr = NSRange(location: 0, length: ts.length)
+                            ts.enumerateAttribute(.attachment, in: fr, options: []) { val, charRange, stop in
+                                if val as AnyObject === att {
+                                    textView.layoutManager?.invalidateLayout(forCharacterRange: charRange, actualCharacterRange: nil)
+                                    stop.pointee = true
+                                }
+                            }
+                            self.syncText()
+                        }
+
+                        overlay.onDeleteCallout = { [weak self, weak textStorage, weak textView, weak attachment] in
+                            guard let self = self, let ts = textStorage, let tv = textView, let att = attachment else { return }
+                            let fr = NSRange(location: 0, length: ts.length)
+                            ts.enumerateAttribute(.attachment, in: fr, options: []) { val, charRange, stop in
+                                if val as AnyObject === att {
+                                    var deleteStart = charRange.location
+                                    var deleteEnd = charRange.location + charRange.length
+                                    let nsString = ts.string as NSString
+                                    if deleteStart > 0 {
+                                        let prev = nsString.character(at: deleteStart - 1)
+                                        if let scalar = Unicode.Scalar(prev), CharacterSet.newlines.contains(scalar) {
+                                            deleteStart -= 1
+                                        }
+                                    }
+                                    if deleteEnd < nsString.length {
+                                        let next = nsString.character(at: deleteEnd)
+                                        if let scalar = Unicode.Scalar(next), CharacterSet.newlines.contains(scalar) {
+                                            deleteEnd += 1
+                                        }
+                                    }
+                                    let deleteRange = NSRange(location: deleteStart, length: deleteEnd - deleteStart)
+                                    if tv.shouldChangeText(in: deleteRange, replacementString: "") {
+                                        ts.replaceCharacters(in: deleteRange, with: "")
+                                        tv.didChangeText()
+                                    }
+                                    stop.pointee = true
+                                }
+                            }
+                            self.syncText()
+                        }
+
+                        overlay.onWidthChanged = { [weak textStorage, weak layoutManager, weak attachment, weak textView] newWidth in
+                            guard let ts = textStorage, let lm = layoutManager, let att = attachment,
+                                  let tc = textView?.textContainer else { return }
+                            let clamped = max(CalloutOverlayView.minWidth, min(newWidth, tc.containerSize.width))
+                            let newHeight = CalloutOverlayView.heightForData(att.calloutData, width: clamped)
+                            let newSize = CGSize(width: clamped, height: newHeight)
+                            att.attachmentCell = CalloutSizeAttachmentCell(size: newSize)
+                            att.bounds = CGRect(origin: .zero, size: newSize)
+                            let fr = NSRange(location: 0, length: ts.length)
+                            ts.enumerateAttribute(.attachment, in: fr, options: []) { val, charRange, stop in
+                                if val as AnyObject === att {
+                                    lm.invalidateLayout(forCharacterRange: charRange, actualCharacterRange: nil)
+                                    stop.pointee = true
+                                }
+                            }
+                        }
+
+                        hostView.addSubview(overlay)
+                        calloutOverlays[id] = overlay
+                    }
+
+                    overlay.frame = overlayRect.integral
+                }
+
+                let toRemoveCallout = calloutOverlays.keys.filter { !seenIDs.contains($0) }
+                for key in toRemoveCallout {
+                    calloutOverlays[key]?.removeFromSuperview()
+                    calloutOverlays.removeValue(forKey: key)
+                }
+            }
+
+            // MARK: - Code Block Overlay Management
+
+            func updateCodeBlockOverlays(in textView: NSTextView) {
+                guard let textStorage = textView.textStorage,
+                      let layoutManager = textView.layoutManager,
+                      let textContainer = textView.textContainer else { return }
+
+                let hostView: NSView = textView
+                var seenIDs = Set<ObjectIdentifier>()
+                let fullRange = NSRange(location: 0, length: textStorage.length)
+                guard fullRange.length > 0 else {
+                    codeBlockOverlays.values.forEach { $0.removeFromSuperview() }
+                    codeBlockOverlays.removeAll()
+                    return
+                }
+
+                textStorage.enumerateAttribute(.attachment, in: fullRange, options: []) { val, range, _ in
+                    guard let attachment = val as? NoteCodeBlockAttachment else { return }
+                    let id = ObjectIdentifier(attachment)
+                    seenIDs.insert(id)
+
+                    // Clamp width to valid range; preserve user-resized width if within bounds
+                    let containerW = max(textContainer.containerSize.width, 100)
+                    let currentWidth = attachment.bounds.width
+                    let expectedHeight = CodeBlockOverlayView.defaultHeight
+                    let needsCorrection = currentWidth < CodeBlockOverlayView.minWidth
+                        || currentWidth > containerW
+                        || abs(attachment.bounds.height - expectedHeight) > 1
+                    if needsCorrection {
+                        let correctedWidth = max(CodeBlockOverlayView.minWidth, min(containerW, currentWidth))
+                        let newSize = CGSize(width: correctedWidth, height: expectedHeight)
+                        attachment.attachmentCell = CodeBlockSizeAttachmentCell(size: newSize)
+                        attachment.bounds = CGRect(origin: .zero, size: newSize)
+                        layoutManager.invalidateLayout(forCharacterRange: range, actualCharacterRange: nil)
+                    }
+
+                    let glyphRange = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+                    if glyphRange.length > 0 { layoutManager.ensureLayout(forGlyphRange: glyphRange) }
+                    guard glyphRange.length > 0 else { return }
+                    let glyphRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+
+                    let overlayRect = CGRect(
+                        x: glyphRect.origin.x + textView.textContainerOrigin.x,
+                        y: glyphRect.origin.y + textView.textContainerOrigin.y,
+                        width: attachment.bounds.width,
+                        height: attachment.bounds.height
+                    )
+
+                    let overlay: CodeBlockOverlayView
+                    if let existing = codeBlockOverlays[id] {
+                        overlay = existing
+                        overlay.codeBlockData = attachment.codeBlockData
+                    } else {
+                        overlay = CodeBlockOverlayView(codeBlockData: attachment.codeBlockData)
+                        overlay.parentTextView = textView
+
+                        overlay.onDataChanged = { [weak self, weak textStorage, weak attachment] newData in
+                            guard let self = self, let ts = textStorage, let att = attachment else { return }
+                            att.codeBlockData = newData
+                            let fr = NSRange(location: 0, length: ts.length)
+                            ts.enumerateAttribute(.attachment, in: fr, options: []) { val, charRange, stop in
+                                if val as AnyObject === att {
+                                    textView.layoutManager?.invalidateLayout(
+                                        forCharacterRange: charRange, actualCharacterRange: nil)
+                                    stop.pointee = true
+                                }
+                            }
+                            self.syncText()
+                        }
+
+                        overlay.onDeleteCodeBlock = { [weak self, weak textStorage, weak textView, weak attachment] in
+                            guard let self = self, let ts = textStorage,
+                                  let tv = textView, let att = attachment else { return }
+                            let fr = NSRange(location: 0, length: ts.length)
+                            ts.enumerateAttribute(.attachment, in: fr, options: []) { val, charRange, stop in
+                                if val as AnyObject === att {
+                                    var deleteStart = charRange.location
+                                    var deleteEnd = charRange.location + charRange.length
+                                    let nsString = ts.string as NSString
+                                    if deleteStart > 0 {
+                                        let prev = nsString.character(at: deleteStart - 1)
+                                        if let scalar = Unicode.Scalar(prev),
+                                           CharacterSet.newlines.contains(scalar) { deleteStart -= 1 }
+                                    }
+                                    if deleteEnd < nsString.length {
+                                        let next = nsString.character(at: deleteEnd)
+                                        if let scalar = Unicode.Scalar(next),
+                                           CharacterSet.newlines.contains(scalar) { deleteEnd += 1 }
+                                    }
+                                    let deleteRange = NSRange(location: deleteStart,
+                                                             length: deleteEnd - deleteStart)
+                                    if tv.shouldChangeText(in: deleteRange, replacementString: "") {
+                                        ts.replaceCharacters(in: deleteRange, with: "")
+                                        tv.didChangeText()
+                                    }
+                                    stop.pointee = true
+                                }
+                            }
+                            self.syncText()
+                        }
+
+                        overlay.onWidthChanged = { [weak textStorage, weak layoutManager, weak attachment, weak textView] newWidth in
+                            guard let ts = textStorage, let lm = layoutManager, let att = attachment,
+                                  let tc = textView?.textContainer else { return }
+                            let clamped = max(CodeBlockOverlayView.minWidth, min(newWidth, tc.containerSize.width))
+                            let newSize = CGSize(width: clamped, height: CodeBlockOverlayView.defaultHeight)
+                            att.attachmentCell = CodeBlockSizeAttachmentCell(size: newSize)
+                            att.bounds = CGRect(origin: .zero, size: newSize)
+                            let fr = NSRange(location: 0, length: ts.length)
+                            ts.enumerateAttribute(.attachment, in: fr, options: []) { val, charRange, stop in
+                                if val as AnyObject === att {
+                                    lm.invalidateLayout(forCharacterRange: charRange, actualCharacterRange: nil)
+                                    stop.pointee = true
+                                }
+                            }
+                        }
+
+                        hostView.addSubview(overlay)
+                        codeBlockOverlays[id] = overlay
+                    }
+
+                    overlay.frame = overlayRect.integral
+                }
+
+                let toRemove = codeBlockOverlays.keys.filter { !seenIDs.contains($0) }
+                for key in toRemove {
+                    codeBlockOverlays[key]?.removeFromSuperview()
+                    codeBlockOverlays.removeValue(forKey: key)
+                }
+            }
+
             private func updateImageRatio(
                 _ newRatio: CGFloat,
                 attachment: NoteImageAttachment,
@@ -3419,6 +5061,9 @@ struct URLPasteOptionMenu: View {
                 Task { @MainActor [weak self] in
                     guard let self = self, let tv = self.textView else { return }
                     self.updateImageOverlays(in: tv)
+                    self.updateTableOverlays(in: tv)
+                    self.updateCalloutOverlays(in: tv)
+                    self.updateCodeBlockOverlays(in: tv)
                 }
             }
 
@@ -3436,6 +5081,12 @@ struct URLPasteOptionMenu: View {
                 textStorage.enumerateAttributes(
                     in: NSRange(location: 0, length: textStorage.length)
                 ) { attributes, range, _ in
+                    // Attachment characters (U+FFFC) render through their NSTextAttachmentCell,
+                    // not through text attributes. Rewriting their attributes with setAttributes
+                    // can silently strip critical custom keys (.notelinkID, .notelinkTitle, etc.)
+                    // causing notelinks and other attachments to vanish after serialization.
+                    if attributes[.attachment] != nil { return }
+
                     var needsFixing = false
                     var fixedAttributes: [NSAttributedString.Key: Any] = attributes
 
@@ -3471,9 +5122,10 @@ struct URLPasteOptionMenu: View {
                         needsFixing = true
                     }
 
-                    // Check text color — skip ranges with a user-intentional custom color
+                    // Check text color — skip ranges with a user-intentional custom color or block quote
                     let hasCustomColor = attributes[TextFormattingManager.customTextColorKey] as? Bool == true
-                    if !hasCustomColor {
+                    let isBlockQuote = attributes[.blockQuote] as? Bool == true
+                    if !hasCustomColor && !isBlockQuote {
                         if let currentColor = attributes[.foregroundColor] as? NSColor {
                             if !currentColor.isEqual(expectedColor) {
                                 fixedAttributes[.foregroundColor] = expectedColor
@@ -3508,6 +5160,7 @@ struct URLPasteOptionMenu: View {
                     var isTodoParagraph = false
                     var isWebClipParagraph = false
                     var isImageParagraph = false
+                    var isTableParagraph = false
 
                     textStorage.enumerateAttribute(
                         .attachment,
@@ -3530,18 +5183,43 @@ struct URLPasteOptionMenu: View {
                                 isWebClipParagraph = true
                                 stop.pointee = true
                             }
-                            // Check if it's a block-level image attachment
-                            else if attachment is NoteImageAttachment {
+                            // Table attachments need extra top spacing for grab handles
+                            else if attachment is NoteTableAttachment {
+                                isTableParagraph = true
+                                stop.pointee = true
+                            }
+                            // Other block-level attachments (image, callout, code block)
+                            else if attachment is NoteImageAttachment
+                                    || attachment is NoteCalloutAttachment
+                                    || attachment is NoteCodeBlockAttachment {
                                 isImageParagraph = true
                                 stop.pointee = true
                             }
                         }
                     }
 
+                    // Detect numbered list paragraphs
+                    var isNumberedListParagraph = false
+                    if !isTodoParagraph && !isWebClipParagraph && !isImageParagraph && !isTableParagraph {
+                        if substringRange.location < textStorage.length,
+                           textStorage.attribute(.orderedListNumber, at: substringRange.location, effectiveRange: nil) != nil {
+                            isNumberedListParagraph = true
+                        }
+                    }
+
+                    // Detect block quote paragraphs
+                    var isBlockQuoteParagraph = false
+                    if !isTodoParagraph && !isWebClipParagraph && !isImageParagraph && !isTableParagraph && !isNumberedListParagraph {
+                        if substringRange.location < textStorage.length,
+                           textStorage.attribute(.blockQuote, at: substringRange.location, effectiveRange: nil) as? Bool == true {
+                            isBlockQuoteParagraph = true
+                        }
+                    }
+
                     // Detect heading paragraphs — heading paragraph style is set during
                     // deserialization and must not be overwritten here.
                     var isHeadingParagraph = false
-                    if !isTodoParagraph && !isWebClipParagraph {
+                    if !isTodoParagraph && !isWebClipParagraph && !isNumberedListParagraph && !isBlockQuoteParagraph {
                         textStorage.enumerateAttribute(.font, in: substringRange, options: []) { val, _, stop in
                             if let f = val as? NSFont, Self.headingLevel(for: f) != nil {
                                 isHeadingParagraph = true
@@ -3551,7 +5229,14 @@ struct URLPasteOptionMenu: View {
                     }
 
                     // Apply appropriate paragraph style based on content type
-                    if isImageParagraph {
+                    if isTableParagraph {
+                        // Tables need extra top spacing so column grab handles don't overlap content above
+                        let tableStyle = NSMutableParagraphStyle()
+                        tableStyle.alignment = .left
+                        tableStyle.paragraphSpacing = 8
+                        tableStyle.paragraphSpacingBefore = 30
+                        textStorage.addAttribute(.paragraphStyle, value: tableStyle, range: substringRange)
+                    } else if isImageParagraph {
                         // Preserve block image paragraph style — do not override
                         let imgStyle = NSMutableParagraphStyle()
                         imgStyle.alignment = .left
@@ -3562,6 +5247,19 @@ struct URLPasteOptionMenu: View {
                         textStorage.addAttribute(.paragraphStyle, value: Self.webClipParagraphStyle(), range: substringRange)
                     } else if isTodoParagraph {
                         textStorage.addAttribute(.paragraphStyle, value: Self.todoParagraphStyle(), range: substringRange)
+                    } else if isNumberedListParagraph {
+                        textStorage.addAttribute(.paragraphStyle, value: Self.orderedListParagraphStyle(), range: substringRange)
+                    } else if isBlockQuoteParagraph {
+                        // Actively enforce block quote paragraph style on every text change,
+                        // just like every other block type. Preserves custom alignment if set.
+                        let quoteStyle = Self.blockQuoteParagraphStyle().mutableCopy() as! NSMutableParagraphStyle
+                        textStorage.enumerateAttribute(.paragraphStyle, in: substringRange, options: []) { val, _, stop in
+                            if let ps = val as? NSParagraphStyle, ps.alignment != .left {
+                                quoteStyle.alignment = ps.alignment
+                                stop.pointee = true
+                            }
+                        }
+                        textStorage.addAttribute(.paragraphStyle, value: quoteStyle, range: substringRange)
                     } else if !isHeadingParagraph {
                         // Body paragraph: apply base style but preserve any custom alignment
                         let mutableStyle = Self.baseParagraphStyle().mutableCopy() as! NSMutableParagraphStyle
@@ -3576,8 +5274,8 @@ struct URLPasteOptionMenu: View {
                         textStorage.addAttribute(.paragraphStyle, value: mutableStyle, range: substringRange)
                     }
 
-                    // Don't adjust baseline for todo, web clip, heading, or image paragraphs
-                    if !isTodoParagraph && !isWebClipParagraph && !isHeadingParagraph && !isImageParagraph {
+                    // Don't adjust baseline for todo, web clip, heading, image, table, numbered list, or block quote paragraphs
+                    if !isTodoParagraph && !isWebClipParagraph && !isHeadingParagraph && !isImageParagraph && !isTableParagraph && !isNumberedListParagraph && !isBlockQuoteParagraph {
                         textStorage.addAttribute(
                             .baselineOffset, value: Self.baseBaselineOffset, range: substringRange)
                     }
@@ -3620,6 +5318,39 @@ struct URLPasteOptionMenu: View {
                 return isTodo
             }
 
+            /// Returns true if the cursor is inside a bullet list paragraph ("• " prefix)
+            private func isInBulletParagraph(range: NSRange) -> Bool {
+                guard let storage = textView?.textStorage else { return false }
+                let location = max(0, min(storage.length, range.location))
+                let paraRange = (storage.string as NSString).paragraphRange(
+                    for: NSRange(location: location, length: 0))
+                let text = (storage.string as NSString).substring(with: paraRange)
+                return text.hasPrefix("• ")
+            }
+
+            /// Returns true if the cursor is inside a block quote paragraph
+            private func isInBlockQuoteParagraph(range: NSRange) -> Bool {
+                guard let storage = textView?.textStorage else { return false }
+                let location = max(0, min(storage.length, range.location))
+                guard location < storage.length else { return false }
+                return storage.attribute(.blockQuote, at: location, effectiveRange: nil) as? Bool == true
+            }
+
+            /// Returns the ordered list number if cursor is in a numbered list paragraph, nil otherwise
+            private func orderedListNumber(at range: NSRange) -> Int? {
+                guard let storage = textView?.textStorage else { return nil }
+                let location = max(0, min(storage.length, range.location))
+                let paraRange = (storage.string as NSString).paragraphRange(
+                    for: NSRange(location: location, length: 0))
+                guard paraRange.length > 0, paraRange.location < storage.length else { return nil }
+                return storage.attribute(.orderedListNumber, at: paraRange.location, effectiveRange: nil) as? Int
+            }
+
+            /// Returns the length of the "N. " prefix for a given list number
+            private func orderedListPrefixLength(for number: Int) -> Int {
+                return "\(number). ".count
+            }
+
             private func serialize() -> String {
                 guard let storage = textView?.textStorage else { return "" }
                 let fullRange = NSRange(location: 0, length: storage.length)
@@ -3653,6 +5384,20 @@ struct URLPasteOptionMenu: View {
                         let typeIdentifier = Self.sanitizedWebClipComponent(typeIdentifierRaw)
                         let originalName = Self.sanitizedWebClipComponent(originalNameRaw)
                         output.append("[[file|\(typeIdentifier)|\(storedFilename)|\(originalName)]]")
+                    } else if let tableAttachment = attributes[.attachment] as? NoteTableAttachment {
+                        output.append(tableAttachment.tableData.serialize())
+                    } else if let calloutAttachment = attributes[.attachment] as? NoteCalloutAttachment {
+                        output.append(calloutAttachment.calloutData.serialize())
+                    } else if let codeBlockAttachment = attributes[.attachment] as? NoteCodeBlockAttachment {
+                        output.append(codeBlockAttachment.codeBlockData.serialize())
+                    } else if let notelinkAttachment = attributes[.attachment] as? NotelinkAttachment {
+                        output.append("[[notelink|\(notelinkAttachment.noteID)|\(notelinkAttachment.noteTitle)]]")
+                    } else if let nlID = attributes[.notelinkID] as? String,
+                              let nlTitle = attributes[.notelinkTitle] as? String {
+                        // Notelink fallback — the NotelinkAttachment subclass may have been
+                        // degraded to a plain NSTextAttachment by AppKit copy/undo operations,
+                        // but the text attributes survive. Catch them before the generic handler.
+                        output.append("[[notelink|\(nlID)|\(nlTitle)]]")
                     } else if let attachment = attributes[.attachment] as? NSTextAttachment,
                         !(attachment.attachmentCell is TodoCheckboxAttachmentCell)
                     {
@@ -3681,10 +5426,19 @@ struct URLPasteOptionMenu: View {
                             NSLog("⚠️ Serialization CRITICAL: Could not find filename for image attachment. Data may be lost.")
                         }
                     } else {
+                        // Ordered list prefix: the "N. " characters carry orderedListNumber
+                        // Emit [[ol|N]] tag and skip the prefix text — it's encoded in the tag
+                        if let olNum = attributes[.orderedListNumber] as? Int {
+                            output.append("[[ol|\(olNum)]]")
+                            return  // Skip the prefix text — it's reconstructed during deserialization
+                        }
+
                         let rangeText = (storage.string as NSString).substring(with: range)
 
                         // Determine inline formatting for this run
                         let font = attributes[.font] as? NSFont
+                        let isBlockQuote = attributes[.blockQuote] as? Bool == true
+                        let highlightHex = attributes[.highlightColor] as? String
                         let heading = font.flatMap { Self.headingLevel(for: $0) }
 
                         var runBold = false
@@ -3707,7 +5461,10 @@ struct URLPasteOptionMenu: View {
                         var openTags = ""
                         var closeTags = ""
 
-                        // Alignment (outermost) — emit only for non-left
+                        // Block quote (outermost)
+                        if isBlockQuote { openTags += "[[quote]]"; closeTags = "[[/quote]]" + closeTags }
+
+                        // Alignment — emit only for non-left
                         if alignment != .left {
                             switch alignment {
                             case .center:
@@ -3738,21 +5495,20 @@ struct URLPasteOptionMenu: View {
                         if hasUnderline     { openTags += "[[u]]"; closeTags = "[[/u]]" + closeTags }
                         if hasStrikethrough { openTags += "[[s]]"; closeTags = "[[/s]]" + closeTags }
 
-                        // Color (innermost) — preserve existing serialization log
+                        // Color + highlight (innermost)
                         if attributes[TextFormattingManager.customTextColorKey] as? Bool == true,
                            let nsColor = attributes[.foregroundColor] as? NSColor
                         {
                             let hex = Self.nsColorToHex(nsColor)
-                            output.append(openTags)
-                            output.append("[[color|\(hex)]]")
-                            output.append(rangeText)
-                            output.append("[[/color]]")
-                            output.append(closeTags)
-                        } else {
-                            output.append(openTags)
-                            output.append(rangeText)
-                            output.append(closeTags)
+                            openTags += "[[color|\(hex)]]"; closeTags = "[[/color]]" + closeTags
                         }
+                        if let hlHex = highlightHex {
+                            openTags += "[[hl|\(hlHex)]]"; closeTags = "[[/hl]]" + closeTags
+                        }
+
+                        output.append(openTags)
+                        output.append(rangeText)
+                        output.append(closeTags)
 
                     }
                 }
@@ -3762,6 +5518,17 @@ struct URLPasteOptionMenu: View {
             private func deserialize(_ text: String) -> NSAttributedString {
                 // Handle empty text case
                 if text.isEmpty {
+                    return NSAttributedString(
+                        string: "", attributes: Self.baseTypingAttributes(for: currentColorScheme))
+                }
+
+                // Strip AI metadata block if present — it lives outside the editor's domain.
+                // NoteDetailView handles AI persistence separately; the editor only renders content.
+                var text = text
+                if let aiStart = text.range(of: "\n[[ai-block]]") ?? text.range(of: "[[ai-block]]") {
+                    text = String(text[text.startIndex..<aiStart.lowerBound])
+                }
+                guard !text.isEmpty else {
                     return NSAttributedString(
                         string: "", attributes: Self.baseTypingAttributes(for: currentColorScheme))
                 }
@@ -3778,6 +5545,8 @@ struct URLPasteOptionMenu: View {
                 var fmtStrikethrough = false
                 var fmtHeading: TextFormattingManager.HeadingLevel = .none
                 var fmtAlignment: NSTextAlignment = .left
+                var fmtBlockQuote = false
+                var fmtHighlightHex: String? = nil
 
                 // Buffer for accumulating plain text characters with the same attributes.
                 // Flushed as a single NSAttributedString when formatting changes or a tag is hit.
@@ -3785,12 +5554,23 @@ struct URLPasteOptionMenu: View {
                 let colorSchemeForBuffer = currentColorScheme
                 func flushBuffer() {
                     guard !textBuffer.isEmpty else { return }
-                    let attrs = Self.formattingAttributes(
+                    var attrs = Self.formattingAttributes(
                         base: colorSchemeForBuffer,
                         heading: fmtHeading,
-                        bold: fmtBold, italic: fmtItalic,
+                        bold: fmtBold,
+                        italic: fmtItalic,
                         underline: fmtUnderline, strikethrough: fmtStrikethrough,
                         alignment: fmtAlignment)
+                    if fmtBlockQuote {
+                        attrs[.blockQuote] = true
+                        attrs[.paragraphStyle] = Self.blockQuoteParagraphStyle()
+                        attrs[.foregroundColor] = NSColor.labelColor.withAlphaComponent(0.7)
+                    }
+                    if let hlHex = fmtHighlightHex {
+                        attrs[.highlightColor] = hlHex
+                        let hlColor = TextFormattingManager.nsColorFromHex(hlHex).withAlphaComponent(0.35)
+                        attrs[.backgroundColor] = hlColor
+                    }
                     result.append(NSAttributedString(string: textBuffer, attributes: attrs))
                     textBuffer = ""
                 }
@@ -3994,6 +5774,120 @@ struct URLPasteOptionMenu: View {
                                 continue
                             }
                         }
+                    } else if text[index...].hasPrefix("[[table|") {
+                        flushBuffer()
+                        // Find [[/table]] closing tag
+                        let remaining = text[index...]
+                        if let closingRange = remaining.range(of: "[[/table]]") {
+                            let tableBlock = String(remaining[remaining.startIndex..<closingRange.upperBound])
+                            if let tableData = NoteTableData.deserialize(from: tableBlock) {
+                                let baseAttributes = Self.baseTypingAttributes(for: currentColorScheme)
+                                // Ensure newline before table
+                                if result.length > 0,
+                                   let lastScalar = result.string.unicodeScalars.last,
+                                   !CharacterSet.newlines.contains(lastScalar) {
+                                    result.append(NSAttributedString(string: "\n", attributes: baseAttributes))
+                                }
+
+                                let attachment = makeTableAttachment(tableData: tableData)
+                                result.append(attachment)
+
+                                // Ensure newline after
+                                let afterClosing = closingRange.upperBound
+                                if afterClosing < text.endIndex {
+                                    if !text[afterClosing].isNewline {
+                                        result.append(NSAttributedString(string: "\n", attributes: baseAttributes))
+                                    }
+                                } else {
+                                    result.append(NSAttributedString(string: "\n", attributes: baseAttributes))
+                                }
+
+                                index = closingRange.upperBound
+                                lastWasWebClip = false
+                                continue
+                            }
+                        }
+                    } else if text[index...].hasPrefix("[[codeblock|") {
+                        flushBuffer()
+                        let remaining = text[index...]
+                        if let closingRange = remaining.range(of: "[[/codeblock]]") {
+                            let codeBlockText = String(remaining[remaining.startIndex..<closingRange.upperBound])
+                            if let codeBlockData = CodeBlockData.deserialize(from: codeBlockText) {
+                                let baseAttributes = Self.baseTypingAttributes(for: currentColorScheme)
+                                if result.length > 0,
+                                   let lastScalar = result.string.unicodeScalars.last,
+                                   !CharacterSet.newlines.contains(lastScalar) {
+                                    result.append(NSAttributedString(string: "\n", attributes: baseAttributes))
+                                }
+                                let attachment = makeCodeBlockAttachment(codeBlockData: codeBlockData)
+                                result.append(attachment)
+                                let afterClosing = closingRange.upperBound
+                                if afterClosing < text.endIndex {
+                                    if !text[afterClosing].isNewline {
+                                        result.append(NSAttributedString(string: "\n", attributes: baseAttributes))
+                                    }
+                                } else {
+                                    result.append(NSAttributedString(string: "\n", attributes: baseAttributes))
+                                }
+                                index = closingRange.upperBound
+                                lastWasWebClip = false
+                                continue
+                            }
+                        }
+                    } else if text[index...].hasPrefix("[[callout|") {
+                        flushBuffer()
+                        let remaining = text[index...]
+                        if let closingRange = remaining.range(of: "[[/callout]]") {
+                            let calloutBlock = String(remaining[remaining.startIndex..<closingRange.upperBound])
+                            if let calloutData = CalloutData.deserialize(from: calloutBlock) {
+                                let baseAttributes = Self.baseTypingAttributes(for: currentColorScheme)
+                                if result.length > 0,
+                                   let lastScalar = result.string.unicodeScalars.last,
+                                   !CharacterSet.newlines.contains(lastScalar) {
+                                    result.append(NSAttributedString(string: "\n", attributes: baseAttributes))
+                                }
+
+                                let attachment = makeCalloutAttachment(calloutData: calloutData)
+                                result.append(attachment)
+
+                                let afterClosing = closingRange.upperBound
+                                if afterClosing < text.endIndex {
+                                    if !text[afterClosing].isNewline {
+                                        result.append(NSAttributedString(string: "\n", attributes: baseAttributes))
+                                    }
+                                } else {
+                                    result.append(NSAttributedString(string: "\n", attributes: baseAttributes))
+                                }
+
+                                index = closingRange.upperBound
+                                lastWasWebClip = false
+                                continue
+                            }
+                        }
+                    } else if text[index...].hasPrefix("[[notelink|") {
+                        flushBuffer()
+                        let prefixLen = "[[notelink|".count
+                        let afterPrefix = text.index(index, offsetBy: prefixLen)
+                        if let closeBracket = text[afterPrefix...].range(of: "]]") {
+                            let body = String(text[afterPrefix..<closeBracket.lowerBound])
+                            let parts = body.split(separator: "|", maxSplits: 1)
+                            if parts.count == 2 {
+                                let noteIDStr = String(parts[0])
+                                let noteTitle = String(parts[1])
+
+                                let attachment = NotelinkAttachment(noteID: noteIDStr, noteTitle: noteTitle)
+                                let notelinkStr = NSMutableAttributedString(attachment: attachment)
+                                notelinkStr.addAttributes([
+                                    .notelinkID: noteIDStr,
+                                    .notelinkTitle: noteTitle,
+                                ], range: NSRange(location: 0, length: notelinkStr.length))
+                                result.append(notelinkStr)
+
+                                index = closeBracket.upperBound
+                                lastWasWebClip = false
+                                continue
+                            }
+                        }
                     } else if text[index...].hasPrefix("[[b]]") {
                         flushBuffer()
                         fmtBold = true
@@ -4033,6 +5927,87 @@ struct URLPasteOptionMenu: View {
                         flushBuffer()
                         fmtStrikethrough = false
                         index = text.index(index, offsetBy: 6)
+                        continue
+                    } else if text[index...].hasPrefix("[[code]]") {
+                        // Legacy inline code block — migrate to a plaintext code block attachment
+                        flushBuffer()
+                        let remaining = text[index...]
+                        let prefixLen = "[[code]]".count
+                        let contentStart = text.index(index, offsetBy: prefixLen)
+                        if let closingRange = remaining.range(of: "[[/code]]") {
+                            let rawCode = String(remaining[remaining.index(remaining.startIndex, offsetBy: prefixLen)..<closingRange.lowerBound])
+                            let legacyData = CodeBlockData(language: "plaintext", code: rawCode)
+                            let baseAttributes = Self.baseTypingAttributes(for: currentColorScheme)
+                            if result.length > 0,
+                               let lastScalar = result.string.unicodeScalars.last,
+                               !CharacterSet.newlines.contains(lastScalar) {
+                                result.append(NSAttributedString(string: "\n", attributes: baseAttributes))
+                            }
+                            let attachment = makeCodeBlockAttachment(codeBlockData: legacyData)
+                            result.append(attachment)
+                            let afterClosing = closingRange.upperBound
+                            if afterClosing < text.endIndex {
+                                if !text[afterClosing].isNewline {
+                                    result.append(NSAttributedString(string: "\n", attributes: baseAttributes))
+                                }
+                            } else {
+                                result.append(NSAttributedString(string: "\n", attributes: baseAttributes))
+                            }
+                            index = closingRange.upperBound
+                            lastWasWebClip = false
+                            continue
+                        }
+                        // Malformed — skip the tag
+                        index = contentStart
+                        continue
+                    } else if text[index...].hasPrefix("[[/code]]") {
+                        // Orphaned close tag from legacy format — skip
+                        index = text.index(index, offsetBy: 9)
+                        continue
+                    } else if text[index...].hasPrefix("[[ol|") {
+                        flushBuffer()
+                        // Parse [[ol|N]] — extract the number
+                        let prefixLen = "[[ol|".count
+                        let afterPrefix = text.index(index, offsetBy: prefixLen)
+                        if let closeBracket = text[afterPrefix...].range(of: "]]") {
+                            let numStr = String(text[afterPrefix..<closeBracket.lowerBound])
+                            let num = Int(numStr) ?? 1
+                            let prefix = "\(num). "
+                            var attrs = Self.formattingAttributes(
+                                base: currentColorScheme,
+                                heading: fmtHeading,
+                                bold: fmtBold, italic: fmtItalic,
+                                underline: fmtUnderline, strikethrough: fmtStrikethrough,
+                                alignment: fmtAlignment)
+                            attrs[.orderedListNumber] = num
+                            result.append(NSAttributedString(string: prefix, attributes: attrs))
+                            index = closeBracket.upperBound
+                            lastWasWebClip = false
+                            continue
+                        }
+                    } else if text[index...].hasPrefix("[[quote]]") {
+                        flushBuffer()
+                        fmtBlockQuote = true
+                        index = text.index(index, offsetBy: 9)
+                        continue
+                    } else if text[index...].hasPrefix("[[/quote]]") {
+                        flushBuffer()
+                        fmtBlockQuote = false
+                        index = text.index(index, offsetBy: 10)
+                        continue
+                    } else if text[index...].hasPrefix("[[hl|") {
+                        flushBuffer()
+                        let prefixLen = "[[hl|".count
+                        let afterPrefix = text.index(index, offsetBy: prefixLen)
+                        if let closeBracket = text[afterPrefix...].range(of: "]]") {
+                            fmtHighlightHex = String(text[afterPrefix..<closeBracket.lowerBound])
+                            index = closeBracket.upperBound
+                            continue
+                        }
+                    } else if text[index...].hasPrefix("[[/hl]]") {
+                        flushBuffer()
+                        fmtHighlightHex = nil
+                        index = text.index(index, offsetBy: 7)
                         continue
                     } else if text[index...].hasPrefix("[[h1]]") {
                         flushBuffer()
@@ -4169,6 +6144,33 @@ struct URLPasteOptionMenu: View {
                 return style
             }
 
+            static func orderedListParagraphStyle() -> NSParagraphStyle {
+                let spacing = ThemeManager.currentLineSpacing()
+                let scaledHeight = baseLineHeight * spacing.multiplier / 1.2
+                let style = NSMutableParagraphStyle()
+                style.lineHeightMultiple = spacing.multiplier
+                style.minimumLineHeight = scaledHeight
+                style.maximumLineHeight = scaledHeight + 4
+                style.paragraphSpacing = 4
+                // Indent wrapping lines to align with text after "N. "
+                style.firstLineHeadIndent = 0
+                style.headIndent = 22  // Approximate width of "1. " in body font
+                return style
+            }
+
+            static func blockQuoteParagraphStyle() -> NSParagraphStyle {
+                let spacing = ThemeManager.currentLineSpacing()
+                let scaledHeight = baseLineHeight * spacing.multiplier / 1.2
+                let style = NSMutableParagraphStyle()
+                style.lineHeightMultiple = spacing.multiplier
+                style.minimumLineHeight = scaledHeight
+                style.maximumLineHeight = scaledHeight + 4
+                style.paragraphSpacing = 8
+                style.firstLineHeadIndent = 20
+                style.headIndent = 20
+                return style
+            }
+
             // Paragraph style for web clip attachments — matches base style so line
             // heights stay consistent whether the clip is inline or on its own line.
             static func webClipParagraphStyle() -> NSParagraphStyle {
@@ -4278,6 +6280,10 @@ struct URLPasteOptionMenu: View {
         // Static flag to track command menu visibility for keyboard event handling
         static var isCommandMenuShowing = false
         static var commandSlashLocation: Int = -1
+
+        // Note picker state (triggered by "@")
+        static var isNotePickerShowing = false
+        static var notePickerAtLocation: Int = -1
 
         /// When true, mouseMoved sets arrow cursor instead of allowing NSTextView's I-beam.
         /// Set by ContentView when any full-screen panel overlay (settings, search, trash) is open.
@@ -4415,6 +6421,26 @@ struct URLPasteOptionMenu: View {
                 cursor.set()
                 return
             }
+            // Notelink hover: show pointing hand cursor (layout-manager hit testing)
+            let mousePoint = convert(event.locationInWindow, from: nil)
+            if let textStorage = self.textStorage,
+               let layoutManager = self.layoutManager,
+               let textContainer = self.textContainer {
+                let ptInContainer = CGPoint(
+                    x: mousePoint.x - textContainerOrigin.x,
+                    y: mousePoint.y - textContainerOrigin.y)
+                let gi = layoutManager.glyphIndex(for: ptInContainer, in: textContainer)
+                if gi < layoutManager.numberOfGlyphs {
+                    let charIdx = layoutManager.characterIndexForGlyph(at: gi)
+                    if charIdx < textStorage.length,
+                       (textStorage.attribute(.attachment, at: charIdx, effectiveRange: nil) is NotelinkAttachment
+                        || textStorage.attribute(.notelinkID, at: charIdx, effectiveRange: nil) != nil) {
+                        NSCursor.pointingHand.set()
+                        return
+                    }
+                }
+            }
+
             super.mouseMoved(with: event)
             let point = convert(event.locationInWindow, from: nil)
             if actionDelegate?.handleAttachmentHover(at: point, in: self) != true {
@@ -4452,6 +6478,45 @@ struct URLPasteOptionMenu: View {
             if actionDelegate?.handleAttachmentClick(at: point, in: self) == true {
                 return
             }
+
+            // Notelink click: navigate to linked note.
+            // Use layout-manager-based hit testing (same approach as handleAttachmentClick)
+            // rather than characterIndex(for:) which expects screen coordinates.
+            if let textStorage = self.textStorage,
+               let layoutManager = self.layoutManager,
+               let textContainer = self.textContainer {
+                let pointInContainer = CGPoint(
+                    x: point.x - textContainerOrigin.x,
+                    y: point.y - textContainerOrigin.y)
+                let glyphIndex = layoutManager.glyphIndex(for: pointInContainer, in: textContainer)
+                if glyphIndex < layoutManager.numberOfGlyphs {
+                    let charIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
+                    if charIndex < textStorage.length {
+                        // Attachment-based notelink (new format)
+                        if let nlAttachment = textStorage.attribute(.attachment, at: charIndex, effectiveRange: nil) as? NotelinkAttachment,
+                           let noteID = UUID(uuidString: nlAttachment.noteID) {
+                            NotificationCenter.default.post(
+                                name: .navigateToNoteLink,
+                                object: nil,
+                                userInfo: ["noteID": noteID]
+                            )
+                            return
+                        }
+                        // Text-based notelink (legacy format)
+                        if let noteIDStr = textStorage.attribute(.notelinkID, at: charIndex, effectiveRange: nil) as? String,
+                           textStorage.attribute(.attachment, at: charIndex, effectiveRange: nil) == nil,
+                           let noteID = UUID(uuidString: noteIDStr) {
+                            NotificationCenter.default.post(
+                                name: .navigateToNoteLink,
+                                object: nil,
+                                userInfo: ["noteID": noteID]
+                            )
+                            return
+                        }
+                    }
+                }
+            }
+
             actionDelegate?.endAttachmentHover()
             window?.makeFirstResponder(self)
             super.mouseDown(with: event)
@@ -4463,6 +6528,14 @@ struct URLPasteOptionMenu: View {
             }
             return super.draggingEntered(sender)
         }
+
+        override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
+            if actionDelegate?.canHandleFileDrop(sender, in: self) == true {
+                return .copy
+            }
+            return super.draggingUpdated(sender)
+        }
+
 
         override func prepareForDragOperation(_ sender: NSDraggingInfo) -> Bool {
             if actionDelegate?.canHandleFileDrop(sender, in: self) == true {
@@ -4498,13 +6571,111 @@ struct URLPasteOptionMenu: View {
         }
 
         override func keyDown(with event: NSEvent) {
+            // Check formatting shortcuts before command menu handling
+            let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            let hasCommand = modifiers.contains(.command)
+            let hasShift = modifiers.contains(.shift)
+
+            if hasCommand, let chars = event.charactersIgnoringModifiers,
+               let fmt = actionDelegate?.formatter {
+                // Cmd+1/2/3 — Headings
+                if !hasShift {
+                    switch chars {
+                    case "1":
+                        fmt.applyFormatting(to: self, tool: .h1)
+                        return
+                    case "2":
+                        fmt.applyFormatting(to: self, tool: .h2)
+                        return
+                    case "3":
+                        fmt.applyFormatting(to: self, tool: .h3)
+                        return
+                    default:
+                        break
+                    }
+                }
+
+                // Cmd+Shift shortcuts
+                if hasShift {
+                    switch chars {
+                    case "x", "X":
+                        // Cmd+Shift+X — Strikethrough
+                        fmt.applyFormatting(to: self, tool: .strikethrough)
+                        return
+                    case "8":
+                        // Cmd+Shift+8 — Bullet list
+                        fmt.applyFormatting(to: self, tool: .bulletList)
+                        return
+                    case "7":
+                        // Cmd+Shift+7 — Numbered list
+                        fmt.applyFormatting(to: self, tool: .numberedList)
+                        return
+                    case ".":
+                        // Cmd+Shift+. — Block quote
+                        fmt.applyFormatting(to: self, tool: .blockQuote)
+                        return
+                    case "h", "H":
+                        // Cmd+Shift+H — Highlight (yellow default)
+                        fmt.applyHighlight(hex: "FFFF00", range: selectedRange(), to: self)
+                        return
+                    case "k", "K":
+                        // Cmd+Shift+K — Insert link
+                        fmt.applyFormatting(to: self, tool: .link)
+                        return
+                    default:
+                        break
+                    }
+                }
+            }
+
+            let eidInfo: [String: Any]? = editorInstanceID.map { ["editorInstanceID": $0] }
+
+            // Handle note picker keyboard navigation (triggered by "@")
+            if InlineNSTextView.isNotePickerShowing {
+                switch event.keyCode {
+                case 126:  // Up Arrow
+                    NotificationCenter.default.post(name: .notePickerNavigateUp, object: nil, userInfo: eidInfo)
+                    return
+                case 125:  // Down Arrow
+                    NotificationCenter.default.post(name: .notePickerNavigateDown, object: nil, userInfo: eidInfo)
+                    return
+                case 36, 76:  // Return/Enter
+                    NotificationCenter.default.post(name: .notePickerSelect, object: nil, userInfo: eidInfo)
+                    return
+                case 53:  // Escape
+                    NotificationCenter.default.post(name: .hideNotePicker, object: nil, userInfo: eidInfo)
+                    return
+                case 51:  // Backspace
+                    super.keyDown(with: event)
+                    let cursor = selectedRange().location
+                    let atLoc = InlineNSTextView.notePickerAtLocation
+                    if cursor <= atLoc || atLoc < 0 {
+                        NotificationCenter.default.post(name: .hideNotePicker, object: nil, userInfo: eidInfo)
+                    } else {
+                        let filterText = readNotePickerFilterText()
+                        NotificationCenter.default.post(name: .notePickerFilterUpdate, object: filterText, userInfo: eidInfo)
+                    }
+                    return
+                default:
+                    super.keyDown(with: event)
+                    // Update the note picker filter after the character is inserted
+                    let cursor = selectedRange().location
+                    let atLoc = InlineNSTextView.notePickerAtLocation
+                    if cursor <= atLoc || atLoc < 0 {
+                        NotificationCenter.default.post(name: .hideNotePicker, object: nil, userInfo: eidInfo)
+                    } else {
+                        let filterText = readNotePickerFilterText()
+                        NotificationCenter.default.post(name: .notePickerFilterUpdate, object: filterText, userInfo: eidInfo)
+                    }
+                    return
+                }
+            }
+
             // Only intercept keys if command menu is showing
             guard InlineNSTextView.isCommandMenuShowing else {
                 super.keyDown(with: event)
                 return
             }
-
-            let eidInfo: [String: Any]? = editorInstanceID.map { ["editorInstanceID": $0] }
 
             // Handle special keys for command menu navigation
             // keyCode 126 = Up Arrow, 125 = Down Arrow, 36 = Return, 53 = Escape
@@ -4546,6 +6717,52 @@ struct URLPasteOptionMenu: View {
         @available(macOS 10.11, *)
         override func insertText(_ string: Any, replacementRange: NSRange) {
             let eidInfo: [String: Any]? = editorInstanceID.map { ["editorInstanceID": $0] }
+
+            // Check if we're inserting "@" to trigger note picker
+            if let str = string as? String, str == "@" {
+                // Dismiss if already showing
+                if InlineNSTextView.isNotePickerShowing {
+                    NotificationCenter.default.post(name: .hideNotePicker, object: nil, userInfo: eidInfo)
+                }
+
+                let location = selectedRange().location
+                super.insertText(string, replacementRange: replacementRange)
+
+                // Show note picker at cursor position
+                if let layoutManager = self.layoutManager,
+                   let textContainer = self.textContainer
+                {
+                    let glyphIndex = layoutManager.glyphIndexForCharacter(at: location)
+                    let glyphRect = layoutManager.boundingRect(
+                        forGlyphRange: NSRange(location: glyphIndex, length: 1),
+                        in: textContainer)
+
+                    let cursorX = glyphRect.origin.x + self.textContainerOrigin.x
+                    let cursorY = glyphRect.origin.y + self.textContainerOrigin.y
+                    let cursorHeight = glyphRect.height
+
+                    let menuPosition = CGPoint(x: cursorX, y: cursorY + cursorHeight + 4)
+
+                    NotificationCenter.default.post(
+                        name: .showNotePicker,
+                        object: [
+                            "position": menuPosition,
+                            "atLocation": location
+                        ],
+                        userInfo: eidInfo
+                    )
+                }
+                return
+            }
+
+            // If note picker is showing, insert character and update filter
+            if InlineNSTextView.isNotePickerShowing {
+                super.insertText(string, replacementRange: replacementRange)
+                let filterText = readNotePickerFilterText()
+                NotificationCenter.default.post(
+                    name: .notePickerFilterUpdate, object: filterText, userInfo: eidInfo)
+                return
+            }
 
             // Check if we're inserting "/" to trigger command menu
             if let str = string as? String, str == "/" {
@@ -4596,6 +6813,234 @@ struct URLPasteOptionMenu: View {
             }
 
             super.insertText(string, replacementRange: replacementRange)
+
+            // Check for markdown shortcuts after insertion
+            if let str = string as? String {
+                handleMarkdownShortcuts(inserted: str)
+            }
+        }
+
+        /// Base typing attributes for markdown shortcut results
+        private var markdownBaseAttributes: [NSAttributedString.Key: Any] {
+            let font = FontManager.bodyNS()
+            return [
+                .font: font,
+                .foregroundColor: NSColor.labelColor,
+            ]
+        }
+
+        /// Detects and applies markdown-style shortcuts after text insertion
+        private func handleMarkdownShortcuts(inserted: String) {
+            guard let textStorage = self.textStorage else { return }
+            let cursor = selectedRange().location
+
+            // --- Block-level shortcuts (trigger on Space) ---
+            if inserted == " " {
+                let paraRange = (textStorage.string as NSString).paragraphRange(
+                    for: NSRange(location: max(0, cursor - 1), length: 0))
+                let lineText = (textStorage.string as NSString).substring(with: paraRange)
+                let trimmed = lineText.trimmingCharacters(in: .newlines)
+
+                // Only trigger if cursor is right after the pattern (at start of line)
+                let cursorInPara = cursor - paraRange.location
+                struct BlockPattern {
+                    let prefix: String
+                    let action: String
+                }
+                let patterns: [BlockPattern] = [
+                    .init(prefix: "- ", action: "bullet"),
+                    .init(prefix: "* ", action: "bullet"),
+                    .init(prefix: "[ ] ", action: "todo"),
+                    .init(prefix: "> ", action: "quote"),
+                ]
+
+                for pattern in patterns {
+                    if trimmed == pattern.prefix.trimmingCharacters(in: .whitespaces)
+                        || (cursorInPara == pattern.prefix.count && lineText.hasPrefix(pattern.prefix)) {
+                        // Verify cursor position matches end of prefix
+                        guard cursorInPara == pattern.prefix.count else { continue }
+
+                        let deleteRange = NSRange(
+                            location: paraRange.location,
+                            length: pattern.prefix.count)
+
+                        switch pattern.action {
+                        case "bullet":
+                            textStorage.replaceCharacters(in: deleteRange, with: "")
+                            let newCursorPos = paraRange.location
+                            setSelectedRange(NSRange(location: newCursorPos, length: 0))
+                            if let coord = actionDelegate {
+                                coord.formatter.applyFormatting(to: self, tool: .bulletList)
+                            }
+                            // Position cursor after "• " — toggleBulletList leaves it past the newline
+                            setSelectedRange(NSRange(location: paraRange.location + 2, length: 0))
+                        case "todo":
+                            textStorage.replaceCharacters(in: deleteRange, with: "")
+                            let newCursorPos = paraRange.location
+                            setSelectedRange(NSRange(location: newCursorPos, length: 0))
+                            if let coord = actionDelegate {
+                                coord.insertTodo()
+                            }
+                        case "quote":
+                            // Remove "> " prefix and apply block quote formatting atomically.
+                            // beginEditing/endEditing prevents processEditing from firing
+                            // between the character removal and attribute application — without
+                            // this, styleTodoParagraphs() runs before .blockQuote is set
+                            // and applies baseParagraphStyle (no indent).
+                            textStorage.beginEditing()
+                            textStorage.replaceCharacters(in: deleteRange, with: "")
+                            let newCursorPos = paraRange.location
+                            let newParaRange = (textStorage.string as NSString).paragraphRange(
+                                for: NSRange(location: newCursorPos, length: 0))
+                            let quoteStyle = TodoEditorRepresentable.Coordinator.blockQuoteParagraphStyle()
+                            textStorage.addAttribute(.blockQuote, value: true, range: newParaRange)
+                            textStorage.addAttribute(.paragraphStyle, value: quoteStyle, range: newParaRange)
+                            textStorage.addAttribute(
+                                .foregroundColor,
+                                value: NSColor.labelColor.withAlphaComponent(0.7),
+                                range: newParaRange)
+                            textStorage.endEditing()
+                            setSelectedRange(NSRange(location: newCursorPos, length: 0))
+                            // Set typing attributes so first typed character gets the full style
+                            var quoteTyping = TodoEditorRepresentable.Coordinator.baseTypingAttributes(
+                                for: actionDelegate?.currentColorScheme)
+                            quoteTyping[.blockQuote] = true
+                            quoteTyping[.paragraphStyle] = quoteStyle
+                            quoteTyping[.foregroundColor] = NSColor.labelColor.withAlphaComponent(0.7)
+                            typingAttributes = quoteTyping
+                        default:
+                            break
+                        }
+                        return
+                    }
+                }
+
+                // Check for numbered list pattern: "1. " at line start
+                let olPattern = /^(\d+)\. $/
+                if let match = trimmed.wholeMatch(of: olPattern),
+                   cursorInPara == trimmed.count {
+                    let num = Int(match.1) ?? 1
+                    let deleteRange = NSRange(
+                        location: paraRange.location,
+                        length: trimmed.count)
+                    let prefix = "\(num). "
+                    textStorage.replaceCharacters(in: deleteRange, with: prefix)
+                    let prefixRange = NSRange(location: paraRange.location, length: prefix.count)
+                    textStorage.addAttribute(.orderedListNumber, value: num, range: prefixRange)
+                    setSelectedRange(NSRange(location: paraRange.location + prefix.count, length: 0))
+                    return
+                }
+            }
+
+            // --- Inline shortcuts (trigger on closing delimiter) ---
+            if inserted == "*" || inserted == "`" || inserted == "~" {
+                let paraRange = (textStorage.string as NSString).paragraphRange(
+                    for: NSRange(location: max(0, cursor - 1), length: 0))
+                let lineStart = paraRange.location
+                let textBeforeCursor = (textStorage.string as NSString).substring(
+                    with: NSRange(location: lineStart, length: cursor - lineStart))
+
+                // Bold: **text**
+                if inserted == "*" && textBeforeCursor.hasSuffix("*") {
+                    // Look for opening **
+                    let searchStr = textBeforeCursor
+                    if let range = searchStr.range(of: "**", options: .backwards,
+                                                    range: searchStr.startIndex..<searchStr.index(before: searchStr.endIndex)) {
+                        let openOffset = searchStr.distance(from: searchStr.startIndex, to: range.lowerBound)
+                        let contentStart = openOffset + 2
+                        let contentEnd = searchStr.count - 1  // before the last *
+                        if contentEnd > contentStart {
+                            let content = String(searchStr[searchStr.index(searchStr.startIndex, offsetBy: contentStart)..<searchStr.index(searchStr.startIndex, offsetBy: contentEnd)])
+                            if !content.isEmpty && !content.hasPrefix("*") {
+                                // Replace **content** with bold content
+                                let absStart = lineStart + openOffset
+                                let fullLen = cursor - absStart  // includes closing *
+                                let replaceRange = NSRange(location: absStart, length: fullLen)
+                                var attrs = markdownBaseAttributes
+                                if let font = attrs[.font] as? NSFont {
+                                    attrs[.font] = NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask)
+                                }
+                                textStorage.replaceCharacters(in: replaceRange, with: NSAttributedString(string: content, attributes: attrs))
+                                setSelectedRange(NSRange(location: absStart + content.count, length: 0))
+                                return
+                            }
+                        }
+                    }
+                }
+
+                // Italic: *text* (single asterisk, not **)
+                if inserted == "*" {
+                    let searchStr = textBeforeCursor
+                    // Find last single * that isn't part of **
+                    if let lastStar = searchStr.lastIndex(of: "*"),
+                       lastStar != searchStr.index(before: searchStr.endIndex) {
+                        let beforeStar = searchStr.index(before: lastStar)
+                        let afterStar = searchStr.index(after: lastStar)
+                        // Make sure it's a single * (not **)
+                        if (lastStar == searchStr.startIndex || searchStr[beforeStar] != "*")
+                            && searchStr[afterStar] != "*" {
+                            let openOffset = searchStr.distance(from: searchStr.startIndex, to: lastStar)
+                            let contentStart = openOffset + 1
+                            let contentEnd = searchStr.count  // before closing *
+                            if contentEnd > contentStart {
+                                let content = String(searchStr[searchStr.index(searchStr.startIndex, offsetBy: contentStart)...])
+                                if !content.isEmpty {
+                                    let absStart = lineStart + openOffset
+                                    let fullLen = cursor - absStart
+                                    let replaceRange = NSRange(location: absStart, length: fullLen)
+                                    var attrs = markdownBaseAttributes
+                                    if let font = attrs[.font] as? NSFont {
+                                        attrs[.font] = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask)
+                                    }
+                                    textStorage.replaceCharacters(in: replaceRange, with: NSAttributedString(string: content, attributes: attrs))
+                                    setSelectedRange(NSRange(location: absStart + content.count, length: 0))
+                                    return
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Strikethrough: ~~text~~
+                if inserted == "~" && textBeforeCursor.hasSuffix("~") {
+                    let searchStr = textBeforeCursor
+                    if let range = searchStr.range(of: "~~", options: .backwards,
+                                                    range: searchStr.startIndex..<searchStr.index(before: searchStr.endIndex)) {
+                        let openOffset = searchStr.distance(from: searchStr.startIndex, to: range.lowerBound)
+                        let contentStart = openOffset + 2
+                        let contentEnd = searchStr.count - 1
+                        if contentEnd > contentStart {
+                            let content = String(searchStr[searchStr.index(searchStr.startIndex, offsetBy: contentStart)..<searchStr.index(searchStr.startIndex, offsetBy: contentEnd)])
+                            if !content.isEmpty && !content.hasPrefix("~") {
+                                let absStart = lineStart + openOffset
+                                let fullLen = cursor - absStart
+                                let replaceRange = NSRange(location: absStart, length: fullLen)
+                                var attrs = markdownBaseAttributes
+                                attrs[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
+                                textStorage.replaceCharacters(in: replaceRange, with: NSAttributedString(string: content, attributes: attrs))
+                                setSelectedRange(NSRange(location: absStart + content.count, length: 0))
+                                return
+                            }
+                        }
+                    }
+                }
+            }
+
+            // --- Divider shortcut: --- or *** at line start, trigger on Enter ---
+            // (handled separately since Enter triggers newline insertion)
+        }
+
+        /// Reads the text typed after the "@" character to use as a filter for note picker
+        private func readNotePickerFilterText() -> String {
+            let atLoc = InlineNSTextView.notePickerAtLocation
+            guard atLoc >= 0,
+                  let textStorage = self.textStorage else { return "" }
+            let cursor = selectedRange().location
+            let filterStart = atLoc + 1  // skip the "@" itself
+            guard filterStart <= cursor && cursor <= textStorage.length else { return "" }
+            if filterStart == cursor { return "" }
+            let filterRange = NSRange(location: filterStart, length: cursor - filterStart)
+            return (textStorage.string as NSString).substring(with: filterRange)
         }
 
         /// Reads the text typed after the slash character to use as a filter
@@ -4797,8 +7242,24 @@ extension Notification.Name {
     static let urlPasteSelectPlainLink = Notification.Name("URLPasteSelectPlainLink")
     static let urlPasteDismiss = Notification.Name("URLPasteDismiss")
 
+    // Note picker notifications (triggered by "@")
+    static let showNotePicker = Notification.Name("ShowNotePicker")
+    static let hideNotePicker = Notification.Name("HideNotePicker")
+    static let notePickerFilterUpdate = Notification.Name("NotePickerFilterUpdate")
+    static let notePickerNavigateUp = Notification.Name("NotePickerNavigateUp")
+    static let notePickerNavigateDown = Notification.Name("NotePickerNavigateDown")
+    static let notePickerSelect = Notification.Name("NotePickerSelect")
+    static let applyNotePickerSelection = Notification.Name("ApplyNotePickerSelection")
+
+    // Notelink navigation
+    static let navigateToNoteLink = Notification.Name("NavigateToNoteLink")
+
     // In-note search notifications
     static let showInNoteSearch = Notification.Name("ShowInNoteSearch")
     static let highlightSearchMatches = Notification.Name("HighlightSearchMatches")
     static let clearSearchHighlights = Notification.Name("ClearSearchHighlights")
+    static let replaceCurrentSearchMatch = Notification.Name("ReplaceCurrentSearchMatch")
+    static let replaceAllSearchMatches = Notification.Name("ReplaceAllSearchMatches")
+    static let showInNoteSearchAndReplace = Notification.Name("ShowInNoteSearchAndReplace")
+
 }
