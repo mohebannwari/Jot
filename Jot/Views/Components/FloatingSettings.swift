@@ -1021,6 +1021,10 @@ struct SettingsPage: View {
                 Capsule()
                     .fill(colorScheme == .light ? Color.white : Color("SettingsOptionCardColor"))
             )
+            .overlay(
+                Capsule()
+                    .stroke(colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.08), lineWidth: 1)
+            )
         }
     }
 

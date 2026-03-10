@@ -1479,12 +1479,11 @@ struct URLPasteOptionMenu: View {
 
             // Reposition overlays only when the frame has actually changed — avoids
             // redundant full-storage enumeration on every SwiftUI layout pass.
+            // Uses coalesced dispatch to prevent layout-invalidation storms during
+            // split-view resize (multiple triggers collapse into one pass).
             if context.coordinator.lastKnownTextViewWidth != textView.bounds.width {
                 context.coordinator.lastKnownTextViewWidth = textView.bounds.width
-                context.coordinator.updateImageOverlays(in: textView)
-                context.coordinator.updateTableOverlays(in: textView)
-                context.coordinator.updateCalloutOverlays(in: textView)
-                context.coordinator.updateCodeBlockOverlays(in: textView)
+                context.coordinator.scheduleOverlayUpdate()
             }
         }
 
@@ -1594,9 +1593,35 @@ struct URLPasteOptionMenu: View {
             var lastKnownTextViewWidth: CGFloat = 0
             /// True once the bounds-change observer on the clip view has been registered.
             private var hasBoundsObserver = false
+            /// True once the frame-change observer on the scroll view has been registered.
+            private var hasFrameObserver = false
             /// True once ancestor clipping has been disabled for overlay overflow.
             private var hasDisabledAncestorClipping = false
+            /// Reentrancy guard — prevents cascading overlay updates from creating
+            /// an infinite layout-invalidation cycle (split-view freeze bug).
+            private var isUpdatingOverlays = false
+            /// Coalesces rapid overlay update requests (resize, scroll, layout
+            /// completion) into a single pass on the next main-queue turn.
+            private var pendingOverlayUpdate: DispatchWorkItem?
 
+            /// Coalesces overlay update requests so multiple triggers
+            /// (updateNSView, didCompleteLayoutFor, boundsDidChange) within
+            /// the same run-loop turn collapse into a single pass.
+            func scheduleOverlayUpdate() {
+                pendingOverlayUpdate?.cancel()
+                let work = DispatchWorkItem { [weak self] in
+                    guard let self = self, !self.isUpdatingOverlays,
+                          let tv = self.textView else { return }
+                    self.isUpdatingOverlays = true
+                    defer { self.isUpdatingOverlays = false }
+                    self.updateImageOverlays(in: tv)
+                    self.updateTableOverlays(in: tv)
+                    self.updateCalloutOverlays(in: tv)
+                    self.updateCodeBlockOverlays(in: tv)
+                }
+                pendingOverlayUpdate = work
+                DispatchQueue.main.async(execute: work)
+            }
 
             private static let inlineImageCache: NSCache<NSString, NSImage> = {
                 let cache = NSCache<NSString, NSImage>()
@@ -2081,6 +2106,7 @@ struct URLPasteOptionMenu: View {
                 // Register as layout manager delegate for overlay position tracking
                 textView.layoutManager?.delegate = self
                 registerBoundsObserverIfNeeded(for: textView)
+                registerFrameObserverIfNeeded(for: textView)
 
                 // Prevent layout shifts when gaining focus
                 let windowKey = NotificationCenter.default.addObserver(
@@ -2492,12 +2518,41 @@ struct URLPasteOptionMenu: View {
                     queue: .main
                 ) { [weak self] _ in
                     Task { @MainActor [weak self] in
-                        if let tv = self?.textView {
-                            self?.updateImageOverlays(in: tv)
-                            self?.updateTableOverlays(in: tv)
-                            self?.updateCalloutOverlays(in: tv)
-                            self?.updateCodeBlockOverlays(in: tv)
+                        self?.scheduleOverlayUpdate()
+                    }
+                }
+                observers.append(observer)
+            }
+
+            /// Registers a frame-change observer on the enclosing scroll view so
+            /// overlays resize when the container width changes (e.g. split view).
+            /// boundsDidChangeNotification only fires on scroll — this catches
+            /// actual frame/size changes from SwiftUI layout.
+            private func registerFrameObserverIfNeeded(for textView: NSTextView) {
+                guard !hasFrameObserver,
+                      let scrollView = textView.enclosingScrollView else { return }
+                hasFrameObserver = true
+                scrollView.postsFrameChangedNotifications = true
+                let observer = NotificationCenter.default.addObserver(
+                    forName: NSView.frameDidChangeNotification,
+                    object: scrollView,
+                    queue: .main
+                ) { [weak self] _ in
+                    Task { @MainActor [weak self] in
+                        guard let self = self, let tv = self.textView else { return }
+                        // Sync container width with the text view's actual frame
+                        // (widthTracksTextView may not fire after replaceLayoutManager)
+                        if let container = tv.textContainer {
+                            let width = tv.bounds.width
+                            if width > 0 && abs(container.containerSize.width - width) > 0.5 {
+                                container.containerSize = NSSize(
+                                    width: width,
+                                    height: CGFloat.greatestFiniteMagnitude)
+                                tv.layoutManager?.ensureLayout(for: container)
+                            }
                         }
+                        self.lastKnownTextViewWidth = tv.bounds.width
+                        self.scheduleOverlayUpdate()
                     }
                 }
                 observers.append(observer)
@@ -2510,6 +2565,9 @@ struct URLPasteOptionMenu: View {
                 // the view had an enclosingScrollView.
                 if !hasBoundsObserver {
                     registerBoundsObserverIfNeeded(for: textView)
+                }
+                if !hasFrameObserver {
+                    registerFrameObserverIfNeeded(for: textView)
                 }
 
                 // Disable layer clipping on the text view and its immediate
@@ -4218,7 +4276,7 @@ struct URLPasteOptionMenu: View {
                 // Fill container width; minimum 400pt
                 var containerWidth = textView?.textContainer?.containerSize.width ?? CalloutOverlayView.minWidth
                 if containerWidth < 1 { containerWidth = CalloutOverlayView.minWidth }
-                let calloutWidth = max(CalloutOverlayView.minWidth, containerWidth)
+                let calloutWidth = containerWidth
 
                 let calloutHeight = CalloutOverlayView.heightForData(calloutData, width: calloutWidth)
 
@@ -4283,7 +4341,7 @@ struct URLPasteOptionMenu: View {
             private func makeCodeBlockAttachment(codeBlockData: CodeBlockData) -> NSMutableAttributedString {
                 var containerWidth = textView?.textContainer?.containerSize.width ?? CodeBlockOverlayView.minWidth
                 if containerWidth < 1 { containerWidth = CodeBlockOverlayView.minWidth }
-                let blockWidth = max(CodeBlockOverlayView.minWidth, containerWidth)
+                let blockWidth = containerWidth
                 let size = CGSize(width: blockWidth, height: CodeBlockOverlayView.defaultHeight)
                 let attachment = NoteCodeBlockAttachment(codeBlockData: codeBlockData)
                 attachment.attachmentCell = CodeBlockSizeAttachmentCell(size: size)
@@ -4760,13 +4818,14 @@ struct URLPasteOptionMenu: View {
 
                     // Clamp width to valid range; preserve user-resized width if within bounds
                     let containerW = max(textContainer.containerSize.width, 100)
+                    let effectiveMinCallout = min(CalloutOverlayView.minWidth, containerW)
                     let currentWidth = attachment.bounds.width
-                    let needsWidthCorrection = currentWidth < CalloutOverlayView.minWidth || currentWidth > containerW
+                    let needsWidthCorrection = currentWidth < effectiveMinCallout || currentWidth > containerW
                     let correctedWidth = needsWidthCorrection
-                        ? max(CalloutOverlayView.minWidth, min(containerW, currentWidth))
+                        ? max(effectiveMinCallout, min(containerW, currentWidth))
                         : currentWidth
                     let expectedHeight = CalloutOverlayView.heightForData(
-                        attachment.calloutData, width: max(correctedWidth, CalloutOverlayView.minWidth))
+                        attachment.calloutData, width: correctedWidth)
                     let heightDrift = abs(attachment.bounds.height - expectedHeight) > 1
                     if needsWidthCorrection || heightDrift {
                         let newSize = CGSize(width: correctedWidth, height: expectedHeight)
@@ -4846,7 +4905,8 @@ struct URLPasteOptionMenu: View {
                         overlay.onWidthChanged = { [weak textStorage, weak layoutManager, weak attachment, weak textView] newWidth in
                             guard let ts = textStorage, let lm = layoutManager, let att = attachment,
                                   let tc = textView?.textContainer else { return }
-                            let clamped = max(CalloutOverlayView.minWidth, min(newWidth, tc.containerSize.width))
+                            let effMin = min(CalloutOverlayView.minWidth, tc.containerSize.width)
+                            let clamped = max(effMin, min(newWidth, tc.containerSize.width))
                             let newHeight = CalloutOverlayView.heightForData(att.calloutData, width: clamped)
                             let newSize = CGSize(width: clamped, height: newHeight)
                             att.attachmentCell = CalloutSizeAttachmentCell(size: newSize)
@@ -4864,6 +4924,7 @@ struct URLPasteOptionMenu: View {
                         calloutOverlays[id] = overlay
                     }
 
+                    overlay.currentContainerWidth = containerW
                     overlay.frame = overlayRect.integral
                 }
 
@@ -4897,13 +4958,14 @@ struct URLPasteOptionMenu: View {
 
                     // Clamp width to valid range; preserve user-resized width if within bounds
                     let containerW = max(textContainer.containerSize.width, 100)
+                    let effectiveMinCode = min(CodeBlockOverlayView.minWidth, containerW)
                     let currentWidth = attachment.bounds.width
                     let expectedHeight = CodeBlockOverlayView.defaultHeight
-                    let needsCorrection = currentWidth < CodeBlockOverlayView.minWidth
+                    let needsCorrection = currentWidth < effectiveMinCode
                         || currentWidth > containerW
                         || abs(attachment.bounds.height - expectedHeight) > 1
                     if needsCorrection {
-                        let correctedWidth = max(CodeBlockOverlayView.minWidth, min(containerW, currentWidth))
+                        let correctedWidth = max(effectiveMinCode, min(containerW, currentWidth))
                         let newSize = CGSize(width: correctedWidth, height: expectedHeight)
                         attachment.attachmentCell = CodeBlockSizeAttachmentCell(size: newSize)
                         attachment.bounds = CGRect(origin: .zero, size: newSize)
@@ -4978,7 +5040,8 @@ struct URLPasteOptionMenu: View {
                         overlay.onWidthChanged = { [weak textStorage, weak layoutManager, weak attachment, weak textView] newWidth in
                             guard let ts = textStorage, let lm = layoutManager, let att = attachment,
                                   let tc = textView?.textContainer else { return }
-                            let clamped = max(CodeBlockOverlayView.minWidth, min(newWidth, tc.containerSize.width))
+                            let effMin = min(CodeBlockOverlayView.minWidth, tc.containerSize.width)
+                            let clamped = max(effMin, min(newWidth, tc.containerSize.width))
                             let newSize = CGSize(width: clamped, height: CodeBlockOverlayView.defaultHeight)
                             att.attachmentCell = CodeBlockSizeAttachmentCell(size: newSize)
                             att.bounds = CGRect(origin: .zero, size: newSize)
@@ -4995,6 +5058,7 @@ struct URLPasteOptionMenu: View {
                         codeBlockOverlays[id] = overlay
                     }
 
+                    overlay.currentContainerWidth = containerW
                     overlay.frame = overlayRect.integral
                 }
 
@@ -5059,11 +5123,7 @@ struct URLPasteOptionMenu: View {
             ) {
                 guard layoutFinishedFlag else { return }
                 Task { @MainActor [weak self] in
-                    guard let self = self, let tv = self.textView else { return }
-                    self.updateImageOverlays(in: tv)
-                    self.updateTableOverlays(in: tv)
-                    self.updateCalloutOverlays(in: tv)
-                    self.updateCodeBlockOverlays(in: tv)
+                    self?.scheduleOverlayUpdate()
                 }
             }
 

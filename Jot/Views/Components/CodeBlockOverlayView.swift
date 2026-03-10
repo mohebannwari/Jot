@@ -17,6 +17,8 @@ final class CodeBlockOverlayView: NSView {
     // MARK: - Constants
 
     static  let minWidth:     CGFloat = 400
+    /// Set by the coordinator so drag-resize respects the actual container.
+    var currentContainerWidth: CGFloat = 0
     static  let defaultHeight: CGFloat = outerPad + hdrHeight + bodyHeight + outerPad  // 342
 
     private static let outerPad:     CGFloat = 2
@@ -254,7 +256,9 @@ final class CodeBlockOverlayView: NSView {
     // MARK: - Resize
 
     func handleResize(to newWidth: CGFloat) {
-        let clamped = floor(max(Self.minWidth, newWidth))
+        let effectiveMax = currentContainerWidth > 0 ? currentContainerWidth : CGFloat.greatestFiniteMagnitude
+        let effectiveMin = min(Self.minWidth, effectiveMax)
+        let clamped = floor(max(effectiveMin, min(effectiveMax, newWidth)))
         var f = frame
         f.size.width = clamped
         frame = f

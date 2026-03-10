@@ -189,7 +189,6 @@ struct ContentView: View {
     @State private var splitFocusRequestID = UUID()
     @State private var primaryEditorID = UUID()
     @State private var splitEditorID = UUID()
-    @State private var currentDetailWidth: CGFloat = 0
     @State private var splitMenuButtonFrame: CGRect = .zero
     @State private var primaryBottomOverlayActive = false
     @State private var splitBottomOverlayActive = false
@@ -720,11 +719,6 @@ struct ContentView: View {
             ))
             .padding(.leading, sidebarDetailGap)
             .padding(needsPendingPadding ? windowContentPadding : 0)
-            .background(
-                Color.clear
-                    .onAppear { currentDetailWidth = totalDetailWidth }
-                    .onChange(of: totalDetailWidth) { currentDetailWidth = $0 }
-            )
             .disabled(isCreateFolderAlertPresented || pendingFolderToEdit != nil)
         }
     }
