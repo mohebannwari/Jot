@@ -286,11 +286,9 @@ final class NoteTableOverlayView: NSView {
         return NSRect(x: x, y: y, width: handleHitThickness, height: rowHeight)
     }
 
-    /// Wider hit zone for row handles that extends into the table body.
+    /// Hit zone for row handles — matches the visible handle strip only (no inward extension).
     private func rowHandleHitZone(for row: Int) -> NSRect {
-        let base = rowHandleRect(for: row)
-        return NSRect(x: base.origin.x, y: base.origin.y,
-                      width: base.width + handleGap + cellPaddingH, height: base.height)
+        return rowHandleRect(for: row)
     }
 
     /// Hit rect for column divider between col and col+1
@@ -973,6 +971,37 @@ final class NoteTableOverlayView: NSView {
     }
 
     // MARK: - Cursor Rects
+
+    /// Returns the appropriate cursor for a given window point, or nil if the point
+    /// isn't over any handle/divider. Called by the Coordinator's `resizeCursorForPoint`
+    /// to prevent NSTextView.mouseMoved from resetting to I-beam.
+    func cursorForPoint(_ windowPoint: CGPoint) -> NSCursor? {
+        let local = convert(windowPoint, from: nil)
+
+        // Column dividers -- resize left/right
+        for col in 0..<(tableData.columns - 1) {
+            if columnDividerRect(at: col).contains(local) {
+                return .resizeLeftRight
+            }
+        }
+        // Column handles -- open hand
+        for col in 0..<tableData.columns {
+            if columnHandleRect(for: col).contains(local) {
+                return .openHand
+            }
+        }
+        // Row handles -- open hand (uses rowHandleRect, not the wider hit zone)
+        for row in 0..<tableData.rows {
+            if rowHandleRect(for: row).contains(local) {
+                return .openHand
+            }
+        }
+        // Add buttons -- pointing hand
+        if addRowButtonRect.contains(local) || addColumnButtonViewRect.contains(local) {
+            return .pointingHand
+        }
+        return nil
+    }
 
     override func resetCursorRects() {
         for col in 0..<(tableData.columns - 1) {

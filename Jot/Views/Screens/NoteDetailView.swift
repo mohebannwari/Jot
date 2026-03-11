@@ -236,6 +236,7 @@ struct NoteDetailView: View {
             )
             .id(editorIdentity)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, -28) // Extend editor into VStack padding for table row handle gutter
 
             // Backlinks section
             if !backlinks.isEmpty {

@@ -1366,7 +1366,7 @@ struct URLPasteOptionMenu: View {
             textView.drawsBackground = false
             // Use Charter for body text as per design requirements
             textView.font = FontManager.bodyNS(size: ThemeManager.currentBodyFontSize(), weight: .regular)
-            textView.textContainerInset = NSSize(width: 0, height: 16)
+            textView.textContainerInset = NSSize(width: 28, height: 16)
             textView.linkTextAttributes = [
                 .underlineStyle: 0,
                 .underlineColor: NSColor.clear,
@@ -1464,9 +1464,9 @@ struct URLPasteOptionMenu: View {
                 }
             }
 
-            // Update container size only if needed
+            // Update container size only if needed (account for horizontal textContainerInset)
             if let container = textView.textContainer, let layoutManager = textView.layoutManager {
-                let width = textView.bounds.width
+                let width = textView.bounds.width - textView.textContainerInset.width * 2
                 if width > 0 && abs(container.containerSize.width - width) > 0.5 {
                     container.containerSize = NSSize(width: width, height: unlimitedDimension)
                     layoutManager.ensureLayout(for: container)
@@ -1509,9 +1509,10 @@ struct URLPasteOptionMenu: View {
             let proposedWidth = proposal.width ?? nsView.bounds.width
             let targetWidth = max(proposedWidth, 100)
 
-            // Update container size for layout calculation
-            if abs(container.containerSize.width - targetWidth) > 0.5 {
-                container.containerSize = NSSize(width: targetWidth, height: unlimitedDimension)
+            // Update container size for layout calculation (account for horizontal textContainerInset)
+            let containerWidth = max(targetWidth - nsView.textContainerInset.width * 2, 100)
+            if abs(container.containerSize.width - containerWidth) > 0.5 {
+                container.containerSize = NSSize(width: containerWidth, height: unlimitedDimension)
             }
 
             // Ensure layout is up to date
@@ -2085,6 +2086,11 @@ struct URLPasteOptionMenu: View {
                         return cursor
                     }
                 }
+                for (_, overlay) in tableOverlays {
+                    if let cursor = overlay.cursorForPoint(windowPoint) {
+                        return cursor
+                    }
+                }
                 return nil
             }
 
@@ -2561,7 +2567,7 @@ struct URLPasteOptionMenu: View {
                         // Sync container width with the text view's actual frame
                         // (widthTracksTextView may not fire after replaceLayoutManager)
                         if let container = tv.textContainer {
-                            let width = tv.bounds.width
+                            let width = tv.bounds.width - tv.textContainerInset.width * 2
                             if width > 0 && abs(container.containerSize.width - width) > 0.5 {
                                 container.containerSize = NSSize(
                                     width: width,
