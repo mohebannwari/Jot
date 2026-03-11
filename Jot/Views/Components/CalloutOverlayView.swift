@@ -152,7 +152,7 @@ final class CalloutOverlayView: NSView {
 
         layer?.backgroundColor = isDark ? colors.outerDark.cgColor : colors.outerLight.cgColor
         layer?.borderColor = isDark
-            ? NSColor.white.withAlphaComponent(0.12).cgColor
+            ? NSColor.white.withAlphaComponent(0.06).cgColor
             : NSColor.black.withAlphaComponent(0.08).cgColor
 
         innerBlock.layer?.backgroundColor = isDark
@@ -269,13 +269,23 @@ final class CalloutOverlayView: NSView {
         let tfH = max(innerH - innerPadding * 2, 20)
         textField.frame = CGRect(x: innerPadding, y: innerPadding, width: tfW, height: tfH)
 
-        // Resize handle — right edge, full height
+        // Resize handle — straddles right edge (half inside, half outside)
         resizeHandle.frame = CGRect(
-            x: bounds.width - Self.handleWidth,
+            x: bounds.width - Self.handleWidth / 2,
             y: 0,
             width: Self.handleWidth,
             height: bounds.height
         )
+    }
+
+    // MARK: - Cursor
+
+    /// Returns the resize cursor if the window point falls on the resize handle, nil otherwise.
+    /// Called by the coordinator's resizeCursorForPoint to bypass NSTextView's I-beam override.
+    func cursorForPoint(_ windowPoint: CGPoint) -> NSCursor? {
+        let local = convert(windowPoint, from: nil)
+        guard resizeHandle.frame.contains(local) else { return nil }
+        return NSCursor.frameResize(position: .right, directions: .all)
     }
 
     // MARK: - Height Calculation
@@ -413,7 +423,7 @@ private final class _CalloutResizeHandle: NSView {
     override var isOpaque: Bool { false }
 
     override func resetCursorRects() {
-        addCursorRect(bounds, cursor: .resizeLeftRight)
+        addCursorRect(bounds, cursor: NSCursor.frameResize(position: .right, directions: .all))
     }
 
     override func mouseDown(with event: NSEvent) {

@@ -262,7 +262,7 @@ extension EditTool {
         case .codeBlock: return "IconCode"
         case .blockQuote: return "IconTextBlock"
         case .highlight: return nil
-        case .callout: return "IconFormRectangle"
+        case .callout: return "IconLightBulbSimple"
         }
     }
 

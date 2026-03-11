@@ -528,6 +528,9 @@ private final class InlineImageOverlayView: NSView {
     /// Right edge: rightmost 40px. Bottom edge: bottommost 40px. Corner: overlap of both.
     private let edgeZone: CGFloat = 40
 
+    /// How far outside the image bounds the resize zone extends (straddles the edge).
+    private let edgeOutset: CGFloat = 6
+
     /// Corner radius scales proportionally with image width.
     private var computedCornerRadius: CGFloat { 16 }
 
@@ -594,7 +597,7 @@ private final class InlineImageOverlayView: NSView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         borderLayer.borderColor = isDark
-            ? NSColor.white.withAlphaComponent(0.12).cgColor
+            ? NSColor.white.withAlphaComponent(0.06).cgColor
             : NSColor.black.withAlphaComponent(0.08).cgColor
         shadowLayer.shadowOpacity = 0
         CATransaction.commit()
@@ -620,20 +623,21 @@ private final class InlineImageOverlayView: NSView {
         super.resetCursorRects()
         discardCursorRects()
         let zone = edgeZone
+        let outset = edgeOutset
 
-        // Corner (bottom-right) — added first; edges exclude this region
-        let cornerRect = CGRect(x: bounds.maxX - zone, y: bounds.maxY - zone,
+        // Corner (bottom-right) — extends outward by `outset` on both axes
+        let cornerRect = CGRect(x: bounds.maxX - zone + outset, y: bounds.maxY - zone + outset,
                                 width: zone, height: zone)
         addCursorRect(cornerRect, cursor: NSCursor.frameResize(position: .bottomRight, directions: .all))
 
-        // Right edge (excluding corner)
-        let rightRect = CGRect(x: bounds.maxX - zone, y: bounds.minY,
-                               width: zone, height: bounds.height - zone)
+        // Right edge (excluding corner) — extends outward by `outset`
+        let rightRect = CGRect(x: bounds.maxX - zone + outset, y: bounds.minY,
+                               width: zone, height: bounds.height - zone + outset)
         addCursorRect(rightRect, cursor: NSCursor.frameResize(position: .right, directions: .all))
 
-        // Bottom edge (excluding corner)
-        let bottomRect = CGRect(x: bounds.minX, y: bounds.maxY - zone,
-                                width: bounds.width - zone, height: zone)
+        // Bottom edge (excluding corner) — extends outward by `outset`
+        let bottomRect = CGRect(x: bounds.minX, y: bounds.maxY - zone + outset,
+                                width: bounds.width - zone + outset, height: zone)
         addCursorRect(bottomRect, cursor: NSCursor.frameResize(position: .bottom, directions: .all))
     }
 
@@ -658,9 +662,11 @@ private final class InlineImageOverlayView: NSView {
     }
 
     private func resizeEdge(at point: NSPoint) -> ResizeEdge? {
-        guard bounds.contains(point) else { return nil }
-        let onRight = point.x >= bounds.maxX - edgeZone
-        let onBottom = point.y >= bounds.maxY - edgeZone
+        // Expand hit area by edgeOutset so the resize zone straddles the image edge
+        let expandedBounds = bounds.insetBy(dx: -edgeOutset, dy: -edgeOutset)
+        guard expandedBounds.contains(point) else { return nil }
+        let onRight = point.x >= bounds.maxX - edgeZone + edgeOutset
+        let onBottom = point.y >= bounds.maxY - edgeZone + edgeOutset
         if onRight && onBottom { return .corner }
         if onRight { return .right }
         if onBottom { return .bottom }
@@ -672,7 +678,9 @@ private final class InlineImageOverlayView: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? {
         let local = convert(point, from: superview)
         if isDragging { return self }
-        return bounds.contains(local) ? self : nil
+        // Expand hit area so resize zones that straddle the edge are reachable
+        let expandedBounds = bounds.insetBy(dx: -edgeOutset, dy: -edgeOutset)
+        return expandedBounds.contains(local) ? self : nil
     }
 
     // MARK: - Resize Drag + Event Forwarding
@@ -2063,6 +2071,16 @@ struct URLPasteOptionMenu: View {
             /// Returns the appropriate resize cursor, or nil if the point isn't on any edge.
             func resizeCursorForPoint(_ windowPoint: CGPoint) -> NSCursor? {
                 for (_, overlay) in imageOverlays {
+                    if let cursor = overlay.cursorForPoint(windowPoint) {
+                        return cursor
+                    }
+                }
+                for (_, overlay) in codeBlockOverlays {
+                    if let cursor = overlay.cursorForPoint(windowPoint) {
+                        return cursor
+                    }
+                }
+                for (_, overlay) in calloutOverlays {
                     if let cursor = overlay.cursorForPoint(windowPoint) {
                         return cursor
                     }
@@ -7268,7 +7286,7 @@ struct URLPasteOptionMenu: View {
                     xRadius: cornerRadius - bInset,
                     yRadius: cornerRadius - bInset)
                 strokePath.lineWidth = borderWidth
-                (isDark ? NSColor(white: 0.45, alpha: 1) : NSColor(white: 0.72, alpha: 1)).setStroke()
+                (isDark ? NSColor(white: 0.35, alpha: 1) : NSColor(white: 0.72, alpha: 1)).setStroke()
                 strokePath.stroke()
             }
 

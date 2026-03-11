@@ -489,7 +489,7 @@ struct SettingsPage: View {
         )
         .overlay(
             Capsule()
-                .stroke(colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.08), lineWidth: 1)
+                .stroke(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.08), lineWidth: 1)
         )
     }
 
@@ -505,7 +505,7 @@ struct SettingsPage: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.08), lineWidth: 1)
+                .stroke(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.08), lineWidth: 1)
         )
     }
 
@@ -520,7 +520,7 @@ struct SettingsPage: View {
                         .frame(width: 16, height: 16)
 
                     Circle()
-                        .strokeBorder(isOn.wrappedValue ? Color.clear : (colorScheme == .dark ? Color(white: 0.45) : Color(white: 0.72)), lineWidth: 1)
+                        .strokeBorder(isOn.wrappedValue ? Color.clear : (colorScheme == .dark ? Color(white: 0.35) : Color(white: 0.72)), lineWidth: 1)
                         .frame(width: 16, height: 16)
 
                     if isOn.wrappedValue {
@@ -628,7 +628,7 @@ struct SettingsPage: View {
                     .clipShape(RoundedRectangle(cornerRadius: bodyFontCardRadius, style: .continuous))
                     .overlay(
                         RoundedRectangle(cornerRadius: bodyFontCardRadius, style: .continuous)
-                            .stroke(colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.08), lineWidth: 1)
+                            .stroke(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.08), lineWidth: 1)
                     )
                     .shadow(color: .black.opacity(0.06), radius: 3, x: 0, y: 1)
                     .shadow(color: .black.opacity(0.03), radius: 1, x: 0, y: 0)
@@ -697,7 +697,7 @@ struct SettingsPage: View {
                 .frame(height: bodyFontCardHeight)
                 .overlay(
                     RoundedRectangle(cornerRadius: bodyFontCardRadius, style: .continuous)
-                        .stroke(colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.08), lineWidth: 1)
+                        .stroke(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.08), lineWidth: 1)
                 )
                 .shadow(color: .black.opacity(0.06), radius: 3, x: 0, y: 1)
                 .shadow(color: .black.opacity(0.03), radius: 1, x: 0, y: 0)
@@ -748,7 +748,7 @@ struct SettingsPage: View {
                 .frame(height: lineSpacingCardHeight)
                 .overlay(
                     RoundedRectangle(cornerRadius: lineSpacingCardRadius, style: .continuous)
-                        .stroke(colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.08), lineWidth: 1)
+                        .stroke(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.08), lineWidth: 1)
                 )
                 .shadow(color: .black.opacity(0.06), radius: 3, x: 0, y: 1)
                 .shadow(color: .black.opacity(0.03), radius: 1, x: 0, y: 0)
@@ -840,7 +840,7 @@ struct SettingsPage: View {
                 )
                 .overlay(
                     Capsule()
-                        .stroke(colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.08), lineWidth: 1)
+                        .stroke(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.08), lineWidth: 1)
                 )
                 .shadow(color: .black.opacity(0.06), radius: 3, x: 0, y: 1)
                 .shadow(color: .black.opacity(0.03), radius: 1, x: 0, y: 0)
@@ -873,7 +873,7 @@ struct SettingsPage: View {
             )
             .overlay(
                 Capsule()
-                    .stroke(colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.08), lineWidth: 1)
+                    .stroke(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.08), lineWidth: 1)
             )
             .shadow(color: .black.opacity(0.06), radius: 3, x: 0, y: 1)
             .shadow(color: .black.opacity(0.03), radius: 1, x: 0, y: 0)
@@ -929,7 +929,7 @@ struct SettingsPage: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.08), lineWidth: 1)
+                .stroke(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.08), lineWidth: 1)
         )
     }
 
@@ -1023,7 +1023,7 @@ struct SettingsPage: View {
             )
             .overlay(
                 Capsule()
-                    .stroke(colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.08), lineWidth: 1)
+                    .stroke(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.08), lineWidth: 1)
             )
         }
     }
@@ -1129,7 +1129,7 @@ struct SettingsPage: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(colorScheme == .dark ? Color.white.opacity(0.12) : Color.black.opacity(0.08), lineWidth: 1)
+                .stroke(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.08), lineWidth: 1)
         )
     }
 

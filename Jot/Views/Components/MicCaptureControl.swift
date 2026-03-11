@@ -89,6 +89,22 @@ public struct MicCaptureControl: View {
     }
 }
 
+// MARK: - Geometry (concentric radius math)
+//
+// icon frame:     18 x 18
+// button inset:   4pt each side  →  26 x 26 circle
+// capsule inset:  4pt each side  →  34pt tall capsule
+// capsule radius: 34 / 2 = 17
+// inner circle:   26 / 2 = 13    →  17 - 4 = 13 ✓ concentric
+//
+private enum MicGeometry {
+    static let iconSize: CGFloat = 18
+    static let buttonInset: CGFloat = 4
+    static let buttonDiameter: CGFloat = iconSize + buttonInset * 2   // 26
+    static let capsuleInset: CGFloat = 4
+    static let innerRadius: CGFloat = buttonDiameter / 2              // 13
+}
+
 // MARK: - Subviews
 private extension MicCaptureControl {
     var idleView: some View {
@@ -99,18 +115,23 @@ private extension MicCaptureControl {
             }
         } label: {
             Image(systemName: "mic")
-                .font(FontManager.icon(size: 18, weight: .medium))
+                .font(FontManager.icon(size: MicGeometry.iconSize, weight: .medium))
                 .foregroundStyle(Color("SecondaryTextColor"))
-                .frame(width: 18, height: 18)
+                .frame(width: MicGeometry.iconSize, height: MicGeometry.iconSize)
+                .padding(MicGeometry.buttonInset)
+                .contentShape(Circle())
         }
         .buttonStyle(.plain)
         .macPointingHandCursor()
+        .hoverContainer(cornerRadius: MicGeometry.innerRadius)
+        .padding(MicGeometry.capsuleInset)
+        .thinLiquidGlass(in: Capsule())
         .accessibilityLabel(Text("Start recording"))
         .keyboardShortcut(.space, modifiers: [])
     }
 
     var recordingView: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 4) {
             Button {
                 HapticManager.shared.buttonTap()
                 Task { @MainActor in
@@ -120,7 +141,9 @@ private extension MicCaptureControl {
                 Image(systemName: "stop.circle.fill")
                     .font(.system(size: 20, weight: .medium))
                     .foregroundStyle(.white, Color.red)
-                    .frame(width: 18, height: 18)
+                    .frame(width: MicGeometry.iconSize, height: MicGeometry.iconSize)
+                    .padding(MicGeometry.buttonInset)
+                    .contentShape(Circle())
             }
             .buttonStyle(.plain)
             .macPointingHandCursor()
@@ -134,7 +157,11 @@ private extension MicCaptureControl {
                 color: Color("SecondaryTextColor")
             )
             .frame(width: 20, height: 20)
+            .frame(width: MicGeometry.buttonDiameter, height: MicGeometry.buttonDiameter)
+            .padding(.trailing, 4)
         }
+        .padding(MicGeometry.capsuleInset)
+        .thinLiquidGlass(in: Capsule())
         .overlay(cancelShortcut)
     }
 
@@ -151,13 +178,13 @@ private extension MicCaptureControl {
                     .resizable()
                     .scaledToFit()
                     .foregroundColor(.red)
-                    .frame(width: 18, height: 18)
-                    .padding(4)
-                    .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .frame(width: MicGeometry.iconSize, height: MicGeometry.iconSize)
+                    .padding(MicGeometry.buttonInset)
+                    .contentShape(Circle())
             }
             .buttonStyle(.plain)
             .macPointingHandCursor()
-            .hoverContainer(cornerRadius: 8)
+            .hoverContainer(cornerRadius: MicGeometry.innerRadius)
             .accessibilityLabel(Text("Cancel recording"))
 
             Button {
@@ -171,13 +198,13 @@ private extension MicCaptureControl {
                     .resizable()
                     .scaledToFit()
                     .foregroundColor(Color("SecondaryTextColor"))
-                    .frame(width: 18, height: 18)
-                    .padding(4)
-                    .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .frame(width: MicGeometry.iconSize, height: MicGeometry.iconSize)
+                    .padding(MicGeometry.buttonInset)
+                    .contentShape(Circle())
             }
             .buttonStyle(.plain)
             .macPointingHandCursor()
-            .hoverContainer(cornerRadius: 8)
+            .hoverContainer(cornerRadius: MicGeometry.innerRadius)
             .accessibilityLabel(Text("Resume recording"))
 
             Button {
@@ -191,24 +218,26 @@ private extension MicCaptureControl {
                         .progressViewStyle(CircularProgressViewStyle(tint: .white))
                         .scaleEffect(0.8)
                         .frame(width: 20, height: 20)
-                        .padding(4)
+                        .frame(width: MicGeometry.buttonDiameter, height: MicGeometry.buttonDiameter)
                 } else {
                     Image("IconArrowUpCircle")
                         .renderingMode(.template)
                         .resizable()
                         .scaledToFit()
                         .foregroundColor(Color("AccentColor"))
-                        .frame(width: 18, height: 18)
-                        .padding(4)
-                        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .frame(width: MicGeometry.iconSize, height: MicGeometry.iconSize)
+                        .padding(MicGeometry.buttonInset)
+                        .contentShape(Circle())
                 }
             }
             .buttonStyle(.plain)
             .macPointingHandCursor()
-            .hoverContainer(cornerRadius: 8)
+            .hoverContainer(cornerRadius: MicGeometry.innerRadius)
             .disabled(viewModel.isProcessingSend)
             .accessibilityLabel(Text(viewModel.isProcessingSend ? "Sending voice note" : "Send voice note"))
         }
+        .padding(MicGeometry.capsuleInset)
+        .thinLiquidGlass(in: Capsule())
         .overlay(cancelShortcut)
     }
 

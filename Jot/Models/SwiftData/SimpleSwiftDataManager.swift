@@ -339,19 +339,21 @@ final class SimpleSwiftDataManager: ObservableObject {
 
             noteEntity.updateTitle(updatedNote.title)
             noteEntity.updateContent(updatedNote.content)
-            noteEntity.folderID = updatedNote.folderID
-            noteEntity.isPinned = updatedNote.folderID == nil ? updatedNote.isPinned : false
-            noteEntity.isLocked = updatedNote.isLocked
-
+            // Preserve metadata from the authoritative local notes array — the editor's
+            // noteForPersist may carry stale isPinned/isLocked/folderID values.
+            noteEntity.folderID = existingNote?.folderID ?? updatedNote.folderID
+            noteEntity.isPinned = existingNote?.isPinned ?? updatedNote.isPinned
+            noteEntity.isLocked = existingNote?.isLocked ?? updatedNote.isLocked
 
             try modelContext.save()
 
             // Update local array — skip the expensive recomputeDerivedNotes() for content-only saves
             if let index = notes.firstIndex(where: { $0.id == updatedNote.id }) {
                 var localNote = updatedNote
-                if localNote.folderID != nil {
-                    localNote.isPinned = false
-                }
+                let existing = notes[index]
+                localNote.isPinned = existing.isPinned
+                localNote.isLocked = existing.isLocked
+                localNote.folderID = existing.folderID
                 if !metadataChanged {
                     suppressDerivedRecompute = true
                 }

@@ -215,7 +215,7 @@ private struct FormatPillButton: View {
                     .stroke(
                         isSelected
                             ? Color.clear
-                            : Color(nsColor: NSColor.labelColor).opacity(0.09),
+                            : Color(nsColor: NSColor.labelColor).opacity(colorScheme == .dark ? 0.05 : 0.09),
                         lineWidth: 1
                     )
                     .animation(.jotBounce, value: isSelected)

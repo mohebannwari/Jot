@@ -120,7 +120,7 @@ struct AIToolsOverlay: View {
         }
         .buttonStyle(.plain)
         .macPointingHandCursor()
-        .help(tooltip)
+        .glassTooltip(tooltip)
         .hoverContainer(cornerRadius: 8)
     }
 
@@ -192,7 +192,7 @@ struct AIToolsOverlay: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(Color.primary.opacity(0.2), lineWidth: 1)
+                    .stroke(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.08), lineWidth: 1)
             )
             .onKeyPress(.return) {
                 let trimmed = promptText.trimmingCharacters(in: .whitespacesAndNewlines)

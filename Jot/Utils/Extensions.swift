@@ -193,6 +193,42 @@ extension View {
     }
 }
 
+// MARK: - Glass Tooltip
+
+/// Liquid glass tooltip pill that appears instantly above the hovered view.
+private struct GlassTooltipModifier: ViewModifier {
+    let label: String
+    @State private var isHovered = false
+
+    func body(content: Content) -> some View {
+        content
+            .overlay(alignment: .top) {
+                if isHovered {
+                    Text(label)
+                        .font(FontManager.heading(size: 11, weight: .medium))
+                        .foregroundColor(Color("PrimaryTextColor"))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .fixedSize()
+                        .liquidGlass(in: Capsule())
+                        .offset(y: -28)
+                        .allowsHitTesting(false)
+                        .transition(.scale(scale: 0.9, anchor: .bottom).combined(with: .opacity))
+                        .zIndex(10000)
+                }
+            }
+            .animation(.easeOut(duration: 0.15), value: isHovered)
+            .onHover { isHovered = $0 }
+    }
+}
+
+extension View {
+    /// Adds a liquid glass tooltip pill that appears instantly on hover.
+    func glassTooltip(_ label: String) -> some View {
+        modifier(GlassTooltipModifier(label: label))
+    }
+}
+
 // MARK: - Color Hex Initializer
 
 extension Color {

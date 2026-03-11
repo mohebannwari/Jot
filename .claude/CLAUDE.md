@@ -73,7 +73,7 @@ Before any feature implementation:
 | Task | Skills |
 |------|--------|
 | New feature | `superpowers:brainstorming` → `superpowers:writing-plans` → `superpowers:test-driven-development` |
-| Bug | `superpowers:systematic-debugging` |
+| Bug | `superpowers:systematic-debugging` (reproduce-first — see Bug Workflow below) |
 | Design / UI | `figma-design` → `frontend-design` |
 | Completion | `superpowers:verification-before-completion` → `superpowers:requesting-code-review` |
 | Multi-task | `superpowers:dispatching-parallel-agents` |
@@ -223,8 +223,15 @@ First frame renders at native proportions, rotation flips visually, second frame
 
 ---
 
+## Bug Workflow
+When a bug is reported, **do not attempt to fix it immediately.** Instead:
+1. Write a test that reproduces the bug (the test must fail).
+2. Dispatch subagents to fix the bug and prove the fix with the now-passing test.
+3. Only declare the bug fixed when the reproduction test passes.
+
+---
+
 ## Code Rules
-- **iOS 26+ / macOS 26+ only.** Never reference iOS 18 or macOS 15.
 - No hardcoded colors, spacing, or radii — use design tokens.
 - Check existing components before creating new ones.
 - Rich text: `AttributedString` + `.richTextCapabilities()`.

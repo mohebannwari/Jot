@@ -137,7 +137,7 @@ final class NoteTableOverlayView: NSView {
 
     private var borderColor: NSColor {
         isDarkMode
-            ? NSColor.white.withAlphaComponent(0.12)
+            ? NSColor.white.withAlphaComponent(0.06)
             : NSColor.black.withAlphaComponent(0.08)
     }
     private var gridColor: NSColor { .separatorColor }

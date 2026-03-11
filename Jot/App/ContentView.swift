@@ -763,7 +763,9 @@ struct ContentView: View {
             .onPreferenceChange(BottomOverlayActivePreferenceKey.self) { primaryBottomOverlayActive = $0 }
             .onPreferenceChange(BottomInputOverlayActivePreferenceKey.self) { primaryBottomInputOverlayActive = $0 }
             .overlay(alignment: .bottomTrailing) {
-                AIToolsOverlay(state: $aiToolsState, editorInstanceID: primaryEditorID).padding(.trailing, 14).padding(.bottom, 14)
+                if AppleIntelligenceService.shared.isAvailable {
+                    AIToolsOverlay(state: $aiToolsState, editorInstanceID: primaryEditorID).padding(.trailing, 14).padding(.bottom, 14)
+                }
             }
             .overlay(alignment: .bottomLeading) {
                 if !(primaryBottomOverlayActive || (primaryBottomInputOverlayActive && width < 620)) {
@@ -918,7 +920,9 @@ struct ContentView: View {
         .onPreferenceChange(BottomOverlayActivePreferenceKey.self) { splitBottomOverlayActive = $0 }
         .onPreferenceChange(BottomInputOverlayActivePreferenceKey.self) { splitBottomInputOverlayActive = $0 }
         .overlay(alignment: .bottomTrailing) {
-            AIToolsOverlay(state: $splitAiToolsState, editorInstanceID: splitEditorID).padding(.trailing, 14).padding(.bottom, 14)
+            if AppleIntelligenceService.shared.isAvailable {
+                AIToolsOverlay(state: $splitAiToolsState, editorInstanceID: splitEditorID).padding(.trailing, 14).padding(.bottom, 14)
+            }
         }
         .overlay(alignment: .bottomLeading) {
             if !(splitBottomOverlayActive || (splitBottomInputOverlayActive && width < 620)) {
@@ -2091,6 +2095,9 @@ struct ContentView: View {
         .shadow(color: .black.opacity(0.04), radius: 9.5, x: 0, y: 9)
         .shadow(color: .black.opacity(0.02), radius: 17.5, x: 0, y: 35)
         .shadow(color: .black.opacity(0.01), radius: 23.5, x: 0, y: 78)
+        .onHover { hovering in
+            handleFloatingSidebarHover(hovering)
+        }
     }
 
     @ViewBuilder
@@ -2251,10 +2258,36 @@ struct ContentView: View {
                     notesManager.toggleLock(id: note.id)
                 }
             }
-        } else {
-            authManager.authenticate(noteID: note.id, method: .login) { success in
+        } else if themeManager.useTouchID {
+            authManager.authenticate(noteID: note.id, method: .touchID) { success in
                 if success {
                     notesManager.toggleLock(id: note.id)
+                }
+            }
+        } else {
+            let alert = NSAlert()
+            alert.messageText = "Remove Lock"
+            alert.informativeText = "Enter your macOS login password to permanently remove the lock from this note."
+
+            let passwordField = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
+            alert.accessoryView = passwordField
+            alert.addButton(withTitle: "Unlock")
+            alert.addButton(withTitle: "Cancel")
+
+            if let okButton = alert.buttons.first {
+                okButton.hasDestructiveAction = false
+                okButton.bezelColor = NSColor.controlAccentColor
+            }
+
+            alert.window.initialFirstResponder = passwordField
+
+            let response = alert.runModal()
+            if response == .alertFirstButtonReturn {
+                let input = passwordField.stringValue
+                authManager.authenticate(noteID: note.id, method: .login, customPasswordInput: input) { success in
+                    if success {
+                        notesManager.toggleLock(id: note.id)
+                    }
                 }
             }
         }
@@ -2421,7 +2454,7 @@ struct ContentView: View {
                     .overlay {
                         if !isActive {
                             Capsule()
-                                .strokeBorder(Color("IconSecondaryColor").opacity(0.3), lineWidth: 0.5)
+                                .strokeBorder(Color("IconSecondaryColor").opacity(colorScheme == .dark ? 0.15 : 0.3), lineWidth: 0.5)
                         }
                     }
                     .shadow(color: .black.opacity(0.06), radius: 3, x: 0, y: 1)
@@ -2440,7 +2473,7 @@ struct ContentView: View {
                     .overlay {
                         if !isActive {
                             Capsule()
-                                .strokeBorder(Color("IconSecondaryColor").opacity(0.3), lineWidth: 0.5)
+                                .strokeBorder(Color("IconSecondaryColor").opacity(colorScheme == .dark ? 0.15 : 0.3), lineWidth: 0.5)
                         }
                     }
                     .shadow(color: .black.opacity(0.06), radius: 3, x: 0, y: 1)
@@ -3631,117 +3664,116 @@ struct NoteListCard: View {
     }
 
     var body: some View {
-        Button {
-            if !isRenaming {
-                onTap(Self.selectionInteractionFromCurrentEvent())
-            }
-        } label: {
-            HStack(spacing: 8) {
-                if let icon = leadingIconAssetName {
-                    let isLeadingIconVisible = !showLeadingIconOnHoverOnly || isHovered
-                    let isShowingHoverVariant = isHovered && hoverLeadingIconAssetName != nil
-                    let showBg = persistentLeadingIconBg || (isLeadingIconHovered && onLeadingIconTap != nil)
-                    let currentFg = showBg
-                        ? (isShowingHoverVariant ? (hoverLeadingIconFgColor ?? leadingIconFgColor) : leadingIconFgColor)
-                        : leadingIconTint
-                    let currentBg = showBg
-                        ? (isShowingHoverVariant ? (hoverLeadingIconBgColor ?? leadingIconBgColor) : leadingIconBgColor)
-                        : Color.clear
+        HStack(spacing: 8) {
+            if let icon = leadingIconAssetName {
+                let isLeadingIconVisible = !showLeadingIconOnHoverOnly || isHovered
+                let isShowingHoverVariant = isLeadingIconHovered && hoverLeadingIconAssetName != nil
+                let showBg = persistentLeadingIconBg || (isLeadingIconHovered && onLeadingIconTap != nil)
+                let currentFg = showBg
+                    ? (isShowingHoverVariant ? (hoverLeadingIconFgColor ?? leadingIconFgColor) : leadingIconFgColor)
+                    : leadingIconTint
+                let currentBg = showBg
+                    ? (isShowingHoverVariant ? (hoverLeadingIconBgColor ?? leadingIconBgColor) : leadingIconBgColor)
+                    : Color.clear
 
-                    ZStack {
-                        Image(icon)
+                ZStack {
+                    Image(icon)
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
+                        .foregroundColor(currentFg)
+                        .frame(width: 14, height: 14)
+                        .opacity(isLeadingIconVisible && !isShowingHoverVariant ? 1 : 0)
+
+                    if let hoverIcon = hoverLeadingIconAssetName {
+                        Image(hoverIcon)
                             .renderingMode(.template)
                             .resizable()
                             .scaledToFit()
                             .foregroundColor(currentFg)
                             .frame(width: 14, height: 14)
-                            .opacity(isLeadingIconVisible && !isShowingHoverVariant ? 1 : 0)
-
-                        if let hoverIcon = hoverLeadingIconAssetName {
-                            Image(hoverIcon)
-                                .renderingMode(.template)
-                                .resizable()
-                                .scaledToFit()
-                                .foregroundColor(currentFg)
-                                .frame(width: 14, height: 14)
-                                .opacity(isLeadingIconVisible && isShowingHoverVariant ? 1 : 0)
-                        }
+                            .opacity(isLeadingIconVisible && isShowingHoverVariant ? 1 : 0)
                     }
-                    .padding(4)
-                    .background(
-                        RoundedRectangle(cornerRadius: 999, style: .continuous)
-                            .fill(currentBg)
-                    )
-                    .animation(.jotHover, value: isLeadingIconHovered)
-                    .contentShape(RoundedRectangle(cornerRadius: 8))
-                    .onHover { isLeadingIconHovered = $0 }
-                    .onTapGesture {
-                        onLeadingIconTap?()
+                }
+                .padding(4)
+                .background(
+                    RoundedRectangle(cornerRadius: 999, style: .continuous)
+                        .fill(currentBg)
+                )
+                .compositingGroup()
+                .drawingGroup()
+                .animation(.jotHover, value: isLeadingIconHovered)
+                .contentShape(RoundedRectangle(cornerRadius: 8))
+                .onHover { isLeadingIconHovered = $0 }
+                .onTapGesture {
+                    onLeadingIconTap?()
+                }
+                .macPointingHandCursor()
+                .allowsHitTesting(isLeadingIconVisible && onLeadingIconTap != nil)
+                .animation(.easeInOut(duration: 0.12), value: isLeadingIconVisible)
+
+                Circle()
+                    .fill(leadingIconTint)
+                    .frame(width: 2, height: 2)
+                    .opacity(isLeadingIconVisible ? 1 : 0)
+                    .padding(.horizontal, -2)
+            }
+
+            if isRenaming {
+                TextField("Note Title", text: $renamingTitle)
+                    .font(FontManager.heading(size: 15, weight: .medium))
+                    .foregroundColor(Color("PrimaryTextColor"))
+                    .textFieldStyle(.plain)
+                    .focused($isFieldFocused)
+                    .onSubmit {
+                        commitRename()
                     }
-                    .macPointingHandCursor()
-                    .allowsHitTesting(isLeadingIconVisible && onLeadingIconTap != nil)
-                    .animation(.easeInOut(duration: 0.12), value: isLeadingIconVisible)
-                    .animation(.easeInOut(duration: 0.1), value: isShowingHoverVariant)
-
-                    Circle()
-                        .fill(leadingIconTint)
-                        .frame(width: 2, height: 2)
-                        .opacity(isLeadingIconVisible ? 1 : 0)
-                        .padding(.horizontal, -2)
-                }
-
-                if isRenaming {
-                    TextField("Note Title", text: $renamingTitle)
-                        .font(FontManager.heading(size: 15, weight: .medium))
-                        .foregroundColor(Color("PrimaryTextColor"))
-                        .textFieldStyle(.plain)
-                        .focused($isFieldFocused)
-                        .onSubmit {
-                            commitRename()
-                        }
-                        .onExitCommand {
-                            cancelRename()
-                        }
-                } else {
-                    Text(note.title)
-                        .font(FontManager.heading(size: 15, weight: .medium))
-                        .foregroundColor(isActiveNote
-                            ? Color("ButtonPrimaryTextColor")
-                            : Color("PrimaryTextColor"))
-                        .tracking(-0.1)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .onTapGesture(count: 2) {
-                            startRename()
-                        }
-                }
-
-                Text(Self.dateFormatter.string(from: note.date))
-                    .font(FontManager.metadata(size: 11, weight: .medium))
+                    .onExitCommand {
+                        cancelRename()
+                    }
+            } else {
+                Text(note.title)
+                    .font(FontManager.heading(size: 15, weight: .medium))
                     .foregroundColor(isActiveNote
-                        ? Color("ButtonPrimaryTextColor").opacity(0.7)
-                        : Color("SecondaryTextColor"))
+                        ? Color("ButtonPrimaryTextColor")
+                        : Color("PrimaryTextColor"))
+                    .tracking(-0.1)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .onTapGesture(count: 2) {
+                        startRename()
+                    }
             }
-            .animation(.jotHover, value: isHovered)
-            .padding(8)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .frame(height: 34)
-            .background {
-                if isActiveNote {
-                    Capsule()
-                        .fill(Color("ButtonPrimaryBgColor"))
-                } else if isSelected {
-                    Capsule()
-                        .fill(Color("SurfaceTranslucentColor"))
-                } else if isHovered {
-                    Capsule()
-                        .fill(Color("HoverBackgroundColor"))
-                }
-            }
-            .contentShape(Capsule())
+
+            Text(Self.dateFormatter.string(from: note.date))
+                .font(FontManager.metadata(size: 11, weight: .medium))
+                .foregroundColor(isActiveNote
+                    ? Color("ButtonPrimaryTextColor").opacity(0.7)
+                    : Color("SecondaryTextColor"))
         }
-        .buttonStyle(.plain)
+        .animation(.jotHover, value: isHovered)
+        .padding(8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: 34)
+        .background {
+            if isActiveNote {
+                Capsule()
+                    .fill(Color("ButtonPrimaryBgColor"))
+            } else if isSelected {
+                Capsule()
+                    .fill(Color("SurfaceTranslucentColor"))
+            } else if isHovered {
+                Capsule()
+                    .fill(Color("HoverBackgroundColor"))
+            }
+        }
+        .contentShape(Capsule())
+        .onTapGesture {
+            if !isRenaming {
+                onTap(Self.selectionInteractionFromCurrentEvent())
+            }
+        }
         .onHover { hovering in
             isHovered = hovering
         }

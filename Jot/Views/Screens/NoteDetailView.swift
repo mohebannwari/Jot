@@ -357,7 +357,7 @@ struct NoteDetailView: View {
         }
         .preference(
             key: BottomOverlayActivePreferenceKey.self,
-            value: showVoiceRecorderOverlay
+            value: false  // mic capsule is compact — NoteToolsBar stays visible
         )
         .preference(
             key: BottomInputOverlayActivePreferenceKey.self,

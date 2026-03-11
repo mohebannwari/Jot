@@ -244,9 +244,9 @@ final class CodeBlockOverlayView: NSView {
             height: chevSz
         )
 
-        // ── Resize handle — right edge, full height ────────────────────────
+        // ── Resize handle — straddles right edge (half inside, half outside) ──
         resizeHandle.frame = CGRect(
-            x: W - Self.handleWidth,
+            x: W - Self.handleWidth / 2,
             y: 0,
             width: Self.handleWidth,
             height: bounds.height
@@ -254,6 +254,14 @@ final class CodeBlockOverlayView: NSView {
     }
 
     // MARK: - Resize
+
+    /// Returns the resize cursor if the window point falls on the resize handle, nil otherwise.
+    /// Called by the coordinator's resizeCursorForPoint to bypass NSTextView's I-beam override.
+    func cursorForPoint(_ windowPoint: CGPoint) -> NSCursor? {
+        let local = convert(windowPoint, from: nil)
+        guard resizeHandle.frame.contains(local) else { return nil }
+        return NSCursor.frameResize(position: .right, directions: .all)
+    }
 
     func handleResize(to newWidth: CGFloat) {
         let effectiveMax = currentContainerWidth > 0 ? currentContainerWidth : CGFloat.greatestFiniteMagnitude
@@ -299,7 +307,7 @@ final class CodeBlockOverlayView: NSView {
         chevronView.contentTintColor  = accent
 
         layer?.borderColor = dark
-            ? NSColor.white.withAlphaComponent(0.12).cgColor
+            ? NSColor.white.withAlphaComponent(0.06).cgColor
             : NSColor.black.withAlphaComponent(0.08).cgColor
 
         needsDisplay = true
@@ -457,7 +465,7 @@ private final class _ResizeHandle: NSView {
     override var isOpaque: Bool { false }
 
     override func resetCursorRects() {
-        addCursorRect(bounds, cursor: .resizeLeftRight)
+        addCursorRect(bounds, cursor: NSCursor.frameResize(position: .right, directions: .all))
     }
 
     override func mouseDown(with event: NSEvent) {

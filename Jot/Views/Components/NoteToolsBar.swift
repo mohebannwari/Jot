@@ -3,8 +3,8 @@
 //  Jot
 //
 //  Horizontal icon bar at the bottom-left of the detail pane.
-//  Mirrors the "/" command menu functionality: image upload, voice record,
-//  to-do, insert link, and share.
+//  Collapsed: 4 primary actions + ellipsis to expand.
+//  Expanded: primary actions + divider + additional tools from the slash command menu.
 //
 
 import SwiftUI
@@ -16,24 +16,16 @@ struct NoteToolsBar: View {
     let note: Note
     var editorInstanceID: UUID? = nil
 
+    @State private var isExpanded = false
+
     private let iconSize: CGFloat = 18
 
     var body: some View {
         HStack(spacing: 2) {
+            // MARK: - Primary actions (always visible)
+
             toolButton(icon: "gallery", tooltip: "Image Upload") {
                 postToolAction(.imageUpload)
-            }
-            toolButton(icon: "mic-recording", tooltip: "Voice Record") {
-                postToolAction(.voiceRecord)
-            }
-            toolButton(icon: "todo-list", tooltip: "To-Do") {
-                postToolAction(.todo)
-            }
-            toolButton(icon: "IconTable", tooltip: "Table") {
-                postToolAction(.table)
-            }
-            toolButton(icon: "insert link", tooltip: "Insert Link") {
-                postToolAction(.link)
             }
             toolButton(icon: "IconPageTextSearch", tooltip: "Search on Page") {
                 postToolAction(.searchOnPage)
@@ -42,12 +34,101 @@ struct NoteToolsBar: View {
             ShareToolButton(note: note, iconSize: iconSize)
                 .frame(width: iconSize, height: iconSize)
                 .padding(4)
+                .glassTooltip("Share")
                 .hoverContainer(cornerRadius: 8)
             #endif
+            toolButton(icon: "mic-recording", tooltip: "Voice Record") {
+                postToolAction(.voiceRecord)
+            }
 
-            Spacer()
+            // MARK: - Ellipsis toggle / divider
+
+            if isExpanded {
+                // Single dot divider (non-interactive)
+                Circle()
+                    .fill(Color("IconSecondaryColor"))
+                    .frame(width: 4, height: 4)
+                    .padding(.horizontal, 6)
+                    .transition(.scale.combined(with: .opacity))
+            } else {
+                // Horizontal ellipsis button to expand
+                Button {
+                    withAnimation(.jotSpring) { isExpanded = true }
+                } label: {
+                    Image("IconDotGrid1x3HorizontalTight")
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
+                        .foregroundColor(Color("IconSecondaryColor"))
+                        .frame(width: iconSize, height: iconSize)
+                        .padding(4)
+                        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .macPointingHandCursor()
+                .glassTooltip("More actions")
+                .hoverContainer(cornerRadius: 8)
+                .transition(.scale.combined(with: .opacity))
+            }
+
+            // MARK: - Expanded actions
+
+            if isExpanded {
+                Group {
+                    toolButton(icon: "IconCode", tooltip: "Code Block") {
+                        postToolAction(.codeBlock)
+                    }
+                    toolButton(icon: "IconTextBlock", tooltip: "Block Quote") {
+                        postToolAction(.blockQuote)
+                    }
+                    toolButton(icon: "IconLightBulbSimple", tooltip: "Callout") {
+                        postToolAction(.callout)
+                    }
+                    toolButton(icon: "IconNumberedList", tooltip: "Numbered List") {
+                        postToolAction(.numberedList)
+                    }
+                    toolButton(icon: "todo-list", tooltip: "Bullet List") {
+                        postToolAction(.bulletList)
+                    }
+                    toolButton(icon: "insert link", tooltip: "Insert Link") {
+                        postToolAction(.link)
+                    }
+                    toolButton(icon: "IconDivider", tooltip: "Insert Divider") {
+                        postToolAction(.divider)
+                    }
+                    toolButton(icon: "IconTodos", tooltip: "To-Do") {
+                        postToolAction(.todo)
+                    }
+                    toolButton(icon: "IconTable", tooltip: "Table") {
+                        postToolAction(.table)
+                    }
+
+                    // Collapse chevron
+                    Button {
+                        withAnimation(.jotSpring) { isExpanded = false }
+                    } label: {
+                        Image("IconChevronRightMedium")
+                            .renderingMode(.template)
+                            .resizable()
+                            .scaledToFit()
+                            .foregroundColor(Color("IconSecondaryColor"))
+                            .frame(width: iconSize, height: iconSize)
+                            .scaleEffect(x: -1, y: 1)
+                            .padding(4)
+                            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .macPointingHandCursor()
+                    .glassTooltip("Collapse")
+                    .hoverContainer(cornerRadius: 8)
+                }
+                .transition(.scale(scale: 0.8, anchor: .leading).combined(with: .opacity))
+            }
         }
+        .animation(.jotSpring, value: isExpanded)
     }
+
+    // MARK: - Helpers
 
     private func toolButton(icon: String, tooltip: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
@@ -62,7 +143,7 @@ struct NoteToolsBar: View {
         }
         .buttonStyle(.plain)
         .macPointingHandCursor()
-        .help(tooltip)
+        .glassTooltip(tooltip)
         .hoverContainer(cornerRadius: 8)
     }
 
