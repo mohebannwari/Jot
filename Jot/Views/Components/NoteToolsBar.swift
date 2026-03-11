@@ -75,6 +75,17 @@ struct NoteToolsBar: View {
 
             if isExpanded {
                 Group {
+                    // Lists & Tasks
+                    toolButton(icon: "todo-list", tooltip: "Bullet List") {
+                        postToolAction(.bulletList)
+                    }
+                    toolButton(icon: "IconNumberedList", tooltip: "Numbered List") {
+                        postToolAction(.numberedList)
+                    }
+                    toolButton(icon: "IconTodos", tooltip: "To-Do") {
+                        postToolAction(.todo)
+                    }
+                    // Rich Blocks
                     toolButton(icon: "IconCode", tooltip: "Code Block") {
                         postToolAction(.codeBlock)
                     }
@@ -84,23 +95,15 @@ struct NoteToolsBar: View {
                     toolButton(icon: "IconLightBulbSimple", tooltip: "Callout") {
                         postToolAction(.callout)
                     }
-                    toolButton(icon: "IconNumberedList", tooltip: "Numbered List") {
-                        postToolAction(.numberedList)
-                    }
-                    toolButton(icon: "todo-list", tooltip: "Bullet List") {
-                        postToolAction(.bulletList)
+                    // Insertable Objects
+                    toolButton(icon: "IconTable", tooltip: "Table") {
+                        postToolAction(.table)
                     }
                     toolButton(icon: "insert link", tooltip: "Insert Link") {
                         postToolAction(.link)
                     }
                     toolButton(icon: "IconDivider", tooltip: "Insert Divider") {
                         postToolAction(.divider)
-                    }
-                    toolButton(icon: "IconTodos", tooltip: "To-Do") {
-                        postToolAction(.todo)
-                    }
-                    toolButton(icon: "IconTable", tooltip: "Table") {
-                        postToolAction(.table)
                     }
 
                     // Collapse chevron

@@ -176,7 +176,10 @@ final class NoteTableOverlayView: NSView {
         NSColor.controlAccentColor.withAlphaComponent(isDarkMode ? 0.85 : 0.7)
     }
     private var headerBackgroundColor: NSColor {
-        isDarkMode ? NSColor.white.withAlphaComponent(0.04) : NSColor.black.withAlphaComponent(0.03)
+        NSColor(named: "BlockContainerColor")
+            ?? (isDarkMode
+                ? NSColor(srgbRed: 41/255, green: 37/255, blue: 36/255, alpha: 1)
+                : NSColor(srgbRed: 214/255, green: 211/255, blue: 209/255, alpha: 1))
     }
 
     // MARK: - Init

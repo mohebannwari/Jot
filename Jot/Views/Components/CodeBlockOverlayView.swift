@@ -3,8 +3,8 @@
 //  Jot
 //
 //  Overlay NSView that renders a code block inside the text editor.
-//  Figma spec: outer blue wrapper (blue-200/blue-950), 16px radius, 2px padding;
-//  header row with icon + "Code block" label left, language picker right;
+//  Figma spec: outer stone wrapper (stone-300/stone-800), 16px radius, 2px padding;
+//  header row with icon + language picker left;
 //  inner code body white/#0C0A09, 14px concentric radius, 16px padding.
 //
 
@@ -299,12 +299,12 @@ final class CodeBlockOverlayView: NSView {
             ? NSColor(srgbRed: 12/255,  green: 10/255,  blue: 9/255,   alpha: 1).cgColor   // #0C0A09
             : NSColor.white.cgColor
 
-        let accent: NSColor = dark
-            ? NSColor(srgbRed: 59/255,  green: 130/255, blue: 246/255, alpha: 1)            // blue-500
-            : NSColor(srgbRed: 37/255,  green: 99/255,  blue: 235/255, alpha: 1)            // blue-600
-        codeIconView.contentTintColor = accent
-        langLabel.textColor           = accent
-        chevronView.contentTintColor  = accent
+        let iconSecondary = NSColor(named: "IconSecondaryColor") ?? .secondaryLabelColor
+        codeIconView.contentTintColor = iconSecondary
+
+        let secondary = NSColor(named: "SecondaryTextColor") ?? .secondaryLabelColor
+        langLabel.textColor          = secondary
+        chevronView.contentTintColor = secondary
 
         layer?.borderColor = dark
             ? NSColor.white.withAlphaComponent(0.06).cgColor
@@ -381,9 +381,10 @@ final class CodeBlockOverlayView: NSView {
         super.draw(dirtyRect)
         let dark = isDarkMode
 
-        let outerBg: NSColor = dark
-            ? NSColor(srgbRed: 23/255,  green: 37/255,  blue: 84/255,  alpha: 1)   // blue-950 #172554
-            : NSColor(srgbRed: 191/255, green: 219/255, blue: 254/255, alpha: 1)   // blue-200 #BFDBFE
+        let outerBg = NSColor(named: "BlockContainerColor")
+            ?? (dark
+                ? NSColor(srgbRed: 41/255,  green: 37/255,  blue: 36/255,  alpha: 1)   // stone-800 #292524
+                : NSColor(srgbRed: 214/255, green: 211/255, blue: 209/255, alpha: 1))  // stone-300 #D6D3D1
         outerBg.setFill()
         NSBezierPath(roundedRect: bounds, xRadius: outerRadius, yRadius: outerRadius).fill()
     }

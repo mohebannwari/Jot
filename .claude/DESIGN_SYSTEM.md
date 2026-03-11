@@ -14,6 +14,7 @@ All semantic colors live in `Jot/Ressources/Assets.xcassets/`. Reference by name
 | `AccentColor` | `#2563EB` | `#608DFA` |
 | `MainColor` | `#FDBA74` | `#FDBA74` |
 | `BackgroundColor` | `#FFFFFF5C` (36% white) | `#0C0A0908` (3% near-black) |
+| `BlockContainerColor` | `#D6D3D1` (stone-300) | `#292524` (stone-800) |
 | `BorderSubtleColor` | `#1A1A1A17` (9% black) | `#FFFFFF17` (9% white) |
 | `ButtonPrimaryBgColor` | `#1A1A1A` | `#FFFFFF` |
 | `ButtonPrimaryTextColor` | `#FFFFFF` | `#1A1A1A` |
