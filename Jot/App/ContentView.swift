@@ -797,7 +797,7 @@ struct ContentView: View {
                 if hasPrimary {
                     singleNotePane(note: primaryNote, width: primW, cornerRadius: splitRadius)
                         .splitPaneDimming(isInactive: activeSplitPane != .primary, cornerRadius: splitRadius, colorScheme: colorScheme)
-                        .splitPaneShadow(isActive: activeSplitPane == .primary, cornerRadius: splitRadius, backgroundColor: detailBg, colorScheme: colorScheme)
+                        .splitPaneShadow(isActive: activeSplitPane == .primary, cornerRadius: splitRadius, backgroundColor: detailBg, colorScheme: colorScheme, showStroke: true)
                         .zIndex(activeSplitPane == .primary ? 1 : 0)
                         .overlay(alignment: .topTrailing) {
                             if !isPending {
@@ -816,7 +816,7 @@ struct ContentView: View {
                 if hasSecondary, let secNote = activeSecondaryNote {
                     secondaryNotePane(note: secNote, width: secW, cornerRadius: splitRadius, primaryNote: primaryNote)
                         .splitPaneDimming(isInactive: activeSplitPane != .secondary, cornerRadius: splitRadius, colorScheme: colorScheme)
-                        .splitPaneShadow(isActive: activeSplitPane == .secondary, cornerRadius: splitRadius, backgroundColor: detailBg, colorScheme: colorScheme)
+                        .splitPaneShadow(isActive: activeSplitPane == .secondary, cornerRadius: splitRadius, backgroundColor: detailBg, colorScheme: colorScheme, showStroke: true)
                         .zIndex(activeSplitPane == .secondary ? 1 : 0)
                 } else {
                     splitPickerPane(width: secW, cornerRadius: splitRadius, excludingNote: activePrimaryNote, isPrimary: false)
@@ -828,7 +828,7 @@ struct ContentView: View {
                 if hasSecondary, let secNote = activeSecondaryNote {
                     secondaryNotePane(note: secNote, width: secW, cornerRadius: splitRadius, primaryNote: primaryNote)
                         .splitPaneDimming(isInactive: activeSplitPane != .secondary, cornerRadius: splitRadius, colorScheme: colorScheme)
-                        .splitPaneShadow(isActive: activeSplitPane == .secondary, cornerRadius: splitRadius, backgroundColor: detailBg, colorScheme: colorScheme)
+                        .splitPaneShadow(isActive: activeSplitPane == .secondary, cornerRadius: splitRadius, backgroundColor: detailBg, colorScheme: colorScheme, showStroke: true)
                         .zIndex(activeSplitPane == .secondary ? 1 : 0)
                 } else {
                     splitPickerPane(width: secW, cornerRadius: splitRadius, excludingNote: activePrimaryNote, isPrimary: false)
@@ -838,7 +838,7 @@ struct ContentView: View {
                 if hasPrimary {
                     singleNotePane(note: primaryNote, width: primW, cornerRadius: splitRadius)
                         .splitPaneDimming(isInactive: activeSplitPane != .primary, cornerRadius: splitRadius, colorScheme: colorScheme)
-                        .splitPaneShadow(isActive: activeSplitPane == .primary, cornerRadius: splitRadius, backgroundColor: detailBg, colorScheme: colorScheme)
+                        .splitPaneShadow(isActive: activeSplitPane == .primary, cornerRadius: splitRadius, backgroundColor: detailBg, colorScheme: colorScheme, showStroke: true)
                         .zIndex(activeSplitPane == .primary ? 1 : 0)
                         .overlay(alignment: .topTrailing) {
                             if !isPending {
@@ -2426,6 +2426,9 @@ struct ContentView: View {
                 : Color.white.opacity(0.6)
 
         return Button {
+            if isSettingsPresented {
+                isSettingsPresented = false
+            }
             activeSplitID = session.id
             isSplitViewVisible = true
             if let primaryID = session.primaryNoteID,
@@ -4535,15 +4538,24 @@ private extension View {
 
     /// Applies a layered shadow via a background shape instead of directly on the content.
     /// This prevents SwiftUI from rasterizing the content (which kills NSTextView's cursor blink timer).
-    func splitPaneShadow(isActive: Bool, cornerRadius: CGFloat, backgroundColor: Color, colorScheme: ColorScheme) -> some View {
+    func splitPaneShadow(isActive: Bool, cornerRadius: CGFloat, backgroundColor: Color, colorScheme: ColorScheme, showStroke: Bool = false) -> some View {
         let base: Color = colorScheme == .dark ? .white : .black
-        return self.background {
-            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .fill(backgroundColor)
-                .shadow(color: base.opacity(isActive ? 0.20 : 0), radius: 1, x: 0, y: 0)
-                .shadow(color: base.opacity(isActive ? 0.15 : 0), radius: 6, x: 0, y: 2)
-                .shadow(color: base.opacity(isActive ? 0.10 : 0), radius: 20, x: 0, y: 6)
-        }
+        let strokeColor: Color = colorScheme == .dark
+            ? .white.opacity(isActive && showStroke ? 0.50 : 0)
+            : .black.opacity(isActive && showStroke ? 0.50 : 0)
+        return self
+            .background {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(backgroundColor)
+                    .shadow(color: base.opacity(isActive ? 0.20 : 0), radius: 1, x: 0, y: 0)
+                    .shadow(color: base.opacity(isActive ? 0.15 : 0), radius: 6, x: 0, y: 2)
+                    .shadow(color: base.opacity(isActive ? 0.10 : 0), radius: 20, x: 0, y: 6)
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: cornerRadius - 1, style: .continuous)
+                    .strokeBorder(strokeColor, lineWidth: 2)
+                    .padding(1)
+            }
     }
 }
 
