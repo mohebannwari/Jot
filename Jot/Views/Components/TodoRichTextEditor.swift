@@ -387,6 +387,43 @@ private final class CalloutSizeAttachmentCell: NSTextAttachmentCell {
     }
 }
 
+// MARK: - Toggle Section Attachment
+
+private final class NoteToggleSectionAttachment: NSTextAttachment {
+    var data: ToggleSectionData
+    let toggleID = UUID()
+
+    init(data: ToggleSectionData) {
+        self.data = data
+        super.init(data: nil, ofType: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("NoteToggleSectionAttachment does not support init(coder:)")
+    }
+}
+
+private final class ToggleSectionSizeAttachmentCell: NSTextAttachmentCell {
+    let displaySize: CGSize
+
+    init(size: CGSize) {
+        self.displaySize = size
+        super.init(imageCell: nil)
+    }
+
+    @available(*, unavailable)
+    required init(coder: NSCoder) {
+        fatalError("ToggleSectionSizeAttachmentCell does not support init(coder:)")
+    }
+
+    override var cellSize: NSSize { displaySize }
+    override nonisolated func cellBaselineOffset() -> NSPoint { .zero }
+
+    override func draw(withFrame cellFrame: NSRect, in controlView: NSView?) {}
+    override func draw(withFrame cellFrame: NSRect, in controlView: NSView?, characterIndex charIndex: Int, layoutManager: NSLayoutManager) {}
+}
+
 // MARK: - Code Block Attachment
 
 private final class NoteCodeBlockAttachment: NSTextAttachment {
@@ -829,7 +866,7 @@ struct TodoRichTextEditor: View {
     @State private var urlPasteMenuPosition: CGPoint = .zero
     @State private var urlPasteURL: String = ""
     @State private var urlPasteRange: NSRange = NSRange(location: 0, length: 0)
-    fileprivate static let commandMenuActions: [EditTool] = [.imageUpload, .voiceRecord, .link, .todo, .bulletList, .numberedList, .blockQuote, .codeBlock, .callout, .divider, .table]
+    fileprivate static let commandMenuActions: [EditTool] = [.imageUpload, .voiceRecord, .link, .todo, .bulletList, .numberedList, .blockQuote, .codeBlock, .callout, .toggleSection, .divider, .table]
     fileprivate static let commandMenuOuterPadding: CGFloat = CommandMenuLayout.outerPadding
     fileprivate static let commandMenuHorizontalPadding = commandMenuOuterPadding * 2
     fileprivate static let commandMenuVerticalPadding = commandMenuOuterPadding * 2
@@ -1593,7 +1630,9 @@ struct URLPasteOptionMenu: View {
             private var imageOverlays: [ObjectIdentifier: InlineImageOverlayView] = [:]
             private var tableOverlays: [ObjectIdentifier: NoteTableOverlayView] = [:]
             private var calloutOverlays: [ObjectIdentifier: CalloutOverlayView] = [:]
+            private var toggleSectionOverlays: [ObjectIdentifier: ToggleSectionOverlayView] = [:]
             private var codeBlockOverlays: [ObjectIdentifier: CodeBlockOverlayView] = [:]
+
             private weak var overlayHostView: NSView?
             /// True when applyInitialText ran but the view was not in the hierarchy
             /// yet (no enclosingScrollView), so overlay creation was deferred.
@@ -1626,7 +1665,9 @@ struct URLPasteOptionMenu: View {
                     self.updateImageOverlays(in: tv)
                     self.updateTableOverlays(in: tv)
                     self.updateCalloutOverlays(in: tv)
+                    self.updateToggleSectionOverlays(in: tv)
                     self.updateCodeBlockOverlays(in: tv)
+
                 }
                 pendingOverlayUpdate = work
                 DispatchQueue.main.async(execute: work)
@@ -2224,6 +2265,8 @@ struct URLPasteOptionMenu: View {
                             self.insertCallout()
                         } else if tool == .codeBlock {
                             self.insertCodeBlock()
+                        } else if tool == .toggleSection {
+                            self.insertToggleSection()
                         } else {
                             self.formatter.applyFormatting(to: textView, tool: tool)
                             self.styleTodoParagraphs()
@@ -2271,6 +2314,8 @@ struct URLPasteOptionMenu: View {
                             self.insertCallout()
                         } else if tool == .codeBlock {
                             self.insertCodeBlock()
+                        } else if tool == .toggleSection {
+                            self.insertToggleSection()
                         } else {
                             self.formatter.applyFormatting(to: textView, tool: tool)
                         }
@@ -2626,7 +2671,10 @@ struct URLPasteOptionMenu: View {
                     updateImageOverlays(in: textView)
                     updateTableOverlays(in: textView)
                     updateCalloutOverlays(in: textView)
+                updateToggleSectionOverlays(in: textView)
+                    updateToggleSectionOverlays(in: textView)
                     updateCodeBlockOverlays(in: textView)
+    
                 }
             }
 
@@ -3249,7 +3297,9 @@ struct URLPasteOptionMenu: View {
                 updateImageOverlays(in: textView)
                 updateTableOverlays(in: textView)
                 updateCalloutOverlays(in: textView)
+                updateToggleSectionOverlays(in: textView)
                 updateCodeBlockOverlays(in: textView)
+
                 needsDeferredOverlaySetup = true
             }
 
@@ -3284,7 +3334,9 @@ struct URLPasteOptionMenu: View {
                 updateImageOverlays(in: textView)
                 updateTableOverlays(in: textView)
                 updateCalloutOverlays(in: textView)
+                updateToggleSectionOverlays(in: textView)
                 updateCodeBlockOverlays(in: textView)
+
             }
 
             func textDidChange(_ notification: Notification) {
@@ -4294,6 +4346,76 @@ struct URLPasteOptionMenu: View {
                 syncText()
             }
 
+            // MARK: - Toggle Section Insertion
+
+            private func makeToggleSectionAttachment(data: ToggleSectionData, initialWidth: CGFloat? = nil) -> NSMutableAttributedString {
+                var containerWidth = textView?.textContainer?.containerSize.width ?? ToggleSectionOverlayView.minWidth
+                if containerWidth < 1 { containerWidth = ToggleSectionOverlayView.minWidth }
+                let toggleWidth = containerWidth
+
+                let toggleHeight = ToggleSectionOverlayView.heightForData(data, width: toggleWidth)
+
+                let attachment = NoteToggleSectionAttachment(data: data)
+                let cellSize = CGSize(width: toggleWidth, height: toggleHeight)
+                attachment.attachmentCell = ToggleSectionSizeAttachmentCell(size: cellSize)
+                attachment.bounds = CGRect(origin: .zero, size: cellSize)
+
+                let attributed = NSMutableAttributedString(attachment: attachment)
+                let range = NSRange(location: 0, length: attributed.length)
+
+                let blockStyle = NSMutableParagraphStyle()
+                blockStyle.alignment = .left
+                blockStyle.paragraphSpacing = 8
+                blockStyle.paragraphSpacingBefore = 8
+                attributed.addAttribute(.paragraphStyle, value: blockStyle, range: range)
+
+                return attributed
+            }
+
+            private func insertToggleSection() {
+                guard let textView = textView,
+                      let textStorage = textView.textStorage else { return }
+
+                var data = ToggleSectionData.empty()
+                let selectedRange = textView.selectedRange()
+                let nsString = textStorage.string as NSString
+
+                if selectedRange.length > 0 {
+                    let selectedText = nsString.substring(with: selectedRange)
+                    data.content = selectedText.trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+
+                let baseAttrs = Self.baseTypingAttributes(for: currentColorScheme)
+                let composed = NSMutableAttributedString()
+
+                let insertAt = selectedRange.location
+
+                if insertAt > 0 {
+                    let prevChar = nsString.character(at: insertAt - 1)
+                    if let scalar = Unicode.Scalar(prevChar),
+                       !CharacterSet.newlines.contains(scalar) {
+                        composed.append(NSAttributedString(string: "\n", attributes: baseAttrs))
+                    }
+                }
+
+                let toggleAttrib = makeToggleSectionAttachment(data: data)
+                composed.append(toggleAttrib)
+                composed.append(NSAttributedString(string: "\n", attributes: baseAttrs))
+
+                if textView.shouldChangeText(in: selectedRange, replacementString: composed.string) {
+                    isUpdating = true
+                    textStorage.beginEditing()
+                    textStorage.replaceCharacters(in: selectedRange, with: composed)
+                    textStorage.endEditing()
+                    textView.setSelectedRange(NSRange(location: insertAt + composed.length, length: 0))
+                    textView.didChangeText()
+                    isUpdating = false
+                }
+
+                updateToggleSectionOverlays(in: textView)
+                syncText()
+            }
+
             // MARK: - Callout Insertion
 
             private func makeCalloutAttachment(calloutData: CalloutData, initialWidth: CGFloat? = nil) -> NSMutableAttributedString {
@@ -4356,7 +4478,9 @@ struct URLPasteOptionMenu: View {
                 }
 
                 updateCalloutOverlays(in: textView)
+                updateToggleSectionOverlays(in: textView)
                 updateCodeBlockOverlays(in: textView)
+
                 syncText()
             }
 
@@ -4528,7 +4652,9 @@ struct URLPasteOptionMenu: View {
                 updateImageOverlays(in: textView)
                 updateTableOverlays(in: textView)
                 updateCalloutOverlays(in: textView)
+                updateToggleSectionOverlays(in: textView)
                 updateCodeBlockOverlays(in: textView)
+
             }
 
             // MARK: - Inline Image Overlay Management
@@ -4959,6 +5085,96 @@ struct URLPasteOptionMenu: View {
                 }
             }
 
+            // MARK: - Toggle Section Overlay Management
+
+            func updateToggleSectionOverlays(in textView: NSTextView) {
+                guard let textStorage = textView.textStorage,
+                      let layoutManager = textView.layoutManager,
+                      let textContainer = textView.textContainer else { return }
+
+                let hostView: NSView = textView
+                var seenIDs = Set<ObjectIdentifier>()
+                let fullRange = NSRange(location: 0, length: textStorage.length)
+                guard fullRange.length > 0 else {
+                    toggleSectionOverlays.values.forEach { $0.removeFromSuperview() }
+                    toggleSectionOverlays.removeAll()
+                    return
+                }
+
+                textStorage.enumerateAttribute(.attachment, in: fullRange, options: []) { val, range, _ in
+                    guard let attachment = val as? NoteToggleSectionAttachment else { return }
+                    let id = ObjectIdentifier(attachment)
+                    seenIDs.insert(id)
+
+                    let containerW = max(textContainer.containerSize.width, 100)
+                    let effectiveMinToggle = min(ToggleSectionOverlayView.minWidth, containerW)
+                    let currentWidth = attachment.bounds.width
+                    let needsWidthCorrection = currentWidth < effectiveMinToggle || currentWidth > containerW
+                    let correctedWidth = needsWidthCorrection
+                        ? max(effectiveMinToggle, min(containerW, currentWidth))
+                        : currentWidth
+                    let expectedHeight = ToggleSectionOverlayView.heightForData(
+                        attachment.data, width: correctedWidth)
+                    let heightDrift = abs(attachment.bounds.height - expectedHeight) > 1
+                    if needsWidthCorrection || heightDrift {
+                        let newSize = CGSize(width: correctedWidth, height: expectedHeight)
+                        attachment.attachmentCell = ToggleSectionSizeAttachmentCell(size: newSize)
+                        attachment.bounds = CGRect(origin: .zero, size: newSize)
+                        layoutManager.invalidateLayout(forCharacterRange: range, actualCharacterRange: nil)
+                    }
+
+                    let glyphRange = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+                    if glyphRange.length > 0 { layoutManager.ensureLayout(forGlyphRange: glyphRange) }
+                    guard glyphRange.length > 0 else { return }
+                    let glyphRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+
+                    let overlayRect = CGRect(
+                        x: glyphRect.origin.x + textView.textContainerOrigin.x,
+                        y: glyphRect.origin.y + textView.textContainerOrigin.y,
+                        width: attachment.bounds.width,
+                        height: attachment.bounds.height
+                    )
+
+                    let overlay: ToggleSectionOverlayView
+                    if let existing = toggleSectionOverlays[id] {
+                        overlay = existing
+                        overlay.data = attachment.data
+                    } else {
+                        overlay = ToggleSectionOverlayView(data: attachment.data)
+                        overlay.parentTextView = textView
+
+                        overlay.onDataChanged = { [weak self, weak textStorage, weak attachment] newData in
+                            guard let self = self, let ts = textStorage, let att = attachment else { return }
+                            att.data = newData
+                            let newHeight = ToggleSectionOverlayView.heightForData(newData, width: att.bounds.width)
+                            let newSize = CGSize(width: att.bounds.width, height: newHeight)
+                            att.attachmentCell = ToggleSectionSizeAttachmentCell(size: newSize)
+                            att.bounds = CGRect(origin: .zero, size: newSize)
+                            let fr = NSRange(location: 0, length: ts.length)
+                            ts.enumerateAttribute(.attachment, in: fr, options: []) { val, charRange, stop in
+                                if val as AnyObject === att {
+                                    textView.layoutManager?.invalidateLayout(forCharacterRange: charRange, actualCharacterRange: nil)
+                                    stop.pointee = true
+                                }
+                            }
+                            self.syncText()
+                        }
+
+                        hostView.addSubview(overlay)
+                        toggleSectionOverlays[id] = overlay
+                    }
+
+                    overlay.currentContainerWidth = containerW
+                    overlay.frame = overlayRect.integral
+                }
+
+                let toRemoveToggle = toggleSectionOverlays.keys.filter { !seenIDs.contains($0) }
+                for key in toRemoveToggle {
+                    toggleSectionOverlays[key]?.removeFromSuperview()
+                    toggleSectionOverlays.removeValue(forKey: key)
+                }
+            }
+
             // MARK: - Code Block Overlay Management
 
             func updateCodeBlockOverlays(in textView: NSTextView) {
@@ -5272,9 +5488,10 @@ struct URLPasteOptionMenu: View {
                                 isTableParagraph = true
                                 stop.pointee = true
                             }
-                            // Other block-level attachments (image, callout, code block)
+                            // Other block-level attachments (image, callout, code block, toggle)
                             else if attachment is NoteImageAttachment
                                     || attachment is NoteCalloutAttachment
+                                    || attachment is NoteToggleSectionAttachment
                                     || attachment is NoteCodeBlockAttachment {
                                 isImageParagraph = true
                                 stop.pointee = true
@@ -5472,6 +5689,8 @@ struct URLPasteOptionMenu: View {
                         output.append(tableAttachment.tableData.serialize())
                     } else if let calloutAttachment = attributes[.attachment] as? NoteCalloutAttachment {
                         output.append(calloutAttachment.calloutData.serialize())
+                    } else if let toggleAttachment = attributes[.attachment] as? NoteToggleSectionAttachment {
+                        output.append(toggleAttachment.data.serialize())
                     } else if let codeBlockAttachment = attributes[.attachment] as? NoteCodeBlockAttachment {
                         output.append(codeBlockAttachment.codeBlockData.serialize())
                     } else if let notelinkAttachment = attributes[.attachment] as? NotelinkAttachment {
@@ -5905,6 +6124,35 @@ struct URLPasteOptionMenu: View {
                                 }
                                 let attachment = makeCodeBlockAttachment(codeBlockData: codeBlockData)
                                 result.append(attachment)
+                                let afterClosing = closingRange.upperBound
+                                if afterClosing < text.endIndex {
+                                    if !text[afterClosing].isNewline {
+                                        result.append(NSAttributedString(string: "\n", attributes: baseAttributes))
+                                    }
+                                } else {
+                                    result.append(NSAttributedString(string: "\n", attributes: baseAttributes))
+                                }
+                                index = closingRange.upperBound
+                                lastWasWebClip = false
+                                continue
+                            }
+                        }
+                    } else if text[index...].hasPrefix("[[toggle|") {
+                        flushBuffer()
+                        let remaining = text[index...]
+                        if let closingRange = remaining.range(of: "[[/toggle]]") {
+                            let toggleBlock = String(remaining[remaining.startIndex..<closingRange.upperBound])
+                            if let toggleData = ToggleSectionData.deserialize(from: toggleBlock) {
+                                let baseAttributes = Self.baseTypingAttributes(for: currentColorScheme)
+                                if result.length > 0,
+                                   let lastScalar = result.string.unicodeScalars.last,
+                                   !CharacterSet.newlines.contains(lastScalar) {
+                                    result.append(NSAttributedString(string: "\n", attributes: baseAttributes))
+                                }
+
+                                let attachment = makeToggleSectionAttachment(data: toggleData)
+                                result.append(attachment)
+
                                 let afterClosing = closingRange.upperBound
                                 if afterClosing < text.endIndex {
                                     if !text[afterClosing].isNewline {

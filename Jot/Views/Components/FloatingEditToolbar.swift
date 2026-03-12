@@ -387,6 +387,25 @@ struct FloatingEditToolbar: View {
                     }
                 }
             )
+
+            FloatingToolButton(
+                tool: .toggleSection,
+                assetName: "IconToggleSec",
+                isSelected: selectedTool == .toggleSection,
+                isHovered: hoveredTool == .toggleSection,
+                action: { handleToolAction(.toggleSection) },
+                onHoverChange: { hovering, frame in
+                    hoveredTool = hovering ? .toggleSection : nil
+                    tooltipFrame = frame
+                    if hovering {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                            if hoveredTool == .toggleSection { showTooltip = true }
+                        }
+                    } else {
+                        showTooltip = false
+                    }
+                }
+            )
         }
     }
 
@@ -650,6 +669,7 @@ enum EditTool: String, CaseIterable {
     case blockQuote
     case highlight
     case callout
+    case toggleSection
 
     var isToggleable: Bool {
         switch self {
@@ -692,6 +712,7 @@ enum EditTool: String, CaseIterable {
         case .blockQuote: return "Block Quote"
         case .highlight: return "Highlight"
         case .callout: return "Callout"
+        case .toggleSection: return "Toggle Section"
         }
     }
 

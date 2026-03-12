@@ -95,6 +95,9 @@ struct NoteToolsBar: View {
                     toolButton(icon: "IconLightBulbSimple", tooltip: "Callout") {
                         postToolAction(.callout)
                     }
+                    toolButton(icon: "IconToggleSec", tooltip: "Toggle Section") {
+                        postToolAction(.toggleSection)
+                    }
                     // Insertable Objects
                     toolButton(icon: "IconTable", tooltip: "Table") {
                         postToolAction(.table)
@@ -105,7 +108,6 @@ struct NoteToolsBar: View {
                     toolButton(icon: "IconDivider", tooltip: "Insert Divider") {
                         postToolAction(.divider)
                     }
-
                     // Collapse chevron
                     Button {
                         withAnimation(.jotSpring) { isExpanded = false }

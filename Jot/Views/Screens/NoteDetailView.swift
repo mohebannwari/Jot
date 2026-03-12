@@ -504,7 +504,6 @@ struct NoteDetailView: View {
         .onReceive(NotificationCenter.default.publisher(for: .showInNoteSearchAndReplace)) { notification in
             if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
             presentSearchOnPage()
-            showReplaceField = true
         }
         .onReceive(NotificationCenter.default.publisher(for: .showCommandMenu))
         { notification in
@@ -1127,54 +1126,13 @@ struct NoteDetailView: View {
                     .buttonStyle(.plain)
                     .disabled(searchOnPageMatches.isEmpty)
 
-                    // Toggle replace field
-                    Button(action: toggleReplaceField) {
-                        Image(systemName: "arrow.2.squarepath")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(showReplaceField ? Color("PrimaryTextColor") : Color("SecondaryTextColor"))
-                    }
-                    .buttonStyle(.plain)
-                    .help("Find & Replace")
                 }
-            }
-
-            // Replace row (expandable)
-            if showReplaceField {
-                HStack(spacing: 8) {
-                    TextField("Replace", text: $replaceText)
-                        .textFieldStyle(.plain)
-                        .font(FontManager.heading(size: 12, weight: .medium))
-                        .foregroundColor(Color("PrimaryTextColor"))
-                        .focused($isReplaceFocused)
-                        .onSubmit { replaceCurrentMatch() }
-
-                    HStack(spacing: 4) {
-                        Button(action: replaceCurrentMatch) {
-                            Text("Replace")
-                                .font(FontManager.heading(size: 11, weight: .medium))
-                                .foregroundColor(Color("SecondaryTextColor"))
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(searchOnPageMatches.isEmpty)
-
-                        Button(action: replaceAllMatches) {
-                            Text("All")
-                                .font(FontManager.heading(size: 11, weight: .medium))
-                                .foregroundColor(Color("SecondaryTextColor"))
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(searchOnPageMatches.isEmpty)
-                    }
-                }
-                .padding(.top, 6)
-                .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .liquidGlass(in: RoundedRectangle(cornerRadius: showReplaceField ? 20 : 100, style: .continuous))
-        .frame(maxWidth: showReplaceField ? 300 : 240)
-        .animation(.jotSpring, value: showReplaceField)
+        .liquidGlass(in: RoundedRectangle(cornerRadius: 100, style: .continuous))
+        .frame(maxWidth: 240)
         .onExitCommand {
             dismissSearchOnPage()
         }

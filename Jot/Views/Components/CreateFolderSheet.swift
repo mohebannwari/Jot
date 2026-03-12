@@ -31,7 +31,6 @@ struct CreateFolderSheet: View {
     }
 
     private static let presetColors: [(name: String, hex: String)] = [
-        ("zinc", "#71717a"),
         ("red", "#ef4444"),
         ("yellow", "#facc15"),
         ("green", "#22c55e"),
@@ -113,6 +112,8 @@ struct CreateFolderSheet: View {
             .padding(.horizontal, 4)
 
             HStack {
+                defaultColorCircle
+
                 ForEach(Self.presetColors, id: \.hex) { preset in
                     colorCircle(hex: preset.hex)
                 }
@@ -121,6 +122,33 @@ struct CreateFolderSheet: View {
             }
             .frame(maxWidth: .infinity)
         }
+    }
+
+    private var defaultColorCircle: some View {
+        let isSelected = selectedColorHex == nil
+        return Button {
+            HapticManager.shared.buttonTap()
+            withAnimation(.jotBounce) {
+                selectedColorHex = nil
+            }
+        } label: {
+            ZStack {
+                Circle()
+                    .fill(Color("SecondaryTextColor"))
+                    .frame(width: circleSize, height: circleSize)
+
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundColor(.white)
+                        .transition(.scale.combined(with: .opacity))
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .scaleEffect(isSelected ? 1.04 : 1.0)
+        .animation(.jotBounce, value: isSelected)
+        .subtleHoverScale(1.04)
     }
 
     private func colorCircle(hex: String) -> some View {

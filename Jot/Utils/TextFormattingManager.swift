@@ -87,7 +87,7 @@ class TextFormattingManager: ObservableObject {
             }
 
             switch tool {
-            case .imageUpload, .voiceRecord:
+            case .imageUpload, .voiceRecord, .toggleSection:
                 return
             case .titleCase:
                 applyTitleCase(to: textView, in: selectedRange)

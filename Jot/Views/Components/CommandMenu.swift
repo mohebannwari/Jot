@@ -263,6 +263,7 @@ extension EditTool {
         case .blockQuote: return "IconTextBlock"
         case .highlight: return nil
         case .callout: return "IconLightBulbSimple"
+        case .toggleSection: return "IconToggleSec"
         }
     }
 
@@ -298,6 +299,7 @@ extension EditTool {
         case .blockQuote: return "text.quote"
         case .highlight: return "highlighter"
         case .callout: return "info.circle.fill"
+        case .toggleSection: return "list.bullet.indent"
         }
     }
 }
