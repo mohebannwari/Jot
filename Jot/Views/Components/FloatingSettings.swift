@@ -1104,7 +1104,7 @@ struct SettingsPage: View {
         VStack(alignment: .trailing, spacing: 0) {
             FeedbackTextView(
                 text: $feedbackText,
-                font: FontManager.headingNS(size: 15, weight: .medium),
+                font: .systemFont(ofSize: 14, weight: .regular),
                 textColor: NSColor(named: "SettingsPrimaryTextColor") ?? .labelColor
             )
             .frame(maxWidth: .infinity, minHeight: 150, maxHeight: 150)

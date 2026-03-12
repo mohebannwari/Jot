@@ -87,7 +87,7 @@ class TextFormattingManager: ObservableObject {
             }
 
             switch tool {
-            case .imageUpload, .voiceRecord, .toggleSection:
+            case .imageUpload, .voiceRecord:
                 return
             case .titleCase:
                 applyTitleCase(to: textView, in: selectedRange)
@@ -135,7 +135,7 @@ class TextFormattingManager: ObservableObject {
                 toggleBlockQuote(to: textView, in: selectedRange)
             case .highlight:
                 return  // Highlight requires a color parameter — handled separately via applyHighlight()
-            case .searchOnPage, .table, .callout, .codeBlock:
+            case .searchOnPage, .table, .callout, .codeBlock, .fileLink:
                 return
             }
 

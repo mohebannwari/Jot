@@ -27,6 +27,9 @@ struct NoteToolsBar: View {
             toolButton(icon: "gallery", tooltip: "Image Upload") {
                 postToolAction(.imageUpload)
             }
+            toolButton(icon: "IconFileLink", tooltip: "Attach File") {
+                postToolAction(.fileLink)
+            }
             toolButton(icon: "IconPageTextSearch", tooltip: "Search on Page") {
                 postToolAction(.searchOnPage)
             }
@@ -94,9 +97,6 @@ struct NoteToolsBar: View {
                     }
                     toolButton(icon: "IconLightBulbSimple", tooltip: "Callout") {
                         postToolAction(.callout)
-                    }
-                    toolButton(icon: "IconToggleSec", tooltip: "Toggle Section") {
-                        postToolAction(.toggleSection)
                     }
                     // Insertable Objects
                     toolButton(icon: "IconTable", tooltip: "Table") {

@@ -29,6 +29,9 @@ extension NSAttributedString.Key {
     static let highlightColor = NSAttributedString.Key("HighlightColor")
     static let notelinkID = NSAttributedString.Key("NotelinkID")
     static let notelinkTitle = NSAttributedString.Key("NotelinkTitle")
+    fileprivate static let fileLinkPath = NSAttributedString.Key("FileLinkPath")
+    fileprivate static let fileLinkDisplayName = NSAttributedString.Key("FileLinkDisplayName")
+    fileprivate static let fileLinkBookmark = NSAttributedString.Key("FileLinkBookmark")
 }
 
 private enum AttachmentMarkup {
@@ -42,6 +45,12 @@ private enum AttachmentMarkup {
     static let filePattern = #"\[\[file\|([^|]+)\|([^|]+)\|([^\]]*)\]\]"#
     static let fileRegex: NSRegularExpression? = try? NSRegularExpression(
         pattern: filePattern,
+        options: []
+    )
+    static let fileLinkMarkupPrefix = "[[filelink|"
+    static let fileLinkPattern = #"\[\[filelink\|([^|]+)\|([^|\]]*?)(?:\|([^\]]*))?\]\]"#
+    static let fileLinkRegex: NSRegularExpression? = try? NSRegularExpression(
+        pattern: fileLinkPattern,
         options: []
     )
 
@@ -387,43 +396,6 @@ private final class CalloutSizeAttachmentCell: NSTextAttachmentCell {
     }
 }
 
-// MARK: - Toggle Section Attachment
-
-private final class NoteToggleSectionAttachment: NSTextAttachment {
-    var data: ToggleSectionData
-    let toggleID = UUID()
-
-    init(data: ToggleSectionData) {
-        self.data = data
-        super.init(data: nil, ofType: nil)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("NoteToggleSectionAttachment does not support init(coder:)")
-    }
-}
-
-private final class ToggleSectionSizeAttachmentCell: NSTextAttachmentCell {
-    let displaySize: CGSize
-
-    init(size: CGSize) {
-        self.displaySize = size
-        super.init(imageCell: nil)
-    }
-
-    @available(*, unavailable)
-    required init(coder: NSCoder) {
-        fatalError("ToggleSectionSizeAttachmentCell does not support init(coder:)")
-    }
-
-    override var cellSize: NSSize { displaySize }
-    override nonisolated func cellBaselineOffset() -> NSPoint { .zero }
-
-    override func draw(withFrame cellFrame: NSRect, in controlView: NSView?) {}
-    override func draw(withFrame cellFrame: NSRect, in controlView: NSView?, characterIndex charIndex: Int, layoutManager: NSLayoutManager) {}
-}
-
 // MARK: - Code Block Attachment
 
 private final class NoteCodeBlockAttachment: NSTextAttachment {
@@ -472,7 +444,6 @@ private final class NotelinkAttachment: NSTextAttachment {
         self.noteID = noteID
         self.noteTitle = noteTitle
         super.init(data: nil, ofType: nil)
-        self.attachmentCell = NotelinkAttachmentCell(noteTitle: noteTitle)
     }
 
     @available(*, unavailable)
@@ -481,64 +452,62 @@ private final class NotelinkAttachment: NSTextAttachment {
     }
 }
 
-private final class NotelinkAttachmentCell: NSTextAttachmentCell {
-    private let noteTitle: String
-    private static let pillColor = NSColor(red: 0.145, green: 0.388, blue: 0.922, alpha: 1.0)
-    private static let textFont = NSFont.systemFont(ofSize: 12, weight: .medium)
-    private static let hPad: CGFloat = 8
-    private static let vPad: CGFloat = 4
+// MARK: - Notelink Pill View (SwiftUI — rendered to image via ImageRenderer)
 
-    init(noteTitle: String) {
-        self.noteTitle = noteTitle
-        super.init(imageCell: nil)
+private struct NotelinkPillView: View {
+    let title: String
+    let colorScheme: ColorScheme
+
+    private var pillColor: Color {
+        colorScheme == .dark
+            ? Color(red: 0.792, green: 0.541, blue: 0.016)  // Yellow 600 #ca8a04
+            : Color(red: 0.918, green: 0.702, blue: 0.031)  // Yellow 500 #eab308
     }
 
-    @available(*, unavailable)
-    required init(coder: NSCoder) {
-        fatalError("NotelinkAttachmentCell does not support init(coder:)")
+    var body: some View {
+        Text("@\(title.isEmpty ? "Untitled" : title)")
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(.black)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(pillColor, in: Capsule(style: .continuous))
+            .fixedSize()
+    }
+}
+
+private struct FileLinkPillView: View {
+    let displayName: String
+    let colorScheme: ColorScheme
+
+    private var pillColor: Color {
+        colorScheme == .dark
+            ? Color(red: 0.839, green: 0.827, blue: 0.820)  // stone/300 #d6d3d1
+            : Color(red: 0.161, green: 0.145, blue: 0.141)  // stone/800 #292524
     }
 
-    private var displayText: String {
-        "@\(noteTitle.isEmpty ? "Untitled" : noteTitle)"
+    private var contentColor: Color {
+        colorScheme == .dark
+            ? Color(red: 0.102, green: 0.102, blue: 0.102)  // #1a1a1a
+            : .white
     }
 
-    private var textAttributes: [NSAttributedString.Key: Any] {
-        [.font: Self.textFont, .foregroundColor: NSColor.white]
-    }
-
-    override var cellSize: NSSize {
-        let textSize = (displayText as NSString).size(withAttributes: textAttributes)
-        return NSSize(
-            width: ceil(textSize.width + Self.hPad * 2),
-            height: ceil(textSize.height + Self.vPad * 2)
-        )
-    }
-
-    override nonisolated func cellBaselineOffset() -> NSPoint {
-        NSPoint(x: 0, y: -4)
-    }
-
-    override func draw(withFrame cellFrame: NSRect, in controlView: NSView?) {
-        drawPill(in: cellFrame)
-    }
-
-    override func draw(withFrame cellFrame: NSRect, in controlView: NSView?, characterIndex charIndex: Int, layoutManager: NSLayoutManager) {
-        drawPill(in: cellFrame)
-    }
-
-    private func drawPill(in frame: NSRect) {
-        let path = NSBezierPath(roundedRect: frame, xRadius: frame.height / 2, yRadius: frame.height / 2)
-        Self.pillColor.setFill()
-        path.fill()
-
-        let textSize = (displayText as NSString).size(withAttributes: textAttributes)
-        let textRect = NSRect(
-            x: frame.origin.x + (frame.width - textSize.width) / 2,
-            y: frame.origin.y + (frame.height - textSize.height) / 2,
-            width: textSize.width,
-            height: textSize.height
-        )
-        (displayText as NSString).draw(in: textRect, withAttributes: textAttributes)
+    var body: some View {
+        HStack(spacing: 4) {
+            Image("IconFileLink")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 16, height: 16)
+                .foregroundStyle(contentColor)
+            Text(displayName.isEmpty ? "Untitled" : displayName)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(contentColor)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(pillColor, in: Capsule(style: .continuous))
+        .fixedSize()
     }
 }
 
@@ -804,6 +773,24 @@ private final class NoteFileAttachment: NSTextAttachment {
     }
 }
 
+private final class FileLinkAttachment: NSTextAttachment {
+    let filePath: String
+    let displayName: String
+    let bookmarkBase64: String
+
+    init(filePath: String, displayName: String, bookmarkBase64: String = "") {
+        self.filePath = filePath
+        self.displayName = displayName
+        self.bookmarkBase64 = bookmarkBase64
+        super.init(data: nil, ofType: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("FileLinkAttachment does not support init(coder:)")
+    }
+}
+
 struct TodoRichTextEditor: View {
     @Binding var text: String
     var focusRequestID: UUID?
@@ -866,7 +853,7 @@ struct TodoRichTextEditor: View {
     @State private var urlPasteMenuPosition: CGPoint = .zero
     @State private var urlPasteURL: String = ""
     @State private var urlPasteRange: NSRange = NSRange(location: 0, length: 0)
-    fileprivate static let commandMenuActions: [EditTool] = [.imageUpload, .voiceRecord, .link, .todo, .bulletList, .numberedList, .blockQuote, .codeBlock, .callout, .toggleSection, .divider, .table]
+    fileprivate static let commandMenuActions: [EditTool] = [.imageUpload, .fileLink, .voiceRecord, .link, .todo, .bulletList, .numberedList, .blockQuote, .codeBlock, .callout, .divider, .table]
     fileprivate static let commandMenuOuterPadding: CGFloat = CommandMenuLayout.outerPadding
     fileprivate static let commandMenuHorizontalPadding = commandMenuOuterPadding * 2
     fileprivate static let commandMenuVerticalPadding = commandMenuOuterPadding * 2
@@ -1630,7 +1617,6 @@ struct URLPasteOptionMenu: View {
             private var imageOverlays: [ObjectIdentifier: InlineImageOverlayView] = [:]
             private var tableOverlays: [ObjectIdentifier: NoteTableOverlayView] = [:]
             private var calloutOverlays: [ObjectIdentifier: CalloutOverlayView] = [:]
-            private var toggleSectionOverlays: [ObjectIdentifier: ToggleSectionOverlayView] = [:]
             private var codeBlockOverlays: [ObjectIdentifier: CodeBlockOverlayView] = [:]
 
             private weak var overlayHostView: NSView?
@@ -1665,7 +1651,6 @@ struct URLPasteOptionMenu: View {
                     self.updateImageOverlays(in: tv)
                     self.updateTableOverlays(in: tv)
                     self.updateCalloutOverlays(in: tv)
-                    self.updateToggleSectionOverlays(in: tv)
                     self.updateCodeBlockOverlays(in: tv)
 
                 }
@@ -1833,6 +1818,15 @@ struct URLPasteOptionMenu: View {
                 return "https://\(trimmed)"
             }
 
+            /// Extract URL string from `.link` attribute regardless of type.
+            /// AppKit may silently convert `.link` String values to URL objects,
+            /// so we must handle both representations.
+            private static func linkURLString(from attributes: [NSAttributedString.Key: Any]) -> String? {
+                if let str = attributes[.link] as? String { return str }
+                if let url = attributes[.link] as? URL { return url.absoluteString }
+                return nil
+            }
+
             private static func resolvedDomain(from urlString: String) -> String {
                 let normalized = normalizedURL(from: urlString)
                 if let host = URL(string: normalized)?.host, !host.isEmpty {
@@ -1851,6 +1845,117 @@ struct URLPasteOptionMenu: View {
                 let range = match.range(at: index)
                 guard let swiftRange = Range(range, in: text) else { return "" }
                 return String(text[swiftRange])
+            }
+
+            private func makeNotelinkAttachment(noteID: String, noteTitle: String) -> NSMutableAttributedString {
+                let pillView = NotelinkPillView(title: noteTitle, colorScheme: currentColorScheme)
+                    .environment(\.colorScheme, currentColorScheme)
+                let renderer = ImageRenderer(content: pillView)
+                let displayScale = NSScreen.main?.backingScaleFactor ?? 2.0
+                renderer.scale = displayScale
+                renderer.isOpaque = false
+
+                let attachment = NotelinkAttachment(noteID: noteID, noteTitle: noteTitle)
+
+                guard let cgImage = renderer.cgImage else {
+                    let fallback = NSMutableAttributedString(string: "@\(noteTitle)")
+                    fallback.addAttributes([.notelinkID: noteID, .notelinkTitle: noteTitle],
+                                           range: NSRange(location: 0, length: fallback.length))
+                    return fallback
+                }
+
+                let pixelWidth = CGFloat(cgImage.width)
+                let pixelHeight = CGFloat(cgImage.height)
+                let displaySize = CGSize(width: pixelWidth / displayScale, height: pixelHeight / displayScale)
+
+                let nsImage = NSImage(size: displaySize)
+                nsImage.addRepresentation(NSBitmapImageRep(cgImage: cgImage))
+
+                attachment.image = nsImage
+                attachment.bounds = CGRect(
+                    x: 0,
+                    y: Self.imageTagVerticalOffset(for: displaySize.height),
+                    width: displaySize.width,
+                    height: displaySize.height
+                )
+
+                let attributed = NSMutableAttributedString(attachment: attachment)
+                let range = NSRange(location: 0, length: attributed.length)
+                attributed.addAttributes([
+                    .notelinkID: noteID,
+                    .notelinkTitle: noteTitle,
+                ], range: range)
+                return attributed
+            }
+
+            private func makeFileLinkAttachment(filePath: String, displayName: String, bookmarkBase64: String = "") -> NSMutableAttributedString {
+                let pillView = FileLinkPillView(displayName: displayName, colorScheme: currentColorScheme)
+                    .environment(\.colorScheme, currentColorScheme)
+                let renderer = ImageRenderer(content: pillView)
+                let displayScale = NSScreen.main?.backingScaleFactor ?? 2.0
+                renderer.scale = displayScale
+                renderer.isOpaque = false
+
+                let attachment = FileLinkAttachment(filePath: filePath, displayName: displayName, bookmarkBase64: bookmarkBase64)
+
+                guard let cgImage = renderer.cgImage else {
+                    let fallback = NSMutableAttributedString(string: displayName)
+                    var attrs: [NSAttributedString.Key: Any] = [.fileLinkPath: filePath, .fileLinkDisplayName: displayName]
+                    if !bookmarkBase64.isEmpty { attrs[.fileLinkBookmark] = bookmarkBase64 }
+                    fallback.addAttributes(attrs, range: NSRange(location: 0, length: fallback.length))
+                    return fallback
+                }
+
+                let pixelWidth = CGFloat(cgImage.width)
+                let pixelHeight = CGFloat(cgImage.height)
+                let displaySize = CGSize(width: pixelWidth / displayScale, height: pixelHeight / displayScale)
+
+                let nsImage = NSImage(size: displaySize)
+                nsImage.addRepresentation(NSBitmapImageRep(cgImage: cgImage))
+
+                attachment.image = nsImage
+                attachment.bounds = CGRect(
+                    x: 0,
+                    y: Self.imageTagVerticalOffset(for: displaySize.height),
+                    width: displaySize.width,
+                    height: displaySize.height
+                )
+
+                let attributed = NSMutableAttributedString(attachment: attachment)
+                let range = NSRange(location: 0, length: attributed.length)
+                var attrs: [NSAttributedString.Key: Any] = [
+                    .fileLinkPath: filePath,
+                    .fileLinkDisplayName: displayName,
+                ]
+                if !bookmarkBase64.isEmpty { attrs[.fileLinkBookmark] = bookmarkBase64 }
+                attributed.addAttributes(attrs, range: range)
+                return attributed
+            }
+
+            private func insertFileLink(filePath: String, displayName: String, bookmarkBase64: String = "") {
+                guard let textView = self.textView,
+                      let textStorage = textView.textStorage else { return }
+
+                let fileLinkString = makeFileLinkAttachment(filePath: filePath, displayName: displayName, bookmarkBase64: bookmarkBase64)
+                let spaceStr = NSAttributedString(string: " ", attributes: Self.baseTypingAttributes(for: nil))
+                let combined = NSMutableAttributedString()
+                combined.append(fileLinkString)
+                combined.append(spaceStr)
+
+                let insertRange = textView.selectedRange()
+                if textView.shouldChangeText(in: insertRange, replacementString: combined.string) {
+                    isUpdating = true
+                    textStorage.beginEditing()
+                    textStorage.replaceCharacters(in: insertRange, with: combined)
+                    textStorage.endEditing()
+                    textView.didChangeText()
+                    isUpdating = false
+                }
+
+                let newCursorPos = insertRange.location + combined.length
+                textView.setSelectedRange(NSRange(location: newCursorPos, length: 0))
+                textView.typingAttributes = Self.baseTypingAttributes(for: nil)
+                syncText()
             }
 
             private func makeWebClipAttachment(
@@ -2207,6 +2312,19 @@ struct URLPasteOptionMenu: View {
                     }
                 }
 
+                let insertFileLink = NotificationCenter.default.addObserver(
+                    forName: .insertFileLinkInEditor, object: nil, queue: .main
+                ) { [weak self] notification in
+                    if let nid = notification.userInfo?["editorInstanceID"] as? UUID,
+                       let myID = self?.editorInstanceID, nid != myID { return }
+                    guard let filePath = notification.userInfo?["filePath"] as? String,
+                          let displayName = notification.userInfo?["displayName"] as? String else { return }
+                    let bookmarkBase64 = notification.userInfo?["bookmarkBase64"] as? String ?? ""
+                    Task { @MainActor [weak self] in
+                        self?.insertFileLink(filePath: filePath, displayName: displayName, bookmarkBase64: bookmarkBase64)
+                    }
+                }
+
                 let insertVoiceTranscript = NotificationCenter.default.addObserver(
                     forName: .insertVoiceTranscriptInEditor, object: nil, queue: .main
                 ) { [weak self] notification in
@@ -2265,8 +2383,6 @@ struct URLPasteOptionMenu: View {
                             self.insertCallout()
                         } else if tool == .codeBlock {
                             self.insertCodeBlock()
-                        } else if tool == .toggleSection {
-                            self.insertToggleSection()
                         } else {
                             self.formatter.applyFormatting(to: textView, tool: tool)
                             self.styleTodoParagraphs()
@@ -2314,8 +2430,6 @@ struct URLPasteOptionMenu: View {
                             self.insertCallout()
                         } else if tool == .codeBlock {
                             self.insertCodeBlock()
-                        } else if tool == .toggleSection {
-                            self.insertToggleSection()
                         } else {
                             self.formatter.applyFormatting(to: textView, tool: tool)
                         }
@@ -2515,7 +2629,7 @@ struct URLPasteOptionMenu: View {
 
                 observers = [
                     windowKey,
-                    insertTodo, insertLink, insertVoiceTranscript, insertImage, applyTool, applyCommandMenuTool,
+                    insertTodo, insertLink, insertFileLink, insertVoiceTranscript, insertImage, applyTool, applyCommandMenuTool,
                     applyNotePickerSelection, navigateNoteLink,
                     highlightSearch, clearSearch, replaceMatch, replaceAll,
                     proofreadShow, proofreadClear, proofreadApply, captureSelection,
@@ -2671,8 +2785,6 @@ struct URLPasteOptionMenu: View {
                     updateImageOverlays(in: textView)
                     updateTableOverlays(in: textView)
                     updateCalloutOverlays(in: textView)
-                updateToggleSectionOverlays(in: textView)
-                    updateToggleSectionOverlays(in: textView)
                     updateCodeBlockOverlays(in: textView)
     
                 }
@@ -3209,18 +3321,23 @@ struct URLPasteOptionMenu: View {
                 enum AttachmentAction {
                     case webClip(url: URL)
                     case file(url: URL)
+                    case fileLink(path: String, bookmark: String)
                 }
 
                 let action: AttachmentAction?
-                if let storedFilename = attributes[.fileStoredFilename] as? String,
+                if let fileLinkAttachment = attachment as? FileLinkAttachment {
+                    action = .fileLink(path: fileLinkAttachment.filePath, bookmark: fileLinkAttachment.bookmarkBase64)
+                } else if let filePath = attributes[.fileLinkPath] as? String {
+                    let bookmark = (attributes[.fileLinkBookmark] as? String) ?? ""
+                    action = .fileLink(path: filePath, bookmark: bookmark)
+                } else if let storedFilename = attributes[.fileStoredFilename] as? String,
                    let fileURL = FileAttachmentStorageManager.shared.fileURL(for: storedFilename) {
                     action = .file(url: fileURL)
                 } else if attributes[.webClipTitle] != nil,
-                          let linkValue = attributes[.link] as? String,
+                          let linkValue = Self.linkURLString(from: attributes),
                           let url = URL(string: linkValue) {
                     action = .webClip(url: url)
-                } else if attributes[.plainLinkURL] != nil,
-                          let linkValue = attributes[.link] as? String,
+                } else if let linkValue = attributes[.plainLinkURL] as? String,
                           let url = URL(string: linkValue) {
                     action = .webClip(url: url)
                 } else {
@@ -3249,10 +3366,133 @@ struct URLPasteOptionMenu: View {
                     NSWorkspace.shared.open(url)
                     return true
                 case let .file(url):
-                    NSWorkspace.shared.open(url)
+                    let config = NSWorkspace.OpenConfiguration()
+                    NSWorkspace.shared.open(url, configuration: config, completionHandler: nil)
+                    return true
+                case let .fileLink(path, bookmark):
+                    // Try security-scoped bookmark first (required for sandboxed apps)
+                    if !bookmark.isEmpty,
+                       let bookmarkData = Data(base64Encoded: bookmark) {
+                        var isStale = false
+                        if let resolvedURL = try? URL(
+                            resolvingBookmarkData: bookmarkData,
+                            options: .withSecurityScope,
+                            relativeTo: nil,
+                            bookmarkDataIsStale: &isStale
+                        ) {
+                            let accessed = resolvedURL.startAccessingSecurityScopedResource()
+                            guard accessed else {
+                                NSLog("FileLinkOpen: startAccessingSecurityScopedResource failed for %@", path)
+                                Self.promptRelink(originalPath: path, textView: textView, charIndex: charIndex)
+                                return true
+                            }
+
+                            // Refresh stale bookmark while we still have access
+                            if isStale {
+                                Self.refreshFileLinkBookmark(resolvedURL, textView: textView, charIndex: charIndex)
+                            }
+
+                            // Use async open so security scope stays active until handoff completes
+                            let config = NSWorkspace.OpenConfiguration()
+                            NSWorkspace.shared.open(resolvedURL, configuration: config) { _, error in
+                                resolvedURL.stopAccessingSecurityScopedResource()
+                                if let error {
+                                    NSLog("FileLinkOpen: NSWorkspace.open failed: %@", error.localizedDescription)
+                                }
+                            }
+                            return true
+                        }
+                    }
+                    // Bookmark missing or resolution failed — prompt user to re-select the file
+                    NSLog("FileLinkOpen: bookmark empty or resolution failed for %@", path)
+                    Self.promptRelink(originalPath: path, textView: textView, charIndex: charIndex)
                     return true
                 }
 
+            }
+
+            /// Re-create the security-scoped bookmark for a file link whose bookmark went stale.
+            private static func refreshFileLinkBookmark(_ url: URL, textView: NSTextView, charIndex: Int) {
+                guard let storage = textView.textStorage else { return }
+                do {
+                    let freshBookmark = try url.bookmarkData(
+                        options: .withSecurityScope,
+                        includingResourceValuesForKeys: nil,
+                        relativeTo: nil
+                    )
+                    let base64 = freshBookmark.base64EncodedString()
+                    storage.addAttribute(.fileLinkBookmark, value: base64, range: NSRange(location: charIndex, length: 1))
+                    NSLog("FileLinkOpen: refreshed stale bookmark for %@", url.lastPathComponent)
+                } catch {
+                    NSLog("FileLinkOpen: failed to refresh bookmark — %@", error.localizedDescription)
+                }
+            }
+
+            /// Bookmark is missing or irrecoverably stale — ask the user to re-select the file.
+            private static func promptRelink(originalPath: String, textView: NSTextView, charIndex: Int) {
+                let filename = (originalPath as NSString).lastPathComponent
+                let alert = NSAlert()
+                alert.messageText = "Cannot Open \"\(filename)\""
+                alert.informativeText = "Jot no longer has permission to access this file. Would you like to locate it again?"
+                alert.addButton(withTitle: "Locate File...")
+                alert.addButton(withTitle: "Cancel")
+                alert.alertStyle = .warning
+
+                guard let window = textView.window else {
+                    NSSound.beep()
+                    return
+                }
+
+                alert.beginSheetModal(for: window) { response in
+                    guard response == .alertFirstButtonReturn else { return }
+
+                    let panel = NSOpenPanel()
+                    panel.canChooseFiles = true
+                    panel.canChooseDirectories = false
+                    panel.allowsMultipleSelection = false
+                    panel.message = "Select \"\(filename)\" to restore access"
+                    panel.nameFieldStringValue = filename
+
+                    panel.beginSheetModal(for: window) { result in
+                        guard result == .OK, let url = panel.url else { return }
+
+                        let accessed = url.startAccessingSecurityScopedResource()
+                        defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+
+                        // Create a fresh bookmark
+                        if let bookmarkData = try? url.bookmarkData(
+                            options: .withSecurityScope,
+                            includingResourceValuesForKeys: nil,
+                            relativeTo: nil
+                        ) {
+                            let base64 = bookmarkData.base64EncodedString()
+                            if let storage = textView.textStorage, charIndex < storage.length {
+                                storage.addAttribute(.fileLinkBookmark, value: base64, range: NSRange(location: charIndex, length: 1))
+                                storage.addAttribute(.fileLinkPath, value: url.path, range: NSRange(location: charIndex, length: 1))
+                            }
+                            // Also update the FileLinkAttachment if present
+                            if let storage = textView.textStorage,
+                               charIndex < storage.length,
+                               let attachment = storage.attribute(.attachment, at: charIndex, effectiveRange: nil) as? FileLinkAttachment {
+                                let updated = FileLinkAttachment(
+                                    filePath: url.path,
+                                    displayName: attachment.displayName,
+                                    bookmarkBase64: base64
+                                )
+                                storage.addAttribute(.attachment, value: updated, range: NSRange(location: charIndex, length: 1))
+                            }
+                            NSLog("FileLinkOpen: re-linked %@ via user selection", url.lastPathComponent)
+                        }
+
+                        // Now open the file
+                        let config = NSWorkspace.OpenConfiguration()
+                        NSWorkspace.shared.open(url, configuration: config) { _, error in
+                            if let error {
+                                NSLog("FileLinkOpen: re-linked open failed: %@", error.localizedDescription)
+                            }
+                        }
+                    }
+                }
             }
 
             func updateColorScheme(_ scheme: ColorScheme) {
@@ -3297,7 +3537,6 @@ struct URLPasteOptionMenu: View {
                 updateImageOverlays(in: textView)
                 updateTableOverlays(in: textView)
                 updateCalloutOverlays(in: textView)
-                updateToggleSectionOverlays(in: textView)
                 updateCodeBlockOverlays(in: textView)
 
                 needsDeferredOverlaySetup = true
@@ -3334,7 +3573,6 @@ struct URLPasteOptionMenu: View {
                 updateImageOverlays(in: textView)
                 updateTableOverlays(in: textView)
                 updateCalloutOverlays(in: textView)
-                updateToggleSectionOverlays(in: textView)
                 updateCodeBlockOverlays(in: textView)
 
             }
@@ -3993,13 +4231,8 @@ struct URLPasteOptionMenu: View {
                 let deleteLength = min(1 + filterLength, textStorage.length - atLocation)
                 guard atLocation >= 0 && atLocation < textStorage.length && deleteLength > 0 else { return }
 
-                // Build the notelink attachment (atomic pill badge)
-                let attachment = NotelinkAttachment(noteID: noteID.uuidString, noteTitle: title)
-                let notelinkString = NSMutableAttributedString(attachment: attachment)
-                notelinkString.addAttributes([
-                    .notelinkID: noteID.uuidString,
-                    .notelinkTitle: title,
-                ], range: NSRange(location: 0, length: notelinkString.length))
+                // Build the notelink attachment (SwiftUI-rendered pill)
+                let notelinkString = makeNotelinkAttachment(noteID: noteID.uuidString, noteTitle: title)
 
                 let spaceStr = NSAttributedString(string: " ", attributes: Self.baseTypingAttributes(for: nil))
                 let combined = NSMutableAttributedString()
@@ -4188,10 +4421,10 @@ struct URLPasteOptionMenu: View {
                 textStorage.enumerateAttribute(
                     .attachment, in: NSRange(location: 0, length: textStorage.length)
                 ) { value, range, stop in
-                    if value as? NSTextAttachment != nil,
-                        let linkValue = textStorage.attribute(
-                            .link, at: range.location, effectiveRange: nil) as? String,
-                        Self.normalizedURL(from: linkValue) == Self.normalizedURL(from: url)
+                    guard value as? NSTextAttachment != nil else { return }
+                    let attrs = textStorage.attributes(at: range.location, effectiveRange: nil)
+                    if let linkValue = Self.linkURLString(from: attrs),
+                       Self.normalizedURL(from: linkValue) == Self.normalizedURL(from: url)
                     {
                         textStorage.deleteCharacters(in: range)
                         stop.pointee = true
@@ -4346,76 +4579,6 @@ struct URLPasteOptionMenu: View {
                 syncText()
             }
 
-            // MARK: - Toggle Section Insertion
-
-            private func makeToggleSectionAttachment(data: ToggleSectionData, initialWidth: CGFloat? = nil) -> NSMutableAttributedString {
-                var containerWidth = textView?.textContainer?.containerSize.width ?? ToggleSectionOverlayView.minWidth
-                if containerWidth < 1 { containerWidth = ToggleSectionOverlayView.minWidth }
-                let toggleWidth = containerWidth
-
-                let toggleHeight = ToggleSectionOverlayView.heightForData(data, width: toggleWidth)
-
-                let attachment = NoteToggleSectionAttachment(data: data)
-                let cellSize = CGSize(width: toggleWidth, height: toggleHeight)
-                attachment.attachmentCell = ToggleSectionSizeAttachmentCell(size: cellSize)
-                attachment.bounds = CGRect(origin: .zero, size: cellSize)
-
-                let attributed = NSMutableAttributedString(attachment: attachment)
-                let range = NSRange(location: 0, length: attributed.length)
-
-                let blockStyle = NSMutableParagraphStyle()
-                blockStyle.alignment = .left
-                blockStyle.paragraphSpacing = 8
-                blockStyle.paragraphSpacingBefore = 8
-                attributed.addAttribute(.paragraphStyle, value: blockStyle, range: range)
-
-                return attributed
-            }
-
-            private func insertToggleSection() {
-                guard let textView = textView,
-                      let textStorage = textView.textStorage else { return }
-
-                var data = ToggleSectionData.empty()
-                let selectedRange = textView.selectedRange()
-                let nsString = textStorage.string as NSString
-
-                if selectedRange.length > 0 {
-                    let selectedText = nsString.substring(with: selectedRange)
-                    data.content = selectedText.trimmingCharacters(in: .whitespacesAndNewlines)
-                }
-
-                let baseAttrs = Self.baseTypingAttributes(for: currentColorScheme)
-                let composed = NSMutableAttributedString()
-
-                let insertAt = selectedRange.location
-
-                if insertAt > 0 {
-                    let prevChar = nsString.character(at: insertAt - 1)
-                    if let scalar = Unicode.Scalar(prevChar),
-                       !CharacterSet.newlines.contains(scalar) {
-                        composed.append(NSAttributedString(string: "\n", attributes: baseAttrs))
-                    }
-                }
-
-                let toggleAttrib = makeToggleSectionAttachment(data: data)
-                composed.append(toggleAttrib)
-                composed.append(NSAttributedString(string: "\n", attributes: baseAttrs))
-
-                if textView.shouldChangeText(in: selectedRange, replacementString: composed.string) {
-                    isUpdating = true
-                    textStorage.beginEditing()
-                    textStorage.replaceCharacters(in: selectedRange, with: composed)
-                    textStorage.endEditing()
-                    textView.setSelectedRange(NSRange(location: insertAt + composed.length, length: 0))
-                    textView.didChangeText()
-                    isUpdating = false
-                }
-
-                updateToggleSectionOverlays(in: textView)
-                syncText()
-            }
-
             // MARK: - Callout Insertion
 
             private func makeCalloutAttachment(calloutData: CalloutData, initialWidth: CGFloat? = nil) -> NSMutableAttributedString {
@@ -4478,7 +4641,6 @@ struct URLPasteOptionMenu: View {
                 }
 
                 updateCalloutOverlays(in: textView)
-                updateToggleSectionOverlays(in: textView)
                 updateCodeBlockOverlays(in: textView)
 
                 syncText()
@@ -4652,7 +4814,6 @@ struct URLPasteOptionMenu: View {
                 updateImageOverlays(in: textView)
                 updateTableOverlays(in: textView)
                 updateCalloutOverlays(in: textView)
-                updateToggleSectionOverlays(in: textView)
                 updateCodeBlockOverlays(in: textView)
 
             }
@@ -5085,96 +5246,6 @@ struct URLPasteOptionMenu: View {
                 }
             }
 
-            // MARK: - Toggle Section Overlay Management
-
-            func updateToggleSectionOverlays(in textView: NSTextView) {
-                guard let textStorage = textView.textStorage,
-                      let layoutManager = textView.layoutManager,
-                      let textContainer = textView.textContainer else { return }
-
-                let hostView: NSView = textView
-                var seenIDs = Set<ObjectIdentifier>()
-                let fullRange = NSRange(location: 0, length: textStorage.length)
-                guard fullRange.length > 0 else {
-                    toggleSectionOverlays.values.forEach { $0.removeFromSuperview() }
-                    toggleSectionOverlays.removeAll()
-                    return
-                }
-
-                textStorage.enumerateAttribute(.attachment, in: fullRange, options: []) { val, range, _ in
-                    guard let attachment = val as? NoteToggleSectionAttachment else { return }
-                    let id = ObjectIdentifier(attachment)
-                    seenIDs.insert(id)
-
-                    let containerW = max(textContainer.containerSize.width, 100)
-                    let effectiveMinToggle = min(ToggleSectionOverlayView.minWidth, containerW)
-                    let currentWidth = attachment.bounds.width
-                    let needsWidthCorrection = currentWidth < effectiveMinToggle || currentWidth > containerW
-                    let correctedWidth = needsWidthCorrection
-                        ? max(effectiveMinToggle, min(containerW, currentWidth))
-                        : currentWidth
-                    let expectedHeight = ToggleSectionOverlayView.heightForData(
-                        attachment.data, width: correctedWidth)
-                    let heightDrift = abs(attachment.bounds.height - expectedHeight) > 1
-                    if needsWidthCorrection || heightDrift {
-                        let newSize = CGSize(width: correctedWidth, height: expectedHeight)
-                        attachment.attachmentCell = ToggleSectionSizeAttachmentCell(size: newSize)
-                        attachment.bounds = CGRect(origin: .zero, size: newSize)
-                        layoutManager.invalidateLayout(forCharacterRange: range, actualCharacterRange: nil)
-                    }
-
-                    let glyphRange = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
-                    if glyphRange.length > 0 { layoutManager.ensureLayout(forGlyphRange: glyphRange) }
-                    guard glyphRange.length > 0 else { return }
-                    let glyphRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
-
-                    let overlayRect = CGRect(
-                        x: glyphRect.origin.x + textView.textContainerOrigin.x,
-                        y: glyphRect.origin.y + textView.textContainerOrigin.y,
-                        width: attachment.bounds.width,
-                        height: attachment.bounds.height
-                    )
-
-                    let overlay: ToggleSectionOverlayView
-                    if let existing = toggleSectionOverlays[id] {
-                        overlay = existing
-                        overlay.data = attachment.data
-                    } else {
-                        overlay = ToggleSectionOverlayView(data: attachment.data)
-                        overlay.parentTextView = textView
-
-                        overlay.onDataChanged = { [weak self, weak textStorage, weak attachment] newData in
-                            guard let self = self, let ts = textStorage, let att = attachment else { return }
-                            att.data = newData
-                            let newHeight = ToggleSectionOverlayView.heightForData(newData, width: att.bounds.width)
-                            let newSize = CGSize(width: att.bounds.width, height: newHeight)
-                            att.attachmentCell = ToggleSectionSizeAttachmentCell(size: newSize)
-                            att.bounds = CGRect(origin: .zero, size: newSize)
-                            let fr = NSRange(location: 0, length: ts.length)
-                            ts.enumerateAttribute(.attachment, in: fr, options: []) { val, charRange, stop in
-                                if val as AnyObject === att {
-                                    textView.layoutManager?.invalidateLayout(forCharacterRange: charRange, actualCharacterRange: nil)
-                                    stop.pointee = true
-                                }
-                            }
-                            self.syncText()
-                        }
-
-                        hostView.addSubview(overlay)
-                        toggleSectionOverlays[id] = overlay
-                    }
-
-                    overlay.currentContainerWidth = containerW
-                    overlay.frame = overlayRect.integral
-                }
-
-                let toRemoveToggle = toggleSectionOverlays.keys.filter { !seenIDs.contains($0) }
-                for key in toRemoveToggle {
-                    toggleSectionOverlays[key]?.removeFromSuperview()
-                    toggleSectionOverlays.removeValue(forKey: key)
-                }
-            }
-
             // MARK: - Code Block Overlay Management
 
             func updateCodeBlockOverlays(in textView: NSTextView) {
@@ -5488,10 +5559,9 @@ struct URLPasteOptionMenu: View {
                                 isTableParagraph = true
                                 stop.pointee = true
                             }
-                            // Other block-level attachments (image, callout, code block, toggle)
+                            // Other block-level attachments (image, callout, code block)
                             else if attachment is NoteImageAttachment
                                     || attachment is NoteCalloutAttachment
-                                    || attachment is NoteToggleSectionAttachment
                                     || attachment is NoteCodeBlockAttachment {
                                 isImageParagraph = true
                                 stop.pointee = true
@@ -5661,14 +5731,12 @@ struct URLPasteOptionMenu: View {
                         let cell = attachment.attachmentCell as? TodoCheckboxAttachmentCell
                     {
                         output.append(cell.isChecked ? "[x]" : "[ ]")
-                    } else if attributes[.plainLinkURL] is String,
-                        let urlString = attributes[.link] as? String
-                    {
+                    } else if let urlString = attributes[.plainLinkURL] as? String {
                         let sanitizedURL = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
                         output.append("[[link|\(sanitizedURL)]]")
                     } else if let attachment = attributes[.attachment] as? NSTextAttachment,
                         !(attachment.attachmentCell is TodoCheckboxAttachmentCell),
-                        let urlString = attributes[.link] as? String
+                        let urlString = Self.linkURLString(from: attributes)
                     {
                         var title = Self.cleanedWebClipComponent(attributes[.webClipTitle])
                         let description = Self.cleanedWebClipComponent(
@@ -5679,6 +5747,16 @@ struct URLPasteOptionMenu: View {
                         }
                         let sanitizedURL = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
                         output.append("[[webclip|\(title)|\(description)|\(sanitizedURL)]]")
+                    } else if let filePath = attributes[.fileLinkPath] as? String {
+                        let displayName = (attributes[.fileLinkDisplayName] as? String) ?? URL(fileURLWithPath: filePath).lastPathComponent
+                        let bookmark = (attributes[.fileLinkBookmark] as? String) ?? ""
+                        let sanitizedPath = Self.sanitizedWebClipComponent(filePath)
+                        let sanitizedName = Self.sanitizedWebClipComponent(displayName)
+                        if bookmark.isEmpty {
+                            output.append("[[filelink|\(sanitizedPath)|\(sanitizedName)]]")
+                        } else {
+                            output.append("[[filelink|\(sanitizedPath)|\(sanitizedName)|\(bookmark)]]")
+                        }
                     } else if let storedFilename = attributes[.fileStoredFilename] as? String {
                         let typeIdentifierRaw = (attributes[.fileTypeIdentifier] as? String) ?? "public.data"
                         let originalNameRaw = (attributes[.fileOriginalFilename] as? String) ?? storedFilename
@@ -5689,8 +5767,6 @@ struct URLPasteOptionMenu: View {
                         output.append(tableAttachment.tableData.serialize())
                     } else if let calloutAttachment = attributes[.attachment] as? NoteCalloutAttachment {
                         output.append(calloutAttachment.calloutData.serialize())
-                    } else if let toggleAttachment = attributes[.attachment] as? NoteToggleSectionAttachment {
-                        output.append(toggleAttachment.data.serialize())
                     } else if let codeBlockAttachment = attributes[.attachment] as? NoteCodeBlockAttachment {
                         output.append(codeBlockAttachment.codeBlockData.serialize())
                     } else if let notelinkAttachment = attributes[.attachment] as? NotelinkAttachment {
@@ -5701,6 +5777,15 @@ struct URLPasteOptionMenu: View {
                         // degraded to a plain NSTextAttachment by AppKit copy/undo operations,
                         // but the text attributes survive. Catch them before the generic handler.
                         output.append("[[notelink|\(nlID)|\(nlTitle)]]")
+                    } else if attributes[.webClipTitle] != nil {
+                        // Webclip fallback — .link attribute may have been stripped by AppKit,
+                        // but webclip metadata attributes survive. Recover the webclip.
+                        var title = Self.cleanedWebClipComponent(attributes[.webClipTitle])
+                        let description = Self.cleanedWebClipComponent(attributes[.webClipDescription])
+                        let domain = Self.cleanedWebClipComponent(attributes[.webClipDomain])
+                        if title.isEmpty { title = domain }
+                        let url = Self.linkURLString(from: attributes)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? domain
+                        output.append("[[webclip|\(title)|\(description)|\(url)]]")
                     } else if let attachment = attributes[.attachment] as? NSTextAttachment,
                         !(attachment.attachmentCell is TodoCheckboxAttachmentCell)
                     {
@@ -5964,6 +6049,54 @@ struct URLPasteOptionMenu: View {
                                 continue
                             }
                         }
+                    } else if text[index...].hasPrefix(AttachmentMarkup.fileLinkMarkupPrefix) {
+                        flushBuffer()
+                        if let endIndex = text[index...].range(of: "]]")?.upperBound {
+                            let fileLinkText = String(text[index..<endIndex])
+                            if let regex = AttachmentMarkup.fileLinkRegex,
+                               let match = regex.firstMatch(
+                                   in: fileLinkText,
+                                   options: [],
+                                   range: NSRange(location: 0, length: fileLinkText.utf16.count)
+                               )
+                            {
+                                let filePath = Self.string(from: match, at: 1, in: fileLinkText)
+                                let displayName = Self.string(from: match, at: 2, in: fileLinkText)
+                                let bookmarkBase64 = Self.string(from: match, at: 3, in: fileLinkText)
+
+                                let baseAttributes = Self.baseTypingAttributes(
+                                    for: currentColorScheme)
+                                if result.length > 0,
+                                   let lastScalar = result.string.unicodeScalars.last,
+                                   !CharacterSet.whitespacesAndNewlines.contains(lastScalar)
+                                {
+                                    let leadingSpace = NSAttributedString(
+                                        string: " ", attributes: baseAttributes)
+                                    result.append(leadingSpace)
+                                }
+
+                                let attachment = makeFileLinkAttachment(filePath: filePath, displayName: displayName, bookmarkBase64: bookmarkBase64)
+                                result.append(attachment)
+
+                                let shouldAddTrailingSpace: Bool
+                                if endIndex < text.endIndex {
+                                    let nextCharacter = text[endIndex]
+                                    shouldAddTrailingSpace = !nextCharacter.isWhitespace
+                                } else {
+                                    shouldAddTrailingSpace = true
+                                }
+
+                                if shouldAddTrailingSpace {
+                                    let trailingSpace = NSAttributedString(
+                                        string: " ", attributes: baseAttributes)
+                                    result.append(trailingSpace)
+                                }
+
+                                index = endIndex
+                                lastWasWebClip = false
+                                continue
+                            }
+                        }
                     } else if text[index...].hasPrefix(AttachmentMarkup.fileMarkupPrefix) {
                         flushBuffer()
                         if let endIndex = text[index...].range(of: "]]")?.upperBound {
@@ -6137,35 +6270,6 @@ struct URLPasteOptionMenu: View {
                                 continue
                             }
                         }
-                    } else if text[index...].hasPrefix("[[toggle|") {
-                        flushBuffer()
-                        let remaining = text[index...]
-                        if let closingRange = remaining.range(of: "[[/toggle]]") {
-                            let toggleBlock = String(remaining[remaining.startIndex..<closingRange.upperBound])
-                            if let toggleData = ToggleSectionData.deserialize(from: toggleBlock) {
-                                let baseAttributes = Self.baseTypingAttributes(for: currentColorScheme)
-                                if result.length > 0,
-                                   let lastScalar = result.string.unicodeScalars.last,
-                                   !CharacterSet.newlines.contains(lastScalar) {
-                                    result.append(NSAttributedString(string: "\n", attributes: baseAttributes))
-                                }
-
-                                let attachment = makeToggleSectionAttachment(data: toggleData)
-                                result.append(attachment)
-
-                                let afterClosing = closingRange.upperBound
-                                if afterClosing < text.endIndex {
-                                    if !text[afterClosing].isNewline {
-                                        result.append(NSAttributedString(string: "\n", attributes: baseAttributes))
-                                    }
-                                } else {
-                                    result.append(NSAttributedString(string: "\n", attributes: baseAttributes))
-                                }
-                                index = closingRange.upperBound
-                                lastWasWebClip = false
-                                continue
-                            }
-                        }
                     } else if text[index...].hasPrefix("[[callout|") {
                         flushBuffer()
                         let remaining = text[index...]
@@ -6207,12 +6311,7 @@ struct URLPasteOptionMenu: View {
                                 let noteIDStr = String(parts[0])
                                 let noteTitle = String(parts[1])
 
-                                let attachment = NotelinkAttachment(noteID: noteIDStr, noteTitle: noteTitle)
-                                let notelinkStr = NSMutableAttributedString(attachment: attachment)
-                                notelinkStr.addAttributes([
-                                    .notelinkID: noteIDStr,
-                                    .notelinkTitle: noteTitle,
-                                ], range: NSRange(location: 0, length: notelinkStr.length))
+                                let notelinkStr = makeNotelinkAttachment(noteID: noteIDStr, noteTitle: noteTitle)
                                 result.append(notelinkStr)
 
                                 index = closeBracket.upperBound
@@ -6753,7 +6852,7 @@ struct URLPasteOptionMenu: View {
                 cursor.set()
                 return
             }
-            // Notelink hover: show pointing hand cursor (layout-manager hit testing)
+            // Notelink / webclip / plain link hover: show pointing hand cursor
             let mousePoint = convert(event.locationInWindow, from: nil)
             if let textStorage = self.textStorage,
                let layoutManager = self.layoutManager,
@@ -6764,11 +6863,15 @@ struct URLPasteOptionMenu: View {
                 let gi = layoutManager.glyphIndex(for: ptInContainer, in: textContainer)
                 if gi < layoutManager.numberOfGlyphs {
                     let charIdx = layoutManager.characterIndexForGlyph(at: gi)
-                    if charIdx < textStorage.length,
-                       (textStorage.attribute(.attachment, at: charIdx, effectiveRange: nil) is NotelinkAttachment
-                        || textStorage.attribute(.notelinkID, at: charIdx, effectiveRange: nil) != nil) {
-                        NSCursor.pointingHand.set()
-                        return
+                    if charIdx < textStorage.length {
+                        let isNotelink = textStorage.attribute(.attachment, at: charIdx, effectiveRange: nil) is NotelinkAttachment
+                            || textStorage.attribute(.notelinkID, at: charIdx, effectiveRange: nil) != nil
+                        let isWebclip = textStorage.attribute(.webClipTitle, at: charIdx, effectiveRange: nil) != nil
+                        let isPlainLink = textStorage.attribute(.plainLinkURL, at: charIdx, effectiveRange: nil) != nil
+                        if isNotelink || isWebclip || isPlainLink {
+                            NSCursor.pointingHand.set()
+                            return
+                        }
                     }
                 }
             }
@@ -7555,6 +7658,7 @@ struct URLPasteOptionMenu: View {
 extension Notification.Name {
     static let insertTodoInEditor = Notification.Name("insertTodoInEditor")
     static let insertWebClipInEditor = Notification.Name("insertWebClipInEditor")
+    static let insertFileLinkInEditor = Notification.Name("insertFileLinkInEditor")
     static let insertVoiceTranscriptInEditor = Notification.Name("insertVoiceTranscriptInEditor")
     static let insertImageInEditor = Notification.Name("insertImageInEditor")
     static let deleteWebClipAttachment = Notification.Name("deleteWebClipAttachment")

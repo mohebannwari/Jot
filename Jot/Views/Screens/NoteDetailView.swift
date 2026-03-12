@@ -9,6 +9,7 @@
 //  Voice/image/link handlers live in NoteDetailView+Actions.swift
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 import AppKit
 
@@ -45,6 +46,7 @@ struct NoteDetailView: View {
     // MARK: - Overlay state (accessed by +Actions extension)
     @State var showVoiceRecorderOverlay = false
     @State private var showImagePicker = false
+    @State private var showFileLinkPicker = false
     @State var showLinkInputOverlay = false
     @State var linkInputText = ""
     @FocusState var isLinkInputFocused: Bool
@@ -157,6 +159,46 @@ struct NoteDetailView: View {
 
     private var noteContent: some View {
         noteContentEvents
+            .fileImporter(
+                isPresented: $showFileLinkPicker,
+                allowedContentTypes: [.item],
+                allowsMultipleSelection: false
+            ) { result in
+                handleFileLinkImport(result)
+            }
+    }
+
+    private func handleFileLinkImport(_ result: Result<[URL], Error>) {
+        if case .success(let urls) = result, let url = urls.first {
+            let accessed = url.startAccessingSecurityScopedResource()
+            defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+
+            let path = url.path
+            let displayName = url.lastPathComponent
+
+            // Create a security-scoped bookmark so we can reopen this file later
+            let bookmarkBase64: String
+            if let bookmarkData = try? url.bookmarkData(
+                options: .withSecurityScope,
+                includingResourceValuesForKeys: nil,
+                relativeTo: nil
+            ) {
+                bookmarkBase64 = bookmarkData.base64EncodedString()
+            } else {
+                bookmarkBase64 = ""
+            }
+
+            NotificationCenter.default.post(
+                name: .insertFileLinkInEditor,
+                object: nil,
+                userInfo: [
+                    "filePath": path,
+                    "displayName": displayName,
+                    "bookmarkBase64": bookmarkBase64,
+                    "editorInstanceID": editorInstanceID
+                ]
+            )
+        }
     }
 
     // Extracted to reduce type-checker pressure on noteContentLayout
@@ -441,7 +483,7 @@ struct NoteDetailView: View {
                     titleFocused = true
                 }
             }
-            showVoiceRecorderOverlay = false; showLinkInputOverlay = false; showImagePicker = false
+            showVoiceRecorderOverlay = false; showLinkInputOverlay = false; showImagePicker = false; showFileLinkPicker = false
             capturedSelectionRange = NSRange(location: NSNotFound, length: 0)
             capturedSelectionText = ""; capturedSelectionWindowRect = .zero
 
@@ -1326,6 +1368,10 @@ struct NoteDetailView: View {
             return true
         case .searchOnPage:
             presentSearchOnPage()
+            return true
+        case .fileLink:
+            hideLinkInputOverlay()
+            showFileLinkPicker = true
             return true
         default:
             return false

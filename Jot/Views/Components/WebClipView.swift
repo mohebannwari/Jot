@@ -12,6 +12,15 @@ struct WebClipView: View {
     let domain: String
     let url: String?
 
+    @Environment(\.colorScheme) private var colorScheme
+
+    /// Light mode: system accent blue. Dark mode: darker Apple-style blue.
+    private var pillBackground: Color {
+        colorScheme == .dark
+            ? Color(red: 0.149, green: 0.353, blue: 0.776)  // #2658C6
+            : Color.accentColor
+    }
+
     var body: some View {
         Button {
             if let urlString = url ?? URL(string: "https://\(domain)")?.absoluteString,
@@ -33,7 +42,7 @@ struct WebClipView: View {
                     .foregroundStyle(.white)
 
                 Text(cleanedDomain)
-                    .font(FontManager.metadata(size: 11, weight: .medium))
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.white)
                     .lineLimit(1)
                     .textCase(.lowercase)
@@ -47,7 +56,7 @@ struct WebClipView: View {
             }
             .padding(4)
             .frame(minWidth: 54)
-            .background(Color.accentColor, in: Capsule())
+            .background(pillBackground, in: Capsule(style: .continuous))
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
