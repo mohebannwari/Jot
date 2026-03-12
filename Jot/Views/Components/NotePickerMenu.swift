@@ -111,13 +111,16 @@ struct NotePickerMenuItem: View {
     let note: NotePickerItem
     let isSelected: Bool
 
+    @State private var isHovered = false
     @Environment(\.colorScheme) private var colorScheme
 
-    private var selectedForegroundColor: Color {
+    private var isHighlighted: Bool { isSelected || isHovered }
+
+    private var highlightedForegroundColor: Color {
         colorScheme == .dark ? .white : Color("PrimaryTextColor")
     }
 
-    private var selectedBackgroundColor: Color {
+    private var highlightedBackgroundColor: Color {
         Color("HoverBackgroundColor").opacity(colorScheme == .dark ? 0.95 : 1.0)
     }
 
@@ -127,11 +130,11 @@ struct NotePickerMenuItem: View {
                 .renderingMode(.template)
                 .resizable()
                 .frame(width: 14, height: 14)
-                .foregroundStyle(isSelected ? selectedForegroundColor.opacity(0.7) : .secondary)
+                .foregroundStyle(isHighlighted ? highlightedForegroundColor.opacity(0.7) : .secondary)
 
             Text(note.title.isEmpty ? "Untitled" : note.title)
                 .font(FontManager.heading(size: 13, weight: .medium))
-                .foregroundStyle(isSelected ? selectedForegroundColor : .primary)
+                .foregroundStyle(isHighlighted ? highlightedForegroundColor : .primary)
                 .lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -139,10 +142,13 @@ struct NotePickerMenuItem: View {
         .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: 999, style: .continuous)
-                .fill(selectedBackgroundColor)
-                .opacity(isSelected ? 1 : 0)
+                .fill(highlightedBackgroundColor)
+                .opacity(isHighlighted ? 1 : 0)
         )
-        .animation(.snappy(duration: 0.15), value: isSelected)
+        .animation(.snappy(duration: 0.15), value: isHighlighted)
         .contentShape(Rectangle())
+        .onHover { hovering in
+            isHovered = hovering
+        }
     }
 }

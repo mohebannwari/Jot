@@ -87,6 +87,9 @@ struct NoteDetailView: View {
     @State private var headerRevealProgress: CGFloat = 0
     @State private var titleOffset: CGFloat = 0
     @State private var commandMenuNeedsSpace = false
+    /// True when any popup menu (command menu, note picker) is visible.
+    /// Used to disable the parent scroll view so scroll events stay in the popup.
+    @State private var popupMenuActive = false
     @State private var showFloatingToolbar = false
     @State private var floatingToolbarOffset = CGPoint.zero
     @State private var floatingToolbarPlaceAbove = false
@@ -271,6 +274,7 @@ struct NoteDetailView: View {
                 ScrollView(showsIndicators: false) {
                     editorScrollContent
                 }
+                .scrollDisabled(popupMenuActive)
                 .scrollClipDisabled()
                 .coordinateSpace(name: "scroll")
                 .contentMargins(.bottom, 100, for: .scrollContent)
@@ -516,6 +520,7 @@ struct NoteDetailView: View {
                         self.commandMenuNeedsSpace = needsSpace
                     }
                 }
+                self.popupMenuActive = true
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .hideCommandMenu))
@@ -525,6 +530,21 @@ struct NoteDetailView: View {
                 withAnimation(.easeOut(duration: 0.15)) {
                     self.commandMenuNeedsSpace = false
                 }
+                self.popupMenuActive = false
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .showNotePicker))
+        { notification in
+            if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
+            DispatchQueue.main.async {
+                self.popupMenuActive = true
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .hideNotePicker))
+        { notification in
+            if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
+            DispatchQueue.main.async {
+                self.popupMenuActive = false
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .textSelectionChanged))
