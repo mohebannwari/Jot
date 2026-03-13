@@ -555,37 +555,25 @@ class TextFormattingManager: ObservableObject {
 
             let selectedRange = textView.selectedRange()
 
-            // Get the available width from the text container (adaptive to editor width)
-            let availableWidth = textView.textContainer?.size.width ?? 400
-            let lineWidth = availableWidth - 20  // Subtract padding for margins
+            // Use NoteDividerAttachment so dividers survive serialize/deserialize round-trips
+            var containerWidth = textView.textContainer?.size.width ?? 400
+            if containerWidth < 1 { containerWidth = 400 }
+            let dividerHeight: CGFloat = 20
+            let attachment = NoteDividerAttachment(data: nil, ofType: nil)
+            let cellSize = CGSize(width: containerWidth, height: dividerHeight)
+            attachment.attachmentCell = DividerSizeAttachmentCell(size: cellSize)
+            attachment.bounds = CGRect(origin: .zero, size: cellSize)
 
-            // Create a stroke line image using Core Graphics
-            // This creates a clean horizontal line that adapts to light/dark mode
-            let lineHeight: CGFloat = 1.0
-            let image = NSImage(size: NSSize(width: lineWidth, height: lineHeight), flipped: false)
-            { rect in
-                NSColor.labelColor.withAlphaComponent(0.3).setFill()
-                NSBezierPath(rect: rect).fill()
-                return true
-            }
-
-            // Create text attachment with the stroke line image
-            let attachment = NSTextAttachment()
-            attachment.image = image
-
-            // Create attributed string with proper spacing
             let mutableString = NSMutableAttributedString()
             mutableString.append(NSAttributedString(string: "\n"))
             mutableString.append(NSAttributedString(attachment: attachment))
             mutableString.append(NSAttributedString(string: "\n"))
 
-            // Insert the divider
             if textView.shouldChangeText(in: selectedRange, replacementString: mutableString.string)
             {
                 textStorage.replaceCharacters(in: selectedRange, with: mutableString)
                 textView.didChangeText()
 
-                // Move cursor after the divider
                 let newPosition = selectedRange.location + mutableString.length
                 textView.setSelectedRange(NSRange(location: newPosition, length: 0))
             }

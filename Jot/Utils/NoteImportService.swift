@@ -146,8 +146,12 @@ final class NoteImportService {
         guard let raw = try? String(contentsOf: url, encoding: .utf8) else { return nil }
         let baseDir = url.deletingLastPathComponent()
         var lines: [String] = []
-        var insideCodeBlock = false
+        var codeBlockLanguage: String? = nil   // nil = not inside a code block
+        var codeBlockLines: [String] = []
         var pendingTableRows: [[String]] = []
+        var quoteLines: [String] = []
+        var isCallout = false
+        var calloutType = "note"
 
         /// Flush accumulated pipe-table rows into a [[table|...]] block
         func flushPipeTable() {
@@ -161,15 +165,46 @@ final class NoteImportService {
             pendingTableRows.removeAll()
         }
 
+        /// Flush accumulated blockquote lines
+        func flushQuoteBlock() {
+            guard !quoteLines.isEmpty else { return }
+            if isCallout {
+                let content = quoteLines.joined(separator: "\n")
+                let escaped = content
+                    .replacingOccurrences(of: "\\", with: "\\\\")
+                    .replacingOccurrences(of: "\n", with: "\\n")
+                lines.append("[[callout|\(calloutType)]]\(escaped)[[/callout]]")
+            } else {
+                for ql in quoteLines {
+                    lines.append("[[quote]]\(ql)[[/quote]]")
+                }
+            }
+            quoteLines.removeAll()
+            isCallout = false
+            calloutType = "note"
+        }
+
         for line in raw.components(separatedBy: .newlines) {
-            // Code fences — toggle tracking, strip markers
+            // Code fences — accumulate into CodeBlockData
             if line.hasPrefix("```") {
                 flushPipeTable()
-                insideCodeBlock.toggle()
+                if codeBlockLanguage != nil {
+                    // Closing fence — emit code block
+                    let lang = codeBlockLanguage ?? "plaintext"
+                    let code = codeBlockLines.joined(separator: "\n")
+                    let data = CodeBlockData(language: lang, code: code)
+                    lines.append(data.serialize())
+                    codeBlockLanguage = nil
+                    codeBlockLines.removeAll()
+                } else {
+                    // Opening fence — extract language hint
+                    let hint = String(line.dropFirst(3)).trimmingCharacters(in: .whitespaces)
+                    codeBlockLanguage = Self.normalizeCodeLanguage(hint)
+                }
                 continue
             }
-            if insideCodeBlock {
-                lines.append(line)
+            if codeBlockLanguage != nil {
+                codeBlockLines.append(line)
                 continue
             }
 
@@ -198,24 +233,43 @@ final class NoteImportService {
             var blockPrefix = ""
             var blockSuffix = ""
 
-            // Horizontal rules: ---, ***, ___
+            // Horizontal rules: ---, ***, ___  → divider tag
             let hrTrimmed = converted.trimmingCharacters(in: .whitespaces)
             if hrTrimmed.count >= 3,
                hrTrimmed.allSatisfy({ $0 == "-" || $0 == "*" || $0 == "_" }),
                Set(hrTrimmed).count == 1
             {
-                lines.append("")
+                lines.append("[[divider]]")
                 continue
             }
 
-            // Block quotes: > text (strip prefix, wrap later)
-            if converted.hasPrefix("> ") {
-                converted = String(converted.dropFirst(2))
-                blockPrefix = "[[quote]]"
-                blockSuffix = "[[/quote]]"
-            } else if converted == ">" {
-                lines.append("[[quote]][[/quote]]")
+            // Block quotes: accumulate multi-line > blocks
+            if converted.hasPrefix("> ") || converted == ">" {
+                let quoteLine = converted == ">" ? "" : String(converted.dropFirst(2))
+                // Detect callout syntax on first line: > [!type]
+                if quoteLines.isEmpty {
+                    if let calloutMatch = quoteLine.firstMatch(of: /^\[!(\w+)\]\s*(.*)$/) {
+                        let rawType = String(calloutMatch.1).lowercased()
+                        if let normalized = Self.normalizeCalloutType(rawType) {
+                            isCallout = true
+                            calloutType = normalized
+                            let remainder = String(calloutMatch.2)
+                            if !remainder.isEmpty {
+                                quoteLines.append(remainder)
+                            }
+                        } else {
+                            quoteLines.append(quoteLine)
+                        }
+                    } else {
+                        quoteLines.append(quoteLine)
+                    }
+                } else {
+                    quoteLines.append(quoteLine)
+                }
                 continue
+            } else {
+                // Non-quote line — flush accumulated quote block
+                flushQuoteBlock()
             }
 
             // Headings: after block-quote strip so "> # heading" works.
@@ -243,21 +297,27 @@ final class NoteImportService {
             )
 
             // Ordered lists: N. text (strip leading whitespace for indented items)
+            let leadingOL = converted.prefix(while: { $0 == " " || $0 == "\t" })
+            let olIndentDepth = leadingOL.reduce(0) { $0 + ($1 == "\t" ? 2 : 1) } / 2
             let strippedForOL = converted.drop(while: { $0 == " " || $0 == "\t" })
             if let match = String(strippedForOL).firstMatch(of: /^(\d+)\.\s+(.*)$/) {
                 let num = String(match.1)
                 converted = String(match.2)
-                blockPrefix += "[[ol|\(num)]]"
+                let indent = String(repeating: "  ", count: olIndentDepth)
+                blockPrefix += "\(indent)[[ol|\(num)]]"
             }
 
             // Unordered list bullets: - item, * item, + item → • prefix
+            let leadingBullet = converted.prefix(while: { $0 == " " || $0 == "\t" })
+            let bulletIndentDepth = leadingBullet.reduce(0) { $0 + ($1 == "\t" ? 2 : 1) } / 2
             let strippedForBullet = converted.drop(while: { $0 == " " || $0 == "\t" })
             let bulletStr = String(strippedForBullet)
             if (bulletStr.hasPrefix("- ") && !bulletStr.hasPrefix("- ["))
                 || bulletStr.hasPrefix("* ")
                 || bulletStr.hasPrefix("+ ")
             {
-                converted = "• " + String(bulletStr.dropFirst(2))
+                let indent = String(repeating: "  ", count: bulletIndentDepth)
+                converted = "\(indent)\u{2022} " + String(bulletStr.dropFirst(2))
             }
 
             // Images: ![alt](path) — resolve local paths relative to .md dir
@@ -304,6 +364,14 @@ final class NoteImportService {
                 in: converted, pattern: #"\[([^\]]+)\]\(([^)]+)\)"#
             ) { groups in "[[link|\(groups[2])|\(groups[1])]]" }
 
+            // Bare URLs: detect URLs not already inside [[link|...]] tags
+            if !converted.contains("[[link|") {
+                converted = replacePattern(
+                    in: converted,
+                    pattern: #"(https?://[^\s\)\]\>]+)"#
+                ) { "[[link|\($0[1])|\($0[1])]]" }
+            }
+
             // Bold: **text** or __text__ (before italic to avoid conflicts)
             converted = replacePattern(
                 in: converted, pattern: #"\*\*(.+?)\*\*"#
@@ -325,26 +393,48 @@ final class NoteImportService {
                 in: converted, pattern: #"~~(.+?)~~"#
             ) { "[[s]]\($0[1])[[/s]]" }
 
+            // Inline code: `code` → bold (no inline-code markup exists in the editor)
+            converted = replacePattern(
+                in: converted, pattern: #"`([^`\n]+)`"#
+            ) { "[[b]]\($0[1])[[/b]]" }
+
             lines.append(blockPrefix + converted + blockSuffix)
         }
+
+        flushQuoteBlock()
 
         // Flush any trailing pipe table
         flushPipeTable()
 
-        return (titleFromURL(url), lines.joined(separator: "\n"))
+        return (titleFromURL(url), collapseExcessiveBlankLines(lines.joined(separator: "\n")))
     }
 
     private func convertHTML(at url: URL) async -> (title: String, content: String)? {
         guard let data = try? Data(contentsOf: url) else { return nil }
-        guard let attrString = try? NSAttributedString(
-            data: data,
-            options: [
-                .documentType: NSAttributedString.DocumentType.html,
-                .characterEncoding: String.Encoding.utf8.rawValue,
-            ],
-            documentAttributes: nil
-        ) else { return nil }
-        return (titleFromURL(url), await attributedStringToMarkup(attrString))
+        guard var htmlString = String(data: data, encoding: .utf8) else { return nil }
+
+        // Pre-extract semantic blocks that Apple's converter loses
+        let (processedHTML, placeholders) = Self.extractSemanticHTMLBlocks(htmlString)
+        htmlString = processedHTML
+
+        guard let processedData = htmlString.data(using: .utf8),
+              let attrString = try? NSAttributedString(
+                data: processedData,
+                options: [
+                    .documentType: NSAttributedString.DocumentType.html,
+                    .characterEncoding: String.Encoding.utf8.rawValue,
+                ],
+                documentAttributes: nil
+              ) else { return nil }
+
+        var markup = await attributedStringToMarkup(attrString)
+
+        // Restore semantic placeholders
+        for (placeholder, replacement) in placeholders {
+            markup = markup.replacingOccurrences(of: placeholder, with: replacement)
+        }
+
+        return (titleFromURL(url), markup)
     }
 
     private func convertRTF(at url: URL) async -> (title: String, content: String)? {
@@ -428,7 +518,7 @@ final class NoteImportService {
             }
         }
 
-        return (titleFromURL(url), lines.joined(separator: "\n"))
+        return (titleFromURL(url), collapseExcessiveBlankLines(lines.joined(separator: "\n")))
     }
 
     // MARK: - PDF Heuristic Structure Detection
@@ -462,7 +552,7 @@ final class NoteImportService {
                 Self.isHeadingOrShortStructural($0)
             } ?? false
             if !isNewBlock, !prevIsShortStructural, let last = paragraphs.last,
-               !last.isEmpty, last.count > 40
+               !last.isEmpty, last.count > 65
             {
                 // Continuation of previous line — join with space
                 paragraphs[paragraphs.count - 1] += " " + trimmed
@@ -534,7 +624,7 @@ final class NoteImportService {
             outputLines.append(para)
         }
 
-        return outputLines.joined(separator: "\n")
+        return collapseExcessiveBlankLines(outputLines.joined(separator: "\n"))
     }
 
     /// Determines if a line of text starts a new logical block (heading, list,
@@ -651,8 +741,12 @@ final class NoteImportService {
             )
 
             // Insert blank line for significant paragraph spacing (preserves visual separation)
-            if pIndex > 0 && paragraphSpacingBefore > baseFontSize * 0.75
+            // Threshold raised to 1.5x — Apple's converters routinely set paragraphSpacingBefore
+            // equal to font size (ratio 1.0), which triggered phantom blank lines at 0.75x.
+            if pIndex > 0
+                && paragraphSpacingBefore > baseFontSize * 1.5
                 && headingLevel == 0 && listType == .none
+                && !result.hasSuffix("\n\n")
             {
                 result += "\n"
             }
@@ -674,6 +768,17 @@ final class NoteImportService {
                 if let attachment = attrs[.attachment] as? NSTextAttachment {
                     if let filename = await saveAttachmentImage(from: attachment) {
                         paraContent += "[[image|||\(filename)]]"
+                    }
+                    continue
+                }
+
+                // Link attribute — emit [[link|...]] and skip formatting
+                if let linkURL = attrs[.link] as? URL ?? (attrs[.link] as? String).flatMap(URL.init(string:)) {
+                    let urlString = linkURL.absoluteString
+                    if substring == urlString || substring.isEmpty {
+                        paraContent += "[[link|\(urlString)]]"
+                    } else {
+                        paraContent += "[[link|\(urlString)|\(substring)]]"
                     }
                     continue
                 }
@@ -747,7 +852,7 @@ final class NoteImportService {
             location += paraLength + 1
         }
 
-        return result
+        return collapseExcessiveBlankLines(result)
     }
 
     // MARK: - Helpers
@@ -881,6 +986,102 @@ final class NoteImportService {
             rest = rest.dropFirst()
         }
         return "• " + rest
+    }
+
+    /// Collapse 3+ consecutive newlines into exactly 2 (one visual blank line).
+    private func collapseExcessiveBlankLines(_ text: String) -> String {
+        guard let regex = try? NSRegularExpression(pattern: "\\n{3,}") else { return text }
+        return regex.stringByReplacingMatches(
+            in: text,
+            range: NSRange(location: 0, length: (text as NSString).length),
+            withTemplate: "\n\n"
+        )
+    }
+
+    /// Normalize a code-fence language hint to a supported CodeBlockData language.
+    private static func normalizeCodeLanguage(_ raw: String) -> String {
+        let aliases: [String: String] = [
+            "js": "javascript", "ts": "typescript", "py": "python",
+            "sh": "bash", "shell": "bash", "c++": "cpp", "c#": "csharp",
+            "rb": "ruby", "yml": "yaml", "objc": "swift",
+            "objective-c": "swift",
+        ]
+        let lower = raw.lowercased().trimmingCharacters(in: .whitespaces)
+        if lower.isEmpty { return "plaintext" }
+        let resolved = aliases[lower] ?? lower
+        return CodeBlockData.supportedLanguages.contains(resolved) ? resolved : "plaintext"
+    }
+
+    /// Map callout/admonition type aliases to CalloutData.CalloutType raw values.
+    private static func normalizeCalloutType(_ raw: String) -> String? {
+        let mapping: [String: String] = [
+            "info": "info", "warning": "warning", "warn": "warning",
+            "caution": "warning", "tip": "tip", "hint": "tip",
+            "note": "note", "important": "important", "danger": "warning",
+            "error": "warning", "success": "tip", "abstract": "note",
+            "summary": "note", "todo": "note", "example": "info",
+            "question": "info", "faq": "info", "bug": "warning",
+            "quote": "note", "cite": "note",
+        ]
+        return mapping[raw.lowercased()]
+    }
+
+    /// Pre-extract semantic HTML blocks (code, hr, callouts) that Apple's
+    /// NSAttributedString converter discards, replacing them with placeholders.
+    private static func extractSemanticHTMLBlocks(_ html: String) -> (processedHTML: String, placeholders: [String: String]) {
+        var result = html
+        var placeholders: [String: String] = [:]
+        var counter = 0
+
+        func nextPlaceholder() -> String {
+            counter += 1
+            return "JOTPLACEHOLDER_\(counter)"
+        }
+
+        // <pre><code class="language-X">...</code></pre> → code block
+        if let regex = try? NSRegularExpression(
+            pattern: #"<pre[^>]*>\s*<code(?:\s+class="(?:language-)?([^"]*)")?[^>]*>([\s\S]*?)</code>\s*</pre>"#,
+            options: .caseInsensitive
+        ) {
+            let nsString = result as NSString
+            for match in regex.matches(in: result, range: NSRange(location: 0, length: nsString.length)).reversed() {
+                let langRange = match.range(at: 1)
+                let codeRange = match.range(at: 2)
+                let lang = langRange.location != NSNotFound ? nsString.substring(with: langRange) : ""
+                var code = codeRange.location != NSNotFound ? nsString.substring(with: codeRange) : ""
+                code = Self.unescapeHTMLEntities(code)
+                let normalized = normalizeCodeLanguage(lang)
+                let data = CodeBlockData(language: normalized, code: code)
+                let placeholder = nextPlaceholder()
+                placeholders[placeholder] = data.serialize()
+                if let range = Range(match.range, in: result) {
+                    result = result.replacingCharacters(in: range, with: placeholder)
+                }
+            }
+        }
+
+        // <hr> → divider
+        if let regex = try? NSRegularExpression(pattern: #"<hr\s*/?>"#, options: .caseInsensitive) {
+            let nsString = result as NSString
+            for match in regex.matches(in: result, range: NSRange(location: 0, length: nsString.length)).reversed() {
+                let placeholder = nextPlaceholder()
+                placeholders[placeholder] = "[[divider]]"
+                if let range = Range(match.range, in: result) {
+                    result = result.replacingCharacters(in: range, with: placeholder)
+                }
+            }
+        }
+
+        return (result, placeholders)
+    }
+
+    /// Unescape common HTML entities in extracted code content.
+    private static func unescapeHTMLEntities(_ text: String) -> String {
+        text.replacingOccurrences(of: "&lt;", with: "<")
+            .replacingOccurrences(of: "&gt;", with: ">")
+            .replacingOccurrences(of: "&amp;", with: "&")
+            .replacingOccurrences(of: "&#39;", with: "'")
+            .replacingOccurrences(of: "&quot;", with: "\"")
     }
 
     /// Regex replacement helper — processes matches in reverse for safe mutation

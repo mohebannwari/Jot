@@ -435,6 +435,51 @@ final class CodeBlockSizeAttachmentCell: NSTextAttachmentCell {
                        characterIndex charIndex: Int, layoutManager: NSLayoutManager) {}
 }
 
+// MARK: - Divider Attachment
+
+final class NoteDividerAttachment: NSTextAttachment {
+    let dividerID = UUID()
+
+    override init(data: Data?, ofType uti: String?) {
+        super.init(data: data, ofType: uti)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("NoteDividerAttachment does not support init(coder:)")
+    }
+}
+
+final class DividerSizeAttachmentCell: NSTextAttachmentCell {
+    let displaySize: CGSize
+
+    init(size: CGSize) {
+        self.displaySize = size
+        super.init(imageCell: nil)
+    }
+
+    @available(*, unavailable)
+    required init(coder: NSCoder) {
+        fatalError("DividerSizeAttachmentCell does not support init(coder:)")
+    }
+
+    override var cellSize: NSSize { displaySize }
+    override nonisolated func cellBaselineOffset() -> NSPoint { .zero }
+
+    override func draw(withFrame cellFrame: NSRect, in controlView: NSView?) {
+        // Draw the divider line directly — no overlay view needed
+        let lineY = cellFrame.midY
+        let lineRect = NSRect(x: cellFrame.minX + 10, y: lineY, width: cellFrame.width - 20, height: 1)
+        NSColor.labelColor.withAlphaComponent(0.3).setFill()
+        NSBezierPath(rect: lineRect).fill()
+    }
+
+    override func draw(withFrame cellFrame: NSRect, in controlView: NSView?,
+                       characterIndex charIndex: Int, layoutManager: NSLayoutManager) {
+        draw(withFrame: cellFrame, in: controlView)
+    }
+}
+
 // MARK: - Notelink Attachment
 
 final class NotelinkAttachment: NSTextAttachment {
@@ -2023,6 +2068,39 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 }
             }
 
+            let codePasteSelectCodeBlock = NotificationCenter.default.addObserver(
+                forName: .codePasteSelectCodeBlock, object: nil, queue: .main
+            ) { [weak self] notification in
+                guard let info = notification.object as? [String: Any],
+                      let code = info["code"] as? String,
+                      let rangeValue = info["range"] as? NSValue,
+                      let language = info["language"] as? String else { return }
+                let range = rangeValue.rangeValue
+                Task { @MainActor [weak self] in
+                    self?.replaceCodePasteWithCodeBlock(code: code, range: range, language: language)
+                }
+            }
+
+            let codePasteSelectPlainText = NotificationCenter.default.addObserver(
+                forName: .codePasteSelectPlainText, object: nil, queue: .main
+            ) { [weak self] notification in
+                guard let info = notification.object as? [String: Any],
+                      let rangeValue = info["range"] as? NSValue else { return }
+                let range = rangeValue.rangeValue
+                Task { @MainActor [weak self] in
+                    self?.clearCodePasteHighlight(range: range)
+                }
+            }
+
+            let codePasteDismissObserver = NotificationCenter.default.addObserver(
+                forName: .codePasteDismiss, object: nil, queue: .main
+            ) { [weak self] notification in
+                let range = (notification.object as? [String: Any])?["range"] as? NSValue
+                Task { @MainActor [weak self] in
+                    if let r = range?.rangeValue { self?.clearCodePasteHighlight(range: r) }
+                }
+            }
+
             let applyColor = NotificationCenter.default.addObserver(
                 forName: Notification.Name("applyTextColor"), object: nil, queue: .main
             ) { [weak self] notification in
@@ -2117,6 +2195,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 proofreadShow, proofreadClear, proofreadApply, captureSelection,
                 editReplace, proofreadReplaceAll,
                 urlPasteMention, urlPasteSelectPlainLink, urlPasteDismiss,
+                codePasteSelectCodeBlock, codePasteSelectPlainText, codePasteDismissObserver,
                 applyColor, settingsObserver,
             ]
         }
@@ -3200,8 +3279,9 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 }
             }
 
-            // Dismiss URL paste menu on any text change
+            // Dismiss URL/code paste menus on any text change
             NotificationCenter.default.post(name: .urlPasteDismiss, object: nil)
+            NotificationCenter.default.post(name: .codePasteDismiss, object: nil)
 
             syncText()
         }
@@ -3974,6 +4054,43 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             textStorage.addAttributes(base, range: range)
         }
 
+        private func replaceCodePasteWithCodeBlock(code: String, range: NSRange, language: String) {
+            guard let textView = textView, let textStorage = textView.textStorage else { return }
+
+            // Clear highlight
+            if range.location + range.length <= textStorage.length {
+                textStorage.removeAttribute(.backgroundColor, range: range)
+            }
+
+            // Select the pasted text range and replace with code block
+            textView.setSelectedRange(range)
+            let data = CodeBlockData(language: language, code: code)
+            let attachment = makeCodeBlockAttachment(codeBlockData: data)
+
+            let baseAttrs = Self.baseTypingAttributes(for: currentColorScheme)
+            let composed = NSMutableAttributedString()
+
+            let nsString = textStorage.string as NSString
+            if range.location > 0 {
+                let prevChar = nsString.character(at: range.location - 1)
+                if let scalar = Unicode.Scalar(prevChar),
+                   !CharacterSet.newlines.contains(scalar) {
+                    composed.append(NSAttributedString(string: "\n", attributes: baseAttrs))
+                }
+            }
+            composed.append(attachment)
+            composed.append(NSAttributedString(string: "\n", attributes: baseAttrs))
+
+            replaceSelection(with: composed)
+            syncText()
+        }
+
+        private func clearCodePasteHighlight(range: NSRange) {
+            guard let textStorage = textView?.textStorage else { return }
+            guard range.location + range.length <= textStorage.length else { return }
+            textStorage.removeAttribute(.backgroundColor, range: range)
+        }
+
         private func deleteWebClipAttachment(url: String) {
             guard let textStorage = textView?.textStorage else { return }
 
@@ -4160,6 +4277,28 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             blockStyle.alignment = .left
             blockStyle.paragraphSpacing = 8
             blockStyle.paragraphSpacingBefore = 8
+            attributed.addAttribute(.paragraphStyle, value: blockStyle, range: range)
+
+            return attributed
+        }
+
+        private func makeDividerAttachment() -> NSMutableAttributedString {
+            var containerWidth = textView?.textContainer?.containerSize.width ?? 400
+            if containerWidth < 1 { containerWidth = 400 }
+
+            let dividerHeight: CGFloat = 20  // vertical space including line
+            let attachment = NoteDividerAttachment(data: nil, ofType: nil)
+            let cellSize = CGSize(width: containerWidth, height: dividerHeight)
+            attachment.attachmentCell = DividerSizeAttachmentCell(size: cellSize)
+            attachment.bounds = CGRect(origin: .zero, size: cellSize)
+
+            let attributed = NSMutableAttributedString(attachment: attachment)
+            let range = NSRange(location: 0, length: attributed.length)
+
+            let blockStyle = NSMutableParagraphStyle()
+            blockStyle.alignment = .left
+            blockStyle.paragraphSpacing = 4
+            blockStyle.paragraphSpacingBefore = 4
             attributed.addAttribute(.paragraphStyle, value: blockStyle, range: range)
 
             return attributed
@@ -4824,16 +4963,26 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 let id = ObjectIdentifier(attachment)
                 seenIDs.insert(id)
 
-                // Clamp width to valid range; preserve user-resized width if within bounds
+                // Clamp width to valid range; preserve user-resized width if within bounds.
+                // Blocks at minWidth after deserialization (container was unknown) get expanded
+                // to full container width — minWidth is a floor for user resizing, not a default.
                 let containerW = max(textContainer.containerSize.width, 100)
                 let effectiveMinCode = min(CodeBlockOverlayView.minWidth, containerW)
                 let currentWidth = attachment.bounds.width
                 let expectedHeight = CodeBlockOverlayView.defaultHeight
+                let atMinFromDeserialization = currentWidth <= effectiveMinCode && containerW > effectiveMinCode
                 let needsCorrection = currentWidth < effectiveMinCode
                     || currentWidth > containerW
                     || abs(attachment.bounds.height - expectedHeight) > 1
+                    || atMinFromDeserialization
                 if needsCorrection {
-                    let correctedWidth = max(effectiveMinCode, min(containerW, currentWidth))
+                    let correctedWidth: CGFloat
+                    if atMinFromDeserialization {
+                        // Block was created at fallback width — expand to fill container
+                        correctedWidth = containerW
+                    } else {
+                        correctedWidth = max(effectiveMinCode, min(containerW, currentWidth))
+                    }
                     let newSize = CGSize(width: correctedWidth, height: expectedHeight)
                     attachment.attachmentCell = CodeBlockSizeAttachmentCell(size: newSize)
                     attachment.bounds = CGRect(origin: .zero, size: newSize)
@@ -5326,6 +5475,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     output.append(calloutAttachment.calloutData.serialize())
                 } else if let codeBlockAttachment = attributes[.attachment] as? NoteCodeBlockAttachment {
                     output.append(codeBlockAttachment.codeBlockData.serialize())
+                } else if attributes[.attachment] is NoteDividerAttachment {
+                    output.append("[[divider]]")
                 } else if let notelinkAttachment = attributes[.attachment] as? NotelinkAttachment {
                     output.append("[[notelink|\(notelinkAttachment.noteID)|\(notelinkAttachment.noteTitle)]]")
                 } else if let nlID = attributes[.notelinkID] as? String,
@@ -5856,6 +6007,21 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                             continue
                         }
                     }
+                } else if text[index...].hasPrefix("[[divider]]") {
+                    flushBuffer()
+                    let baseAttributes = Self.baseTypingAttributes(for: currentColorScheme)
+                    // Ensure preceding newline
+                    if result.length > 0,
+                       let lastScalar = result.string.unicodeScalars.last,
+                       !CharacterSet.newlines.contains(lastScalar) {
+                        result.append(NSAttributedString(string: "\n", attributes: baseAttributes))
+                    }
+                    let attachment = makeDividerAttachment()
+                    result.append(attachment)
+                    result.append(NSAttributedString(string: "\n", attributes: baseAttributes))
+                    index = text.index(index, offsetBy: "[[divider]]".count)
+                    lastWasWebClip = false
+                    continue
                 } else if text[index...].hasPrefix("[[notelink|") {
                     flushBuffer()
                     let prefixLen = "[[notelink|".count
@@ -6270,6 +6436,7 @@ final class InlineNSTextView: NSTextView {
 
     // URL paste menu state
     static var isURLPasteMenuShowing = false
+    static var isCodePasteMenuShowing = false
 
     // Note picker state (triggered by "@")
     static var isNotePickerShowing = false
@@ -6333,6 +6500,66 @@ final class InlineNSTextView: NSTextView {
                 }
             }
         }
+
+        // Code paste detection — only if URL detection didn't trigger
+        if !isURL && !pastedText.isEmpty {
+            let pb = NSPasteboard.general
+            let hasCodeType = pb.types?.contains(where: { type in
+                let raw = type.rawValue
+                return raw == "com.apple.dt.Xcode.pboard.source-code"
+                    || raw == "public.source-code"
+            }) ?? false
+
+            let (isCode, language) = hasCodeType
+                ? (true, Self.detectCodeLanguage(pastedText))
+                : Self.isLikelyCode(pastedText)
+
+            if isCode {
+                let afterLocation = selectedRange().location
+                let pastedLength = afterLocation - beforeLocation
+                if pastedLength > 0 {
+                    let pastedRange = NSRange(location: beforeLocation, length: pastedLength)
+
+                    let insertedText: String
+                    if let storage = textStorage,
+                       pastedRange.location + pastedRange.length <= storage.length {
+                        insertedText = (storage.string as NSString).substring(with: pastedRange)
+                    } else {
+                        insertedText = pastedText
+                    }
+
+                    textStorage?.addAttribute(
+                        .backgroundColor,
+                        value: NSColor.labelColor.withAlphaComponent(0.08),
+                        range: pastedRange)
+
+                    if let layoutManager = layoutManager, let textContainer = textContainer {
+                        let glyphRange = layoutManager.glyphRange(
+                            forCharacterRange: pastedRange, actualCharacterRange: nil)
+                        let rect = layoutManager.boundingRect(
+                            forGlyphRange: glyphRange, in: textContainer)
+                        let adjustedRect = CGRect(
+                            x: rect.origin.x + textContainerOrigin.x,
+                            y: rect.origin.y + textContainerOrigin.y,
+                            width: rect.width,
+                            height: rect.height
+                        )
+
+                        DispatchQueue.main.async {
+                            NotificationCenter.default.post(
+                                name: .codePasteDetected,
+                                object: [
+                                    "code": insertedText,
+                                    "range": NSValue(range: pastedRange),
+                                    "rect": NSValue(rect: adjustedRect),
+                                    "language": language,
+                                ] as [String: Any]
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private static func isLikelyURL(_ text: String) -> Bool {
@@ -6343,6 +6570,131 @@ final class InlineNSTextView: NSTextView {
         if trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://") { return true }
         let domainPattern = #"^[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?(\.[a-zA-Z]{2,})+(/.*)?$"#
         return trimmed.range(of: domainPattern, options: .regularExpression) != nil
+    }
+
+    /// Detect if pasted text is likely source code.
+    private static func isLikelyCode(_ text: String) -> (isCode: Bool, language: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return (false, "plaintext") }
+
+        let lines = trimmed.components(separatedBy: .newlines)
+        let isMultiline = lines.count > 1
+
+        // Strong signals — any one sufficient for multi-line, required for single-line
+        let strongPatterns: [String] = [
+            #"^import\s+"#, #"^from\s+\S+\s+import"#,
+            #"^func\s+"#, #"^def\s+"#, #"^class\s+"#, #"^struct\s+"#,
+            #"^enum\s+"#, #"^#include\s+"#, #"^package\s+"#,
+            #"^use\s+"#, #"^module\s+"#,
+            #"=>\s*\{"#, #"->\s*\{"#,
+        ]
+        let lineEndPatterns: [String] = [
+            #"\{\s*$"#, #"\};\s*$"#,
+        ]
+
+        var strongCount = 0
+        for line in lines {
+            let t = line.trimmingCharacters(in: .whitespaces)
+            for pattern in strongPatterns {
+                if t.range(of: pattern, options: .regularExpression) != nil {
+                    strongCount += 1
+                    break
+                }
+            }
+            for pattern in lineEndPatterns {
+                if t.range(of: pattern, options: .regularExpression) != nil {
+                    strongCount += 1
+                    break
+                }
+            }
+        }
+
+        // Medium signals — need 2+ to trigger
+        var mediumCount = 0
+        let fullText = trimmed
+
+        if fullText.contains("{") && fullText.contains("}") { mediumCount += 1 }
+        if lines.contains(where: { $0.trimmingCharacters(in: .whitespaces).hasSuffix(";") }) { mediumCount += 1 }
+        if fullText.contains("->") { mediumCount += 1 }
+        if lines.contains(where: {
+            let t = $0.trimmingCharacters(in: .whitespaces)
+            return t.hasPrefix("//") || (t.hasPrefix("#") && !t.hasPrefix("# ") && !t.hasPrefix("## "))
+        }) { mediumCount += 1 }
+        if fullText.range(of: #"(let|var|const|val)\s+\w+\s*="#, options: .regularExpression) != nil { mediumCount += 1 }
+        let nonEmptyLines = lines.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        if nonEmptyLines.count > 1 {
+            let indentedCount = nonEmptyLines.filter { $0.hasPrefix("  ") || $0.hasPrefix("\t") }.count
+            if Double(indentedCount) / Double(nonEmptyLines.count) >= 0.5 { mediumCount += 1 }
+        }
+        if fullText.range(of: #"\w+\("#, options: .regularExpression) != nil { mediumCount += 1 }
+
+        // Negative signals
+        var negativeCount = 0
+        for line in lines {
+            let words = line.split(separator: " ")
+            let hasOperators = line.contains("{") || line.contains("}") || line.contains(";")
+                || line.contains("=") || line.contains("(") || line.contains("->")
+            if words.count >= 5 && !hasOperators {
+                negativeCount += 1
+            }
+        }
+        if lines.contains(where: { $0.hasPrefix("# ") || $0.hasPrefix("## ") }) { negativeCount += 1 }
+        if trimmed.count < 8 && strongCount == 0 { return (false, "plaintext") }
+
+        let isCode: Bool
+        if isMultiline {
+            isCode = strongCount > 0 || (mediumCount >= 2 && negativeCount < nonEmptyLines.count / 2)
+        } else {
+            isCode = strongCount > 0
+        }
+
+        if !isCode { return (false, "plaintext") }
+        let language = detectCodeLanguage(trimmed)
+        return (true, language)
+    }
+
+    /// Detect programming language from keyword clusters.
+    private static func detectCodeLanguage(_ text: String) -> String {
+        struct LangScore {
+            let language: String
+            let exclusiveKeywords: [String]
+            let keywords: [String]
+        }
+
+        let languages: [LangScore] = [
+            LangScore(language: "swift", exclusiveKeywords: ["guard ", "@State", "@Published", "import SwiftUI", "import UIKit"], keywords: ["func ", "let ", "var "]),
+            LangScore(language: "go", exclusiveKeywords: [":=", "fmt.", "go func", "package main"], keywords: ["func ", "package "]),
+            LangScore(language: "python", exclusiveKeywords: ["elif ", "__init__", "self."], keywords: ["def ", "import "]),
+            LangScore(language: "javascript", exclusiveKeywords: ["===", "console.log", "require("], keywords: ["function ", "const ", "=> "]),
+            LangScore(language: "typescript", exclusiveKeywords: [": string", ": number", ": boolean", "interface "], keywords: ["function ", "const ", "=> "]),
+            LangScore(language: "rust", exclusiveKeywords: ["fn ", "mut ", "impl ", "pub fn"], keywords: ["::"]),
+            LangScore(language: "java", exclusiveKeywords: ["public static void", "System.out", "@Override"], keywords: ["class ", "import "]),
+            LangScore(language: "cpp", exclusiveKeywords: ["#include", "std::", "nullptr", "int main"], keywords: ["::", "cout"]),
+            LangScore(language: "sql", exclusiveKeywords: ["SELECT ", "INSERT INTO", "CREATE TABLE"], keywords: ["FROM ", "WHERE ", "JOIN "]),
+            LangScore(language: "html", exclusiveKeywords: ["<div", "<span", "<html", "className="], keywords: ["</"]),
+            LangScore(language: "css", exclusiveKeywords: ["font-size:", "margin:", "padding:", "display:"], keywords: ["{", "}"]),
+            LangScore(language: "bash", exclusiveKeywords: ["#!/bin/bash", "#!/bin/sh"], keywords: ["echo ", "export "]),
+            LangScore(language: "ruby", exclusiveKeywords: ["puts ", "require '", "attr_accessor"], keywords: ["def ", "end"]),
+        ]
+
+        var bestLang = "plaintext"
+        var bestScore = 0
+
+        for lang in languages {
+            var score = 0
+            for kw in lang.exclusiveKeywords {
+                if text.contains(kw) { score += 3 }
+            }
+            for kw in lang.keywords {
+                if text.contains(kw) { score += 1 }
+            }
+            if score > bestScore {
+                bestScore = score
+                bestLang = lang.language
+            }
+        }
+
+        return bestScore > 0 ? bestLang : "plaintext"
     }
 
     override func pasteAsPlainText(_ sender: Any?) {
@@ -6548,14 +6900,18 @@ final class InlineNSTextView: NSTextView {
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
-           event.charactersIgnoringModifiers == "z" {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if flags == .command, event.charactersIgnoringModifiers == "z" {
             undoManager?.undo()
             return true
         }
-        if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == [.command, .shift],
-           event.charactersIgnoringModifiers == "z" {
+        if flags == [.command, .shift], event.charactersIgnoringModifiers == "z" {
             undoManager?.redo()
+            return true
+        }
+        // Cmd+A: select all text in the editor, not sidebar notes
+        if flags == .command, event.charactersIgnoringModifiers == "a" {
+            selectAll(nil)
             return true
         }
         return super.performKeyEquivalent(with: event)
@@ -6644,6 +7000,28 @@ final class InlineNSTextView: NSTextView {
             default:
                 // Any other key dismisses the menu and passes through
                 NotificationCenter.default.post(name: .urlPasteDismiss, object: nil)
+                super.keyDown(with: event)
+                return
+            }
+        }
+
+        // Handle code paste menu keyboard navigation
+        if InlineNSTextView.isCodePasteMenuShowing {
+            switch event.keyCode {
+            case 126:  // Up Arrow
+                NotificationCenter.default.post(name: .codePasteNavigateUp, object: nil, userInfo: eidInfo)
+                return
+            case 125:  // Down Arrow
+                NotificationCenter.default.post(name: .codePasteNavigateDown, object: nil, userInfo: eidInfo)
+                return
+            case 36, 76:  // Return/Enter
+                NotificationCenter.default.post(name: .codePasteSelectFocused, object: nil, userInfo: eidInfo)
+                return
+            case 53:  // Escape
+                NotificationCenter.default.post(name: .codePasteDismiss, object: nil)
+                return
+            default:
+                NotificationCenter.default.post(name: .codePasteDismiss, object: nil)
                 super.keyDown(with: event)
                 return
             }
@@ -7270,6 +7648,15 @@ extension Notification.Name {
     static let urlPasteNavigateUp = Notification.Name("URLPasteNavigateUp")
     static let urlPasteNavigateDown = Notification.Name("URLPasteNavigateDown")
     static let urlPasteSelectFocused = Notification.Name("URLPasteSelectFocused")
+
+    // Code paste option menu notifications
+    static let codePasteDetected = Notification.Name("CodePasteDetected")
+    static let codePasteSelectCodeBlock = Notification.Name("CodePasteSelectCodeBlock")
+    static let codePasteSelectPlainText = Notification.Name("CodePasteSelectPlainText")
+    static let codePasteDismiss = Notification.Name("CodePasteDismiss")
+    static let codePasteNavigateUp = Notification.Name("CodePasteNavigateUp")
+    static let codePasteNavigateDown = Notification.Name("CodePasteNavigateDown")
+    static let codePasteSelectFocused = Notification.Name("CodePasteSelectFocused")
 
     // Note picker notifications (triggered by "@")
     static let showNotePicker = Notification.Name("ShowNotePicker")
