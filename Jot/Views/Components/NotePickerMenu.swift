@@ -35,6 +35,7 @@ struct NotePickerItem: Identifiable, Equatable {
 struct BacklinkItem: Identifiable, Equatable {
     let id: UUID
     let title: String
+    let colorHex: String?
 }
 
 /// Note picker menu displaying a filterable list of notes.

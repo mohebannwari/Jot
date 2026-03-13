@@ -729,9 +729,8 @@ final class NoteExportService {
         savePanel.nameFieldStringValue = "\(filename).\(fileExtension)"
         if let contentType = UTType(filenameExtension: fileExtension) {
             savePanel.allowedContentTypes = [contentType]
-        } else {
-            // Fallback for unexpected extensions
-            savePanel.allowedFileTypes = [fileExtension]
+        } else if let fallbackType = UTType(filenameExtension: fileExtension, conformingTo: .data) {
+            savePanel.allowedContentTypes = [fallbackType]
         }
         savePanel.canCreateDirectories = true
         savePanel.isExtensionHidden = false

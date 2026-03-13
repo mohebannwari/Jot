@@ -43,13 +43,16 @@ struct FileAttachmentTagView: View {
             .frame(width: 18, height: 18)
 
             Text(label.lowercased())
-                .font(FontManager.metadata(size: 11, weight: .medium))
+                .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(foregroundColor)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
         .frame(minWidth: 54, minHeight: 20)
         .background(backgroundColor, in: Capsule())
+        .onHover { inside in
+            if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+        }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(label.uppercased()) attachment")
     }

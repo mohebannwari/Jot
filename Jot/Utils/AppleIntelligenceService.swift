@@ -136,6 +136,95 @@ final class AppleIntelligenceService {
         }
     }
 
+    // MARK: - Markup Stripping
+
+    /// Strips all custom serialization markup from `editedContent`, returning
+    /// clean plain text suitable for Foundation Model input.
+    static func stripMarkupForAI(_ serialized: String) -> String {
+        var s = serialized
+
+        // 1. Remove AI blocks entirely
+        s = s.replacingOccurrences(
+            of: #"\[\[ai-block\]\].*?\[\[/ai-block\]\]"#,
+            with: "", options: .regularExpression)
+
+        // 2. Complex embedded objects
+        // Tables → placeholder
+        s = s.replacingOccurrences(
+            of: #"\[\[table\|[^\]]*\]\][\s\S]*?\[\[/table\]\]"#,
+            with: "[Table]", options: .regularExpression)
+        // Callouts → keep content
+        s = s.replacingOccurrences(
+            of: #"\[\[callout\|[^\]]*\]\]"#, with: "", options: .regularExpression)
+        s = s.replacingOccurrences(of: "[[/callout]]", with: "")
+        // Code blocks → keep code content
+        s = s.replacingOccurrences(
+            of: #"\[\[codeblock\|[^\]]*\]\]"#, with: "", options: .regularExpression)
+        s = s.replacingOccurrences(of: "[[/codeblock]]", with: "")
+        // Web clips → "TITLE (URL)"
+        s = s.replacingOccurrences(
+            of: #"\[\[webclip\|([^|]*)\|[^|]*\|([^\]]*)\]\]"#,
+            with: "$1 ($2)", options: .regularExpression)
+        // Note links → title
+        s = s.replacingOccurrences(
+            of: #"\[\[notelink\|[^|]*\|([^\]]*)\]\]"#,
+            with: "$1", options: .regularExpression)
+        // Links → URL
+        s = s.replacingOccurrences(
+            of: #"\[\[link\|([^\]]*)\]\]"#,
+            with: "$1", options: .regularExpression)
+        // Files → "[File: ORIGINAL]"
+        s = s.replacingOccurrences(
+            of: #"\[\[file\|[^|]*\|[^|]*\|([^\]]*)\]\]"#,
+            with: "[File: $1]", options: .regularExpression)
+        // File links → "[File: NAME]"
+        s = s.replacingOccurrences(
+            of: #"\[\[filelink\|[^|]*\|([^|]*)\|[^\]]*\]\]"#,
+            with: "[File: $1]", options: .regularExpression)
+        // Images → remove entirely
+        s = s.replacingOccurrences(
+            of: #"\[\[image\|\|\|[^\]]*\]\]"#,
+            with: "", options: .regularExpression)
+
+        // 3. Ordered lists → "N. "
+        s = s.replacingOccurrences(
+            of: #"\[\[ol\|(\d+)\]\]"#,
+            with: "$1. ", options: .regularExpression)
+
+        // 4. Paired formatting tags — keep inner text
+        let pairedTags = [
+            "b", "i", "u", "s",
+            "h1", "h2", "h3",
+            "quote", "code",
+        ]
+        for tag in pairedTags {
+            s = s.replacingOccurrences(of: "[[\(tag)]]", with: "")
+            s = s.replacingOccurrences(of: "[[/\(tag)]]", with: "")
+        }
+        // Alignment tags
+        s = s.replacingOccurrences(
+            of: #"\[\[align:(center|right|justify)\]\]"#,
+            with: "", options: .regularExpression)
+        s = s.replacingOccurrences(of: "[[/align]]", with: "")
+
+        // 5. Parameterized tags: color, highlight
+        s = s.replacingOccurrences(
+            of: #"\[\[color\|[0-9a-fA-F]{6}\]\]"#,
+            with: "", options: .regularExpression)
+        s = s.replacingOccurrences(of: "[[/color]]", with: "")
+        s = s.replacingOccurrences(
+            of: #"\[\[hl\|[0-9a-fA-F]{6}\]\]"#,
+            with: "", options: .regularExpression)
+        s = s.replacingOccurrences(of: "[[/hl]]", with: "")
+
+        // 6. Collapse multiple blank lines
+        s = s.replacingOccurrences(
+            of: #"\n{3,}"#,
+            with: "\n\n", options: .regularExpression)
+
+        return s.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     func summarize(text: String) async throws -> String {
         guard #available(macOS 26.0, *) else {
             throw AIServiceError.unavailable(unavailabilityReason)

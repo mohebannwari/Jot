@@ -14,7 +14,7 @@ extension NoteDetailView {
 
     @MainActor
     func handleAITool(_ tool: AITool) async {
-        let content = editedContent
+        let content = AppleIntelligenceService.stripMarkupForAI(editedContent)
         guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         withAnimation(.jotSpring) {
             aiPanelState = .loading(tool)
@@ -66,7 +66,9 @@ extension NoteDetailView {
 
     @MainActor
     func handleAIEdit(instruction: String) async {
-        let sourceText = capturedSelectionText.isEmpty ? editedContent : capturedSelectionText
+        let sourceText = capturedSelectionText.isEmpty
+            ? AppleIntelligenceService.stripMarkupForAI(editedContent)
+            : capturedSelectionText
         guard !sourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
 
         // Resolve panel position before showing the panel so it never appears at (0,0)
@@ -112,17 +114,22 @@ extension NoteDetailView {
         aiIsProcessing = false
     }
 
-    /// Apply the revised text from an editPreview state, replacing the captured range or full content.
+    /// Apply the revised text from an editPreview state by routing through
+    /// the coordinator's text storage (preserving formatting and undo).
     func applyEditContentReplacement() {
-        guard case .editPreview(let revised, let range, _, _) = aiPanelState else { return }
+        guard case .editPreview(let revised, let range, let originalText, _) = aiPanelState else { return }
 
-        if range.location != NSNotFound,
-           let swiftRange = Range(range, in: editedContent)
-        {
-            editedContent.replaceSubrange(swiftRange, with: revised)
-        } else {
-            editedContent = revised
-        }
+        let isFullDocument = range.location == NSNotFound
+
+        NotificationCenter.default.post(
+            name: .aiEditApplyReplacement,
+            object: nil,
+            userInfo: [
+                "original": isFullDocument ? "" : originalText,
+                "replacement": revised,
+                "editorInstanceID": editorInstanceID
+            ]
+        )
 
         scheduleAutosave()
         withAnimation(.jotSpring) {
@@ -131,30 +138,21 @@ extension NoteDetailView {
         }
     }
 
-    /// Applies all remaining proofread suggestions to the note text, then clears overlays.
+    /// Applies all remaining proofread suggestions by routing through
+    /// the coordinator's text storage (preserving formatting and undo).
     func replaceAllSuggestions() {
         guard case .proofread(let annotations) = aiPanelState, !annotations.isEmpty else { return }
 
-        var text = editedContent
+        NotificationCenter.default.post(
+            name: .aiProofreadReplaceAll,
+            object: nil,
+            userInfo: [
+                "annotations": annotations,
+                "editorInstanceID": editorInstanceID
+            ]
+        )
 
-        // Sort by first-occurrence position descending so replacements don't shift earlier indices
-        let sorted: [(annotation: ProofreadAnnotation, location: Int)] = annotations.compactMap { ann in
-            let range = (text as NSString).range(of: ann.original, options: .literal)
-            guard range.location != NSNotFound else { return nil }
-            return (ann, range.location)
-        }.sorted { $0.location > $1.location }
-
-        for entry in sorted {
-            let ns = text as NSString
-            let range = ns.range(of: entry.annotation.original, options: .literal)
-            if range.location != NSNotFound {
-                text = ns.replacingCharacters(in: range, with: entry.annotation.replacement)
-            }
-        }
-
-        editedContent = text
         scheduleAutosave()
-        NotificationCenter.default.post(name: .aiProofreadClearOverlays, object: nil, userInfo: ["editorInstanceID": editorInstanceID])
         withAnimation(.jotSpring) { aiPanelState = .proofread([]) }
     }
 

@@ -142,7 +142,7 @@ class WebMetadataFetcher: ObservableObject {
     }
 
     private final class WebViewLoader: NSObject, WKNavigationDelegate {
-        struct AssociatedKeys { static var loader = "webviewloader_assoc" }
+        struct AssociatedKeys { nonisolated(unsafe) static var loader: UInt8 = 0 }
         let completion: (NSImage?) -> Void
         init(completion: @escaping (NSImage?) -> Void) { self.completion = completion }
         

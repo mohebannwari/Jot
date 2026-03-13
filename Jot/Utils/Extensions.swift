@@ -409,4 +409,9 @@ extension Notification.Name {
     static let aiProofreadShowAnnotations = Notification.Name("AIProofreadShowAnnotations")
     // Posted by ProofreadPillView; userInfo: ["original": String, "replacement": String]
     static let aiProofreadApplySuggestion = Notification.Name("AIProofreadApplySuggestion")
+
+    // Edit Content -- apply replacement through text storage (not editedContent)
+    static let aiEditApplyReplacement = Notification.Name("AIEditApplyReplacement")
+    // Proofread -- batch apply all remaining suggestions through text storage
+    static let aiProofreadReplaceAll = Notification.Name("AIProofreadReplaceAll")
 }

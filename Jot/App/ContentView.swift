@@ -359,12 +359,15 @@ struct ContentView: View {
     /// Find all notes that contain a `[[notelink|targetID|...]]` reference to the given note.
     private func backlinks(for noteID: UUID) -> [BacklinkItem] {
         let searchToken = "[[notelink|\(noteID.uuidString)"
+        let foldersByID = Dictionary(uniqueKeysWithValues: notesManager.folders.map { ($0.id, $0) })
         return notesManager.notes.compactMap { note in
             guard note.id != noteID,
                   note.content.contains(searchToken) else { return nil }
+            let colorHex = note.folderID.flatMap { foldersByID[$0]?.colorHex }
             return BacklinkItem(
                 id: note.id,
-                title: note.title.isEmpty ? "Untitled" : note.title
+                title: note.title.isEmpty ? "Untitled" : note.title,
+                colorHex: colorHex
             )
         }
     }
@@ -478,11 +481,11 @@ struct ContentView: View {
             notesManager.loadDeletedNotes()
             reconcileSelectionWithCurrentNotes()
         }
-        .onChange(of: notesManager.notes) { notes in
+        .onChange(of: notesManager.notes) { _, notes in
             searchEngine.setNotes(notes)
             reconcileSelectionWithCurrentNotes(notes)
         }
-        .onChange(of: notesManager.folders) { folders in
+        .onChange(of: notesManager.folders) { _, folders in
             searchEngine.setFolders(folders)
         }
         .onChange(of: notesManager.hasLoadedInitialNotes) { _, _ in
@@ -797,7 +800,7 @@ struct ContentView: View {
                 if hasPrimary {
                     singleNotePane(note: primaryNote, width: primW, cornerRadius: splitRadius)
                         .splitPaneDimming(isInactive: activeSplitPane != .primary, cornerRadius: splitRadius, colorScheme: colorScheme)
-                        .splitPaneShadow(isActive: activeSplitPane == .primary, cornerRadius: splitRadius, backgroundColor: detailBg, colorScheme: colorScheme, showStroke: true)
+                        .splitPaneShadow(isActive: activeSplitPane == .primary, cornerRadius: splitRadius, backgroundColor: detailBg, colorScheme: colorScheme)
                         .zIndex(activeSplitPane == .primary ? 1 : 0)
                         .overlay(alignment: .topTrailing) {
                             if !isPending {
@@ -816,7 +819,7 @@ struct ContentView: View {
                 if hasSecondary, let secNote = activeSecondaryNote {
                     secondaryNotePane(note: secNote, width: secW, cornerRadius: splitRadius, primaryNote: primaryNote)
                         .splitPaneDimming(isInactive: activeSplitPane != .secondary, cornerRadius: splitRadius, colorScheme: colorScheme)
-                        .splitPaneShadow(isActive: activeSplitPane == .secondary, cornerRadius: splitRadius, backgroundColor: detailBg, colorScheme: colorScheme, showStroke: true)
+                        .splitPaneShadow(isActive: activeSplitPane == .secondary, cornerRadius: splitRadius, backgroundColor: detailBg, colorScheme: colorScheme)
                         .zIndex(activeSplitPane == .secondary ? 1 : 0)
                 } else {
                     splitPickerPane(width: secW, cornerRadius: splitRadius, excludingNote: activePrimaryNote, isPrimary: false)
@@ -828,7 +831,7 @@ struct ContentView: View {
                 if hasSecondary, let secNote = activeSecondaryNote {
                     secondaryNotePane(note: secNote, width: secW, cornerRadius: splitRadius, primaryNote: primaryNote)
                         .splitPaneDimming(isInactive: activeSplitPane != .secondary, cornerRadius: splitRadius, colorScheme: colorScheme)
-                        .splitPaneShadow(isActive: activeSplitPane == .secondary, cornerRadius: splitRadius, backgroundColor: detailBg, colorScheme: colorScheme, showStroke: true)
+                        .splitPaneShadow(isActive: activeSplitPane == .secondary, cornerRadius: splitRadius, backgroundColor: detailBg, colorScheme: colorScheme)
                         .zIndex(activeSplitPane == .secondary ? 1 : 0)
                 } else {
                     splitPickerPane(width: secW, cornerRadius: splitRadius, excludingNote: activePrimaryNote, isPrimary: false)
@@ -838,7 +841,7 @@ struct ContentView: View {
                 if hasPrimary {
                     singleNotePane(note: primaryNote, width: primW, cornerRadius: splitRadius)
                         .splitPaneDimming(isInactive: activeSplitPane != .primary, cornerRadius: splitRadius, colorScheme: colorScheme)
-                        .splitPaneShadow(isActive: activeSplitPane == .primary, cornerRadius: splitRadius, backgroundColor: detailBg, colorScheme: colorScheme, showStroke: true)
+                        .splitPaneShadow(isActive: activeSplitPane == .primary, cornerRadius: splitRadius, backgroundColor: detailBg, colorScheme: colorScheme)
                         .zIndex(activeSplitPane == .primary ? 1 : 0)
                         .overlay(alignment: .topTrailing) {
                             if !isPending {
@@ -3155,7 +3158,6 @@ struct ContentView: View {
         pendingFolderToEdit = nil
     }
 
-    @ViewBuilder
     private func activeArchivedNoteInFolder(_ folder: Folder, notes: [Note]) -> Note? {
         guard let activeID = selectedNote?.id else { return nil }
         return notes.first { $0.id == activeID }

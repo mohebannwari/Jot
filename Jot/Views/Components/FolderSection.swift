@@ -408,7 +408,7 @@ struct FolderSection: View {
             let noteIDs = Set(items.map { $0.noteID })
             let success = onDropNotesIntoFolder(noteIDs, folder.id)
             if success {
-                withAnimation(.jotSmoothFast) {
+                _ = withAnimation(.jotSmoothFast) {
                     expandedFolderIDs.insert(folder.id)
                 }
             }

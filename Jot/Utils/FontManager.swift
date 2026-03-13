@@ -16,11 +16,15 @@ import AppKit
 
 /// Centralized font manager providing consistent typography across the application
 struct FontManager {
+    // Duplicated from ThemeManager.bodyFontStyleDefaultsKey to avoid accessing
+    // a main-actor-isolated property from a nonisolated context.
+    private nonisolated static let bodyFontStyleKey = "BodyFontStyle"
+
     nonisolated private static func currentBodyFontStyle(
         userDefaults: UserDefaults = .standard
     ) -> BodyFontStyle {
         let rawValue =
-            userDefaults.string(forKey: ThemeManager.bodyFontStyleDefaultsKey) ?? BodyFontStyle.default.rawValue
+            userDefaults.string(forKey: bodyFontStyleKey) ?? BodyFontStyle.default.rawValue
         return BodyFontStyle(rawValue: rawValue) ?? .default
     }
 

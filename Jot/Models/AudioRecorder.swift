@@ -178,7 +178,7 @@ public final class AudioRecorder: NSObject, ObservableObject, AudioRecorderServi
         duration = accumulatedDuration
 
         // CRITICAL: Ensure audio file buffers are flushed before releasing
-        if let file = audioFile {
+        if audioFile != nil {
             // Small delay to ensure final buffer writes complete
             // AVAudioFile writes are async, so we need to give them time to finish
             do {
@@ -325,8 +325,7 @@ extension AudioRecorder {
         let inputFormat = input.inputFormat(forBus: 0)
         engine.connect(input, to: bridgeMixer, format: inputFormat)
 
-        let channelCount = max<AVAudioChannelCount>(
-            1, min(inputFormat.channelCount, preferredChannelCount))
+        let channelCount = max(AVAudioChannelCount(1), min(inputFormat.channelCount, preferredChannelCount))
         guard
             let recordingFormat = AVAudioFormat(
                 commonFormat: .pcmFormatFloat32,

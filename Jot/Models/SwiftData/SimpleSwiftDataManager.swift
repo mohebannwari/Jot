@@ -215,7 +215,7 @@ final class SimpleSwiftDataManager: ObservableObject {
     private func loadFolders() {
         do {
             let predicate = #Predicate<FolderEntity> { $0.isArchived == false }
-            var descriptor = FetchDescriptor<FolderEntity>(
+            let descriptor = FetchDescriptor<FolderEntity>(
                 predicate: predicate,
                 sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
             )
@@ -230,7 +230,7 @@ final class SimpleSwiftDataManager: ObservableObject {
     func loadArchivedFolders() {
         do {
             let predicate = #Predicate<FolderEntity> { $0.isArchived == true }
-            var descriptor = FetchDescriptor<FolderEntity>(
+            let descriptor = FetchDescriptor<FolderEntity>(
                 predicate: predicate,
                 sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
             )

@@ -466,12 +466,15 @@ private struct NotelinkPillView: View {
 
     var body: some View {
         Text("@\(title.isEmpty ? "Untitled" : title)")
-            .font(.system(size: 12, weight: .medium))
+            .font(.system(size: 13, weight: .medium))
             .foregroundStyle(.black)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
             .background(pillColor, in: Capsule(style: .continuous))
             .fixedSize()
+            .onHover { inside in
+                if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+            }
     }
 }
 
@@ -514,6 +517,9 @@ private struct FileLinkPillView: View {
         .padding(.vertical, 4)
         .background(pillColor, in: Capsule(style: .continuous))
         .fixedSize()
+        .onHover { inside in
+            if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+        }
     }
 }
 
@@ -962,6 +968,7 @@ struct TodoRichTextEditor: View {
                     URLPasteOptionMenu(
                         onMention: {
                             withAnimation(.smooth(duration: 0.15)) { showURLPasteMenu = false }
+                            InlineNSTextView.isURLPasteMenuShowing = false
                             NotificationCenter.default.post(
                                 name: .urlPasteSelectMention,
                                 object: [
@@ -972,6 +979,7 @@ struct TodoRichTextEditor: View {
                         },
                         onPasteAsURL: {
                             withAnimation(.smooth(duration: 0.15)) { showURLPasteMenu = false }
+                            InlineNSTextView.isURLPasteMenuShowing = false
                             NotificationCenter.default.post(
                                 name: .urlPasteSelectPlainLink,
                                 object: [
@@ -1162,8 +1170,9 @@ struct TodoRichTextEditor: View {
             urlPasteRange = range
 
             // Center the menu 8px below the URL text
-            let menuWidth: CGFloat = 160
-            let menuX = rect.midX - menuWidth / 2
+            // Total width = inner frame (160) + outer padding (12 * 2)
+            let menuTotalWidth: CGFloat = 160 + CommandMenuLayout.outerPadding * 2
+            let menuX = rect.midX - menuTotalWidth / 2
             let menuY = rect.maxY + 8
 
             urlPasteMenuPosition = CGPoint(x: max(0, menuX), y: menuY)
@@ -1171,10 +1180,12 @@ struct TodoRichTextEditor: View {
             withAnimation(.smooth(duration: 0.2)) {
                 showURLPasteMenu = true
             }
+            InlineNSTextView.isURLPasteMenuShowing = true
         }
         .onReceive(NotificationCenter.default.publisher(for: .urlPasteDismiss)) { _ in
             if showURLPasteMenu {
                 withAnimation(.smooth(duration: 0.15)) { showURLPasteMenu = false }
+                InlineNSTextView.isURLPasteMenuShowing = false
             }
         }
     }
@@ -1244,8 +1255,8 @@ struct TodoRichTextEditor: View {
     }
 
     private func clampedURLPasteMenuPosition(for containerSize: CGSize) -> CGPoint {
-        let menuWidth: CGFloat = 160
-        let menuHeight: CGFloat = 68
+        let menuWidth: CGFloat = 160 + CommandMenuLayout.outerPadding * 2
+        let menuHeight: CGFloat = 68 + CommandMenuLayout.outerPadding * 2
         let maxX = max(0, containerSize.width - menuWidth)
         let maxY = max(0, containerSize.height - menuHeight)
         let clampedX = min(max(urlPasteMenuPosition.x, 0), maxX)
@@ -1311,7 +1322,14 @@ struct URLPasteOptionMenu: View {
     let onPasteAsURL: () -> Void
 
     @Environment(\.colorScheme) private var colorScheme
+    @State private var focusedOption: Int = 0
     @State private var hoveredOption: Int?
+
+    private let optionCount = 2
+
+    private var activeOption: Int {
+        hoveredOption ?? focusedOption
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -1333,6 +1351,26 @@ struct URLPasteOptionMenu: View {
         .liquidGlass(in: RoundedRectangle(cornerRadius: 28, style: .continuous))
         .shadow(color: .black.opacity(0.12), radius: 24, x: 0, y: 12)
         .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 4)
+        .onReceive(NotificationCenter.default.publisher(for: .urlPasteNavigateUp)) { _ in
+            withAnimation(.smooth(duration: 0.1)) {
+                hoveredOption = nil
+                focusedOption = max(focusedOption - 1, 0)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .urlPasteNavigateDown)) { _ in
+            withAnimation(.smooth(duration: 0.1)) {
+                hoveredOption = nil
+                focusedOption = min(focusedOption + 1, optionCount - 1)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .urlPasteSelectFocused)) { _ in
+            let selected = activeOption
+            if selected == 0 {
+                onMention()
+            } else {
+                onPasteAsURL()
+            }
+        }
     }
 
     private func optionRow(
@@ -1359,7 +1397,7 @@ struct URLPasteOptionMenu: View {
             .padding(.vertical, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                hoveredOption == index
+                activeOption == index
                     ? Capsule().fill(Color("HoverBackgroundColor"))
                     : nil
             )
@@ -1373,13 +1411,13 @@ struct URLPasteOptionMenu: View {
     }
 
     private func iconColor(for index: Int) -> Color {
-        hoveredOption == index
+        activeOption == index
             ? (colorScheme == .dark ? .white : Color("PrimaryTextColor"))
             : Color("IconSecondaryColor")
     }
 
     private func textColor(for index: Int) -> Color {
-        hoveredOption == index
+        activeOption == index
             ? (colorScheme == .dark ? .white : Color("PrimaryTextColor"))
             : Color("PrimaryTextColor")
     }
@@ -6849,6 +6887,9 @@ struct URLPasteOptionMenu: View {
         static var isCommandMenuShowing = false
         static var commandSlashLocation: Int = -1
 
+        // URL paste menu state
+        static var isURLPasteMenuShowing = false
+
         // Note picker state (triggered by "@")
         static var isNotePickerShowing = false
         static var notePickerAtLocation: Int = -1
@@ -7203,6 +7244,29 @@ struct URLPasteOptionMenu: View {
             }
 
             let eidInfo: [String: Any]? = editorInstanceID.map { ["editorInstanceID": $0] }
+
+            // Handle URL paste menu keyboard navigation
+            if InlineNSTextView.isURLPasteMenuShowing {
+                switch event.keyCode {
+                case 126:  // Up Arrow
+                    NotificationCenter.default.post(name: .urlPasteNavigateUp, object: nil, userInfo: eidInfo)
+                    return
+                case 125:  // Down Arrow
+                    NotificationCenter.default.post(name: .urlPasteNavigateDown, object: nil, userInfo: eidInfo)
+                    return
+                case 36, 76:  // Return/Enter
+                    NotificationCenter.default.post(name: .urlPasteSelectFocused, object: nil, userInfo: eidInfo)
+                    return
+                case 53:  // Escape
+                    NotificationCenter.default.post(name: .urlPasteDismiss, object: nil)
+                    return
+                default:
+                    // Any other key dismisses the menu and passes through
+                    NotificationCenter.default.post(name: .urlPasteDismiss, object: nil)
+                    super.keyDown(with: event)
+                    return
+                }
+            }
 
             // Handle note picker keyboard navigation (triggered by "@")
             if InlineNSTextView.isNotePickerShowing {
@@ -7821,6 +7885,9 @@ extension Notification.Name {
     static let urlPasteSelectMention = Notification.Name("URLPasteSelectMention")
     static let urlPasteSelectPlainLink = Notification.Name("URLPasteSelectPlainLink")
     static let urlPasteDismiss = Notification.Name("URLPasteDismiss")
+    static let urlPasteNavigateUp = Notification.Name("URLPasteNavigateUp")
+    static let urlPasteNavigateDown = Notification.Name("URLPasteNavigateDown")
+    static let urlPasteSelectFocused = Notification.Name("URLPasteSelectFocused")
 
     // Note picker notifications (triggered by "@")
     static let showNotePicker = Notification.Name("ShowNotePicker")

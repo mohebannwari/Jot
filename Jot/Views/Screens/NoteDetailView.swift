@@ -241,6 +241,13 @@ struct NoteDetailView: View {
                             }
                     }
                 )
+
+            // Backlinks section — directly under title
+            if !backlinks.isEmpty {
+                backlinksSection
+                    .padding(.top, 4)
+            }
+
             if let summaryText = aiSummaryText {
                 AIResultPanel(
                     state: .summary(summaryText),
@@ -282,11 +289,6 @@ struct NoteDetailView: View {
             .id(editorIdentity)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, -28) // Extend editor into VStack padding for table row handle gutter
-
-            // Backlinks section
-            if !backlinks.isEmpty {
-                backlinksSection
-            }
 
             if commandMenuNeedsSpace {
                 Color.clear
@@ -1216,48 +1218,41 @@ struct NoteDetailView: View {
 
     // MARK: - Backlinks
 
+    private var backlinkPillColor: Color {
+        colorScheme == .dark
+            ? Color(red: 0.792, green: 0.541, blue: 0.016)  // Yellow 600 #ca8a04
+            : Color(red: 0.918, green: 0.702, blue: 0.031)  // Yellow 500 #eab308
+    }
+
     @ViewBuilder
     private var backlinksSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Divider
-            Rectangle()
-                .fill(Color.primary.opacity(0.08))
-                .frame(height: 0.5)
-                .padding(.vertical, 8)
-
+        VStack(alignment: .leading, spacing: 6) {
             Text("Referenced by")
-                .font(FontManager.metadata(size: 11, weight: .semibold))
-                .foregroundStyle(.secondary)
+                .font(FontManager.metadata(size: 11, weight: .medium))
+                .foregroundStyle(Color("SecondaryTextColor"))
                 .textCase(.uppercase)
                 .tracking(0.5)
 
-            VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
                 ForEach(backlinks) { backlink in
                     Button {
                         onNavigateToNote?(backlink.id)
                     } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "arrow.turn.up.left")
-                                .font(.system(size: 10, weight: .medium))
-                                .foregroundStyle(.secondary)
-                            Text(backlink.title)
-                                .font(FontManager.body(size: 13, weight: .regular))
-                                .foregroundStyle(.primary)
-                                .lineLimit(1)
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .fill(Color.primary.opacity(0.04))
-                        )
+                        Text(backlink.title)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(.black)
+                            .lineLimit(1)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(backlinkPillColor, in: Capsule(style: .continuous))
                     }
                     .buttonStyle(.plain)
+                    .onHover { inside in
+                        if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+                    }
                 }
             }
         }
-        .padding(.top, 24)
-        .padding(.bottom, 16)
         .transition(.opacity)
     }
 

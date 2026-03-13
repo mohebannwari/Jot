@@ -42,7 +42,7 @@ struct WebClipView: View {
                     .foregroundStyle(.white)
 
                 Text(cleanedDomain)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(.white)
                     .lineLimit(1)
                     .textCase(.lowercase)
@@ -59,6 +59,9 @@ struct WebClipView: View {
             .background(pillBackground, in: Capsule(style: .continuous))
         }
         .buttonStyle(.plain)
+        .onHover { inside in
+            if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+        }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityLabel)
     }

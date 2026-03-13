@@ -100,7 +100,7 @@ final class NoteAuthenticationManager: ObservableObject {
         }
 
         context.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: "Unlock note with Touch ID") { [weak self] success, _ in
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 if success {
                     self?.unlockedNoteIDs.insert(noteID)
                 }
