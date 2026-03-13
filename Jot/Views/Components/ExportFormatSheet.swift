@@ -107,15 +107,33 @@ struct ExportFormatSheet: View {
     // MARK: - Format Row
 
     private var formatRow: some View {
-        HStack(spacing: 4) {
-            ForEach(NoteExportFormat.allCases) { format in
-                FormatPillButton(
-                    format: format,
-                    isSelected: selectedFormat == format
-                ) {
-                    HapticManager.shared.buttonTap()
-                    withAnimation(.jotBounce) {
-                        selectedFormat = format
+        let formats = NoteExportFormat.allCases
+        let topRow = Array(formats.prefix(2))
+        let bottomRow = Array(formats.dropFirst(2))
+        return VStack(spacing: 4) {
+            HStack(spacing: 4) {
+                ForEach(topRow) { format in
+                    FormatPillButton(
+                        format: format,
+                        isSelected: selectedFormat == format
+                    ) {
+                        HapticManager.shared.buttonTap()
+                        withAnimation(.jotBounce) {
+                            selectedFormat = format
+                        }
+                    }
+                }
+            }
+            HStack(spacing: 4) {
+                ForEach(bottomRow) { format in
+                    FormatPillButton(
+                        format: format,
+                        isSelected: selectedFormat == format
+                    ) {
+                        HapticManager.shared.buttonTap()
+                        withAnimation(.jotBounce) {
+                            selectedFormat = format
+                        }
                     }
                 }
             }
@@ -206,10 +224,12 @@ private struct FormatPillButton: View {
                     .tracking(-0.1)
                     .foregroundColor(isSelected ? Color("ButtonPrimaryTextColor") : Color("PrimaryTextColor"))
             }
-            .padding(12)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
             .frame(maxWidth: .infinity)
             .background(isSelected ? Color("SettingsSelectionOrange") : pillBackground)
             .clipShape(Capsule())
+            .padding(0.5)
             .overlay {
                 Capsule()
                     .stroke(

@@ -33,6 +33,9 @@ struct NoteToolsBar: View {
             toolButton(icon: "IconPageTextSearch", tooltip: "Search on Page") {
                 postToolAction(.searchOnPage)
             }
+            toolButton(icon: "mic-recording", tooltip: "Voice Record") {
+                postToolAction(.voiceRecord)
+            }
             #if os(macOS)
             ShareToolButton(note: note, iconSize: iconSize)
                 .frame(width: iconSize, height: iconSize)
@@ -40,9 +43,6 @@ struct NoteToolsBar: View {
                 .glassTooltip("Share")
                 .hoverContainer(cornerRadius: 8)
             #endif
-            toolButton(icon: "mic-recording", tooltip: "Voice Record") {
-                postToolAction(.voiceRecord)
-            }
 
             // MARK: - Ellipsis toggle / divider
 

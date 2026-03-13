@@ -503,6 +503,12 @@ private struct FileLinkPillView: View {
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(contentColor)
                 .lineLimit(1)
+            Image("arrow-up-right")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 12, height: 12)
+                .foregroundStyle(contentColor)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
@@ -1177,9 +1183,24 @@ struct TodoRichTextEditor: View {
 
     /// Two-phase dismiss: reverse entrance animation, then remove from hierarchy
     private func dismissCommandMenu() {
+        // Guard against re-entry: the .hideCommandMenu notification handler
+        // at line 1028 also calls this function, so bail if already dismissed.
+        guard showCommandMenu || InlineNSTextView.isCommandMenuShowing else { return }
+
         // Immediately stop keyboard interception
         InlineNSTextView.isCommandMenuShowing = false
         InlineNSTextView.commandSlashLocation = -1
+
+        // Notify NoteDetailView to re-enable scroll (deferred to avoid
+        // re-entrant SwiftUI state updates during the current transaction)
+        let eidInfo: [String: Any]? = editorInstanceID.map { ["editorInstanceID": $0] }
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(
+                name: .hideCommandMenu,
+                object: nil,
+                userInfo: eidInfo
+            )
+        }
 
         // Phase 1: animate reverse entrance (scale down to cursor, items cascade out)
         withAnimation(.smooth(duration: 0.25)) {
@@ -2643,12 +2664,39 @@ struct URLPasteOptionMenu: View {
                     }
                 }
 
+                // MARK: Edit Content -- apply replacement through text storage
+                let editReplace = NotificationCenter.default.addObserver(
+                    forName: .aiEditApplyReplacement, object: nil, queue: .main
+                ) { [weak self] notification in
+                    if let nid = notification.userInfo?["editorInstanceID"] as? UUID,
+                       let myID = self?.editorInstanceID, nid != myID { return }
+                    guard let userInfo = notification.userInfo,
+                          let original = userInfo["original"] as? String,
+                          let replacement = userInfo["replacement"] as? String else { return }
+                    Task { @MainActor [weak self] in
+                        self?.applyEditContentReplacement(original: original, replacement: replacement)
+                    }
+                }
+
+                // MARK: Proofread -- batch replace all through text storage
+                let proofreadReplaceAll = NotificationCenter.default.addObserver(
+                    forName: .aiProofreadReplaceAll, object: nil, queue: .main
+                ) { [weak self] notification in
+                    if let nid = notification.userInfo?["editorInstanceID"] as? UUID,
+                       let myID = self?.editorInstanceID, nid != myID { return }
+                    guard let annotations = notification.userInfo?["annotations"] as? [ProofreadAnnotation] else { return }
+                    Task { @MainActor [weak self] in
+                        self?.replaceAllProofreadSuggestions(annotations)
+                    }
+                }
+
                 observers = [
                     windowKey,
                     insertTodo, insertLink, insertFileLink, insertVoiceTranscript, insertImage, applyTool, applyCommandMenuTool,
                     applyNotePickerSelection, navigateNoteLink,
                     performSearch, highlightSearch, clearSearch, replaceMatch, replaceAll,
                     proofreadShow, proofreadClear, proofreadApply, captureSelection,
+                    editReplace, proofreadReplaceAll,
                     urlPasteMention, urlPasteSelectPlainLink, urlPasteDismiss,
                     applyColor, settingsObserver,
                 ]
@@ -2906,6 +2954,65 @@ struct URLPasteOptionMenu: View {
                 var clearInfo: [String: Any] = [:]
                 if let eid = editorInstanceID { clearInfo["editorInstanceID"] = eid }
                 NotificationCenter.default.post(name: .aiProofreadClearOverlays, object: nil, userInfo: clearInfo.isEmpty ? nil : clearInfo)
+            }
+
+            // MARK: - Edit Content Replacement (via notification)
+
+            private func applyEditContentReplacement(original: String, replacement: String) {
+                guard let textView = self.textView,
+                      let storage = textView.textStorage else { return }
+
+                if original.isEmpty {
+                    // Full-document replacement
+                    let fullRange = NSRange(location: 0, length: storage.length)
+                    if textView.shouldChangeText(in: fullRange, replacementString: replacement) {
+                        storage.replaceCharacters(in: fullRange, with: replacement)
+                        textView.didChangeText()
+                    }
+                } else {
+                    // Selection replacement -- find original text in storage
+                    let fullString = storage.string as NSString
+                    let found = fullString.range(of: original, options: .literal)
+                    guard found.location != NSNotFound else { return }
+
+                    if textView.shouldChangeText(in: found, replacementString: replacement) {
+                        storage.replaceCharacters(in: found, with: replacement)
+                        textView.didChangeText()
+                    }
+                }
+                syncText()
+            }
+
+            // MARK: - Batch Proofread Replace All (via notification)
+
+            private func replaceAllProofreadSuggestions(_ annotations: [ProofreadAnnotation]) {
+                guard let textView = self.textView,
+                      let storage = textView.textStorage else { return }
+
+                let fullString = storage.string as NSString
+                var resolved: [(annotation: ProofreadAnnotation, location: Int)] = annotations.compactMap { ann in
+                    let range = fullString.range(of: ann.original, options: .literal)
+                    guard range.location != NSNotFound else { return nil }
+                    return (ann, range.location)
+                }
+                resolved.sort { $0.location > $1.location }  // Descending to preserve indices
+
+                guard !resolved.isEmpty else { return }
+
+                textView.undoManager?.beginUndoGrouping()
+                for entry in resolved {
+                    let ns = storage.string as NSString
+                    let range = ns.range(of: entry.annotation.original, options: .literal)
+                    if range.location != NSNotFound,
+                       textView.shouldChangeText(in: range, replacementString: entry.annotation.replacement) {
+                        storage.replaceCharacters(in: range, with: entry.annotation.replacement)
+                        textView.didChangeText()
+                    }
+                }
+                textView.undoManager?.endUndoGrouping()
+                syncText()
+
+                clearProofreadOverlays()
             }
 
             // MARK: - Edit Content Selection Capture
@@ -6898,7 +7005,9 @@ struct URLPasteOptionMenu: View {
                             || textStorage.attribute(.notelinkID, at: charIdx, effectiveRange: nil) != nil
                         let isWebclip = textStorage.attribute(.webClipTitle, at: charIdx, effectiveRange: nil) != nil
                         let isPlainLink = textStorage.attribute(.plainLinkURL, at: charIdx, effectiveRange: nil) != nil
-                        if isNotelink || isWebclip || isPlainLink {
+                        let isFileLink = textStorage.attribute(.attachment, at: charIdx, effectiveRange: nil) is FileLinkAttachment
+                            || textStorage.attribute(.fileLinkPath, at: charIdx, effectiveRange: nil) != nil
+                        if isNotelink || isWebclip || isPlainLink || isFileLink {
                             NSCursor.pointingHand.set()
                             return
                         }

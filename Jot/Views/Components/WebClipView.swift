@@ -38,7 +38,7 @@ struct WebClipView: View {
                     .renderingMode(.template)
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 15, height: 15)
+                    .frame(width: 16, height: 16)
                     .foregroundStyle(.white)
 
                 Text(cleanedDomain)
