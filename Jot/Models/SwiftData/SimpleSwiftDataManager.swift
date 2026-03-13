@@ -38,7 +38,6 @@ final class SimpleSwiftDataManager: ObservableObject {
 
     private let modelContainer: ModelContainer
     private let modelContext: ModelContext
-    private let backgroundContext: ModelContext
     private let logger = Logger(subsystem: "com.jot.app", category: "SimpleSwiftDataManager")
 
     // MARK: - Performance Configuration
@@ -56,13 +55,9 @@ final class SimpleSwiftDataManager: ObservableObject {
 
         self.modelContainer = try ModelContainer(for: schema, configurations: [configuration])
         self.modelContext = ModelContext(modelContainer)
-        self.backgroundContext = ModelContext(modelContainer)
 
         // Configure main context for UI
         modelContext.autosaveEnabled = true
-
-        // Configure background context for performance
-        backgroundContext.autosaveEnabled = false
 
         // Cleanup any leftover performance test notes
         cleanupPerformanceNotes()
@@ -173,10 +168,14 @@ final class SimpleSwiftDataManager: ObservableObject {
         let currentMonth = calendar.component(.month, from: now)
         let currentYear = calendar.component(.year, from: now)
 
-        notesByFolderID = Dictionary(
-            grouping: notes.filter { $0.folderID != nil },
-            by: { $0.folderID! }
-        ).mapValues { $0.sorted(by: sortComparator) }
+        notesByFolderID = {
+            var dict: [UUID: [Note]] = [:]
+            for note in notes {
+                guard let fid = note.folderID else { continue }
+                dict[fid, default: []].append(note)
+            }
+            return dict.mapValues { $0.sorted(by: sortComparator) }
+        }()
 
         let unfiled = notes.filter { $0.folderID == nil }
         unfiledNotes = unfiled
@@ -205,6 +204,31 @@ final class SimpleSwiftDataManager: ObservableObject {
         olderNotes = unlocked.filter { note in
             calendar.component(.year, from: groupDate(note)) < currentYear
         }.sorted(by: sortComparator)
+    }
+
+    /// Updates a single note in-place across all derived sidebar collections
+    /// without triggering a full recompute. Used after content-only saves.
+    private func updateNoteInDerivedCollections(_ note: Note) {
+        func patch(_ array: inout [Note]) {
+            if let i = array.firstIndex(where: { $0.id == note.id }) {
+                array[i] = note
+            }
+        }
+        patch(&pinnedNotes)
+        patch(&allUnpinnedNotes)
+        patch(&unfiledNotes)
+        patch(&lockedNotes)
+        patch(&todayNotes)
+        patch(&thisMonthNotes)
+        patch(&thisYearNotes)
+        patch(&olderNotes)
+        for (key, var arr) in notesByFolderID {
+            if let i = arr.firstIndex(where: { $0.id == note.id }) {
+                arr[i] = note
+                notesByFolderID[key] = arr
+                break
+            }
+        }
     }
 
     /// Re-sorts derived note collections when user changes sort preference.
@@ -356,9 +380,12 @@ final class SimpleSwiftDataManager: ObservableObject {
                 localNote.folderID = existing.folderID
                 if !metadataChanged {
                     suppressDerivedRecompute = true
+                    notes[index] = localNote
+                    suppressDerivedRecompute = false
+                    updateNoteInDerivedCollections(localNote)
+                } else {
+                    notes[index] = localNote
                 }
-                notes[index] = localNote
-                suppressDerivedRecompute = false
             }
 
             logger.info("Updated note: \(updatedNote.title)")

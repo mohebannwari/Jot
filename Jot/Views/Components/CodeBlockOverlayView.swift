@@ -484,7 +484,7 @@ private final class _ResizeHandle: NSView {
 
 private extension NSImage {
     func tinting(with color: NSColor) -> NSImage {
-        let image = self.copy() as! NSImage
+        guard let image = self.copy() as? NSImage else { return self }
         image.lockFocus()
         color.set()
         CGRect(origin: .zero, size: image.size).fill(using: .sourceAtop)

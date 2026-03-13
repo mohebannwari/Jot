@@ -19,9 +19,7 @@ struct JotApp: App {
         do {
             manager = try SimpleSwiftDataManager()
         } catch {
-            NSLog("Failed to initialize SimpleSwiftDataManager: %@", "\(error)")
-            // Fallback — attempt continues; crash only if truly unrecoverable
-            manager = try! SimpleSwiftDataManager()
+            fatalError("Failed to initialize data store: \(error). The app cannot continue without persistence.")
         }
         _notesManager = StateObject(wrappedValue: manager)
 

@@ -1986,6 +1986,16 @@ struct ContentView: View {
             .keyboardShortcut("k", modifiers: [.command])
             .opacity(0.001)
 
+            // Cmd+S -> force save current note
+            Button(action: {
+                NotificationCenter.default.post(name: .forceSaveNote, object: nil)
+            }) {
+                Color.clear.frame(width: 1, height: 1)
+            }
+            .buttonStyle(.plain)
+            .keyboardShortcut("s", modifiers: [.command])
+            .opacity(0.001)
+
             // Cmd+. -> toggle sidebar
             Button {
                 withAnimation(sidebarVisibilityAnimation) {
@@ -2415,8 +2425,8 @@ struct ContentView: View {
         let isActive = session.id == activeSplitID
         let pNote = notesManager.notes.first(where: { $0.id == session.primaryNoteID })
         let sNote = notesManager.notes.first(where: { $0.id == session.secondaryNoteID })
-        let primaryTitle = (pNote?.title.isEmpty == false ? pNote!.title : "Untitled")
-        let secondaryTitle = (sNote?.title.isEmpty == false ? sNote!.title : "Untitled")
+        let primaryTitle = pNote?.title.isEmpty == false ? pNote?.title ?? "Untitled" : "Untitled"
+        let secondaryTitle = sNote?.title.isEmpty == false ? sNote?.title ?? "Untitled" : "Untitled"
         // Active: inverted note cards (black card in LM, white card in DM)
         let indicatorColor = Color("IconSecondaryColor")
         let textColor: Color = isActive
@@ -2844,19 +2854,23 @@ struct ContentView: View {
             isSettingsPresented = false
         }
 
+        // Always resolve the freshest version from the authoritative notes array.
+        // Sidebar derived collections may hold stale data after content-only saves.
+        let freshNote = notesManager.notes.first(where: { $0.id == note.id }) ?? note
+
         // Schedule re-lock for the note we're leaving (if it was locked + unlocked)
-        if let prev = selectedNote, prev.id != note.id, prev.isLocked, authManager.isUnlocked(prev.id) {
+        if let prev = selectedNote, prev.id != freshNote.id, prev.isLocked, authManager.isUnlocked(prev.id) {
             authManager.scheduleRelock(for: prev.id)
         }
 
         // Cancel re-lock timer if we're returning to this note
-        if note.isLocked, authManager.isUnlocked(note.id) {
-            authManager.cancelRelock(for: note.id)
+        if freshNote.isLocked, authManager.isUnlocked(freshNote.id) {
+            authManager.cancelRelock(for: freshNote.id)
         }
 
-        selectedNote = note
-        selectedNoteIDs = [note.id]
-        selectionAnchorID = note.id
+        selectedNote = freshNote
+        selectedNoteIDs = [freshNote.id]
+        selectionAnchorID = freshNote.id
         lockPasswordInput = ""
         lockAuthFailed = false
 

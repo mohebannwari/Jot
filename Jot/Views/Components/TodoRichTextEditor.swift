@@ -4026,7 +4026,7 @@ struct URLPasteOptionMenu: View {
                         isUpdating = true
                         storage.beginEditing()
                         storage.removeAttribute(.blockQuote, range: paraRange)
-                        let resetStyle = Self.baseParagraphStyle().mutableCopy() as! NSMutableParagraphStyle
+                        guard let resetStyle = Self.baseParagraphStyle().mutableCopy() as? NSMutableParagraphStyle else { return false }
                         storage.addAttribute(.paragraphStyle, value: resetStyle, range: paraRange)
                         storage.addAttribute(.foregroundColor, value: NSColor.labelColor, range: paraRange)
                         storage.endEditing()
@@ -5799,7 +5799,7 @@ struct URLPasteOptionMenu: View {
                     } else if isBlockQuoteParagraph {
                         // Actively enforce block quote paragraph style on every text change,
                         // just like every other block type. Preserves custom alignment if set.
-                        let quoteStyle = Self.blockQuoteParagraphStyle().mutableCopy() as! NSMutableParagraphStyle
+                        guard let quoteStyle = Self.blockQuoteParagraphStyle().mutableCopy() as? NSMutableParagraphStyle else { return }
                         textStorage.enumerateAttribute(.paragraphStyle, in: substringRange, options: []) { val, _, stop in
                             if let ps = val as? NSParagraphStyle, ps.alignment != .left {
                                 quoteStyle.alignment = ps.alignment
@@ -5809,7 +5809,7 @@ struct URLPasteOptionMenu: View {
                         textStorage.addAttribute(.paragraphStyle, value: quoteStyle, range: substringRange)
                     } else if !isHeadingParagraph {
                         // Body paragraph: apply base style but preserve any custom alignment
-                        let mutableStyle = Self.baseParagraphStyle().mutableCopy() as! NSMutableParagraphStyle
+                        guard let mutableStyle = Self.baseParagraphStyle().mutableCopy() as? NSMutableParagraphStyle else { return }
                         var existingAlignment: NSTextAlignment = .left
                         textStorage.enumerateAttribute(.paragraphStyle, in: substringRange, options: []) { val, _, stop in
                             if let ps = val as? NSParagraphStyle, ps.alignment != .left {

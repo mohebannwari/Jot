@@ -388,6 +388,7 @@ extension Notification.Name {
     static let noteToolsBarAction = Notification.Name("NoteToolsBarAction")
     static let applyTextColor = Notification.Name("applyTextColor")
     static let todoToolbarAction = Notification.Name("TodoToolbarAction")
+    static let forceSaveNote = Notification.Name("forceSaveNote")
 }
 
 // MARK: - AI Notification Names

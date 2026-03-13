@@ -476,40 +476,40 @@ private extension CalloutData.CalloutType {
         switch self {
         case .info:
             // Matches CodeBlockOverlayView blue tokens exactly
-            return .init(
-                outerLight: .init(srgbRed: 191/255, green: 219/255, blue: 254/255, alpha: 1),  // blue-200 #BFDBFE
-                outerDark:  .init(srgbRed: 23/255,  green: 37/255,  blue: 84/255,  alpha: 1),  // blue-950 #172554
-                labelLight: .init(srgbRed: 37/255,  green: 99/255,  blue: 235/255, alpha: 1),  // blue-600
-                labelDark:  .init(srgbRed: 59/255,  green: 130/255, blue: 246/255, alpha: 1)   // blue-500
+            return CalloutTypeColors(
+                outerLight: NSColor(srgbRed: 0.749, green: 0.859, blue: 0.996, alpha: 1),  // blue-200 #BFDBFE
+                outerDark:  NSColor(srgbRed: 0.090, green: 0.145, blue: 0.329, alpha: 1),  // blue-950 #172554
+                labelLight: NSColor(srgbRed: 0.145, green: 0.388, blue: 0.922, alpha: 1),  // blue-600
+                labelDark:  NSColor(srgbRed: 0.231, green: 0.510, blue: 0.965, alpha: 1)   // blue-500
             )
         case .warning:
             // Exact Figma yellow tokens
-            return .init(
-                outerLight: .init(hex: "#fef08a"),  // yellow/200
-                outerDark:  .init(hex: "#422006"),  // yellow/950
-                labelLight: .init(hex: "#ca8a04"),  // yellow/600
-                labelDark:  .init(hex: "#eab308")   // yellow/500
+            return CalloutTypeColors(
+                outerLight: NSColor(hex: "#fef08a"),  // yellow/200
+                outerDark:  NSColor(hex: "#422006"),  // yellow/950
+                labelLight: NSColor(hex: "#ca8a04"),  // yellow/600
+                labelDark:  NSColor(hex: "#eab308")   // yellow/500
             )
         case .tip:
-            return .init(
-                outerLight: .init(hex: "#bbf7d0"),  // green-200
-                outerDark:  .init(hex: "#052e16"),  // green-950
-                labelLight: .init(hex: "#16a34a"),  // green-600
-                labelDark:  .init(hex: "#22c55e")   // green-500
+            return CalloutTypeColors(
+                outerLight: NSColor(hex: "#bbf7d0"),  // green-200
+                outerDark:  NSColor(hex: "#052e16"),  // green-950
+                labelLight: NSColor(hex: "#16a34a"),  // green-600
+                labelDark:  NSColor(hex: "#22c55e")   // green-500
             )
         case .note:
-            return .init(
-                outerLight: .init(hex: "#e5e7eb"),  // gray-200
-                outerDark:  .init(hex: "#1f2937"),  // gray-800
-                labelLight: .init(hex: "#4b5563"),  // gray-600
-                labelDark:  .init(hex: "#9ca3af")   // gray-400
+            return CalloutTypeColors(
+                outerLight: NSColor(hex: "#e5e7eb"),  // gray-200
+                outerDark:  NSColor(hex: "#1f2937"),  // gray-800
+                labelLight: NSColor(hex: "#4b5563"),  // gray-600
+                labelDark:  NSColor(hex: "#9ca3af")   // gray-400
             )
         case .important:
-            return .init(
-                outerLight: .init(hex: "#fecaca"),  // red-200
-                outerDark:  .init(hex: "#450a0a"),  // red-950
-                labelLight: .init(hex: "#dc2626"),  // red-600
-                labelDark:  .init(hex: "#ef4444")   // red-500
+            return CalloutTypeColors(
+                outerLight: NSColor(hex: "#fecaca"),  // red-200
+                outerDark:  NSColor(hex: "#450a0a"),  // red-950
+                labelLight: NSColor(hex: "#dc2626"),  // red-600
+                labelDark:  NSColor(hex: "#ef4444")   // red-500
             )
         }
     }

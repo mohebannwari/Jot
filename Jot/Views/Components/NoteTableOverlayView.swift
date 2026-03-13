@@ -965,12 +965,13 @@ final class NoteTableOverlayView: NSView {
         if let existing = trackingArea {
             removeTrackingArea(existing)
         }
-        trackingArea = NSTrackingArea(
+        let newArea = NSTrackingArea(
             rect: interactiveRect,
             options: [.activeInKeyWindow, .mouseMoved, .mouseEnteredAndExited, .cursorUpdate],
             owner: self, userInfo: nil
         )
-        addTrackingArea(trackingArea!)
+        trackingArea = newArea
+        addTrackingArea(newArea)
     }
 
     // MARK: - Cursor Rects

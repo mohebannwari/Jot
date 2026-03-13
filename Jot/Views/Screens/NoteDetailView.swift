@@ -450,13 +450,11 @@ struct NoteDetailView: View {
             let oldSnapshot = DraftSnapshot(title: editedTitle, content: contentWithAI)
             let oldNote = noteForPersist
             if oldSnapshot != lastSavedSnapshot {
-                DispatchQueue.main.async {
-                    var updated = oldNote
-                    updated.title = oldSnapshot.title
-                    updated.content = oldSnapshot.content
-                    updated.date = Date()
-                    onSave(updated)
-                }
+                var updated = oldNote
+                updated.title = oldSnapshot.title
+                updated.content = oldSnapshot.content
+                updated.date = Date()
+                onSave(updated)
             }
             noteForPersist = note
 
@@ -504,6 +502,10 @@ struct NoteDetailView: View {
                 }
             }
 
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .forceSaveNote)) { _ in
+            autosaveWorkItem?.cancel()
+            persistIfNeeded()
         }
         .onReceive(NotificationCenter.default.publisher(for: .noteToolsBarAction))
         { notification in

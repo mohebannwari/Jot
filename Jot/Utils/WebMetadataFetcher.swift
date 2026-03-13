@@ -22,7 +22,9 @@ struct WebMetadata {
 
 @MainActor
 class WebMetadataFetcher: ObservableObject {
-    
+
+    private var activeFetchTask: Task<Void, Never>?
+
     func fetchMetadata(from urlString: String, completion: @escaping (WebMetadata) -> Void) {
         guard let url = URL(string: urlString) else {
             let domain = urlString.replacingOccurrences(of: "https://", with: "").replacingOccurrences(of: "http://", with: "")
@@ -33,7 +35,8 @@ class WebMetadataFetcher: ObservableObject {
         let domain = url.host ?? urlString
         
         // Fetch metadata + generate a visual preview (snapshot) of the page
-        Task {
+        activeFetchTask?.cancel()
+        activeFetchTask = Task {
             // Attempt metadata; don't fail the whole flow if HTML parsing fails
             var metaTitle = domain.capitalized
             var metaDescription = "Visit \(domain)"
@@ -242,9 +245,16 @@ class WebMetadataFetcher: ObservableObject {
         return nil
     }
     
+    // MARK: - Static Regex (compiled once)
+    private static let titleRegex = try! NSRegularExpression(
+        pattern: "<title[^>]*>([^<]+)</title>", options: .caseInsensitive)
+    private static let descRegex = try! NSRegularExpression(
+        pattern: "<meta[^>]*name=[\"']description[\"'][^>]*content=[\"']([^\"']+)[\"']", options: .caseInsensitive)
+    private static let ogDescRegex = try! NSRegularExpression(
+        pattern: "<meta[^>]*property=[\"']og:description[\"'][^>]*content=[\"']([^\"']+)[\"']", options: .caseInsensitive)
+
     private func extractTitle(from html: String) -> String {
-        // Extract title using regex
-        let titleRegex = try! NSRegularExpression(pattern: "<title[^>]*>([^<]+)</title>", options: .caseInsensitive)
+        let titleRegex = Self.titleRegex
         let range = NSRange(html.startIndex..<html.endIndex, in: html)
 
         if let match = titleRegex.firstMatch(in: html, options: [], range: range),
@@ -258,8 +268,7 @@ class WebMetadataFetcher: ObservableObject {
     }
     
     private func extractDescription(from html: String) -> String {
-        // Try meta description first
-        let descRegex = try! NSRegularExpression(pattern: "<meta[^>]*name=[\"']description[\"'][^>]*content=[\"']([^\"']+)[\"']", options: .caseInsensitive)
+        let descRegex = Self.descRegex
         let range = NSRange(html.startIndex..<html.endIndex, in: html)
 
         if let match = descRegex.firstMatch(in: html, options: [], range: range),
@@ -270,7 +279,7 @@ class WebMetadataFetcher: ObservableObject {
         }
 
         // Try og:description
-        let ogDescRegex = try! NSRegularExpression(pattern: "<meta[^>]*property=[\"']og:description[\"'][^>]*content=[\"']([^\"']+)[\"']", options: .caseInsensitive)
+        let ogDescRegex = Self.ogDescRegex
 
         if let match = ogDescRegex.firstMatch(in: html, options: [], range: range),
            let descRange = Range(match.range(at: 1), in: html) {
