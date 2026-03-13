@@ -43,7 +43,7 @@ enum NoteExportFormat: String, CaseIterable, Identifiable {
         case .pdf: return "IconFilePdf"
         case .markdown: return "IconMarkdown"
         case .html: return "IconWebsite"
-        case .plainText: return "IconNoteText"
+        case .plainText: return "IconFileText"
         }
     }
 }
