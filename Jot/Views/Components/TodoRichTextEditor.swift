@@ -6,12 +6,8 @@
 //  clickable, and in sync with serialized markup.
 //
 
-import Combine
 import SwiftUI
-
 import AppKit
-import QuartzCore
-import UniformTypeIdentifiers
 
 
 struct TodoRichTextEditor: View {
