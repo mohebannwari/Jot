@@ -1165,6 +1165,10 @@ struct TodoRichTextEditor: View {
                 }
             }
         }
+    }
+
+    private var editorWithURLPasteNotifications: some View {
+        editorWithPickerNotifications
         .onReceive(NotificationCenter.default.publisher(for: .urlPasteDetected)) { notification in
             guard let info = notification.object as? [String: Any],
                   let url = info["url"] as? String,
@@ -1199,7 +1203,7 @@ struct TodoRichTextEditor: View {
     }
 
     var body: some View {
-        editorWithPickerNotifications
+        editorWithURLPasteNotifications
     }
 
     // MARK: - Command Menu Handlers
