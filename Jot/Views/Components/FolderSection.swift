@@ -312,7 +312,7 @@ struct FolderSection: View {
                     }
                 } label: {
                     Image(systemName: "ellipsis")
-                        .font(FontManager.icon(size: 18, weight: .medium))
+                        .font(FontManager.icon(size: 14, weight: .medium))
                         .foregroundColor(Color("SecondaryTextColor"))
                         .frame(width: 18, height: 18)
                         .contentShape(Rectangle())

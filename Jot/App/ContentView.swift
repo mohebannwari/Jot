@@ -3671,6 +3671,7 @@ struct NoteListCard: View {
     var cornerRadius: CGFloat = 12
     @State private var isHovered = false
     @State private var isLeadingIconHovered = false
+    @State private var isEllipsisHovered = false
     @State private var isRenaming = false
     @State private var renamingTitle = ""
     @FocusState private var isFieldFocused: Bool
@@ -3680,6 +3681,142 @@ struct NoteListCard: View {
         isActiveNote
             ? Color("ButtonPrimaryTextColor")
             : Color("SecondaryTextColor")
+    }
+
+    @ViewBuilder
+    private var noteContextMenuContent: some View {
+        if note.folderID == nil {
+            Button {
+                HapticManager.shared.buttonTap()
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    onTogglePin(!note.isPinned)
+                }
+            } label: {
+                Label {
+                    Text(note.isPinned ? "Unpin Note" : "Pin Note")
+                } icon: {
+                    Image.menuIcon(note.isPinned ? "IconUnpin" : "IconThumbtack")
+                }
+            }
+        }
+
+        Button {
+            HapticManager.shared.buttonTap()
+            onCreateFolderWithNote()
+        } label: {
+            Label {
+                Text("Create New Folder With Note...")
+            } icon: {
+                Image.menuIcon("IconFolderAddRight")
+            }
+        }
+
+        Menu {
+            if folders.isEmpty {
+                Button("No folders available") { }
+                    .disabled(true)
+            } else {
+                ForEach(folders, id: \.id) { folder in
+                    Button {
+                        HapticManager.shared.buttonTap()
+                        onMoveToFolder(folder.id)
+                    } label: {
+                        if note.folderID == folder.id {
+                            Label {
+                                Text(folder.name)
+                            } icon: {
+                                Image(systemName: "checkmark")
+                                    .renderingMode(.template)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 18, height: 18)
+                            }
+                        } else {
+                            Label {
+                                Text(folder.name)
+                            } icon: {
+                                Image.menuIcon("IconFolder1")
+                            }
+                        }
+                    }
+                }
+            }
+
+            if note.folderID != nil {
+                Divider()
+
+                Button {
+                    HapticManager.shared.buttonTap()
+                    onMoveToFolder(nil)
+                } label: {
+                    Label {
+                        Text("Remove from Folder")
+                    } icon: {
+                        Image.menuIcon("IconFolderOpen")
+                    }
+                }
+            }
+        } label: {
+            Label {
+                Text("Move to Folder")
+            } icon: {
+                Image.menuIcon("IconMoveFolder")
+            }
+        }
+
+        Button {
+            HapticManager.shared.buttonTap()
+            onExport()
+        } label: {
+            Label {
+                Text("Export Note...")
+            } icon: {
+                Image.menuIcon("IconFileDownload")
+            }
+        }
+
+        if let onToggleLock {
+            Button {
+                HapticManager.shared.buttonTap()
+                onToggleLock()
+            } label: {
+                Label {
+                    Text(note.isLocked ? "Remove Lock" : "Lock Note")
+                } icon: {
+                    Image.menuIcon(note.isLocked ? "IconUnlocked" : "IconLock")
+                }
+            }
+        }
+
+        Divider()
+
+        if let onArchive {
+            Button {
+                HapticManager.shared.buttonTap()
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    onArchive()
+                }
+            } label: {
+                Label {
+                    Text(note.isArchived ? "Unarchive" : "Archive")
+                } icon: {
+                    Image.menuIcon("IconArchive1")
+                }
+            }
+        }
+
+        Button(role: .destructive) {
+            HapticManager.shared.buttonTap()
+            withAnimation(.easeInOut(duration: 0.25)) {
+                onDelete()
+            }
+        } label: {
+            Label {
+                Text("Delete")
+            } icon: {
+                Image.menuIcon("delete")
+            }
+        }
     }
 
     var body: some View {
@@ -3765,11 +3902,28 @@ struct NoteListCard: View {
                     }
             }
 
-            Text(Self.dateFormatter.string(from: note.date))
-                .font(FontManager.metadata(size: 11, weight: .medium))
-                .foregroundColor(isActiveNote
-                    ? Color("ButtonPrimaryTextColor").opacity(0.7)
-                    : Color("SecondaryTextColor"))
+            HStack(spacing: 6) {
+                Text(Self.compactDateString(from: note.date))
+                    .font(FontManager.metadata(size: 11, weight: .medium))
+                    .foregroundColor(isActiveNote
+                        ? Color("ButtonPrimaryTextColor").opacity(0.7)
+                        : Color("SecondaryTextColor"))
+
+                Menu {
+                    noteContextMenuContent
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(FontManager.icon(size: 14, weight: .medium))
+                        .foregroundColor(isActiveNote
+                            ? Color("ButtonPrimaryTextColor").opacity(isEllipsisHovered ? 1.0 : 0.5)
+                            : Color("SecondaryTextColor").opacity(isEllipsisHovered ? 1.0 : 0.7))
+                        .frame(width: 18, height: 18)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .onHover { isEllipsisHovered = $0 }
+            }
+            .fixedSize()
         }
         .animation(.jotHover, value: isHovered)
         .padding(8)
@@ -3815,137 +3969,7 @@ struct NoteListCard: View {
             .contentShape(.dragPreview, Capsule())
         }
         .contextMenu {
-            if note.folderID == nil {
-                Button {
-                    HapticManager.shared.buttonTap()
-                    withAnimation(.easeInOut(duration: 0.25)) {
-                        onTogglePin(!note.isPinned)
-                    }
-                } label: {
-                    Label {
-                        Text(note.isPinned ? "Unpin Note" : "Pin Note")
-                    } icon: {
-                        Image.menuIcon(note.isPinned ? "IconUnpin" : "IconThumbtack")
-                    }
-                }
-            }
-
-            Button {
-                HapticManager.shared.buttonTap()
-                onCreateFolderWithNote()
-            } label: {
-                Label {
-                    Text("Create New Folder With Note...")
-                } icon: {
-                    Image.menuIcon("IconFolderAddRight")
-                }
-            }
-
-            Menu {
-                if folders.isEmpty {
-                    Button("No folders available") { }
-                        .disabled(true)
-                } else {
-                    ForEach(folders, id: \.id) { folder in
-                        Button {
-                            HapticManager.shared.buttonTap()
-                            onMoveToFolder(folder.id)
-                        } label: {
-                                                    if note.folderID == folder.id {
-                                                        Label {
-                                                            Text(folder.name)
-                                                        } icon: {
-                                                            Image(systemName: "checkmark")
-                                                                .renderingMode(.template)
-                                                                .resizable()
-                                                                .scaledToFit()
-                                                                .frame(width: 18, height: 18)
-                                                        }
-                                                    } else {                                Label {
-                                    Text(folder.name)
-                                } icon: {
-                                    Image.menuIcon("IconFolder1")
-                                }
-                            }
-                        }
-                    }
-                }
-
-                if note.folderID != nil {
-                    Divider()
-
-                    Button {
-                        HapticManager.shared.buttonTap()
-                        onMoveToFolder(nil)
-                    } label: {
-                        Label {
-                            Text("Remove from Folder")
-                        } icon: {
-                            Image.menuIcon("IconFolderOpen")
-                        }
-                    }
-                }
-            } label: {
-                Label {
-                    Text("Move to Folder")
-                } icon: {
-                    Image.menuIcon("IconMoveFolder")
-                }
-            }
-
-            Button {
-                HapticManager.shared.buttonTap()
-                onExport()
-            } label: {
-                Label {
-                    Text("Export Note...")
-                } icon: {
-                    Image.menuIcon("IconFileDownload")
-                }
-            }
-
-            if let onToggleLock {
-                Button {
-                    HapticManager.shared.buttonTap()
-                    onToggleLock()
-                } label: {
-                    Label {
-                        Text(note.isLocked ? "Remove Lock" : "Lock Note")
-                    } icon: {
-                        Image.menuIcon(note.isLocked ? "IconUnlocked" : "IconLock")
-                    }
-                }
-            }
-
-            Divider()
-
-            if let onArchive {
-                Button {
-                    HapticManager.shared.buttonTap()
-                    withAnimation(.easeInOut(duration: 0.25)) {
-                        onArchive()
-                    }
-                } label: {
-                    Label {
-                        Text(note.isArchived ? "Unarchive" : "Archive")
-                    } icon: {
-                        Image.menuIcon("IconArchive1")
-                    }
-                }
-            }
-
-            Button(role: .destructive) {
-                HapticManager.shared.buttonTap()
-                withAnimation(.easeInOut(duration: 0.25)) {
-                    onDelete()
-                }
-            } label: {
-                Label {
-                    Text("Delete")
-                } icon: {
-                    Image.menuIcon("delete")
-                }
-            }
+            noteContextMenuContent
         }
     }
 
@@ -3972,6 +3996,29 @@ struct NoteListCard: View {
         f.dateFormat = "dd.MM.yyyy"
         return f
     }()
+
+    private static let dayMonthFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "dd.MM"
+        return f
+    }()
+
+    private static let yearFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy"
+        return f
+    }()
+
+    /// Day.Month for notes less than 1 year old, just the year for older notes.
+    private static func compactDateString(from date: Date) -> String {
+        let calendar = Calendar.current
+        let now = Date()
+        if let oneYearAgo = calendar.date(byAdding: .year, value: -1, to: now),
+           date < oneYearAgo {
+            return yearFormatter.string(from: date)
+        }
+        return dayMonthFormatter.string(from: date)
+    }
 
     private static func selectionInteractionFromCurrentEvent() -> NoteSelectionInteraction {
         let modifiers = NSApp.currentEvent?.modifierFlags ?? []
