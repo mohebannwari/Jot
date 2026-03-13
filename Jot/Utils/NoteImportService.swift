@@ -195,25 +195,70 @@ final class NoteImportService {
             }
 
             var converted = line
+            var blockPrefix = ""
+            var blockSuffix = ""
 
-            // Headings (check before inline bold to avoid false matches)
+            // Horizontal rules: ---, ***, ___
+            let hrTrimmed = converted.trimmingCharacters(in: .whitespaces)
+            if hrTrimmed.count >= 3,
+               hrTrimmed.allSatisfy({ $0 == "-" || $0 == "*" || $0 == "_" }),
+               Set(hrTrimmed).count == 1
+            {
+                lines.append("")
+                continue
+            }
+
+            // Block quotes: > text (strip prefix, wrap later)
+            if converted.hasPrefix("> ") {
+                converted = String(converted.dropFirst(2))
+                blockPrefix = "[[quote]]"
+                blockSuffix = "[[/quote]]"
+            } else if converted == ">" {
+                lines.append("[[quote]][[/quote]]")
+                continue
+            }
+
+            // Headings: after block-quote strip so "> # heading" works.
+            // No `continue` — inline formatting now applies to heading content.
             if let match = converted.firstMatch(of: /^###\s+(.+)$/) {
-                lines.append("[[h3]]\(match.1)[[/h3]]"); continue
-            }
-            if let match = converted.firstMatch(of: /^##\s+(.+)$/) {
-                lines.append("[[h2]]\(match.1)[[/h2]]"); continue
-            }
-            if let match = converted.firstMatch(of: /^#\s+(.+)$/) {
-                lines.append("[[h1]]\(match.1)[[/h1]]"); continue
+                converted = String(match.1)
+                blockPrefix += "[[h3]]"
+                blockSuffix = "[[/h3]]" + blockSuffix
+            } else if let match = converted.firstMatch(of: /^##\s+(.+)$/) {
+                converted = String(match.1)
+                blockPrefix += "[[h2]]"
+                blockSuffix = "[[/h2]]" + blockSuffix
+            } else if let match = converted.firstMatch(of: /^#\s+(.+)$/) {
+                converted = String(match.1)
+                blockPrefix += "[[h1]]"
+                blockSuffix = "[[/h1]]" + blockSuffix
             }
 
-            // Task lists
+            // Task lists: - [x], - [ ], * [x], * [ ], + [x], + [ ]
             converted = converted.replacingOccurrences(
-                of: #"^- \[x\]"#, with: "[x]", options: .regularExpression
+                of: #"^[-*+]\s*\[x\]\s?"#, with: "[x] ", options: .regularExpression
             )
             converted = converted.replacingOccurrences(
-                of: #"^- \[ \]"#, with: "[ ]", options: .regularExpression
+                of: #"^[-*+]\s*\[ \]\s?"#, with: "[ ] ", options: .regularExpression
             )
+
+            // Ordered lists: N. text (strip leading whitespace for indented items)
+            let strippedForOL = converted.drop(while: { $0 == " " || $0 == "\t" })
+            if let match = String(strippedForOL).firstMatch(of: /^(\d+)\.\s+(.*)$/) {
+                let num = String(match.1)
+                converted = String(match.2)
+                blockPrefix += "[[ol|\(num)]]"
+            }
+
+            // Unordered list bullets: - item, * item, + item → • prefix
+            let strippedForBullet = converted.drop(while: { $0 == " " || $0 == "\t" })
+            let bulletStr = String(strippedForBullet)
+            if (bulletStr.hasPrefix("- ") && !bulletStr.hasPrefix("- ["))
+                || bulletStr.hasPrefix("* ")
+                || bulletStr.hasPrefix("+ ")
+            {
+                converted = "• " + String(bulletStr.dropFirst(2))
+            }
 
             // Images: ![alt](path) — resolve local paths relative to .md dir
             for match in converted.matches(of: /!\[([^\]]*)\]\(([^)]+)\)/).reversed() {
@@ -280,12 +325,7 @@ final class NoteImportService {
                 in: converted, pattern: #"~~(.+?)~~"#
             ) { "[[s]]\($0[1])[[/s]]" }
 
-            // Unordered list bullets — strip marker
-            if converted.hasPrefix("- ") && !converted.hasPrefix("- [") {
-                converted = String(converted.dropFirst(2))
-            }
-
-            lines.append(converted)
+            lines.append(blockPrefix + converted + blockSuffix)
         }
 
         // Flush any trailing pipe table
@@ -370,9 +410,17 @@ final class NoteImportService {
             guard let page = document.page(at: pageIndex) else { continue }
 
             if let attrString = page.attributedString {
-                lines.append(await attributedStringToMarkup(attrString))
+                let markup = await attributedStringToMarkup(attrString)
+                // If attributedStringToMarkup produced zero formatting tags, the PDF
+                // has uniform fonts (common in generated/template PDFs). Fall back to
+                // heuristic structural detection on the raw text.
+                if markup.contains("[[") {
+                    lines.append(markup)
+                } else {
+                    lines.append(applyPDFTextHeuristics(markup))
+                }
             } else if let text = page.string {
-                lines.append(text)
+                lines.append(applyPDFTextHeuristics(text))
             }
 
             if pageIndex < document.pageCount - 1 {
@@ -383,13 +431,183 @@ final class NoteImportService {
         return (titleFromURL(url), lines.joined(separator: "\n"))
     }
 
+    // MARK: - PDF Heuristic Structure Detection
+
+    /// When PDFKit returns uniform fonts (no bold, no size variation), detect
+    /// structure from textual patterns: section headings, numbered lists, etc.
+    ///
+    /// PDF text extraction often wraps long paragraphs across multiple lines.
+    /// This method first rejoins wrapped lines into logical paragraphs, then
+    /// applies structural pattern matching.
+    private func applyPDFTextHeuristics(_ text: String) -> String {
+        let inputLines = text.components(separatedBy: "\n")
+
+        // --- Pass 1: Rejoin wrapped lines into logical paragraphs ---
+        // A "continuation" line is one that doesn't start a new structural element
+        // and follows a long line (the previous line was near the PDF's line width).
+        var paragraphs: [String] = []
+        for line in inputLines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty {
+                paragraphs.append("")
+                continue
+            }
+
+            let isNewBlock = Self.looksLikeNewBlock(trimmed)
+            // Don't join onto a previous line that is a short heading or standalone
+            // structural element (address, date, greeting, etc.) — these should stay
+            // on their own line. However, numbered list items and long body lines
+            // DO accept continuation joins.
+            let prevIsShortStructural = paragraphs.last.map {
+                Self.isHeadingOrShortStructural($0)
+            } ?? false
+            if !isNewBlock, !prevIsShortStructural, let last = paragraphs.last,
+               !last.isEmpty, last.count > 40
+            {
+                // Continuation of previous line — join with space
+                paragraphs[paragraphs.count - 1] += " " + trimmed
+            } else {
+                paragraphs.append(trimmed)
+            }
+        }
+
+        // --- Pass 2: Apply structural markup ---
+        var outputLines: [String] = []
+
+        // Roman numeral section heading: "I. Title", "II. Title", etc.
+        let romanSectionPattern =
+            /^(M{0,3}(CM|CD|D?C{0,3})(XC|XL|L?X{0,3})(IX|IV|V?I{0,3}))\.\s+(.+)$/
+        let letterSectionPattern = /^([A-Z])\.\s+([A-Z].+)$/
+        let numberedListPattern = /^(\d+)\.\s+(.+)$/
+
+        for para in paragraphs {
+            if para.isEmpty {
+                outputLines.append("")
+                continue
+            }
+
+            // Roman numeral section headings (I., II., III., IV., V., etc.)
+            if let match = para.firstMatch(of: romanSectionPattern) {
+                let roman = String(match.1)
+                let title = String(match.5)
+                if !roman.isEmpty && title.count < 120 {
+                    outputLines.append("[[h2]]\(para)[[/h2]]")
+                    continue
+                }
+            }
+
+            // Single letter section heading: "A. Title"
+            if let match = para.firstMatch(of: letterSectionPattern) {
+                let title = String(match.2)
+                if title.count < 120 {
+                    outputLines.append("[[h3]]\(para)[[/h3]]")
+                    continue
+                }
+            }
+
+            // "Betreff:" / "Subject:" — bold emphasis
+            if para.hasPrefix("Betreff:") || para.hasPrefix("Subject:")
+                || para.hasPrefix("Betrifft:")
+            {
+                outputLines.append("[[b]]\(para)[[/b]]")
+                continue
+            }
+
+            // Numbered list items (1-99)
+            if let match = para.firstMatch(of: numberedListPattern) {
+                let num = String(match.1)
+                let content = String(match.2)
+                let numVal = Int(num) ?? 0
+                if numVal >= 1 && numVal <= 99 {
+                    outputLines.append("[[ol|\(num)]]\(content)")
+                    continue
+                }
+            }
+
+            // En-dash / em-dash bullet items: "– item" or "— item"
+            if para.hasPrefix("\u{2013} ") || para.hasPrefix("\u{2014} ") {
+                let content = String(para.dropFirst(2))
+                outputLines.append("• \(content)")
+                continue
+            }
+
+            outputLines.append(para)
+        }
+
+        return outputLines.joined(separator: "\n")
+    }
+
+    /// Determines if a line of text starts a new logical block (heading, list,
+    /// address field, greeting) vs. being a continuation of the previous line.
+    private static func looksLikeNewBlock(_ line: String) -> Bool {
+        // Roman numeral heading: "I. ", "II. ", "III. ", "IV. ", "V. " etc.
+        if line.firstMatch(of:
+            /^(M{0,3}(CM|CD|D?C{0,3})(XC|XL|L?X{0,3})(IX|IV|V?I{0,3}))\.\s/) != nil,
+           line.first?.isUppercase == true
+        {
+            return true
+        }
+        // Numbered list: "1. ", "2. " etc.
+        if line.firstMatch(of: /^\d+\.\s/) != nil { return true }
+        // En-dash/em-dash bullet
+        if line.hasPrefix("\u{2013} ") || line.hasPrefix("\u{2014} ") { return true }
+        // Common structural prefixes
+        let prefixes = [
+            "Betreff:", "Betrifft:", "Subject:", "Aktenzeichen:", "Anlagen:",
+            "Bearbeiterin:", "Bearbeiter:", "Ihr Schreiben", "Sehr geehrte",
+            "Mit freundlichen", "Hochachtungsvoll", "Dear ", "Sincerely",
+        ]
+        for p in prefixes where line.hasPrefix(p) { return true }
+        // Short line (< 60 chars) is likely a standalone element (address, date, etc.)
+        if line.count < 60 { return true }
+        // Starts with uppercase after a period-terminated previous line — new sentence block
+        // (handled by the caller's length check on prev line)
+        return false
+    }
+
+    /// Returns true for lines that are headings or short standalone structural elements
+    /// (addresses, greetings, signatures) — these should never have continuation lines
+    /// appended to them. Numbered list items and body paragraphs return false.
+    private static func isHeadingOrShortStructural(_ line: String) -> Bool {
+        // Roman numeral heading: never append continuations
+        if line.firstMatch(of:
+            /^(M{0,3}(CM|CD|D?C{0,3})(XC|XL|L?X{0,3})(IX|IV|V?I{0,3}))\.\s/) != nil,
+           line.first?.isUppercase == true
+        {
+            return true
+        }
+        // Short standalone elements (< 60 chars): addresses, dates, greetings
+        if line.count < 60 { return true }
+        // Structural prefixes that should stay on their own line
+        let isolatedPrefixes = [
+            "Betreff:", "Betrifft:", "Subject:", "Aktenzeichen:", "Anlagen:",
+            "Bearbeiterin:", "Bearbeiter:",
+        ]
+        for p in isolatedPrefixes where line.hasPrefix(p) { return true }
+        return false
+    }
+
     // MARK: - Attributed String -> Markup
+
+    /// List type detected from NSParagraphStyle.textLists
+    private enum ImportListType { case none, ordered, unordered }
 
     /// Convert NSAttributedString to the app's custom markup format.
     /// Inverse of TodoRichTextEditor's deserialization.
     private func attributedStringToMarkup(_ attrString: NSAttributedString) async -> String {
         let fullRange = NSRange(location: 0, length: attrString.length)
         guard fullRange.length > 0 else { return "" }
+
+        // Pre-scan: find the dominant (most common) font size for relative heading detection.
+        // Weighted by character count so body text naturally dominates.
+        var fontSizeWeights: [CGFloat: Int] = [:]
+        attrString.enumerateAttribute(.font, in: fullRange) { value, range, _ in
+            if let font = value as? NSFont {
+                let rounded = (font.pointSize * 2).rounded() / 2
+                fontSizeWeights[rounded, default: 0] += range.length
+            }
+        }
+        let baseFontSize = fontSizeWeights.max(by: { $0.value < $1.value })?.key ?? 12.0
 
         let text = attrString.string
         let paragraphs = text.components(separatedBy: "\n")
@@ -404,6 +622,9 @@ final class NoteImportService {
 
             // Paragraph-level attributes
             var alignment: NSTextAlignment = .left
+            var listType: ImportListType = .none
+            var paragraphSpacingBefore: CGFloat = 0
+
             if paraLength > 0,
                 let paraStyle = attrString.attribute(
                     .paragraphStyle, at: paraRange.location,
@@ -411,9 +632,30 @@ final class NoteImportService {
                 ) as? NSParagraphStyle
             {
                 alignment = paraStyle.alignment
+                paragraphSpacingBefore = paraStyle.paragraphSpacingBefore
+
+                // Detect list items via NSTextList (used by Apple's HTML/RTF/DOCX converters)
+                if let textList = paraStyle.textLists.last {
+                    let format = textList.markerFormat
+                    let orderedFormats: [NSTextList.MarkerFormat] = [
+                        .decimal, .lowercaseAlpha, .uppercaseAlpha,
+                        .lowercaseLatin, .uppercaseLatin,
+                        .lowercaseRoman, .uppercaseRoman, .octal,
+                    ]
+                    listType = orderedFormats.contains(format) ? .ordered : .unordered
+                }
             }
 
-            let headingLevel = detectHeadingLevel(in: attrString, range: paraRange)
+            let headingLevel = detectHeadingLevel(
+                in: attrString, range: paraRange, baseFontSize: baseFontSize
+            )
+
+            // Insert blank line for significant paragraph spacing (preserves visual separation)
+            if pIndex > 0 && paragraphSpacingBefore > baseFontSize * 0.75
+                && headingLevel == 0 && listType == .none
+            {
+                result += "\n"
+            }
 
             // Collect attribute runs synchronously
             var runs: [(range: NSRange, attrs: [NSAttributedString.Key: Any])] = []
@@ -463,6 +705,29 @@ final class NoteImportService {
                 paraContent += wrapped
             }
 
+            // Strip list marker prefix inserted by Apple's converters (e.g. "\t•\t", "\t1.\t")
+            var orderedListNumber = 0
+            if listType != .none {
+                let (stripped, num) = Self.stripListMarkerFromContent(
+                    paraContent, listType: listType
+                )
+                paraContent = stripped
+                orderedListNumber = num
+            }
+
+            // Detect and normalize bullet characters in text (common in PDFs)
+            if listType == .none {
+                paraContent = Self.normalizeBulletPrefix(paraContent)
+            }
+
+            // List markup wrapper
+            if listType == .ordered {
+                let num = orderedListNumber > 0 ? orderedListNumber : 1
+                paraContent = "[[ol|\(num)]]\(paraContent)"
+            } else if listType == .unordered {
+                paraContent = "• \(paraContent)"
+            }
+
             // Heading wrapper
             if headingLevel > 0 {
                 paraContent = "[[h\(headingLevel)]]\(paraContent)[[/h\(headingLevel)]]"
@@ -493,7 +758,8 @@ final class NoteImportService {
 
     private func detectHeadingLevel(
         in attrString: NSAttributedString,
-        range: NSRange
+        range: NSRange,
+        baseFontSize: CGFloat
     ) -> Int {
         guard range.length > 0 else { return 0 }
         guard let font = attrString.attribute(
@@ -503,9 +769,15 @@ final class NoteImportService {
         let size = font.pointSize
         let isBold = font.fontDescriptor.symbolicTraits.contains(.bold)
 
-        if size >= 24 || (isBold && size >= 20) { return 1 }
-        if size >= 18 || (isBold && size >= 16) { return 2 }
-        if size >= 14 && isBold { return 3 }
+        // Relative detection: compare against the document's dominant body font size.
+        // Falls back to 12pt when base is unknown, preserving the old absolute thresholds.
+        let effectiveBase = baseFontSize > 0 ? baseFontSize : 12.0
+        let ratio = size / effectiveBase
+
+        if ratio >= 2.0 || (isBold && ratio >= 1.67) { return 1 }
+        if ratio >= 1.5 || (isBold && ratio >= 1.33) { return 2 }
+        if ratio >= 1.17 && isBold { return 3 }
+
         return 0
     }
 
@@ -546,6 +818,69 @@ final class NoteImportService {
         } catch {
             return nil
         }
+    }
+
+    /// Strip list marker prefix (e.g. "\t•\t", "\t1.\t") inserted by Apple's
+    /// NSAttributedString HTML/RTF/DOCX converters.
+    private static func stripListMarkerFromContent(
+        _ content: String,
+        listType: ImportListType
+    ) -> (stripped: String, number: Int) {
+        var number = 0
+        var s = content
+
+        // Strip leading tabs/spaces (Apple's converters indent list markers)
+        let leadingWS = s.prefix(while: { $0 == "\t" || $0 == " " })
+        s = String(s.dropFirst(leadingWS.count))
+
+        if listType == .ordered {
+            // Extract "N." or "N)" prefix
+            if let regex = try? NSRegularExpression(pattern: #"^(\d+)[.)]\s*"#),
+               let match = regex.firstMatch(
+                   in: s, range: NSRange(location: 0, length: (s as NSString).length)
+               )
+            {
+                let numRange = match.range(at: 1)
+                if numRange.location != NSNotFound {
+                    number = Int((s as NSString).substring(with: numRange)) ?? 1
+                }
+                if let range = Range(match.range, in: s) {
+                    s = String(s[range.upperBound...])
+                }
+            }
+        }
+
+        // Strip known bullet characters
+        let bulletChars: Set<Character> = [
+            "\u{2022}", "\u{2023}", "\u{25AA}", "\u{25B8}", "\u{25BA}",
+            "\u{25E6}", "\u{25CB}", "\u{25A0}", "\u{25A1}", "\u{25CF}",
+            "\u{25C6}", "\u{25C7}", "\u{2013}", "\u{2014}", "-",
+        ]
+        if let first = s.first, bulletChars.contains(first) {
+            s = String(s.dropFirst())
+        }
+
+        // Strip whitespace/tab after marker
+        let trailingWS = s.prefix(while: { $0 == "\t" || $0 == " " })
+        s = String(s.dropFirst(trailingWS.count))
+
+        return (s, number)
+    }
+
+    /// Normalize common bullet prefix characters found in PDFs to the standard "• ".
+    private static func normalizeBulletPrefix(_ text: String) -> String {
+        let bulletChars: Set<Character> = [
+            "\u{2023}", "\u{25AA}", "\u{25B8}", "\u{25BA}",
+            "\u{25E6}", "\u{25CB}", "\u{25A0}", "\u{25A1}", "\u{25CF}",
+            "\u{25C6}", "\u{25C7}",
+        ]
+        guard let first = text.first, bulletChars.contains(first) else { return text }
+
+        var rest = text.dropFirst()
+        while rest.first == " " || rest.first == "\t" {
+            rest = rest.dropFirst()
+        }
+        return "• " + rest
     }
 
     /// Regex replacement helper — processes matches in reverse for safe mutation
