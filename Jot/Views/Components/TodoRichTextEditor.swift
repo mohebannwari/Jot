@@ -72,6 +72,15 @@ struct TodoRichTextEditor: View {
     @State private var urlPasteMenuPosition: CGPoint = .zero
     @State private var urlPasteURL: String = ""
     @State private var urlPasteRange: NSRange = NSRange(location: 0, length: 0)
+
+    // Code paste option menu state
+    @State private var showCodePasteMenu = false
+    @State private var codePasteMenuPosition: CGPoint = .zero
+    @State private var codePasteTextRect: CGRect = .zero
+    @State private var codePasteCode: String = ""
+    @State private var codePasteRange: NSRange = NSRange(location: 0, length: 0)
+    @State private var codePasteLanguage: String = "plaintext"
+
     static let commandMenuActions: [EditTool] = [.imageUpload, .fileLink, .voiceRecord, .link, .todo, .bulletList, .numberedList, .blockQuote, .codeBlock, .callout, .divider, .table]
     static let commandMenuOuterPadding: CGFloat = CommandMenuLayout.outerPadding
     static let commandMenuHorizontalPadding = commandMenuOuterPadding * 2
@@ -199,6 +208,48 @@ struct TodoRichTextEditor: View {
                     .offset(
                         x: clampedURLPasteMenuPosition(for: geometry.size).x,
                         y: clampedURLPasteMenuPosition(for: geometry.size).y
+                    )
+                    .transition(
+                        .asymmetric(
+                            insertion: .scale(scale: 0.92, anchor: .top).combined(with: .opacity),
+                            removal: .scale(scale: 0.96, anchor: .top).combined(with: .opacity)
+                        )
+                    )
+                    .zIndex(999)
+                }
+            }
+        }
+        .overlay(alignment: .topLeading) {
+            GeometryReader { geometry in
+                if showCodePasteMenu {
+                    CodePasteOptionMenu(
+                        language: codePasteLanguage,
+                        onCodeBlock: {
+                            withAnimation(.smooth(duration: 0.15)) { showCodePasteMenu = false }
+                            InlineNSTextView.isCodePasteMenuShowing = false
+                            NotificationCenter.default.post(
+                                name: .codePasteSelectCodeBlock,
+                                object: [
+                                    "code": codePasteCode,
+                                    "range": NSValue(range: codePasteRange),
+                                    "language": codePasteLanguage,
+                                ] as [String: Any]
+                            )
+                        },
+                        onPlainText: {
+                            withAnimation(.smooth(duration: 0.15)) { showCodePasteMenu = false }
+                            InlineNSTextView.isCodePasteMenuShowing = false
+                            NotificationCenter.default.post(
+                                name: .codePasteSelectPlainText,
+                                object: [
+                                    "range": NSValue(range: codePasteRange),
+                                ] as [String: Any]
+                            )
+                        }
+                    )
+                    .offset(
+                        x: clampedCodePasteMenuPosition(for: geometry.size).x,
+                        y: clampedCodePasteMenuPosition(for: geometry.size).y
                     )
                     .transition(
                         .asymmetric(
@@ -407,6 +458,38 @@ struct TodoRichTextEditor: View {
                 InlineNSTextView.isURLPasteMenuShowing = false
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .codePasteDetected)) { notification in
+            guard let info = notification.object as? [String: Any],
+                  let code = info["code"] as? String,
+                  let rangeValue = info["range"] as? NSValue,
+                  let rectValue = info["rect"] as? NSValue,
+                  let language = info["language"] as? String else { return }
+
+            let range = rangeValue.rangeValue
+            let rect = rectValue.rectValue
+
+            codePasteCode = code
+            codePasteRange = range
+            codePasteLanguage = language
+            codePasteTextRect = rect
+
+            let menuTotalWidth: CGFloat = 220 + CommandMenuLayout.outerPadding * 2
+            let menuX = rect.midX - menuTotalWidth / 2
+            let menuY = rect.maxY + 8
+
+            codePasteMenuPosition = CGPoint(x: max(0, menuX), y: menuY)
+
+            withAnimation(.smooth(duration: 0.2)) {
+                showCodePasteMenu = true
+            }
+            InlineNSTextView.isCodePasteMenuShowing = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .codePasteDismiss)) { _ in
+            if showCodePasteMenu {
+                withAnimation(.smooth(duration: 0.15)) { showCodePasteMenu = false }
+                InlineNSTextView.isCodePasteMenuShowing = false
+            }
+        }
     }
 
     var body: some View {
@@ -484,6 +567,21 @@ struct TodoRichTextEditor: View {
         let maxY = max(0, containerSize.height - menuHeight)
         let clampedX = min(max(urlPasteMenuPosition.x, 0), maxX)
         let clampedY = min(max(urlPasteMenuPosition.y, 0), maxY)
+        return CGPoint(x: clampedX, y: clampedY)
+    }
+
+    private func clampedCodePasteMenuPosition(for containerSize: CGSize) -> CGPoint {
+        let menuWidth: CGFloat = 220 + CommandMenuLayout.outerPadding * 2
+        let menuHeight: CGFloat = 68 + CommandMenuLayout.outerPadding * 2
+        let maxX = max(0, containerSize.width - menuWidth)
+        let clampedX = min(max(codePasteMenuPosition.x, 0), maxX)
+
+        // If the popup would overflow below the viewport, flip it above the pasted text
+        var y = codePasteMenuPosition.y
+        if y + menuHeight > containerSize.height {
+            y = codePasteTextRect.minY - menuHeight - 8
+        }
+        let clampedY = min(max(y, 0), max(0, containerSize.height - menuHeight))
         return CGPoint(x: clampedX, y: clampedY)
     }
 
@@ -592,6 +690,112 @@ struct URLPasteOptionMenu: View {
                 onMention()
             } else {
                 onPasteAsURL()
+            }
+        }
+    }
+
+    private func optionRow(
+        iconName: String,
+        label: String,
+        index: Int,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(iconName)
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 18, height: 18)
+                    .foregroundStyle(iconColor(for: index))
+
+                Text(label)
+                    .font(FontManager.heading(size: 13, weight: .regular))
+                    .foregroundStyle(textColor(for: index))
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                activeOption == index
+                    ? Capsule().fill(Color("HoverBackgroundColor"))
+                    : nil
+            )
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered in
+            withAnimation(.smooth(duration: 0.12)) {
+                hoveredOption = isHovered ? index : (hoveredOption == index ? nil : hoveredOption)
+            }
+        }
+    }
+
+    private func iconColor(for index: Int) -> Color {
+        activeOption == index
+            ? (colorScheme == .dark ? .white : Color("PrimaryTextColor"))
+            : Color("IconSecondaryColor")
+    }
+
+    private func textColor(for index: Int) -> Color {
+        activeOption == index
+            ? (colorScheme == .dark ? .white : Color("PrimaryTextColor"))
+            : Color("PrimaryTextColor")
+    }
+}
+
+struct CodePasteOptionMenu: View {
+    let language: String
+    let onCodeBlock: () -> Void
+    let onPlainText: () -> Void
+
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var focusedOption: Int = 0
+    @State private var hoveredOption: Int?
+
+    private let optionCount = 2
+
+    private var activeOption: Int {
+        hoveredOption ?? focusedOption
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            optionRow(
+                iconName: "IconCode",
+                label: "Code Block (\(CodeBlockData.displayName(for: language)))",
+                index: 0,
+                action: onCodeBlock
+            )
+            optionRow(
+                iconName: "IconFileText",
+                label: "Plain Text",
+                index: 1,
+                action: onPlainText
+            )
+        }
+        .padding(CommandMenuLayout.outerPadding)
+        .frame(width: 220)
+        .liquidGlass(in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .shadow(color: .black.opacity(0.12), radius: 24, x: 0, y: 12)
+        .shadow(color: .black.opacity(0.06), radius: 8, x: 0, y: 4)
+        .onReceive(NotificationCenter.default.publisher(for: .codePasteNavigateUp)) { _ in
+            withAnimation(.smooth(duration: 0.1)) {
+                hoveredOption = nil
+                focusedOption = max(focusedOption - 1, 0)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .codePasteNavigateDown)) { _ in
+            withAnimation(.smooth(duration: 0.1)) {
+                hoveredOption = nil
+                focusedOption = min(focusedOption + 1, optionCount - 1)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .codePasteSelectFocused)) { _ in
+            if activeOption == 0 {
+                onCodeBlock()
+            } else {
+                onPlainText()
             }
         }
     }
