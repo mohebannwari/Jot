@@ -158,7 +158,7 @@ struct NoteDetailView: View {
     // MARK: - Note Content
 
     private var noteContent: some View {
-        noteContentEvents
+        noteContentEvents2
             .fileImporter(
                 isPresented: $showFileLinkPicker,
                 allowedContentTypes: [.item],
@@ -437,7 +437,7 @@ struct NoteDetailView: View {
             }
             scheduleAutosave()
         }
-        .onChange(of: editedContent) { _ in
+        .onChange(of: editedContent) { _, _ in
             scheduleAutosave()
         }
         .onChange(of: note.id) { oldNoteID, newNoteID in
@@ -550,6 +550,20 @@ struct NoteDetailView: View {
         .onReceive(NotificationCenter.default.publisher(for: .showInNoteSearchAndReplace)) { notification in
             if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
             presentSearchOnPage()
+        }
+    }
+
+    // Search results + menu/picker observers — split to reduce type-checker pressure
+    private var noteContentEvents2: some View {
+        noteContentEvents
+        .onReceive(NotificationCenter.default.publisher(for: .searchOnPageResults)) { notification in
+            if let nid = notification.userInfo?["editorInstanceID"] as? UUID,
+               nid != editorInstanceID { return }
+            guard let ranges = notification.userInfo?["ranges"] as? [NSRange] else { return }
+            searchOnPageMatches = ranges
+            if searchOnPageCurrentIndex >= ranges.count {
+                searchOnPageCurrentIndex = max(0, ranges.count - 1)
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .showCommandMenu))
         { notification in

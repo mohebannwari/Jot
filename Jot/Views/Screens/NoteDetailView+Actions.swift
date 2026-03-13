@@ -301,32 +301,11 @@ extension NoteDetailView {
             return
         }
 
-        let nsContent = editedContent as NSString
-        var ranges: [NSRange] = []
-        var searchRange = NSRange(location: 0, length: nsContent.length)
-
-        while searchRange.location < nsContent.length {
-            let options: NSString.CompareOptions = [.caseInsensitive, .diacriticInsensitive]
-            let foundRange = nsContent.range(
-                of: query,
-                options: options,
-                range: searchRange
-            )
-            guard foundRange.location != NSNotFound else { break }
-            ranges.append(foundRange)
-            searchRange.location = foundRange.location + foundRange.length
-            searchRange.length = nsContent.length - searchRange.location
-        }
-
-        searchOnPageMatches = ranges
-        searchOnPageCurrentIndex = ranges.isEmpty ? 0 : 0
-
         NotificationCenter.default.post(
-            name: .highlightSearchMatches,
+            name: .performSearchOnPage,
             object: nil,
             userInfo: [
-                "ranges": ranges,
-                "activeIndex": searchOnPageCurrentIndex,
+                "query": query,
                 "editorInstanceID": editorInstanceID
             ]
         )
@@ -381,14 +360,9 @@ extension NoteDetailView {
             ]
         )
 
-        // After replacement, re-run search after a brief delay to let syncText propagate
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+        // After replacement, re-run search to refresh matches
+        DispatchQueue.main.async {
             self.performInNoteSearch(self.searchOnPageQuery)
-            // Clamp index to the new match count
-            if self.searchOnPageCurrentIndex >= self.searchOnPageMatches.count {
-                self.searchOnPageCurrentIndex = max(0, self.searchOnPageMatches.count - 1)
-            }
-            self.postSearchNavigationUpdate()
         }
     }
 
@@ -406,7 +380,7 @@ extension NoteDetailView {
         )
 
         // After replacement, re-run search (should find 0 matches)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+        DispatchQueue.main.async {
             self.performInNoteSearch(self.searchOnPageQuery)
         }
     }

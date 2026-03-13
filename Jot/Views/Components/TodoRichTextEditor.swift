@@ -2248,13 +2248,16 @@ struct URLPasteOptionMenu: View {
             }
 
             deinit {
-                typingAnimationManager?.clearAllAnimations()
+                nonisolated(unsafe) let manager = typingAnimationManager
+                let imgOverlays = imageOverlays.values.map { $0 }
+                let tblOverlays = tableOverlays.values.map { $0 }
                 observers.forEach { NotificationCenter.default.removeObserver($0) }
                 observers.removeAll()
-                imageOverlays.values.forEach { $0.removeFromSuperview() }
-                imageOverlays.removeAll()
-                tableOverlays.values.forEach { $0.removeFromSuperview() }
-                tableOverlays.removeAll()
+                Task { @MainActor in
+                    manager?.clearAllAnimations()
+                    imgOverlays.forEach { $0.removeFromSuperview() }
+                    tblOverlays.forEach { $0.removeFromSuperview() }
+                }
             }
 
             func configure(with textView: NSTextView) {
@@ -2464,6 +2467,17 @@ struct URLPasteOptionMenu: View {
                     }
                 }
 
+                let performSearch = NotificationCenter.default.addObserver(
+                    forName: .performSearchOnPage, object: nil, queue: .main
+                ) { [weak self] notification in
+                    if let nid = notification.userInfo?["editorInstanceID"] as? UUID,
+                       let myID = self?.editorInstanceID, nid != myID { return }
+                    guard let query = notification.userInfo?["query"] as? String else { return }
+                    Task { @MainActor [weak self] in
+                        self?.performAndReportSearch(query: query)
+                    }
+                }
+
                 let highlightSearch = NotificationCenter.default.addObserver(
                     forName: .highlightSearchMatches, object: nil, queue: .main
                 ) { [weak self] notification in
@@ -2542,8 +2556,9 @@ struct URLPasteOptionMenu: View {
                     guard let info = notification.object as? [String: Any],
                           let url = info["url"] as? String,
                           let rangeValue = info["range"] as? NSValue else { return }
+                    let range = rangeValue.rangeValue
                     Task { @MainActor [weak self] in
-                        self?.replaceURLPasteWithWebClip(url: url, range: rangeValue.rangeValue)
+                        self?.replaceURLPasteWithWebClip(url: url, range: range)
                     }
                 }
 
@@ -2553,8 +2568,9 @@ struct URLPasteOptionMenu: View {
                     guard let info = notification.object as? [String: Any],
                           let url = info["url"] as? String,
                           let rangeValue = info["range"] as? NSValue else { return }
+                    let range = rangeValue.rangeValue
                     Task { @MainActor [weak self] in
-                        self?.replaceURLPasteWithPlainLink(url: url, range: rangeValue.rangeValue)
+                        self?.replaceURLPasteWithPlainLink(url: url, range: range)
                     }
                 }
 
@@ -2631,7 +2647,7 @@ struct URLPasteOptionMenu: View {
                     windowKey,
                     insertTodo, insertLink, insertFileLink, insertVoiceTranscript, insertImage, applyTool, applyCommandMenuTool,
                     applyNotePickerSelection, navigateNoteLink,
-                    highlightSearch, clearSearch, replaceMatch, replaceAll,
+                    performSearch, highlightSearch, clearSearch, replaceMatch, replaceAll,
                     proofreadShow, proofreadClear, proofreadApply, captureSelection,
                     urlPasteMention, urlPasteSelectPlainLink, urlPasteDismiss,
                     applyColor, settingsObserver,
@@ -2794,9 +2810,7 @@ struct URLPasteOptionMenu: View {
 
             private func applyProofreadAnnotations(_ annotations: [ProofreadAnnotation], activeIndex: Int = 0) {
                 guard let textView = self.textView,
-                      let storage = textView.textStorage,
-                      let layoutManager = textView.layoutManager,
-                      let textContainer = textView.textContainer else { return }
+                      let storage = textView.textStorage else { return }
 
                 clearProofreadOverlays()
 
@@ -2986,6 +3000,25 @@ struct URLPasteOptionMenu: View {
             }
 
             // MARK: - Search Highlighting
+
+            func performAndReportSearch(query: String) {
+                guard let textView = self.textView,
+                      let storage = textView.textStorage else { return }
+                let text = storage.string as NSString
+                var ranges: [NSRange] = []
+                var searchRange = NSRange(location: 0, length: text.length)
+                while searchRange.location < text.length {
+                    let found = text.range(of: query, options: [.caseInsensitive, .diacriticInsensitive], range: searchRange)
+                    guard found.location != NSNotFound else { break }
+                    ranges.append(found)
+                    searchRange.location = found.location + found.length
+                    searchRange.length = text.length - searchRange.location
+                }
+                applySearchHighlighting(ranges: ranges, activeIndex: 0)
+                var info: [String: Any] = ["ranges": ranges, "matchCount": ranges.count]
+                if let eid = editorInstanceID { info["editorInstanceID"] = eid }
+                NotificationCenter.default.post(name: .searchOnPageResults, object: nil, userInfo: info)
+            }
 
             private var searchImpulseView: NSView?
 
@@ -4848,7 +4881,6 @@ struct URLPasteOptionMenu: View {
                 let containerWidth = textContainer.containerSize.width
 
                 var attachmentCount = 0
-                var needsLayoutInvalidation = false
                 textStorage.enumerateAttribute(.attachment, in: fullRange, options: []) { val, range, _ in
                     guard let attachment = val as? NoteImageAttachment else { return }
                     attachmentCount += 1
@@ -4880,7 +4912,6 @@ struct URLPasteOptionMenu: View {
                             attachment.attachmentCell = ImageSizeAttachmentCell(size: newSize)
                             attachment.bounds = CGRect(origin: .zero, size: newSize)
                             layoutManager.invalidateLayout(forCharacterRange: range, actualCharacterRange: nil)
-                            needsLayoutInvalidation = true
                         }
                     }
 
@@ -4930,16 +4961,16 @@ struct URLPasteOptionMenu: View {
                         if let cached = Self.inlineImageCache.object(forKey: cacheKey) {
                             overlay.image = cached
                         } else {
-                            Task.detached(priority: .userInitiated) { [weak overlay, weak self, weak textView] in
-                                guard let url = ImageStorageManager.shared.getImageURL(for: filename),
-                                      let img = NSImage(contentsOf: url) else {
-                                    return
-                                }
-                                Self.inlineImageCache.setObject(img, forKey: cacheKey)
-                                await MainActor.run {
+                            // Get URL on main actor first
+                            guard let url = ImageStorageManager.shared.getImageURL(for: filename) else { return }
+
+                            Task.detached(priority: .userInitiated) {
+                                guard let img = NSImage(contentsOf: url) else { return }
+                                await MainActor.run { [weak self, weak overlay] in
+                                    guard let self = self else { return }
+                                    Self.inlineImageCache.setObject(img, forKey: cacheKey)
                                     overlay?.image = img
-                                    // Recalculate attachment bounds now that we have the real AR
-                                    if let tv = textView, let self = self {
+                                    if let tv = self.textView {
                                         self.updateImageOverlays(in: tv)
                                     }
                                 }
@@ -5924,7 +5955,6 @@ struct URLPasteOptionMenu: View {
                 let result = NSMutableAttributedString()
                 var index = text.startIndex
                 var lastWasWebClip = false
-                var imageCounter = 0
 
                 // Inline formatting state
                 var fmtBold = false
@@ -7604,47 +7634,52 @@ struct URLPasteOptionMenu: View {
             let image = NSImage(size: size)
             image.lockFocus()
 
-            if let appearance = controlView?.effectiveAppearance {
-                NSAppearance.current = appearance
-            }
-            let accentColor = NSColor(named: "ButtonPrimaryBgColor") ?? NSColor.controlAccentColor
+            let drawBlock = { [self] in
+                let accentColor = NSColor(named: "ButtonPrimaryBgColor") ?? NSColor.controlAccentColor
 
-            let xInset = (size.width - checkSize) / 2
-            let yInset = (size.height - checkSize) / 2
-            let checkRect = NSRect(x: xInset, y: yInset, width: checkSize, height: checkSize)
+                let xInset = (size.width - checkSize) / 2
+                let yInset = (size.height - checkSize) / 2
+                let checkRect = NSRect(x: xInset, y: yInset, width: checkSize, height: checkSize)
 
-            if isChecked {
-                // Filled accent circle
-                let fillPath = NSBezierPath(roundedRect: checkRect, xRadius: cornerRadius, yRadius: cornerRadius)
-                accentColor.setFill()
-                fillPath.fill()
+                if isChecked {
+                    // Filled accent circle
+                    let fillPath = NSBezierPath(roundedRect: checkRect, xRadius: cornerRadius, yRadius: cornerRadius)
+                    accentColor.setFill()
+                    fillPath.fill()
 
-                // SF Symbol checkmark
-                if let symbolImage = NSImage(systemSymbolName: "checkmark", accessibilityDescription: nil) {
-                    let sizeConfig = NSImage.SymbolConfiguration(pointSize: 9, weight: .bold)
-                    let colorConfig = NSImage.SymbolConfiguration(paletteColors: [NSColor(named: "ButtonPrimaryTextColor") ?? .white])
-                    if let configured = symbolImage.withSymbolConfiguration(sizeConfig.applying(colorConfig)) {
-                        let symSize = configured.size
-                        let symX = xInset + (checkSize - symSize.width) / 2
-                        let symY = yInset + (checkSize - symSize.height) / 2
-                        configured.draw(in: NSRect(x: symX, y: symY, width: symSize.width, height: symSize.height))
+                    // SF Symbol checkmark
+                    if let symbolImage = NSImage(systemSymbolName: "checkmark", accessibilityDescription: nil) {
+                        let sizeConfig = NSImage.SymbolConfiguration(pointSize: 9, weight: .bold)
+                        let colorConfig = NSImage.SymbolConfiguration(paletteColors: [NSColor(named: "ButtonPrimaryTextColor") ?? .white])
+                        if let configured = symbolImage.withSymbolConfiguration(sizeConfig.applying(colorConfig)) {
+                            let symSize = configured.size
+                            let symX = xInset + (checkSize - symSize.width) / 2
+                            let symY = yInset + (checkSize - symSize.height) / 2
+                            configured.draw(in: NSRect(x: symX, y: symY, width: symSize.width, height: symSize.height))
+                        }
                     }
-                }
-            } else {
-                // Empty circle with border
-                let fillPath = NSBezierPath(roundedRect: checkRect, xRadius: cornerRadius, yRadius: cornerRadius)
-                (isDark ? NSColor(white: 0.18, alpha: 1) : NSColor.white).setFill()
-                fillPath.fill()
+                } else {
+                    // Empty circle with border
+                    let fillPath = NSBezierPath(roundedRect: checkRect, xRadius: cornerRadius, yRadius: cornerRadius)
+                    (isDark ? NSColor(white: 0.18, alpha: 1) : NSColor.white).setFill()
+                    fillPath.fill()
 
-                let bInset = borderWidth / 2
-                let strokeRect = checkRect.insetBy(dx: bInset, dy: bInset)
-                let strokePath = NSBezierPath(
-                    roundedRect: strokeRect,
-                    xRadius: cornerRadius - bInset,
-                    yRadius: cornerRadius - bInset)
-                strokePath.lineWidth = borderWidth
-                (isDark ? NSColor(white: 0.35, alpha: 1) : NSColor(white: 0.72, alpha: 1)).setStroke()
-                strokePath.stroke()
+                    let bInset = borderWidth / 2
+                    let strokeRect = checkRect.insetBy(dx: bInset, dy: bInset)
+                    let strokePath = NSBezierPath(
+                        roundedRect: strokeRect,
+                        xRadius: cornerRadius - bInset,
+                        yRadius: cornerRadius - bInset)
+                    strokePath.lineWidth = borderWidth
+                    (isDark ? NSColor(white: 0.35, alpha: 1) : NSColor(white: 0.72, alpha: 1)).setStroke()
+                    strokePath.stroke()
+                }
+            }
+
+            if let appearance = controlView?.effectiveAppearance {
+                appearance.performAsCurrentDrawingAppearance(drawBlock)
+            } else {
+                drawBlock()
             }
 
             image.unlockFocus()
@@ -7696,6 +7731,8 @@ extension Notification.Name {
     static let clearSearchHighlights = Notification.Name("ClearSearchHighlights")
     static let replaceCurrentSearchMatch = Notification.Name("ReplaceCurrentSearchMatch")
     static let replaceAllSearchMatches = Notification.Name("ReplaceAllSearchMatches")
+    static let performSearchOnPage = Notification.Name("PerformSearchOnPage")
+    static let searchOnPageResults = Notification.Name("SearchOnPageResults")
     static let showInNoteSearchAndReplace = Notification.Name("ShowInNoteSearchAndReplace")
 
 }
