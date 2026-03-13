@@ -34,23 +34,29 @@ private struct ExportQuickLookContext {
 }
 
 /// Drop delegate for drag-to-split. Uses DropDelegate callbacks for instant targeting feedback.
+/// Allows creating a new split when none exists, or replacing the secondary note of an active split.
+/// Tracks horizontal drop position to determine split direction (left vs right).
 private struct SplitDropDelegate: DropDelegate {
     let currentNoteID: UUID
     @Binding var isTargeted: Bool
-    let isSplitActive: Bool
-    let onDrop: (UUID) -> Void
+    @Binding var dropSide: SplitPosition
+    let paneWidth: CGFloat
+    let onDrop: (UUID, SplitPosition) -> Void
 
     func validateDrop(info: DropInfo) -> Bool {
-        !isSplitActive && info.hasItemsConforming(to: [.jotNoteDragPayload])
+        info.hasItemsConforming(to: [.jotNoteDragPayload])
     }
 
     func dropEntered(info: DropInfo) {
-        guard !isSplitActive else { return }
         withAnimation(.jotDragSnap) { isTargeted = true }
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
-        DropProposal(operation: isSplitActive ? .cancel : .copy)
+        let side: SplitPosition = info.location.x < paneWidth * 0.5 ? .left : .right
+        if side != dropSide {
+            withAnimation(.jotDragSnap) { dropSide = side }
+        }
+        return DropProposal(operation: .move)
     }
 
     func dropExited(info: DropInfo) {
@@ -58,7 +64,7 @@ private struct SplitDropDelegate: DropDelegate {
     }
 
     func performDrop(info: DropInfo) -> Bool {
-        guard !isSplitActive else { return false }
+        let side: SplitPosition = info.location.x < paneWidth * 0.5 ? .left : .right
         let providers = info.itemProviders(for: [.jotNoteDragPayload])
         guard let provider = providers.first else { return false }
         _ = provider.loadTransferable(type: TransferablePayload.self) { result in
@@ -66,13 +72,48 @@ private struct SplitDropDelegate: DropDelegate {
                   let item = payload.items.first,
                   item.noteID != currentNoteID else { return }
             DispatchQueue.main.async {
-                withAnimation(.jotDragSnap) { onDrop(item.noteID) }
+                withAnimation(.jotDragSnap) { onDrop(item.noteID, side) }
             }
         }
         return true
     }
 }
 
+/// Drop delegate for note-to-folder/unfiled moves. Uses `.move` operation
+/// to suppress macOS spring-loading oval and green "+" badge.
+private struct NoteMoveDropDelegate: DropDelegate {
+    @Binding var isTargeted: Bool
+    let onPerformDrop: (TransferablePayload) -> Bool
+
+    func validateDrop(info: DropInfo) -> Bool {
+        info.hasItemsConforming(to: [.jotNoteDragPayload])
+    }
+
+    func dropEntered(info: DropInfo) {
+        withAnimation(.jotDragSnap) { isTargeted = true }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func dropExited(info: DropInfo) {
+        withAnimation(.jotDragSnap) { isTargeted = false }
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        isTargeted = false
+        let providers = info.itemProviders(for: [.jotNoteDragPayload])
+        guard let provider = providers.first else { return false }
+        _ = provider.loadTransferable(type: TransferablePayload.self) { result in
+            guard case .success(let payload) = result else { return }
+            DispatchQueue.main.async {
+                _ = onPerformDrop(payload)
+            }
+        }
+        return true
+    }
+}
 
 /// Makes the hosting NSWindow transparent so liquid glass is the sole background layer.
 /// On pre-macOS 26, the window stays opaque — glass isn't available, so blur materials
@@ -182,6 +223,7 @@ struct ContentView: View {
     @State private var isSplitHandleDragging = false
     @State private var isSplitHandleHovered = false
     @State private var isDragSplitTargeted = false
+    @State private var dragSplitSide: SplitPosition = .right
     @State private var isDragImportOverlayVisible = false
     @State private var importProgress: ImportProgress? = nil
     @State private var activeSplitPane: SplitPickerPane? = nil
@@ -695,33 +737,44 @@ struct ContentView: View {
                     splitDetailLayout(primaryNote: primaryNote, totalWidth: totalDetailWidth, cornerRadius: cornerRadius)
                 } else {
                     let splitRadius = windowCornerRadius - windowContentPadding
-                    let dragging = isDragSplitTargeted && !isSplitActive
+                    let dragging = isDragSplitTargeted
                     let primW = dragging ? ((totalDetailWidth - splitGap) * 0.5).rounded() : totalDetailWidth
                     let secW = dragging ? (totalDetailWidth - primW - splitGap).rounded() : 0
 
+                    let placeholderRect = RoundedRectangle(cornerRadius: splitRadius, style: .continuous)
+                        .strokeBorder(style: StrokeStyle(lineWidth: 2, lineCap: .round, dash: [6, 6]))
+                        .foregroundColor(colorScheme == .dark ? .white : .black)
+                        .frame(width: secW)
+                        .frame(maxHeight: .infinity)
+                        .opacity(dragging ? 1 : 0)
+
                     HStack(spacing: 0) {
+                        if dragging && dragSplitSide == .left {
+                            placeholderRect
+                                .padding(.trailing, splitGap)
+                        }
+
                         singleNotePane(note: note, width: primW, cornerRadius: dragging ? splitRadius : cornerRadius)
 
-                        RoundedRectangle(cornerRadius: splitRadius, style: .continuous)
-                            .strokeBorder(style: StrokeStyle(lineWidth: 2, lineCap: .round, dash: [6, 6]))
-                            .foregroundColor(colorScheme == .dark ? .white : .black)
-                            .frame(width: secW)
-                            .frame(maxHeight: .infinity)
-                            .opacity(dragging ? 1 : 0)
-                            .padding(.leading, dragging ? splitGap : 0)
+                        if !dragging || dragSplitSide == .right {
+                            placeholderRect
+                                .padding(.leading, dragging ? splitGap : 0)
+                        }
                     }
                 }
             }
+            .padding(.leading, sidebarDetailGap)
+            .padding(needsPendingPadding ? windowContentPadding : 0)
+            .contentShape(Rectangle())
             .onDrop(of: [.jotNoteDragPayload], delegate: SplitDropDelegate(
                 currentNoteID: note.id,
                 isTargeted: $isDragSplitTargeted,
-                isSplitActive: isSplitActive || shouldShowSplitLayout,
-                onDrop: { droppedNoteID in
-                    createSplitFromDrop(primaryNote: note, droppedNoteID: droppedNoteID)
+                dropSide: $dragSplitSide,
+                paneWidth: totalDetailWidth,
+                onDrop: { droppedNoteID, side in
+                    createSplitFromDrop(primaryNote: note, droppedNoteID: droppedNoteID, position: side)
                 }
             ))
-            .padding(.leading, sidebarDetailGap)
-            .padding(needsPendingPadding ? windowContentPadding : 0)
             .disabled(isCreateFolderAlertPresented || pendingFolderToEdit != nil)
         }
     }
@@ -734,16 +787,24 @@ struct ContentView: View {
 
 
 
-    private func createSplitFromDrop(primaryNote: Note, droppedNoteID: UUID) {
+    private func createSplitFromDrop(primaryNote: Note, droppedNoteID: UUID, position: SplitPosition) {
         isDragSplitTargeted = false
-        var session = SplitSession()
-        session.primaryNoteID = primaryNote.id
-        session.secondaryNoteID = droppedNoteID
-        session.position = .right
-        splitSessions.append(session)
-        activeSplitID = session.id
-        isSplitViewVisible = true
-        activeSplitPane = .primary
+
+        if let activeIdx = splitSessions.firstIndex(where: { $0.id == activeSplitID }) {
+            // Replace secondary note in the active split and update position
+            splitSessions[activeIdx].secondaryNoteID = droppedNoteID
+            splitSessions[activeIdx].position = position
+        } else {
+            // Create a new split session
+            var session = SplitSession()
+            session.primaryNoteID = primaryNote.id
+            session.secondaryNoteID = droppedNoteID
+            session.position = position
+            splitSessions.append(session)
+            activeSplitID = session.id
+            isSplitViewVisible = true
+            activeSplitPane = .primary
+        }
     }
 
     private func focusSplitPane(_ pane: SplitPickerPane) {
@@ -1286,9 +1347,6 @@ struct ContentView: View {
                         onArchiveNotes: archiveNotes,
                         onToggleLockNote: { id in notesManager.toggleLock(id: id) },
                         onLockIconTap: { note in handleLockIconTap(note) },
-                        onDropNoteToUnfiled: { noteID in
-                            moveNote(noteID: noteID, toFolderID: nil)
-                        },
                         onRenameNote: { note, newTitle in
                             var updatedNote = note
                             updatedNote.title = newTitle
@@ -1317,9 +1375,6 @@ struct ContentView: View {
                         onArchiveNotes: archiveNotes,
                         onToggleLockNote: { id in notesManager.toggleLock(id: id) },
                         onLockIconTap: { note in handleLockIconTap(note) },
-                        onDropNoteToUnfiled: { noteID in
-                            moveNote(noteID: noteID, toFolderID: nil)
-                        },
                         onRenameNote: { note, newTitle in
                             var updatedNote = note
                             updatedNote.title = newTitle
@@ -1348,9 +1403,6 @@ struct ContentView: View {
                         onArchiveNotes: archiveNotes,
                         onToggleLockNote: { id in notesManager.toggleLock(id: id) },
                         onLockIconTap: { note in handleLockIconTap(note) },
-                        onDropNoteToUnfiled: { noteID in
-                            moveNote(noteID: noteID, toFolderID: nil)
-                        },
                         onRenameNote: { note, newTitle in
                             var updatedNote = note
                             updatedNote.title = newTitle
@@ -1379,9 +1431,6 @@ struct ContentView: View {
                         onArchiveNotes: archiveNotes,
                         onToggleLockNote: { id in notesManager.toggleLock(id: id) },
                         onLockIconTap: { note in handleLockIconTap(note) },
-                        onDropNoteToUnfiled: { noteID in
-                            moveNote(noteID: noteID, toFolderID: nil)
-                        },
                         onRenameNote: { note, newTitle in
                             var updatedNote = note
                             updatedNote.title = newTitle
@@ -1410,9 +1459,6 @@ struct ContentView: View {
                         onArchiveNotes: archiveNotes,
                         onToggleLockNote: { id in notesManager.toggleLock(id: id) },
                         onLockIconTap: { note in handleLockIconTap(note) },
-                        onDropNoteToUnfiled: { noteID in
-                            moveNote(noteID: noteID, toFolderID: nil)
-                        },
                         onRenameNote: { note, newTitle in
                             var updatedNote = note
                             updatedNote.title = newTitle
@@ -3527,16 +3573,16 @@ struct NotesSection: View {
                 .fill(isDropTargeted ? Color("SurfaceTranslucentColor") : Color.clear)
         )
         .if(onDropNoteToUnfiled != nil) { view in
-            view.dropDestination(for: TransferablePayload.self) { payloads, _ in
-                let items = payloads.flatMap { $0.items }
-                guard let first = items.first,
-                      let onDropNoteToUnfiled else {
-                    return false
+            view.onDrop(of: [.jotNoteDragPayload], delegate: NoteMoveDropDelegate(
+                isTargeted: $isDropTargeted,
+                onPerformDrop: { payload in
+                    guard let first = payload.items.first,
+                          let onDropNoteToUnfiled else {
+                        return false
+                    }
+                    return onDropNoteToUnfiled(first.noteID)
                 }
-                return onDropNoteToUnfiled(first.noteID)
-            } isTargeted: { targeted in
-                isDropTargeted = targeted
-            }
+            ))
         }
     }
 
@@ -3950,22 +3996,26 @@ struct NoteListCard: View {
         .onHover { hovering in
             isHovered = hovering
         }
-        .contentShape(.dragPreview, Capsule())
         .draggable(
             TransferablePayload(items: getDragItems?() ?? [NoteDragItem(noteID: note.id)])
         ) {
-            HStack(spacing: 8) {
+            HStack {
                 Text(note.title)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(FontManager.heading(size: 15, weight: .medium))
+                    .foregroundColor(Color("ButtonPrimaryTextColor"))
+                    .tracking(-0.1)
                     .lineLimit(1)
-                    .foregroundStyle(.primary)
-                Text(Self.dateFormatter.string(from: note.date))
-                    .font(.system(size: 11, weight: .regular))
-                    .foregroundStyle(.secondary)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                Text(Self.compactDateString(from: note.date))
+                    .font(FontManager.metadata(size: 11, weight: .medium))
+                    .foregroundColor(Color("ButtonPrimaryTextColor").opacity(0.7))
+                    .fixedSize()
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(Capsule().fill(Color(nsColor: .controlBackgroundColor)))
+            .padding(8)
+            .frame(width: 220, height: 34)
+            .background(Capsule().fill(Color("ButtonPrimaryBgColor")))
             .contentShape(.dragPreview, Capsule())
         }
         .contextMenu {
@@ -4382,18 +4432,17 @@ struct PinnedNoteChip: View {
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .contentShape(.dragPreview, Capsule())
         .draggable(TransferablePayload(items: [NoteDragItem(noteID: note.id)])) {
             Text(note.title)
-                .font(.system(size: 13, weight: .medium))
+                .font(FontManager.heading(size: 15, weight: .medium))
+                .foregroundColor(Color("ButtonPrimaryTextColor"))
+                .tracking(-0.1)
                 .lineLimit(1)
-                .foregroundStyle(.primary)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(
-                    Capsule()
-                        .fill(Color(nsColor: .controlBackgroundColor))
-                )
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(8)
+                .frame(width: 180, height: 34)
+                .background(Capsule().fill(Color("ButtonPrimaryBgColor")))
                 .contentShape(.dragPreview, Capsule())
         }
         .liquidGlass(in: Capsule())

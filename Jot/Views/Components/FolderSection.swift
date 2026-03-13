@@ -4,6 +4,43 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
+
+/// Drop delegate for folder targets that uses `.move` operation to suppress
+/// the macOS spring-loading highlight oval and green "+" badge.
+private struct FolderDropDelegate: DropDelegate {
+    @Binding var isTargeted: Bool
+    let onPerformDrop: ([TransferablePayload]) -> Bool
+
+    func validateDrop(info: DropInfo) -> Bool {
+        info.hasItemsConforming(to: [.jotNoteDragPayload])
+    }
+
+    func dropEntered(info: DropInfo) {
+        withAnimation(.jotDragSnap) { isTargeted = true }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func dropExited(info: DropInfo) {
+        withAnimation(.jotDragSnap) { isTargeted = false }
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        isTargeted = false
+        let providers = info.itemProviders(for: [.jotNoteDragPayload])
+        guard let provider = providers.first else { return false }
+        _ = provider.loadTransferable(type: TransferablePayload.self) { result in
+            guard case .success(let payload) = result else { return }
+            DispatchQueue.main.async {
+                _ = onPerformDrop([payload])
+            }
+        }
+        return true
+    }
+}
 
 struct FolderSection: View {
     let folders: [Folder]
@@ -402,24 +439,30 @@ struct FolderSection: View {
                 }
             }
         }
-        .dropDestination(for: TransferablePayload.self) { payloads, _ in
-            let items = payloads.flatMap { $0.items }
-            guard !items.isEmpty else { return false }
-            let noteIDs = Set(items.map { $0.noteID })
-            let success = onDropNotesIntoFolder(noteIDs, folder.id)
-            if success {
-                _ = withAnimation(.jotSmoothFast) {
-                    expandedFolderIDs.insert(folder.id)
+        .onDrop(of: [.jotNoteDragPayload], delegate: FolderDropDelegate(
+            isTargeted: Binding(
+                get: { dropTargetFolderID == folder.id },
+                set: { targeted in
+                    if targeted {
+                        dropTargetFolderID = folder.id
+                    } else if dropTargetFolderID == folder.id {
+                        dropTargetFolderID = nil
+                    }
                 }
+            ),
+            onPerformDrop: { payloads in
+                let items = payloads.flatMap { $0.items }
+                guard !items.isEmpty else { return false }
+                let noteIDs = Set(items.map { $0.noteID })
+                let success = onDropNotesIntoFolder(noteIDs, folder.id)
+                if success {
+                    _ = withAnimation(.jotSmoothFast) {
+                        expandedFolderIDs.insert(folder.id)
+                    }
+                }
+                return success
             }
-            return success
-        } isTargeted: { targeted in
-            if targeted {
-                dropTargetFolderID = folder.id
-            } else if dropTargetFolderID == folder.id {
-                dropTargetFolderID = nil
-            }
-        }
+        ))
     }
 
     private func folderNotesList(_ folder: Folder) -> some View {
