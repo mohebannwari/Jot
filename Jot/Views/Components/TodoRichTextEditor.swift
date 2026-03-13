@@ -905,7 +905,7 @@ struct TodoRichTextEditor: View {
             return baseBottomInset
     }
 
-    var body: some View {
+    private var editorWithOverlays: some View {
         Group {
                 TodoEditorRepresentable(
                     text: $text,
@@ -1003,6 +1003,10 @@ struct TodoRichTextEditor: View {
                 }
             }
         }
+    }
+
+    private var editorWithToolbarNotifications: some View {
+        editorWithOverlays
         .onReceive(
             NotificationCenter.default.publisher(for: .todoToolbarAction)
         ) { notification in
@@ -1085,6 +1089,10 @@ struct TodoRichTextEditor: View {
                 }
             }
         }
+    }
+
+    private var editorWithPickerNotifications: some View {
+        editorWithToolbarNotifications
         // Note picker notifications (triggered by "@")
         .onReceive(NotificationCenter.default.publisher(for: .showNotePicker))
         { notification in
@@ -1188,6 +1196,10 @@ struct TodoRichTextEditor: View {
                 InlineNSTextView.isURLPasteMenuShowing = false
             }
         }
+    }
+
+    var body: some View {
+        editorWithPickerNotifications
     }
 
     // MARK: - Command Menu Handlers
