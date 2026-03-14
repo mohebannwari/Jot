@@ -83,6 +83,7 @@ final class NoteTableOverlayView: NSView {
 
     // Horizontal scroll
     private let minColumnWidth: CGFloat = 50
+    private let minRowHeight: CGFloat = 36  // matches fixed rowHeight
 
     // Cell drag threshold (pixels before click becomes drag)
     private let dragThreshold: CGFloat = 4
@@ -128,6 +129,9 @@ final class NoteTableOverlayView: NSView {
 
     // Horizontal scroll (when columns overflow the view width)
     private var scrollOffset: CGFloat = 0
+
+    // Dynamic row heights (when wrapText is on)
+    private var cachedRowHeights: [CGFloat] = []
 
     // Context menu indices
     private var contextRowIndex: Int = 0
@@ -182,6 +186,38 @@ final class NoteTableOverlayView: NSView {
                 : NSColor(srgbRed: 214/255, green: 211/255, blue: 209/255, alpha: 1))
     }
 
+    /// Compute the total table height for a given NoteTableData (used by attachment sizing).
+    static func computeTableHeight(for data: NoteTableData) -> CGFloat {
+        let fixedRowHeight: CGFloat = 36
+        guard data.wrapText else {
+            return CGFloat(data.rows) * fixedRowHeight
+        }
+        let headerFont = NSFont.systemFont(ofSize: 13, weight: .semibold)
+        let bodyFont = NSFont.systemFont(ofSize: 13, weight: .regular)
+        let cellPadH: CGFloat = 10
+        let cellPadV: CGFloat = 8
+        var total: CGFloat = 0
+        for row in 0..<data.rows {
+            let font = row == 0 ? headerFont : bodyFont
+            var maxH = fixedRowHeight
+            for col in 0..<data.columns {
+                let text = data.cells[row][col]
+                guard !text.isEmpty else { continue }
+                let colWidth = col < data.columnWidths.count ? data.columnWidths[col] : 120
+                let availW = colWidth - 2 * cellPadH
+                guard availW > 0 else { continue }
+                let textSize = (text as NSString).boundingRect(
+                    with: NSSize(width: availW, height: .greatestFiniteMagnitude),
+                    options: [.usesLineFragmentOrigin],
+                    attributes: [.font: font]
+                ).size
+                maxH = max(maxH, ceil(textSize.height) + 2 * cellPadV)
+            }
+            total += maxH
+        }
+        return total
+    }
+
     // MARK: - Init
 
     init(tableData: NoteTableData) {
@@ -227,7 +263,58 @@ final class NoteTableOverlayView: NSView {
     }
 
     private var tableHeight: CGFloat {
-        CGFloat(tableData.rows) * rowHeight
+        if tableData.wrapText && !cachedRowHeights.isEmpty {
+            return cachedRowHeights.reduce(0, +)
+        }
+        return CGFloat(tableData.rows) * rowHeight
+    }
+
+    // MARK: - Per-Row Geometry (dynamic heights for wrapText)
+
+    /// Y position of row `row` — sum of preceding row heights.
+    private func rowY(_ row: Int) -> CGFloat {
+        guard tableData.wrapText, !cachedRowHeights.isEmpty else {
+            return CGFloat(row) * rowHeight
+        }
+        let end = min(row, cachedRowHeights.count)
+        return cachedRowHeights[0..<end].reduce(0, +)
+    }
+
+    /// Height of row `row`.
+    private func rowH(_ row: Int) -> CGFloat {
+        guard tableData.wrapText, !cachedRowHeights.isEmpty,
+              row >= 0, row < cachedRowHeights.count else {
+            return rowHeight
+        }
+        return cachedRowHeights[row]
+    }
+
+    /// Recompute cached row heights by measuring text in each cell.
+    private func recomputeRowHeights() {
+        guard tableData.wrapText else {
+            cachedRowHeights = []
+            return
+        }
+        let headerFont = NSFont.systemFont(ofSize: 13, weight: .semibold)
+        let bodyFont = NSFont.systemFont(ofSize: 13, weight: .regular)
+        var heights = [CGFloat](repeating: minRowHeight, count: tableData.rows)
+        for row in 0..<tableData.rows {
+            let font = row == 0 ? headerFont : bodyFont
+            for col in 0..<tableData.columns {
+                let text = tableData.cells[row][col]
+                guard !text.isEmpty else { continue }
+                let availableWidth = colW(col) - 2 * cellPaddingH
+                guard availableWidth > 0 else { continue }
+                let textSize = (text as NSString).boundingRect(
+                    with: NSSize(width: availableWidth, height: .greatestFiniteMagnitude),
+                    options: [.usesLineFragmentOrigin],
+                    attributes: [.font: font]
+                ).size
+                let needed = ceil(textSize.height) + 2 * cellPaddingV
+                heights[row] = max(heights[row], needed)
+            }
+        }
+        cachedRowHeights = heights
     }
 
     // MARK: Per-Column Geometry
@@ -250,8 +337,7 @@ final class NoteTableOverlayView: NSView {
     /// Cell rect in content-space coordinates
     private func cellRect(row: Int, column: Int) -> NSRect {
         let x = colX(column)
-        let y = CGFloat(row) * rowHeight
-        return NSRect(x: x, y: y, width: colW(column), height: rowHeight)
+        return NSRect(x: x, y: rowY(row), width: colW(column), height: rowH(row))
     }
 
     /// Cell rect offset to view coordinates (accounts for scroll)
@@ -267,10 +353,15 @@ final class NoteTableOverlayView: NSView {
         for c in 0..<tableData.columns {
             if scrolledX < colX(c + 1) { col = c; break }
         }
-        let row = min(Int(point.y / rowHeight), tableData.rows - 1)
+        // Find row by cumulative height
+        var row = tableData.rows - 1
+        for r in 0..<tableData.rows {
+            if point.y < rowY(r + 1) { row = r; break }
+        }
         guard row >= 0, col >= 0 else { return nil }
         return (row, col)
     }
+
 
     private func clampScrollOffset() {
         scrollOffset = max(0, min(scrollOffset, maxScrollOffset))
@@ -284,9 +375,8 @@ final class NoteTableOverlayView: NSView {
     }
 
     private func rowHandleRect(for row: Int) -> NSRect {
-        let y = CGFloat(row) * rowHeight
         let x = -(handleGap + handleHitThickness)
-        return NSRect(x: x, y: y, width: handleHitThickness, height: rowHeight)
+        return NSRect(x: x, y: rowY(row), width: handleHitThickness, height: rowH(row))
     }
 
     /// Hit zone for row handles — matches the visible handle strip only (no inward extension).
@@ -343,6 +433,7 @@ final class NoteTableOverlayView: NSView {
     }
 
     private func invalidateLayout() {
+        recomputeRowHeights()
         clampScrollOffset()
         updateTrackingAreas()
         window?.invalidateCursorRects(for: self)
@@ -405,8 +496,16 @@ final class NoteTableOverlayView: NSView {
     private func dragTargetIndex(isRow: Bool) -> Int {
         if isRow {
             let dragOffset = dragCurrentPos - dragStartPos
-            let draggedCenterY = (CGFloat(dragSourceIndex) + 0.5) * rowHeight + dragOffset
-            return max(0, min(tableData.rows, Int(round(draggedCenterY / rowHeight))))
+            let draggedCenterY = rowY(dragSourceIndex) + rowH(dragSourceIndex) / 2 + dragOffset
+            // Find nearest row boundary
+            var best = 0
+            var bestDist = abs(draggedCenterY - rowY(0))
+            for r in 1...tableData.rows {
+                let boundary = rowY(r)
+                let dist = abs(draggedCenterY - boundary)
+                if dist < bestDist { bestDist = dist; best = r }
+            }
+            return best
         } else {
             let dragOffset = dragCurrentPos - dragStartPos
             let srcCenter = colX(dragSourceIndex) + colW(dragSourceIndex) / 2
@@ -570,7 +669,7 @@ final class NoteTableOverlayView: NSView {
         ctx?.saveGState()
         let clipPath = continuousBezierPath(for: tableContentRect, radius: outerCornerRadius)
         clipPath.addClip()
-        let headerRect = NSRect(x: 0, y: 0, width: contentWidth, height: rowHeight)
+        let headerRect = NSRect(x: 0, y: 0, width: contentWidth, height: rowH(0))
         headerBackgroundColor.setFill()
         NSBezierPath(rect: headerRect).fill()
         ctx?.restoreGState()
@@ -586,7 +685,7 @@ final class NoteTableOverlayView: NSView {
 
         // Horizontal
         for row in 1..<tableData.rows {
-            let y = CGFloat(row) * rowHeight
+            let y = rowY(row)
             let line = NSBezierPath()
             line.move(to: NSPoint(x: 0, y: y))
             line.line(to: NSPoint(x: contentWidth, y: y))
@@ -651,7 +750,7 @@ final class NoteTableOverlayView: NSView {
 
         if isDraggingRow {
             let target = dragTargetIndex(isRow: true)
-            let lineY = CGFloat(target) * rowHeight
+            let lineY = rowY(target)
             NSColor.controlAccentColor.setStroke()
             let line = NSBezierPath()
             line.move(to: NSPoint(x: 0, y: lineY))
@@ -680,9 +779,10 @@ final class NoteTableOverlayView: NSView {
 
     private func drawDraggedRow(ctx: CGContext) {
         let dragOffset = dragCurrentPos - dragStartPos
-        let floatingY = CGFloat(dragSourceIndex) * rowHeight + dragOffset
+        let srcH = rowH(dragSourceIndex)
+        let floatingY = rowY(dragSourceIndex) + dragOffset
         let visibleWidth = min(contentWidth, viewportWidth)
-        let floatingRect = NSRect(x: 0, y: floatingY, width: visibleWidth, height: rowHeight)
+        let floatingRect = NSRect(x: 0, y: floatingY, width: visibleWidth, height: srcH)
 
         ctx.saveGState()
         ctx.setShadow(offset: CGSize(width: 0, height: 2), blur: 8,
@@ -698,7 +798,7 @@ final class NoteTableOverlayView: NSView {
             let x = colX(col) - scrollOffset
             let line = NSBezierPath()
             line.move(to: NSPoint(x: x, y: floatingY))
-            line.line(to: NSPoint(x: x, y: floatingY + rowHeight))
+            line.line(to: NSPoint(x: x, y: floatingY + srcH))
             line.lineWidth = gridLineWidth
             line.stroke()
         }
@@ -716,7 +816,7 @@ final class NoteTableOverlayView: NSView {
             let w = colW(col)
             let textRect = NSRect(x: cellX + cellPaddingH, y: floatingY + cellPaddingV,
                                    width: w - 2 * cellPaddingH,
-                                   height: rowHeight - 2 * cellPaddingV)
+                                   height: srcH - 2 * cellPaddingV)
             NSAttributedString(string: text, attributes: textAttrs)
                 .draw(with: textRect, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
         }
@@ -749,7 +849,7 @@ final class NoteTableOverlayView: NSView {
 
         gridColor.setStroke()
         for row in 1..<tableData.rows {
-            let y = CGFloat(row) * rowHeight
+            let y = rowY(row)
             let line = NSBezierPath()
             line.move(to: NSPoint(x: floatingX, y: y))
             line.line(to: NSPoint(x: floatingX + w, y: y))
@@ -766,9 +866,9 @@ final class NoteTableOverlayView: NSView {
                 .foregroundColor: NSColor.labelColor,
             ]
             let textRect = NSRect(x: floatingX + cellPaddingH,
-                                   y: CGFloat(row) * rowHeight + cellPaddingV,
+                                   y: rowY(row) + cellPaddingV,
                                    width: w - 2 * cellPaddingH,
-                                   height: rowHeight - 2 * cellPaddingV)
+                                   height: rowH(row) - 2 * cellPaddingV)
             NSAttributedString(string: text, attributes: textAttrs)
                 .draw(with: textRect, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
         }
@@ -803,7 +903,7 @@ final class NoteTableOverlayView: NSView {
 
         // Floating cell following the mouse
         let cellW = src.column < tableData.columns ? colW(src.column) : 80
-        let cellH = rowHeight
+        let cellH = rowH(src.row)
         let floatingRect = NSRect(x: dragCellMousePos.x - cellW / 2,
                                    y: dragCellMousePos.y - cellH / 2,
                                    width: cellW, height: cellH)
@@ -1174,8 +1274,24 @@ final class NoteTableOverlayView: NSView {
         }
         if dividerIdx >= 0 {
             if event.clickCount == 2 {
-                // Double-click: reset all columns to default width
-                tableData.columnWidths = Array(repeating: NoteTableData.defaultColumnWidth, count: tableData.columns)
+                // Double-click: auto-fit the left column to its widest content
+                let col = dividerIdx
+                let headerFont = NSFont.systemFont(ofSize: 13, weight: .semibold)
+                let bodyFont = NSFont.systemFont(ofSize: 13, weight: .regular)
+                var maxTextWidth: CGFloat = 0
+                for row in 0..<tableData.rows {
+                    let text = tableData.cells[row][col]
+                    guard !text.isEmpty else { continue }
+                    let font = row == 0 ? headerFont : bodyFont
+                    let size = (text as NSString).boundingRect(
+                        with: NSSize(width: .greatestFiniteMagnitude, height: rowHeight),
+                        options: [.usesLineFragmentOrigin],
+                        attributes: [.font: font]
+                    ).size
+                    maxTextWidth = max(maxTextWidth, ceil(size.width))
+                }
+                let fitWidth = max(minColumnWidth, maxTextWidth + 2 * cellPaddingH)
+                tableData.columnWidths[col] = fitWidth
                 onDataChanged?(tableData)
                 needsDisplay = true
                 return
@@ -1475,6 +1591,10 @@ final class NoteTableOverlayView: NSView {
             del.target = self
         }
         menu.addItem(.separator())
+        let wrapItem = menu.addItem(withTitle: "Wrap Text", action: #selector(toggleWrapText(_:)), keyEquivalent: "")
+        wrapItem.target = self
+        wrapItem.state = tableData.wrapText ? .on : .off
+        menu.addItem(.separator())
         let delTable = menu.addItem(withTitle: "Delete Table", action: #selector(deleteTable(_:)), keyEquivalent: "")
         delTable.target = self
 
@@ -1517,6 +1637,11 @@ final class NoteTableOverlayView: NSView {
         onDeleteTable?()
     }
 
+    @objc private func toggleWrapText(_ sender: Any?) {
+        tableData.wrapText.toggle()
+        onDataChanged?(tableData)
+    }
+
     // MARK: - Cell Editing
 
     private func beginEditing(row: Int, column: Int) {
@@ -1530,8 +1655,8 @@ final class NoteTableOverlayView: NSView {
         field.isBordered = false
         field.drawsBackground = false
         field.focusRingType = .none
-        field.cell?.isScrollable = true
-        field.cell?.wraps = false
+        field.cell?.isScrollable = !tableData.wrapText
+        field.cell?.wraps = tableData.wrapText
         field.delegate = self
         field.target = self
         field.action = #selector(cellEditingDone(_:))

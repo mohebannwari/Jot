@@ -2629,30 +2629,25 @@ struct TodoEditorRepresentable: NSViewRepresentable {
 
         func applySearchHighlighting(ranges: [NSRange], activeIndex: Int) {
             guard let textView = self.textView,
+                  let layoutManager = textView.layoutManager,
                   let storage = textView.textStorage else { return }
             let fullRange = NSRange(location: 0, length: storage.length)
             guard fullRange.length > 0 else { return }
 
-            storage.beginEditing()
+            // Clear any previous temporary highlighting
+            layoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: fullRange)
 
-            // Dim all text to 30% opacity
-            storage.enumerateAttribute(.foregroundColor, in: fullRange, options: []) { value, range, _ in
-                if let color = value as? NSColor {
-                    storage.addAttribute(.foregroundColor, value: color.withAlphaComponent(0.3), range: range)
-                }
-            }
+            // Dim non-matched text: explicit colors per mode to avoid dynamic color resolution issues
+            let dimColor: NSColor = (currentColorScheme == .dark)
+                ? NSColor.white.withAlphaComponent(0.4)
+                : NSColor.black.withAlphaComponent(0.3)
+            layoutManager.addTemporaryAttribute(.foregroundColor, value: dimColor, forCharacterRange: fullRange)
 
-            // Restore matched ranges to full opacity
+            // Remove the dim overlay on matched ranges so original colors show through
             for matchRange in ranges {
                 guard matchRange.location + matchRange.length <= storage.length else { continue }
-                storage.enumerateAttribute(.foregroundColor, in: matchRange, options: []) { value, range, _ in
-                    if let color = value as? NSColor {
-                        storage.addAttribute(.foregroundColor, value: color.withAlphaComponent(1.0), range: range)
-                    }
-                }
+                layoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: matchRange)
             }
-
-            storage.endEditing()
 
             // Scroll active match into view and play impulse
             if activeIndex >= 0 && activeIndex < ranges.count {
@@ -2663,6 +2658,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
 
         func clearSearchHighlighting() {
             guard let textView = self.textView,
+                  let layoutManager = textView.layoutManager,
                   let storage = textView.textStorage else { return }
             let fullRange = NSRange(location: 0, length: storage.length)
             guard fullRange.length > 0 else { return }
@@ -2671,16 +2667,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             searchImpulseView?.removeFromSuperview()
             searchImpulseView = nil
 
-            storage.beginEditing()
-
-            // Restore all text to full opacity
-            storage.enumerateAttribute(.foregroundColor, in: fullRange, options: []) { value, range, _ in
-                if let color = value as? NSColor {
-                    storage.addAttribute(.foregroundColor, value: color.withAlphaComponent(1.0), range: range)
-                }
-            }
-
-            storage.endEditing()
+            // Remove temporary dim overlay — original storage colors are untouched
+            layoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: fullRange)
         }
 
         private func playMatchGlow(for range: NSRange) {
@@ -4188,8 +4176,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             if containerWidth < 1 { containerWidth = 400 }
             let tableWidth = min(tableData.contentWidth, containerWidth)
 
-            let rowHeight: CGFloat = 36
-            let tableHeight = CGFloat(tableData.rows) * rowHeight + 1  // +1 for border
+            let tableHeight = NoteTableOverlayView.computeTableHeight(for: tableData) + 1  // +1 for border
 
             let attachment = NoteTableAttachment(tableData: tableData)
             let cellSize = CGSize(width: tableWidth, height: tableHeight)
@@ -4677,8 +4664,6 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 return
             }
 
-            let rowHeight: CGFloat = 36
-
             textStorage.enumerateAttribute(.attachment, in: fullRange, options: []) { val, range, _ in
                 guard let attachment = val as? NoteTableAttachment else { return }
                 let id = ObjectIdentifier(attachment)
@@ -4687,7 +4672,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 // Correct size drift (row/column count may have changed).
                 let containerWidth = textContainer.containerSize.width > 0 ? textContainer.containerSize.width : 400
                 let expectedWidth = min(attachment.tableData.contentWidth, containerWidth)
-                let expectedHeight = CGFloat(attachment.tableData.rows) * rowHeight + 1
+                let expectedHeight = NoteTableOverlayView.computeTableHeight(for: attachment.tableData) + 1
                 let sizeDrift = abs(attachment.bounds.height - expectedHeight) + abs(attachment.bounds.width - expectedWidth)
                 if sizeDrift > 1 {
                     let newSize = CGSize(width: expectedWidth, height: expectedHeight)
@@ -4725,7 +4710,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                         att.tableData = newData
 
                         // Recalculate attachment size from content width
-                        let newHeight = CGFloat(newData.rows) * rowHeight + 1
+                        let newHeight = NoteTableOverlayView.computeTableHeight(for: newData) + 1
                         let containerWidth = tv.textContainer?.containerSize.width ?? 400
                         let newWidth = min(newData.contentWidth, containerWidth)
                         let newSize = CGSize(width: newWidth, height: newHeight)

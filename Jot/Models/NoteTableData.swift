@@ -13,6 +13,7 @@ struct NoteTableData: Equatable {
     var columns: Int
     var cells: [[String]]  // rows x columns, plain text per cell
     var columnWidths: [CGFloat]  // absolute pixel width per column
+    var wrapText: Bool = false   // when true, rows expand to fit wrapped text
 
     var rows: Int { cells.count }
 
@@ -105,7 +106,9 @@ struct NoteTableData: Equatable {
     func serialize() -> String {
         var lines: [String] = []
         let widthStr = columnWidths.map { String(format: "%.1f", $0) }.joined(separator: ",")
-        lines.append("[[table|\(columns)|\(String(format: "%.1f", contentWidth))|\(widthStr)")
+        var header = "[[table|\(columns)|\(String(format: "%.1f", contentWidth))|\(widthStr)"
+        if wrapText { header += "|wrap" }
+        lines.append(header)
         for row in cells {
             let escaped = row.map { cell in
                 cell.replacingOccurrences(of: "\\", with: "\\\\")
@@ -185,6 +188,7 @@ struct NoteTableData: Equatable {
             widths = Array(repeating: defaultColumnWidth, count: colCount)
         }
 
-        return NoteTableData(columns: colCount, cells: rows, columnWidths: widths)
+        let wrap = parts.count >= 4 && parts[3] == "wrap"
+        return NoteTableData(columns: colCount, cells: rows, columnWidths: widths, wrapText: wrap)
     }
 }

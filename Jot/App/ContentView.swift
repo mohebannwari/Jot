@@ -2446,12 +2446,12 @@ struct ContentView: View {
                                     .frame(width: 18, height: 18)
                                     .padding(4)
                                     .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                    .hoverContainer(cornerRadius: 8)
                             }
                         }
                     }
                     .buttonStyle(.plain)
                     .macPointingHandCursor()
-                    .hoverContainer(cornerRadius: 8)
                 }
                 .padding(.horizontal, 8)
 
@@ -2516,7 +2516,7 @@ struct ContentView: View {
                     .overlay {
                         if !isActive {
                             Capsule()
-                                .strokeBorder(Color("IconSecondaryColor").opacity(colorScheme == .dark ? 0.15 : 0.3), lineWidth: 0.5)
+                                .strokeBorder(Color("IconSecondaryColor").opacity(colorScheme == .dark ? 0.3 : 0.45), lineWidth: 0.5)
                         }
                     }
                     .shadow(color: .black.opacity(0.06), radius: 3, x: 0, y: 1)
@@ -2535,7 +2535,7 @@ struct ContentView: View {
                     .overlay {
                         if !isActive {
                             Capsule()
-                                .strokeBorder(Color("IconSecondaryColor").opacity(colorScheme == .dark ? 0.15 : 0.3), lineWidth: 0.5)
+                                .strokeBorder(Color("IconSecondaryColor").opacity(colorScheme == .dark ? 0.3 : 0.45), lineWidth: 0.5)
                         }
                     }
                     .shadow(color: .black.opacity(0.06), radius: 3, x: 0, y: 1)
@@ -2547,20 +2547,6 @@ struct ContentView: View {
         .macPointingHandCursor()
         .contextMenu {
             Button("Separate all notes") {
-                withAnimation(.jotSpring) {
-                    splitSessions.removeAll(where: { $0.id == session.id })
-                    if session.id == activeSplitID {
-                        if let next = splitSessions.last(where: { $0.isComplete }) {
-                            activeSplitID = next.id
-                        } else {
-                            activeSplitID = nil
-                            isSplitViewVisible = false
-                        }
-                    }
-                    if session.id == pendingSplitID { pendingSplitID = nil }
-                }
-            }
-            Button("Close split", role: .destructive) {
                 withAnimation(.jotSpring) {
                     splitSessions.removeAll(where: { $0.id == session.id })
                     if session.id == activeSplitID {
