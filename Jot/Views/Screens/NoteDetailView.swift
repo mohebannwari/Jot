@@ -545,6 +545,11 @@ struct NoteDetailView: View {
         { notification in
             handleNoteToolsBarNotification(notification)
         }
+    }
+
+    // AI tool + proofread + search observers — split to reduce type-checker pressure
+    private var noteContentEventsAI: some View {
+        noteContentEvents
         .onReceive(NotificationCenter.default.publisher(for: .aiToolAction)) { notification in
             if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
             guard let tool = notification.object as? AITool else { return }
@@ -625,7 +630,7 @@ struct NoteDetailView: View {
 
     // Search results + menu/picker observers — split to reduce type-checker pressure
     private var noteContentEvents2: some View {
-        noteContentEvents
+        noteContentEventsAI
         .onReceive(NotificationCenter.default.publisher(for: .searchOnPageResults)) { notification in
             if let nid = notification.userInfo?["editorInstanceID"] as? UUID,
                nid != editorInstanceID { return }
@@ -735,9 +740,9 @@ struct NoteDetailView: View {
     private var floatingToolbarOverlay: some View {
         GeometryReader { geometry in
             if showFloatingToolbar && !showEditContentPanel {
-                let parentFrame = geometry.frame(in: .global)
-                let localX = floatingToolbarOffset.x - parentFrame.minX
-                let localY = floatingToolbarOffset.y - parentFrame.minY
+                let parentFrame: CGRect = geometry.frame(in: .global)
+                let localX: CGFloat = floatingToolbarOffset.x - parentFrame.minX
+                let localY: CGFloat = floatingToolbarOffset.y - parentFrame.minY
                 let toolbarWidth: CGFloat = 250
                 let toolbarHeight: CGFloat = 36
                 let paneWidth: CGFloat = geometry.size.width
@@ -937,11 +942,11 @@ struct NoteDetailView: View {
     }
 
     private var isNewNote: Bool {
-        let hasMinimalTitle =
+        let hasMinimalTitle: Bool =
             editedTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             || editedTitle == "Untitled" || editedTitle == "Note Title"
             || editedTitle == "New Note"
-        let hasMinimalContent = editedContent.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasMinimalContent: Bool = editedContent.trimmingCharacters(in: .whitespacesAndNewlines)
             .isEmpty
         return hasMinimalTitle && hasMinimalContent
     }
