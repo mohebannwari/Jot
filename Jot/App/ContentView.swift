@@ -765,7 +765,7 @@ struct ContentView: View {
             .splitPaneShadow(isActive: true, cornerRadius: cornerRadius, backgroundColor: markingsBg, colorScheme: .light)
             .padding(.leading, sidebarDetailGap)
         } else if let note = selectedNote {
-            let needsPendingPadding = isActiveSplitPending && !isSidebarVisible
+            let needsPendingPadding: Bool = isActiveSplitPending && !isSidebarVisible
             let totalDetailWidth: CGFloat = isSidebarVisible
                 ? max(0, availableWidth - visibleSidebarWidth - sidebarDetailGap)
                 : needsPendingPadding
@@ -775,13 +775,13 @@ struct ContentView: View {
                 ? windowCornerRadius - windowContentPadding : 0
             ZStack {
                 if shouldShowSplitLayout {
-                    let primaryNote = activePrimaryNote ?? selectedNote ?? Note(title: "", content: "")
+                    let primaryNote: Note = activePrimaryNote ?? selectedNote ?? Note(title: "", content: "")
                     splitDetailLayout(primaryNote: primaryNote, totalWidth: totalDetailWidth, cornerRadius: cornerRadius)
                 } else {
-                    let splitRadius = windowCornerRadius - windowContentPadding
-                    let dragging = isDragSplitTargeted
-                    let primW = dragging ? ((totalDetailWidth - splitGap) * 0.5).rounded() : totalDetailWidth
-                    let secW = dragging ? (totalDetailWidth - primW - splitGap).rounded() : 0
+                    let splitRadius: CGFloat = windowCornerRadius - windowContentPadding
+                    let dragging: Bool = isDragSplitTargeted
+                    let primW: CGFloat = dragging ? ((totalDetailWidth - splitGap) * 0.5).rounded() : totalDetailWidth
+                    let secW: CGFloat = dragging ? (totalDetailWidth - primW - splitGap).rounded() : 0
 
                     let placeholderRect = RoundedRectangle(cornerRadius: splitRadius, style: .continuous)
                         .strokeBorder(style: StrokeStyle(lineWidth: 2, lineCap: .round, dash: [6, 6]))
