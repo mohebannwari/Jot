@@ -10,7 +10,6 @@
 
 import SwiftUI
 import UniformTypeIdentifiers
-
 import AppKit
 
 struct NoteDetailView: View {

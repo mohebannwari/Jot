@@ -937,10 +937,6 @@ struct SettingsPage: View {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
     }
 
-    private var appBuild: String {
-        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
-    }
-
     // MARK: - Contact Panel
 
     private var contactPanel: some View {
