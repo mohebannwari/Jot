@@ -198,13 +198,13 @@ final class NoteTableOverlayView: NSView {
         let cellPadV: CGFloat = 8
         var total: CGFloat = 0
         for row in 0..<data.rows {
-            let font = row == 0 ? headerFont : bodyFont
-            var maxH = fixedRowHeight
+            let font: NSFont = row == 0 ? headerFont : bodyFont
+            var maxH: CGFloat = fixedRowHeight
             for col in 0..<data.columns {
-                let text = data.cells[row][col]
+                let text: String = data.cells[row][col]
                 guard !text.isEmpty else { continue }
-                let colWidth = col < data.columnWidths.count ? data.columnWidths[col] : 120
-                let availW = colWidth - 2 * cellPadH
+                let colWidth: CGFloat = col < data.columnWidths.count ? data.columnWidths[col] : 120
+                let availW: CGFloat = colWidth - 2 * cellPadH
                 guard availW > 0 else { continue }
                 let textSize = (text as NSString).boundingRect(
                     with: NSSize(width: availW, height: .greatestFiniteMagnitude),
@@ -1230,7 +1230,7 @@ final class NoteTableOverlayView: NSView {
         if let col = newCol { newBodyCol = col }
         if let row = newRow { newBodyRow = row }
 
-        let changed = newCol != hoveredColumnHandle || newRow != hoveredRowHandle
+        let changed: Bool = newCol != hoveredColumnHandle || newRow != hoveredRowHandle
             || newAddRow != isHoveringAddRow || newAddCol != isHoveringAddColumn
             || newDivider != isHoveringDivider || newDividerIdx != hoveredDividerIndex
             || newBodyRow != hoveredBodyRow || newBodyCol != hoveredBodyColumn
