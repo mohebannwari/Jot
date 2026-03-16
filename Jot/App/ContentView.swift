@@ -525,8 +525,8 @@ struct ContentView: View {
     }
 
     private var contentBaseGeometry: some View {
-        GeometryReader { geometry in
-            mainLayout(geometry: geometry)
+        GeometryReader { (geometry: GeometryProxy) -> AnyView in
+            AnyView(mainLayout(geometry: geometry))
         }
         .background {
             Color.clear
