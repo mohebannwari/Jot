@@ -21,7 +21,7 @@ struct NoteToolsBar: View {
     private let iconSize: CGFloat = 18
 
     var body: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 4) {
             // MARK: - Primary actions (always visible)
 
             toolButton(icon: "gallery", tooltip: "Image Upload") {
