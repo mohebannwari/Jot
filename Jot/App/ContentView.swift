@@ -503,6 +503,28 @@ struct ContentView: View {
     }
 
     private var contentBaseLayout: some View {
+        contentBaseGeometry
+            .onChange(of: isSidebarVisible) { _, newValue in
+                if newValue {
+                    floatingSidebarDismissWorkItem?.cancel()
+                    floatingSidebarDismissWorkItem = nil
+                    isFloatingSidebarVisible = false
+                }
+            }
+            .onChange(of: isSearchPresented) { _, newValue in
+                if newValue && isFloatingSidebarVisible {
+                    floatingSidebarDismissWorkItem?.cancel()
+                    floatingSidebarDismissWorkItem = nil
+                    withAnimation(.jotSpring) { isFloatingSidebarVisible = false }
+                }
+            }
+            .onChange(of: anyPanelOverlayActive) { TodoRichTextEditor.isPanelOverlayActive = $1 }
+            .onChange(of: themeManager.noteSortOrder) { _, _ in
+                notesManager.refreshSorting()
+            }
+    }
+
+    private var contentBaseGeometry: some View {
         GeometryReader { geometry in
             mainLayout(geometry: geometry)
         }
@@ -548,24 +570,6 @@ struct ContentView: View {
             guard let text = notification.userInfo?["markedText"] as? String,
                   let note = selectedNote else { return }
             markingStore.add(noteID: note.id, noteTitle: note.title, markedText: text)
-        }
-        .onChange(of: isSidebarVisible) { _, newValue in
-            if newValue {
-                floatingSidebarDismissWorkItem?.cancel()
-                floatingSidebarDismissWorkItem = nil
-                isFloatingSidebarVisible = false
-            }
-        }
-        .onChange(of: isSearchPresented) { _, newValue in
-            if newValue && isFloatingSidebarVisible {
-                floatingSidebarDismissWorkItem?.cancel()
-                floatingSidebarDismissWorkItem = nil
-                withAnimation(.jotSpring) { isFloatingSidebarVisible = false }
-            }
-        }
-        .onChange(of: anyPanelOverlayActive) { TodoRichTextEditor.isPanelOverlayActive = $1 }
-        .onChange(of: themeManager.noteSortOrder) { _, _ in
-            notesManager.refreshSorting()
         }
     }
 
