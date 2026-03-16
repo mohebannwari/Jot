@@ -3794,6 +3794,20 @@ struct NoteListCard: View {
             : Color("SecondaryTextColor")
     }
 
+    private var titleColor: Color {
+        isActiveNote ? Color("ButtonPrimaryTextColor") : Color("PrimaryTextColor")
+    }
+
+    private var dateColor: Color {
+        isActiveNote ? Color("ButtonPrimaryTextColor").opacity(0.7) : Color("SecondaryTextColor")
+    }
+
+    private var ellipsisColor: Color {
+        isActiveNote
+            ? Color("ButtonPrimaryTextColor").opacity(isEllipsisHovered ? 1.0 : 0.5)
+            : Color("SecondaryTextColor").opacity(isEllipsisHovered ? 1.0 : 0.7)
+    }
+
     @ViewBuilder
     private var noteContextMenuContent: some View {
         if note.folderID == nil {
@@ -4002,9 +4016,7 @@ struct NoteListCard: View {
             } else {
                 Text(note.title)
                     .font(FontManager.heading(size: 15, weight: .medium))
-                    .foregroundColor(isActiveNote
-                        ? Color("ButtonPrimaryTextColor")
-                        : Color("PrimaryTextColor"))
+                    .foregroundColor(titleColor)
                     .tracking(-0.1)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -4017,18 +4029,14 @@ struct NoteListCard: View {
             HStack(spacing: 6) {
                 Text(Self.compactDateString(from: note.date))
                     .font(FontManager.metadata(size: 11, weight: .medium))
-                    .foregroundColor(isActiveNote
-                        ? Color("ButtonPrimaryTextColor").opacity(0.7)
-                        : Color("SecondaryTextColor"))
+                    .foregroundColor(dateColor)
 
                 Menu {
                     noteContextMenuContent
                 } label: {
                     Image(systemName: "ellipsis")
                         .font(FontManager.icon(size: 14, weight: .medium))
-                        .foregroundColor(isActiveNote
-                            ? Color("ButtonPrimaryTextColor").opacity(isEllipsisHovered ? 1.0 : 0.5)
-                            : Color("SecondaryTextColor").opacity(isEllipsisHovered ? 1.0 : 0.7))
+                        .foregroundColor(ellipsisColor)
                         .frame(width: 18, height: 18)
                         .contentShape(Rectangle())
                 }
