@@ -231,8 +231,8 @@ struct ContentView: View {
     @State private var activeSplitPane: SplitPickerPane? = nil
     @State private var splitAiToolsState: AIToolsState = .collapsed
     @State private var splitFocusRequestID = UUID()
-    @State private var primaryEditorID = UUID()
-    @State private var splitEditorID = UUID()
+    private let primaryEditorID = UUID()
+    private let splitEditorID = UUID()
     @State private var splitMenuButtonFrame: CGRect = .zero
     @State private var primaryBottomOverlayActive = false
     @State private var splitBottomOverlayActive = false
