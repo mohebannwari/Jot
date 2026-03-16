@@ -210,8 +210,6 @@ struct NoteListCard: View {
     let note: Note
     var isSelected: Bool = false
     var isActiveNote: Bool = false
-    var activeIconTint: Color = Color("SecondaryTextColor")
-    var isInsideFolder: Bool = false
     var leadingIconAssetName: String? = nil
     var hoverLeadingIconAssetName: String? = nil
     var showLeadingIconOnHoverOnly: Bool = false

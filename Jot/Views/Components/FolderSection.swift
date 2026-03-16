@@ -129,8 +129,6 @@ struct FolderSection: View {
                                     note: peekNote,
                                     isSelected: selectedNoteIDs.contains(peekNote.id),
                                     isActiveNote: peekNote.id == activeNoteID,
-                                    activeIconTint: folder.folderColor,
-                                    isInsideFolder: true,
                                     onTap: { interaction in onOpenNote(peekNote, interaction) },
                                     onTogglePin: { shouldPin in
                                         onTogglePinForNotes(contextSelection(for: peekNote), shouldPin)
@@ -220,8 +218,6 @@ struct FolderSection: View {
                             note: peekNote,
                             isSelected: selectedNoteIDs.contains(peekNote.id),
                             isActiveNote: peekNote.id == activeNoteID,
-                            activeIconTint: peekFolder.folderColor,
-                            isInsideFolder: true,
                             onTap: { interaction in onOpenNote(peekNote, interaction) },
                             onTogglePin: { shouldPin in
                                 onTogglePinForNotes(contextSelection(for: peekNote), shouldPin)
@@ -479,8 +475,6 @@ struct FolderSection: View {
                             note: note,
                             isSelected: selectedNoteIDs.contains(note.id),
                             isActiveNote: note.id == activeNoteID,
-                            activeIconTint: folder.folderColor,
-                            isInsideFolder: true,
                             leadingIconAssetName: note.isLocked
                                 ? "IconLock"
                                 : (splitNoteIDs.contains(note.id) ? "IconArrowSplitUp" : nil),
