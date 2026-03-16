@@ -5,7 +5,6 @@
 //  NSViewRepresentable bridge and InlineNSTextView for TodoRichTextEditor.
 //
 
-import Combine
 import SwiftUI
 import AppKit
 import QuartzCore
@@ -1314,7 +1313,6 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 )
             }
         }
-        private var textBeforeWritingTools = ""
         var currentColorScheme: ColorScheme
 
         // Proofread inline overlay tracking: (pill view, highlighted NSRange, original text color attributes)
@@ -1342,9 +1340,6 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         private static let checkboxIconSize: CGFloat = 32
         private static let checkboxAttachmentWidth: CGFloat = 22
         private static let baseBaselineOffset: CGFloat = 0.0
-        private static let todoBaselineOffset: CGFloat = {
-            return 0.0
-        }()
         private static var checkboxAttachmentYOffset: CGFloat { 0.0 }
         private static let checkboxBaselineOffset: CGFloat = {
             return 0.0
@@ -1776,14 +1771,6 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             return attributed
         }
 
-
-        func endAttachmentHover() {
-            // No-op — hover preview system removed
-        }
-
-        func handleAttachmentHover(at point: CGPoint, in textView: NSTextView) -> Bool {
-            return false
-        }
 
         /// Checks all image overlays for a resize edge at the given window point.
         /// Returns the appropriate resize cursor, or nil if the point isn't on any edge.
@@ -6970,8 +6957,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         // MARK: - Writing Tools Support (macOS 15+)
         @available(macOS 15.0, *)
         func textViewWritingToolsWillBegin(_ textView: NSTextView) {
-            // Store text before Writing Tools starts
-            textBeforeWritingTools = textView.string
+            // No-op — Writing Tools detection handled by textDidChange
         }
 
         @available(macOS 15.0, *)
@@ -7344,15 +7330,10 @@ final class InlineNSTextView: NSTextView {
         }
 
         super.mouseMoved(with: event)
-        let point = convert(event.locationInWindow, from: nil)
-        if actionDelegate?.handleAttachmentHover(at: point, in: self) != true {
-            actionDelegate?.endAttachmentHover()
-        }
     }
 
     override func mouseExited(with event: NSEvent) {
         super.mouseExited(with: event)
-        actionDelegate?.endAttachmentHover()
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
@@ -7419,7 +7400,6 @@ final class InlineNSTextView: NSTextView {
             }
         }
 
-        actionDelegate?.endAttachmentHover()
         window?.makeFirstResponder(self)
         super.mouseDown(with: event)
 
