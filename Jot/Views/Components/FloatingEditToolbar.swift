@@ -721,7 +721,7 @@ enum EditTool: String, CaseIterable {
         case .table: return "Table"
         case .codeBlock: return "Code Block"
         case .blockQuote: return "Block Quote"
-        case .highlight: return "Highlight"
+        case .highlight: return "Mark"
         case .callout: return "Callout"
         case .fileLink: return "Attach File"
         }

@@ -2557,7 +2557,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             // Ensure layout is up to date before querying glyph positions
             layoutManager.ensureLayout(for: textContainer)
 
-            let markerSize: CGFloat = 18
+            let markerSize: CGFloat = 20
             let containerOrigin = textView.textContainerOrigin
 
             for block in markedBlocks {
@@ -2570,9 +2570,15 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     forGlyphAt: glyphRange.location, effectiveRange: nil
                 )
 
-                // Position marker centered in the left gutter, vertically aligned with the used glyph rect
+                // Position marker centered in the left gutter.
+                // usedRect center is biased upward because it includes descender space,
+                // so nudge down by half the descender to hit the visual text center.
+                let font = storage.attribute(.font, at: block.location, effectiveRange: nil) as? NSFont
+                    ?? NSFont.systemFont(ofSize: 17)
+                let descenderNudge = abs(font.descender) / 2
                 let markerX = (containerOrigin.x - markerSize) / 2
-                let markerY = usedRect.origin.y + containerOrigin.y + (usedRect.height - markerSize) / 2
+                let textMidY = usedRect.origin.y + containerOrigin.y + usedRect.height / 2 + descenderNudge
+                let markerY = textMidY - markerSize / 2
 
                 let markerView = HighlightMarkerView(
                     frame: NSRect(x: markerX, y: markerY, width: markerSize, height: markerSize)
@@ -7671,78 +7677,55 @@ final class InlineNSTextView: NSTextView {
 private final class HighlightMarkerView: NSView {
     override var isFlipped: Bool { true }
 
+    // Pointy tip at y=9.18 in 18x18 viewBox → 51% down
+    static let tipNormalized: CGFloat = 9.18 / 18.0
+
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
 
         let fillColor = NSColor(named: "MarkerFillColor") ?? .systemBlue
         let strokeColor = NSColor(named: "MarkerStrokeColor") ?? .systemBlue
 
-        // Scale from 18x18 design coordinates to current bounds
-        let sx = bounds.width / 18
-        let sy = bounds.height / 18
+        // Scale from 18x18 design space, centered in bounds
+        let scale = min(bounds.width, bounds.height) / 18.0
+        let offsetX = (bounds.width - 18 * scale) / 2
+        let offsetY = (bounds.height - 18 * scale) / 2
+
+        func p(_ x: CGFloat, _ y: CGFloat) -> NSPoint {
+            NSPoint(x: offsetX + x * scale, y: offsetY + y * scale)
+        }
 
         let path = NSBezierPath()
-        path.move(to: NSPoint(x: 14.0039 * sx, y: 9.18164 * sy))
-        path.curve(to: NSPoint(x: 13.5674 * sx, y: 10.1416 * sy),
-                    controlPoint1: NSPoint(x: 13.9921 * sx, y: 9.57105 * sy),
-                    controlPoint2: NSPoint(x: 13.8056 * sx, y: 9.87548 * sy))
-        path.curve(to: NSPoint(x: 12.623 * sx, y: 11 * sy),
-                    controlPoint1: NSPoint(x: 13.3386 * sx, y: 10.3971 * sy),
-                    controlPoint2: NSPoint(x: 13.0084 * sx, y: 10.6742 * sy))
-        path.line(to: NSPoint(x: 11.5488 * sx, y: 11.9092 * sy))
-        path.curve(to: NSPoint(x: 10.8164 * sx, y: 12.4082 * sy),
-                    controlPoint1: NSPoint(x: 11.2995 * sx, y: 12.12 * sy),
-                    controlPoint2: NSPoint(x: 11.0853 * sx, y: 12.3097 * sy))
-        path.curve(to: NSPoint(x: 10.1719 * sx, y: 12.5 * sy),
-                    controlPoint1: NSPoint(x: 10.6146 * sx, y: 12.4821 * sy),
-                    controlPoint2: NSPoint(x: 10.4028 * sx, y: 12.4974 * sy))
-        path.line(to: NSPoint(x: 6 * sx, y: 12.5 * sy))
-        path.curve(to: NSPoint(x: 4.83594 * sx, y: 12.459 * sy),
-                    controlPoint1: NSPoint(x: 5.54273 * sx, y: 12.5 * sy),
-                    controlPoint2: NSPoint(x: 5.14931 * sx, y: 12.5011 * sy))
-        path.curve(to: NSPoint(x: 3.93945 * sx, y: 12.0605 * sy),
-                    controlPoint1: NSPoint(x: 4.50824 * sx, y: 12.4149 * sy),
-                    controlPoint2: NSPoint(x: 4.19424 * sx, y: 12.3153 * sy))
-        path.curve(to: NSPoint(x: 3.54102 * sx, y: 11.1641 * sy),
-                    controlPoint1: NSPoint(x: 3.68466 * sx, y: 11.8058 * sy),
-                    controlPoint2: NSPoint(x: 3.58509 * sx, y: 11.4918 * sy))
-        path.curve(to: NSPoint(x: 3.5 * sx, y: 10 * sy),
-                    controlPoint1: NSPoint(x: 3.49888 * sx, y: 10.8507 * sy),
-                    controlPoint2: NSPoint(x: 3.5 * sx, y: 10.4573 * sy))
-        path.line(to: NSPoint(x: 3.5 * sx, y: 8 * sy))
-        path.curve(to: NSPoint(x: 3.54102 * sx, y: 6.83594 * sy),
-                    controlPoint1: NSPoint(x: 3.5 * sx, y: 7.54273 * sy),
-                    controlPoint2: NSPoint(x: 3.49888 * sx, y: 7.14931 * sy))
-        path.curve(to: NSPoint(x: 3.93945 * sx, y: 5.93945 * sy),
-                    controlPoint1: NSPoint(x: 3.58509 * sx, y: 6.50824 * sy),
-                    controlPoint2: NSPoint(x: 3.68466 * sx, y: 6.19424 * sy))
-        path.curve(to: NSPoint(x: 4.83594 * sx, y: 5.54102 * sy),
-                    controlPoint1: NSPoint(x: 4.19424 * sx, y: 5.68466 * sy),
-                    controlPoint2: NSPoint(x: 4.50824 * sx, y: 5.58509 * sy))
-        path.curve(to: NSPoint(x: 6 * sx, y: 5.5 * sy),
-                    controlPoint1: NSPoint(x: 5.14931 * sx, y: 5.49888 * sy),
-                    controlPoint2: NSPoint(x: 5.54273 * sx, y: 5.5 * sy))
-        path.line(to: NSPoint(x: 9.86523 * sx, y: 5.5 * sy))
-        path.curve(to: NSPoint(x: 10.8242 * sx, y: 5.60742 * sy),
-                    controlPoint1: NSPoint(x: 10.2215 * sx, y: 5.5 * sy),
-                    controlPoint2: NSPoint(x: 10.5349 * sx, y: 5.49153 * sy))
-        path.curve(to: NSPoint(x: 11.5918 * sx, y: 6.19141 * sy),
-                    controlPoint1: NSPoint(x: 11.1134 * sx, y: 5.72335 * sy),
-                    controlPoint2: NSPoint(x: 11.3341 * sx, y: 5.94552 * sy))
-        path.line(to: NSPoint(x: 12.7354 * sx, y: 7.28223 * sy))
-        path.curve(to: NSPoint(x: 13.626 * sx, y: 8.19629 * sy),
-                    controlPoint1: NSPoint(x: 13.1004 * sx, y: 7.63062 * sy),
-                    controlPoint2: NSPoint(x: 13.413 * sx, y: 7.92752 * sy))
-        path.curve(to: NSPoint(x: 14.0039 * sx, y: 9.18164 * sy),
-                    controlPoint1: NSPoint(x: 13.8479 * sx, y: 8.47633 * sy),
-                    controlPoint2: NSPoint(x: 14.0156 * sx, y: 8.79205 * sy))
+        path.move(to: p(14.0039, 9.18164))
+        path.curve(to: p(13.5674, 10.1416), controlPoint1: p(13.9921, 9.57105), controlPoint2: p(13.8056, 9.87548))
+        path.curve(to: p(12.623, 11), controlPoint1: p(13.3386, 10.3971), controlPoint2: p(13.0084, 10.6742))
+        path.line(to: p(11.5488, 11.9092))
+        path.curve(to: p(10.8164, 12.4082), controlPoint1: p(11.2995, 12.12), controlPoint2: p(11.0853, 12.3097))
+        path.curve(to: p(10.1719, 12.5), controlPoint1: p(10.6146, 12.4821), controlPoint2: p(10.4028, 12.4974))
+        path.line(to: p(6, 12.5))
+        path.curve(to: p(4.83594, 12.459), controlPoint1: p(5.54273, 12.5), controlPoint2: p(5.14931, 12.5011))
+        path.curve(to: p(3.93945, 12.0605), controlPoint1: p(4.50824, 12.4149), controlPoint2: p(4.19424, 12.3153))
+        path.curve(to: p(3.54102, 11.1641), controlPoint1: p(3.68466, 11.8058), controlPoint2: p(3.58509, 11.4918))
+        path.curve(to: p(3.5, 10), controlPoint1: p(3.49888, 10.8507), controlPoint2: p(3.5, 10.4573))
+        path.line(to: p(3.5, 8))
+        path.curve(to: p(3.54102, 6.83594), controlPoint1: p(3.5, 7.54273), controlPoint2: p(3.49888, 7.14931))
+        path.curve(to: p(3.93945, 5.93945), controlPoint1: p(3.58509, 6.50824), controlPoint2: p(3.68466, 6.19424))
+        path.curve(to: p(4.83594, 5.54102), controlPoint1: p(4.19424, 5.68466), controlPoint2: p(4.50824, 5.58509))
+        path.curve(to: p(6, 5.5), controlPoint1: p(5.14931, 5.49888), controlPoint2: p(5.54273, 5.5))
+        path.line(to: p(9.86523, 5.5))
+        path.curve(to: p(10.8242, 5.60742), controlPoint1: p(10.2215, 5.5), controlPoint2: p(10.5349, 5.49153))
+        path.curve(to: p(11.5918, 6.19141), controlPoint1: p(11.1134, 5.72335), controlPoint2: p(11.3341, 5.94552))
+        path.line(to: p(12.7354, 7.28223))
+        path.curve(to: p(13.626, 8.19629), controlPoint1: p(13.1004, 7.63062), controlPoint2: p(13.413, 7.92752))
+        path.curve(to: p(14.0039, 9.18164), controlPoint1: p(13.8479, 8.47633), controlPoint2: p(14.0156, 8.79205))
         path.close()
 
         fillColor.setFill()
         path.fill()
         strokeColor.setStroke()
-        path.lineWidth = 1 * sx
+        path.lineWidth = scale
         path.lineJoinStyle = .round
+        path.lineCapStyle = .round
         path.stroke()
     }
 }
