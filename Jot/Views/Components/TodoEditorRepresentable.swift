@@ -2387,7 +2387,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 }
             }
 
-            // Sync menu state from SwiftUI → InlineNSTextView instance vars
+            // Sync menu state from SwiftUI -> InlineNSTextView instance vars
             let syncMenuState = NotificationCenter.default.addObserver(
                 forName: .syncEditorMenuState, object: nil, queue: .main
             ) { [weak self] notification in
@@ -2406,6 +2406,37 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 }
             }
 
+            // MARK: Marking removed -- strip .marked attribute from live editor
+            let markingRemovedObs = NotificationCenter.default.addObserver(
+                forName: .markingRemoved, object: nil, queue: .main
+            ) { [weak self] notification in
+                guard let markedText = notification.userInfo?["markedText"] as? String else { return }
+                Task { @MainActor [weak self] in
+                    guard let self = self, let textView = self.textView,
+                          let storage = textView.textStorage else { return }
+                    let nsContent = storage.string as NSString
+                    var searchStart = 0
+                    while searchStart + markedText.count <= storage.length {
+                        let searchRange = NSRange(location: searchStart, length: storage.length - searchStart)
+                        let found = nsContent.range(of: markedText, range: searchRange)
+                        guard found.location != NSNotFound else { break }
+                        var hasMarked = false
+                        storage.enumerateAttribute(.marked, in: found, options: []) { value, _, stop in
+                            if value != nil { hasMarked = true; stop.pointee = true }
+                        }
+                        if hasMarked {
+                            storage.beginEditing()
+                            storage.removeAttribute(.marked, range: found)
+                            storage.endEditing()
+                            self.updateHighlightMarkers()
+                            self.syncText()
+                            break
+                        }
+                        searchStart = NSMaxRange(found)
+                    }
+                }
+            }
+
             observers = [
                 windowKey,
                 insertTodo, insertLink, insertFileLink, insertVoiceTranscript, insertImage, applyTool, applyCommandMenuTool,
@@ -2415,7 +2446,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 editReplace, proofreadReplaceAll,
                 urlPasteMention, urlPasteSelectPlainLink, urlPasteDismiss,
                 codePasteSelectCodeBlock, codePasteSelectPlainText, codePasteDismissObserver,
-                applyColor, removeColor, applyHighlight, removeHighlight, setHighlightRange, settingsObserver, syncMenuState,
+                applyColor, removeColor, applyHighlight, removeHighlight, setHighlightRange, settingsObserver, syncMenuState, markingRemovedObs,
             ]
         }
 

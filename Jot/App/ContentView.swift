@@ -1959,16 +1959,106 @@ struct ContentView: View {
         // Remove from store
         markingStore.remove(marking.id)
 
-        // Remove [[mark]]...[[/mark]] tags around the marked text in the note
+        // Remove [[mark]]...[[/mark]] tags from the note content.
+        // Marked text may span multiple formatting runs, producing interleaved
+        // tags like [[b]][[mark]]word[[/mark]][[/b]] — so we can't rely on a
+        // simple needle match. Instead, strip all [[mark]]/[[/mark]] tags whose
+        // combined plain text equals the marking's stored text.
         if var note = notesManager.notes.first(where: { $0.id == marking.noteID }) {
-            let tag = "[[mark]]"
-            let endTag = "[[/mark]]"
-            let needle = tag + marking.markedText + endTag
-            if note.content.contains(needle) {
-                note.content = note.content.replacingOccurrences(of: needle, with: marking.markedText)
-                notesManager.updateNote(note)
-            }
+            note.content = stripMarkTags(from: note.content, matching: marking.markedText)
+            notesManager.updateNote(note)
         }
+
+        // Tell the live editor (if open) to drop the .marked attribute so
+        // gutter markers disappear immediately without waiting for a re-render.
+        NotificationCenter.default.post(
+            name: .markingRemoved,
+            object: nil,
+            userInfo: ["markedText": marking.markedText, "noteID": marking.noteID.uuidString]
+        )
+    }
+
+    /// Strips [[mark]] / [[/mark]] tags from `content` for the first contiguous
+    /// marked region whose plain text equals `target`. Handles interleaved
+    /// formatting tags (e.g. [[b]][[mark]]...) by walking the serialised string
+    /// and collecting only the text inside [[mark]] blocks.
+    private func stripMarkTags(from content: String, matching target: String) -> String {
+        let markOpen = "[[mark]]"
+        let markClose = "[[/mark]]"
+
+        // Quick path: simple case where no interleaving exists.
+        let simpleNeedle = markOpen + target + markClose
+        if let range = content.range(of: simpleNeedle) {
+            return content.replacingCharacters(in: range, with: target)
+        }
+
+        // Full path: walk through content and find mark tag groups whose
+        // combined plain text equals the target.
+        var result = content
+        var searchStart = result.startIndex
+
+        while searchStart < result.endIndex {
+            guard let openRange = result.range(of: markOpen, range: searchStart..<result.endIndex) else {
+                break
+            }
+
+            var cursor = openRange.lowerBound
+            var plainText = ""
+            var tagRanges: [(Range<String.Index>, Bool)] = []
+
+            while cursor < result.endIndex {
+                if result[cursor...].hasPrefix(markOpen) {
+                    let tagEnd = result.index(cursor, offsetBy: markOpen.count)
+                    tagRanges.append((cursor..<tagEnd, true))
+                    cursor = tagEnd
+                    while cursor < result.endIndex && !result[cursor...].hasPrefix(markClose) {
+                        if result[cursor...].hasPrefix("[[") {
+                            if let closeIdx = result.range(of: "]]", range: cursor..<result.endIndex) {
+                                tagRanges.append((cursor..<closeIdx.upperBound, false))
+                                cursor = closeIdx.upperBound
+                            } else { break }
+                        } else {
+                            plainText.append(result[cursor])
+                            cursor = result.index(after: cursor)
+                        }
+                    }
+                    if result[cursor...].hasPrefix(markClose) {
+                        let closeEnd = result.index(cursor, offsetBy: markClose.count)
+                        tagRanges.append((cursor..<closeEnd, true))
+                        cursor = closeEnd
+                    }
+                    var peek = cursor
+                    while peek < result.endIndex && result[peek...].hasPrefix("[[") && !result[peek...].hasPrefix(markOpen) {
+                        if let closeIdx = result.range(of: "]]", range: peek..<result.endIndex) {
+                            peek = closeIdx.upperBound
+                        } else { break }
+                    }
+                    if peek < result.endIndex && result[peek...].hasPrefix(markOpen) {
+                        var mid = cursor
+                        while mid < peek {
+                            if result[mid...].hasPrefix("[[") {
+                                if let closeIdx = result.range(of: "]]", range: mid..<result.endIndex) {
+                                    tagRanges.append((mid..<closeIdx.upperBound, false))
+                                    mid = closeIdx.upperBound
+                                } else { break }
+                            } else { mid = result.index(after: mid) }
+                        }
+                        cursor = peek
+                        continue
+                    } else { break }
+                } else { break }
+            }
+
+            if plainText == target {
+                let markTagRanges = tagRanges.filter { $0.1 }.map { $0.0 }.reversed()
+                for range in markTagRanges { result.removeSubrange(range) }
+                return result
+            }
+
+            searchStart = cursor < result.endIndex ? cursor : result.endIndex
+        }
+
+        return result
     }
 
     private func presentSettings() {
