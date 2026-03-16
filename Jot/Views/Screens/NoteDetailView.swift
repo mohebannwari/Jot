@@ -109,6 +109,7 @@ struct NoteDetailView: View {
     @State private var highlightPickerOffset = CGPoint.zero
     @State private var lastSelectionBottomY: CGFloat = 0
     @State private var lastSelectionCenterX: CGFloat = 0
+    @State private var hideToolbarWork: DispatchWorkItem?
 
     // MARK: - Constants
 
@@ -852,67 +853,75 @@ struct NoteDetailView: View {
     // MARK: - Notification Handlers (extracted to reduce type-checker pressure)
 
     private func handleTextSelectionChanged(_ notification: Notification) {
-        DispatchQueue.main.async {
-            guard let userInfo = notification.userInfo,
-                  let hasSelection = userInfo["hasSelection"] as? Bool else { return }
+        guard let userInfo = notification.userInfo,
+              let hasSelection = userInfo["hasSelection"] as? Bool else { return }
 
-            // If this notification is from a different pane, dismiss our toolbar
-            if let notifID = userInfo["editorInstanceID"] as? UUID,
-               notifID != self.editorInstanceID {
-                if hasSelection {
-                    withAnimation(.smooth(duration: 0.15)) { self.showFloatingToolbar = false }
-                }
-                return
+        // If this notification is from a different pane, dismiss our toolbar
+        if let notifID = userInfo["editorInstanceID"] as? UUID,
+           notifID != self.editorInstanceID {
+            if hasSelection {
+                hideToolbarWork?.cancel()
+                hideToolbarWork = nil
+                withAnimation(.smooth(duration: 0.15)) { self.showFloatingToolbar = false }
+            }
+            return
+        }
+
+        if hasSelection,
+           let selectionWidth = userInfo["selectionWidth"] as? CGFloat,
+           let selectionHeight = userInfo["selectionHeight"] as? CGFloat,
+           let selectionWindowY = userInfo["selectionWindowY"] as? CGFloat,
+           let selectionWindowX = userInfo["selectionWindowX"] as? CGFloat,
+           let visibleWidth = userInfo["visibleWidth"] as? CGFloat,
+           let visibleHeight = userInfo["visibleHeight"] as? CGFloat {
+
+            hideToolbarWork?.cancel()
+            hideToolbarWork = nil
+
+            let result = FloatingToolbarPositioner.calculatePosition(
+                selectionWindowX: selectionWindowX,
+                selectionWindowY: selectionWindowY,
+                selectionWidth: selectionWidth,
+                selectionHeight: selectionHeight,
+                visibleWidth: visibleWidth,
+                visibleHeight: visibleHeight
+            )
+
+            // Save selection bottom position for highlight picker
+            let windowHeight = userInfo["windowHeight"] as? CGFloat
+                ?? NSApp.keyWindow?.contentView?.bounds.height ?? visibleHeight
+            let selTopFromTop = max(0, windowHeight - (selectionWindowY + selectionHeight))
+            self.lastSelectionBottomY = selTopFromTop + selectionHeight
+            self.lastSelectionCenterX = selectionWindowX + selectionWidth / 2
+
+            // Update formatting state for toolbar button highlights
+            self.toolbarIsBold = userInfo["isBold"] as? Bool ?? false
+            self.toolbarIsItalic = userInfo["isItalic"] as? Bool ?? false
+            self.toolbarIsUnderline = userInfo["isUnderline"] as? Bool ?? false
+            self.toolbarIsStrikethrough = userInfo["isStrikethrough"] as? Bool ?? false
+            self.toolbarIsHighlight = userInfo["isHighlight"] as? Bool ?? false
+
+            withAnimation(.jotSmoothFast) {
+                self.floatingToolbarOffset = result.origin
+                self.floatingToolbarPlaceAbove = result.placeAbove
+                self.showFloatingToolbar = true
             }
 
-            if hasSelection,
-               let selectionWidth = userInfo["selectionWidth"] as? CGFloat,
-               let selectionHeight = userInfo["selectionHeight"] as? CGFloat,
-               let selectionWindowY = userInfo["selectionWindowY"] as? CGFloat,
-               let selectionWindowX = userInfo["selectionWindowX"] as? CGFloat,
-               let visibleWidth = userInfo["visibleWidth"] as? CGFloat,
-               let visibleHeight = userInfo["visibleHeight"] as? CGFloat {
-
-                let result = FloatingToolbarPositioner.calculatePosition(
-                    selectionWindowX: selectionWindowX,
-                    selectionWindowY: selectionWindowY,
-                    selectionWidth: selectionWidth,
-                    selectionHeight: selectionHeight,
-                    visibleWidth: visibleWidth,
-                    visibleHeight: visibleHeight
-                )
-
-                // Save selection bottom position for highlight picker
-                let windowHeight = userInfo["windowHeight"] as? CGFloat
-                    ?? NSApp.keyWindow?.contentView?.bounds.height ?? visibleHeight
-                let selTopFromTop = max(0, windowHeight - (selectionWindowY + selectionHeight))
-                self.lastSelectionBottomY = selTopFromTop + selectionHeight
-                self.lastSelectionCenterX = selectionWindowX + selectionWidth / 2
-
-                // Update formatting state for toolbar button highlights
-                self.toolbarIsBold = userInfo["isBold"] as? Bool ?? false
-                self.toolbarIsItalic = userInfo["isItalic"] as? Bool ?? false
-                self.toolbarIsUnderline = userInfo["isUnderline"] as? Bool ?? false
-                self.toolbarIsStrikethrough = userInfo["isStrikethrough"] as? Bool ?? false
-                self.toolbarIsHighlight = userInfo["isHighlight"] as? Bool ?? false
-
-                withAnimation(.jotSmoothFast) {
-                    self.floatingToolbarOffset = result.origin
-                    self.floatingToolbarPlaceAbove = result.placeAbove
-                    self.showFloatingToolbar = true
+            // Dismiss highlight picker when toolbar reappears
+            if self.showHighlightColorPicker {
+                withAnimation(.smooth(duration: 0.15)) {
+                    self.showHighlightColorPicker = false
                 }
-
-                // Dismiss highlight picker when toolbar reappears
-                if self.showHighlightColorPicker {
-                    withAnimation(.smooth(duration: 0.15)) {
-                        self.showHighlightColorPicker = false
-                    }
-                }
-            } else {
+            }
+        } else {
+            hideToolbarWork?.cancel()
+            let work = DispatchWorkItem { [self] in
                 withAnimation(.smooth(duration: 0.15)) {
                     self.showFloatingToolbar = false
                 }
             }
+            hideToolbarWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: work)
         }
     }
 
