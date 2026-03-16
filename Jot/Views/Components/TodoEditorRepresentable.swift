@@ -28,6 +28,7 @@ extension NSAttributedString.Key {
     static let orderedListNumber = NSAttributedString.Key("OrderedListNumber")
     static let blockQuote = NSAttributedString.Key("BlockQuote")
     static let highlightColor = NSAttributedString.Key("HighlightColor")
+    static let marked = NSAttributedString.Key("Marked")
     static let notelinkID = NSAttributedString.Key("NotelinkID")
     static let notelinkTitle = NSAttributedString.Key("NotelinkTitle")
     static let fileLinkPath = NSAttributedString.Key("FileLinkPath")
@@ -467,11 +468,44 @@ final class DividerSizeAttachmentCell: NSTextAttachmentCell {
     override nonisolated func cellBaselineOffset() -> NSPoint { .zero }
 
     override func draw(withFrame cellFrame: NSRect, in controlView: NSView?) {
-        // Draw the divider line directly — no overlay view needed
+        // Hand-drawn squiggly divider line
         let lineY = cellFrame.midY
-        let lineRect = NSRect(x: cellFrame.minX + 10, y: lineY, width: cellFrame.width - 20, height: 1)
-        NSColor.labelColor.withAlphaComponent(0.3).setFill()
-        NSBezierPath(rect: lineRect).fill()
+        let startX = cellFrame.minX + 10
+        let endX = cellFrame.maxX - 10
+        let totalWidth = endX - startX
+        guard totalWidth > 0 else { return }
+
+        // Seeded RNG from the cell's pointer for stable wobble across redraws
+        var seed = UInt64(UInt(bitPattern: ObjectIdentifier(self)))
+        func nextRand() -> CGFloat {
+            seed = seed &* 6364136223846793005 &+ 1442695040888963407
+            return CGFloat((seed >> 33) % 1000) / 1000.0
+        }
+
+        let path = NSBezierPath()
+        path.lineWidth = 0.75
+        path.lineCapStyle = .round
+        path.lineJoinStyle = .round
+        path.move(to: NSPoint(x: startX, y: lineY + (nextRand() - 0.5) * 1.8))
+
+        // Uneven segments: vary segment length between 6-16pt for organic feel
+        var x = startX
+        while x < endX {
+            let segLen = 6 + nextRand() * 10
+            let nextX = min(x + segLen, endX)
+            let midX = (x + nextX) / 2
+            // Control points wobble vertically, asymmetric for hand-drawn feel
+            let cpY1 = lineY + (nextRand() - 0.45) * 3.6
+            let cpY2 = lineY + (nextRand() - 0.55) * 3.6
+            let endY = lineY + (nextRand() - 0.5) * 2.0
+            path.curve(to: NSPoint(x: nextX, y: endY),
+                        controlPoint1: NSPoint(x: midX - segLen * 0.15, y: cpY1),
+                        controlPoint2: NSPoint(x: midX + segLen * 0.15, y: cpY2))
+            x = nextX
+        }
+
+        NSColor.labelColor.withAlphaComponent(0.3).setStroke()
+        path.stroke()
     }
 
     override func draw(withFrame cellFrame: NSRect, in controlView: NSView?,
@@ -1137,7 +1171,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 self.updateTableOverlays(in: tv)
                 self.updateCalloutOverlays(in: tv)
                 self.updateCodeBlockOverlays(in: tv)
-
+                self.updateHighlightMarkers()
             }
             pendingOverlayUpdate = work
             DispatchQueue.main.async(execute: work)
@@ -1238,6 +1272,9 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         // Proofread inline overlay tracking: (pill view, highlighted NSRange, original text color attributes)
         private var proofreadPillViews: [(view: NSView, range: NSRange)] = []
         private var proofreadHighlightedRanges: [NSRange] = []
+
+        // Highlight gutter markers — small icons in the left margin for each highlight block
+        private var highlightMarkerViews: [NSView] = []
 
         // Last known non-empty selection — cached here so clicking the AI tools button
         // (which clears the NSTextView selection) doesn't lose context for Edit Content.
@@ -1871,6 +1908,22 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                         self.insertCallout()
                     } else if tool == .codeBlock {
                         self.insertCodeBlock()
+                    } else if tool == .highlight {
+                        // Mark selected text (gutter marker only, no background highlight)
+                        let range = textView.selectedRange()
+                        let isAdding = !self.isRangeFullyMarked(range, in: textView)
+                        self.toggleMark(in: textView)
+                        self.updateHighlightMarkers()
+                        self.syncText()
+                        // Notify so the marking can be persisted
+                        if isAdding, range.length > 0,
+                           let text = (textView.string as NSString?)?.substring(with: range) {
+                            NotificationCenter.default.post(
+                                name: .markingApplied,
+                                object: nil,
+                                userInfo: ["markedText": text]
+                            )
+                        }
                     } else {
                         self.formatter.applyFormatting(to: textView, tool: tool)
                         self.styleTodoParagraphs()
@@ -2348,7 +2401,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 updateTableOverlays(in: textView)
                 updateCalloutOverlays(in: textView)
                 updateCodeBlockOverlays(in: textView)
-
+                updateHighlightMarkers()
             }
         }
 
@@ -2431,6 +2484,104 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 storage.endEditing()
             }
             proofreadHighlightedRanges.removeAll()
+        }
+
+        // MARK: - Mark / Gutter Markers
+
+        /// Returns true if the entire range has the `.marked` attribute.
+        func isRangeFullyMarked(_ range: NSRange, in textView: NSTextView) -> Bool {
+            guard range.length > 0, let storage = textView.textStorage else { return false }
+            guard NSMaxRange(range) <= storage.length else { return false }
+            var fullyMarked = true
+            storage.enumerateAttribute(.marked, in: range, options: []) { value, _, stop in
+                if value == nil { fullyMarked = false; stop.pointee = true }
+            }
+            return fullyMarked
+        }
+
+        /// Toggles the `.marked` attribute on the selected range.
+        /// No background color is applied -- the only visual indicator is the gutter marker.
+        func toggleMark(in textView: NSTextView) {
+            let range = textView.selectedRange()
+            guard range.length > 0, let storage = textView.textStorage else { return }
+            guard NSMaxRange(range) <= storage.length else { return }
+
+            // Check if the entire range is already marked
+            var isFullyMarked = true
+            storage.enumerateAttribute(.marked, in: range, options: []) { value, _, stop in
+                if value == nil { isFullyMarked = false; stop.pointee = true }
+            }
+
+            storage.beginEditing()
+            if isFullyMarked {
+                storage.removeAttribute(.marked, range: range)
+            } else {
+                storage.addAttribute(.marked, value: true, range: range)
+            }
+            storage.endEditing()
+        }
+
+        /// Scans text storage for `.marked` attributes, groups contiguous
+        /// marked ranges into blocks, and places a marker icon in the left gutter
+        /// aligned with the first line of each block.
+        func updateHighlightMarkers() {
+            guard let textView = self.textView,
+                  let storage = textView.textStorage,
+                  let layoutManager = textView.layoutManager,
+                  let textContainer = textView.textContainer else { return }
+
+            // Remove old markers
+            highlightMarkerViews.forEach { $0.removeFromSuperview() }
+            highlightMarkerViews.removeAll()
+
+            guard storage.length > 0 else { return }
+
+            // Collect contiguous marked blocks
+            let fullRange = NSRange(location: 0, length: storage.length)
+            var markedBlocks: [NSRange] = []
+
+            storage.enumerateAttribute(.marked, in: fullRange, options: []) { value, range, _ in
+                guard value != nil else { return }
+                // Merge with previous block if adjacent
+                if let last = markedBlocks.last,
+                   NSMaxRange(last) == range.location {
+                    markedBlocks[markedBlocks.count - 1] = NSRange(
+                        location: last.location,
+                        length: last.length + range.length
+                    )
+                } else {
+                    markedBlocks.append(range)
+                }
+            }
+
+            // Ensure layout is up to date before querying glyph positions
+            layoutManager.ensureLayout(for: textContainer)
+
+            let markerSize: CGFloat = 18
+            let containerOrigin = textView.textContainerOrigin
+
+            for block in markedBlocks {
+                // Get the line fragment for the first character of the block
+                let glyphRange = layoutManager.glyphRange(
+                    forCharacterRange: NSRange(location: block.location, length: 1),
+                    actualCharacterRange: nil
+                )
+                let usedRect = layoutManager.lineFragmentUsedRect(
+                    forGlyphAt: glyphRange.location, effectiveRange: nil
+                )
+
+                // Position marker centered in the left gutter, vertically aligned with the used glyph rect
+                let markerX = (containerOrigin.x - markerSize) / 2
+                let markerY = usedRect.origin.y + containerOrigin.y + (usedRect.height - markerSize) / 2
+
+                let markerView = HighlightMarkerView(
+                    frame: NSRect(x: markerX, y: markerY, width: markerSize, height: markerSize)
+                )
+                markerView.toolTip = "Mark"
+
+                textView.addSubview(markerView)
+                highlightMarkerViews.append(markerView)
+            }
         }
 
         private func applyProofreadSuggestion(original: String, replacement: String) {
@@ -3200,6 +3351,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             updateTableOverlays(in: textView)
             updateCalloutOverlays(in: textView)
             updateCodeBlockOverlays(in: textView)
+            // Highlight markers are repositioned by scheduleOverlayUpdate()
+            // when didCompleteLayoutFor fires — no need to call here.
 
         }
 
@@ -5520,6 +5673,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     let font = attributes[.font] as? NSFont
                     let isBlockQuote = attributes[.blockQuote] as? Bool == true
                     let highlightHex = attributes[.highlightColor] as? String
+                    let isMarked = attributes[.marked] as? Bool == true
                     let heading = font.flatMap { Self.headingLevel(for: $0) }
 
                     var runBold = false
@@ -5586,6 +5740,9 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     if let hlHex = highlightHex {
                         openTags += "[[hl|\(hlHex)]]"; closeTags = "[[/hl]]" + closeTags
                     }
+                    if isMarked {
+                        openTags += "[[mark]]"; closeTags = "[[/mark]]" + closeTags
+                    }
 
                     output.append(openTags)
                     output.append(rangeText)
@@ -5627,6 +5784,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             var fmtAlignment: NSTextAlignment = .left
             var fmtBlockQuote = false
             var fmtHighlightHex: String? = nil
+            var fmtMarked = false
 
             // Buffer for accumulating plain text characters with the same attributes.
             // Flushed as a single NSAttributedString when formatting changes or a tag is hit.
@@ -5650,6 +5808,9 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     attrs[.highlightColor] = hlHex
                     let hlColor = TextFormattingManager.nsColorFromHex(hlHex).withAlphaComponent(0.35)
                     attrs[.backgroundColor] = hlColor
+                }
+                if fmtMarked {
+                    attrs[.marked] = true
                 }
                 result.append(NSAttributedString(string: textBuffer, attributes: attrs))
                 textBuffer = ""
@@ -6146,6 +6307,16 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     flushBuffer()
                     fmtHighlightHex = nil
                     index = text.index(index, offsetBy: 7)
+                    continue
+                } else if text[index...].hasPrefix("[[mark]]") {
+                    flushBuffer()
+                    fmtMarked = true
+                    index = text.index(index, offsetBy: 8)
+                    continue
+                } else if text[index...].hasPrefix("[[/mark]]") {
+                    flushBuffer()
+                    fmtMarked = false
+                    index = text.index(index, offsetBy: 9)
                     continue
                 } else if text[index...].hasPrefix("[[h1]]") {
                     flushBuffer()
@@ -7492,6 +7663,90 @@ final class InlineNSTextView: NSTextView {
     }
 }
 
+// MARK: - Highlight Marker View
+
+/// Custom-drawn marker tab that sits in the left gutter next to marked text.
+/// Uses `MarkerFillColor` and `MarkerStrokeColor` color sets from the asset
+/// catalog so it adapts correctly to light and dark appearances.
+private final class HighlightMarkerView: NSView {
+    override var isFlipped: Bool { true }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+
+        let fillColor = NSColor(named: "MarkerFillColor") ?? .systemBlue
+        let strokeColor = NSColor(named: "MarkerStrokeColor") ?? .systemBlue
+
+        // Scale from 18x18 design coordinates to current bounds
+        let sx = bounds.width / 18
+        let sy = bounds.height / 18
+
+        let path = NSBezierPath()
+        path.move(to: NSPoint(x: 14.0039 * sx, y: 9.18164 * sy))
+        path.curve(to: NSPoint(x: 13.5674 * sx, y: 10.1416 * sy),
+                    controlPoint1: NSPoint(x: 13.9921 * sx, y: 9.57105 * sy),
+                    controlPoint2: NSPoint(x: 13.8056 * sx, y: 9.87548 * sy))
+        path.curve(to: NSPoint(x: 12.623 * sx, y: 11 * sy),
+                    controlPoint1: NSPoint(x: 13.3386 * sx, y: 10.3971 * sy),
+                    controlPoint2: NSPoint(x: 13.0084 * sx, y: 10.6742 * sy))
+        path.line(to: NSPoint(x: 11.5488 * sx, y: 11.9092 * sy))
+        path.curve(to: NSPoint(x: 10.8164 * sx, y: 12.4082 * sy),
+                    controlPoint1: NSPoint(x: 11.2995 * sx, y: 12.12 * sy),
+                    controlPoint2: NSPoint(x: 11.0853 * sx, y: 12.3097 * sy))
+        path.curve(to: NSPoint(x: 10.1719 * sx, y: 12.5 * sy),
+                    controlPoint1: NSPoint(x: 10.6146 * sx, y: 12.4821 * sy),
+                    controlPoint2: NSPoint(x: 10.4028 * sx, y: 12.4974 * sy))
+        path.line(to: NSPoint(x: 6 * sx, y: 12.5 * sy))
+        path.curve(to: NSPoint(x: 4.83594 * sx, y: 12.459 * sy),
+                    controlPoint1: NSPoint(x: 5.54273 * sx, y: 12.5 * sy),
+                    controlPoint2: NSPoint(x: 5.14931 * sx, y: 12.5011 * sy))
+        path.curve(to: NSPoint(x: 3.93945 * sx, y: 12.0605 * sy),
+                    controlPoint1: NSPoint(x: 4.50824 * sx, y: 12.4149 * sy),
+                    controlPoint2: NSPoint(x: 4.19424 * sx, y: 12.3153 * sy))
+        path.curve(to: NSPoint(x: 3.54102 * sx, y: 11.1641 * sy),
+                    controlPoint1: NSPoint(x: 3.68466 * sx, y: 11.8058 * sy),
+                    controlPoint2: NSPoint(x: 3.58509 * sx, y: 11.4918 * sy))
+        path.curve(to: NSPoint(x: 3.5 * sx, y: 10 * sy),
+                    controlPoint1: NSPoint(x: 3.49888 * sx, y: 10.8507 * sy),
+                    controlPoint2: NSPoint(x: 3.5 * sx, y: 10.4573 * sy))
+        path.line(to: NSPoint(x: 3.5 * sx, y: 8 * sy))
+        path.curve(to: NSPoint(x: 3.54102 * sx, y: 6.83594 * sy),
+                    controlPoint1: NSPoint(x: 3.5 * sx, y: 7.54273 * sy),
+                    controlPoint2: NSPoint(x: 3.49888 * sx, y: 7.14931 * sy))
+        path.curve(to: NSPoint(x: 3.93945 * sx, y: 5.93945 * sy),
+                    controlPoint1: NSPoint(x: 3.58509 * sx, y: 6.50824 * sy),
+                    controlPoint2: NSPoint(x: 3.68466 * sx, y: 6.19424 * sy))
+        path.curve(to: NSPoint(x: 4.83594 * sx, y: 5.54102 * sy),
+                    controlPoint1: NSPoint(x: 4.19424 * sx, y: 5.68466 * sy),
+                    controlPoint2: NSPoint(x: 4.50824 * sx, y: 5.58509 * sy))
+        path.curve(to: NSPoint(x: 6 * sx, y: 5.5 * sy),
+                    controlPoint1: NSPoint(x: 5.14931 * sx, y: 5.49888 * sy),
+                    controlPoint2: NSPoint(x: 5.54273 * sx, y: 5.5 * sy))
+        path.line(to: NSPoint(x: 9.86523 * sx, y: 5.5 * sy))
+        path.curve(to: NSPoint(x: 10.8242 * sx, y: 5.60742 * sy),
+                    controlPoint1: NSPoint(x: 10.2215 * sx, y: 5.5 * sy),
+                    controlPoint2: NSPoint(x: 10.5349 * sx, y: 5.49153 * sy))
+        path.curve(to: NSPoint(x: 11.5918 * sx, y: 6.19141 * sy),
+                    controlPoint1: NSPoint(x: 11.1134 * sx, y: 5.72335 * sy),
+                    controlPoint2: NSPoint(x: 11.3341 * sx, y: 5.94552 * sy))
+        path.line(to: NSPoint(x: 12.7354 * sx, y: 7.28223 * sy))
+        path.curve(to: NSPoint(x: 13.626 * sx, y: 8.19629 * sy),
+                    controlPoint1: NSPoint(x: 13.1004 * sx, y: 7.63062 * sy),
+                    controlPoint2: NSPoint(x: 13.413 * sx, y: 7.92752 * sy))
+        path.curve(to: NSPoint(x: 14.0039 * sx, y: 9.18164 * sy),
+                    controlPoint1: NSPoint(x: 13.8479 * sx, y: 8.47633 * sy),
+                    controlPoint2: NSPoint(x: 14.0156 * sx, y: 8.79205 * sy))
+        path.close()
+
+        fillColor.setFill()
+        path.fill()
+        strokeColor.setStroke()
+        path.lineWidth = 1 * sx
+        path.lineJoinStyle = .round
+        path.stroke()
+    }
+}
+
 private final class TodoCheckboxAttachmentCell: NSTextAttachmentCell {
     var isChecked: Bool
     private let size = NSSize(width: 20, height: 32)
@@ -7616,6 +7871,8 @@ extension Notification.Name {
     static let insertImageInEditor = Notification.Name("insertImageInEditor")
     static let deleteWebClipAttachment = Notification.Name("deleteWebClipAttachment")
     static let applyEditTool = Notification.Name("applyEditTool")
+    static let markingApplied = Notification.Name("markingApplied")
+    static let markingRemoved = Notification.Name("markingRemoved")
 
     // Command menu notifications
     static let showCommandMenu = Notification.Name("ShowCommandMenu")

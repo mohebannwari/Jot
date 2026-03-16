@@ -12,6 +12,7 @@ struct JotApp: App {
     @StateObject private var notesManager: SimpleSwiftDataManager
     @StateObject private var themeManager = ThemeManager()
     @StateObject private var authManager = NoteAuthenticationManager()
+    @StateObject private var markingStore = MarkingStore()
 
     init() {
         // Initialize SwiftData manager with error handling
@@ -76,6 +77,7 @@ struct JotApp: App {
                 .environmentObject(notesManager)
                 .environmentObject(themeManager)
                 .environmentObject(authManager)
+                .environmentObject(markingStore)
                 .preferredColorScheme(themeManager.resolvedColorScheme)
                 .containerShape(.rect(cornerRadius: 16))
         }
