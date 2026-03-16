@@ -37,7 +37,15 @@ struct FloatingEditToolbar: View {
     var body: some View {
         // Fixed-width toolbar with horizontal scrolling for all formatting tools
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 2) {
+            HStack(spacing: 4) {
+                // Highlight tool
+                highlightTool
+                    .opacity(toolsVisible ? 1 : 0)
+                    .scaleEffect(toolsVisible ? 1 : 0.8)
+
+                // Divider
+                toolDivider
+
                 // Heading styles
                 headingTools
                     .opacity(toolsVisible ? 1 : 0)
@@ -148,8 +156,29 @@ struct FloatingEditToolbar: View {
             .scaleEffect(y: toolsVisible ? 1 : 0.5)
     }
     
+    private var highlightTool: some View {
+        FloatingToolButton(
+            tool: .highlight,
+            assetName: "IconHighlight",
+            isSelected: selectedTool == .highlight,
+            isHovered: hoveredTool == .highlight,
+            action: { handleToolAction(.highlight) },
+            onHoverChange: { hovering, frame in
+                hoveredTool = hovering ? .highlight : nil
+                tooltipFrame = frame
+                if hovering {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        if hoveredTool == .highlight { showTooltip = true }
+                    }
+                } else {
+                    showTooltip = false
+                }
+            }
+        )
+    }
+
     private var headingTools: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 4) {
             FloatingToolButton(
                 tool: .h1,
                 assetName: "IconH1",
@@ -210,7 +239,7 @@ struct FloatingEditToolbar: View {
     }
     
     private var textStyleTools: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 4) {
             FloatingToolButton(
                 tool: .bold,
                 assetName: "IconBold",
@@ -309,7 +338,7 @@ struct FloatingEditToolbar: View {
     }
 
     private var listTool: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 4) {
             FloatingToolButton(
                 tool: .bulletList,
                 assetName: "todo-list",
@@ -370,7 +399,7 @@ struct FloatingEditToolbar: View {
     }
 
     private var codeTools: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 4) {
             FloatingToolButton(
                 tool: .codeBlock,
                 assetName: "IconCode",
@@ -394,7 +423,7 @@ struct FloatingEditToolbar: View {
     }
 
     private var blockLevelTools: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 4) {
             FloatingToolButton(
                 tool: .blockQuote,
                 assetName: "IconTextBlock",
@@ -418,7 +447,7 @@ struct FloatingEditToolbar: View {
     }
 
     private var indentationTools: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 4) {
             FloatingToolButton(
                 tool: .indentLeft,
                 assetName: "IconTextIndentLeft",
@@ -460,7 +489,7 @@ struct FloatingEditToolbar: View {
     }
     
     private var alignmentTools: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 4) {
             FloatingToolButton(
                 tool: .alignLeft,
                 assetName: "IconAlignmentLeft",
@@ -559,7 +588,7 @@ struct FloatingEditToolbar: View {
     }
     
     private var selectionTools: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 4) {
             FloatingToolButton(
                 tool: .textSelect,
                 assetName: "IconTextSelectDashed",
@@ -684,7 +713,7 @@ enum EditTool: String, CaseIterable {
     var isToggleable: Bool {
         switch self {
         case .bold, .italic, .underline, .strikethrough, .bulletList, .numberedList, .todo,
-             .codeBlock, .blockQuote:
+             .codeBlock, .blockQuote, .highlight:
             return true
         default:
             return false

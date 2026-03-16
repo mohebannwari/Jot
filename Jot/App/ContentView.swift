@@ -170,6 +170,7 @@ struct ContentView: View {
     @EnvironmentObject private var notesManager: SimpleSwiftDataManager
     @EnvironmentObject private var themeManager: ThemeManager
     @EnvironmentObject private var authManager: NoteAuthenticationManager
+    @EnvironmentObject private var markingStore: MarkingStore
     @State private var lockPasswordInput: String = ""
     @State private var lockAuthFailed: Bool = false
     @State private var selectedNote: Note?
@@ -208,6 +209,7 @@ struct ContentView: View {
     @State private var notesPendingExport: [Note] = []
     @State private var quickLookContext: ExportQuickLookContext?
     @State private var isShowingArchive = false
+    @State private var isShowingMarks = false
     @State private var isTrashPresented = false
     @State private var hoveredSidebarMenuLabel: String?
     @State private var trafficLightMetrics = TrafficLightMetrics.fallback
@@ -334,7 +336,7 @@ struct ContentView: View {
     /// Returns nil while the split layout is showing so regular sections
     /// don't highlight a note that's already represented in the Active Split container.
     private var sidebarActiveNoteID: UUID? {
-        (shouldShowSplitLayout || isSettingsPresented) ? nil : selectedNote?.id
+        (shouldShowSplitLayout || isSettingsPresented || isShowingMarks) ? nil : selectedNote?.id
     }
 
     /// Selection set for sidebar cards.
@@ -542,6 +544,11 @@ struct ContentView: View {
                 notesManager.loadArchivedFolders()
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .markingApplied)) { notification in
+            guard let text = notification.userInfo?["markedText"] as? String,
+                  let note = selectedNote else { return }
+            markingStore.add(noteID: note.id, noteTitle: note.title, markedText: text)
+        }
         .onChange(of: isSidebarVisible) { _, newValue in
             if newValue {
                 floatingSidebarDismissWorkItem?.cancel()
@@ -722,6 +729,37 @@ struct ContentView: View {
                 .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
                 .splitPaneShadow(isActive: true, cornerRadius: cornerRadius, backgroundColor: settingsBg, colorScheme: .light)
                 .padding(.leading, sidebarDetailGap)
+        } else if isShowingMarks {
+            let totalDetailWidth: CGFloat = isSidebarVisible
+                ? max(0, availableWidth - visibleSidebarWidth - sidebarDetailGap)
+                : availableWidth
+            let cornerRadius: CGFloat = isSidebarVisible
+                ? windowCornerRadius - windowContentPadding : 0
+
+            let markingsBg = detailBg
+
+            MarkingsView(
+                onShowInNote: { noteID, _ in
+                    withAnimation(.jotSpring) {
+                        isShowingMarks = false
+                    }
+                    if let note = notesManager.notes.first(where: { $0.id == noteID }) {
+                        selectedNote = note
+                    }
+                },
+                onDeleteMarking: { marking in
+                    removeMarkingFromNote(marking)
+                }
+            )
+            .frame(width: totalDetailWidth)
+            .frame(maxHeight: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(markingsBg)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .splitPaneShadow(isActive: true, cornerRadius: cornerRadius, backgroundColor: markingsBg, colorScheme: .light)
+            .padding(.leading, sidebarDetailGap)
         } else if let note = selectedNote {
             let needsPendingPadding = isActiveSplitPending && !isSidebarVisible
             let totalDetailWidth: CGFloat = isSidebarVisible
@@ -1559,6 +1597,15 @@ struct ContentView: View {
             sidebarMenuItem(assetName: "IconMagnifyingGlass", label: "Search") {
                 presentSearch()
             }
+            sidebarMenuItem(assetName: "IconHighlight", label: "Your markings", isActive: isShowingMarks) {
+                withAnimation(.jotSpring) {
+                    isShowingMarks.toggle()
+                    if isShowingMarks {
+                        isShowingArchive = false
+                        isSettingsPresented = false
+                    }
+                }
+            }
             sidebarMenuItem(
                 assetName: isShowingArchive ? "IconChevronRightMedium" : "IconArchive1",
                 label: isShowingArchive ? "Go back" : "Archive",
@@ -1566,6 +1613,9 @@ struct ContentView: View {
             ) {
                 withAnimation(.jotSpring) {
                     isShowingArchive.toggle()
+                    if isShowingArchive {
+                        isShowingMarks = false
+                    }
                 }
             }
             sidebarMenuItem(assetName: "IconSettingsGear1", label: "Settings", isActive: isSettingsPresented) {
@@ -1633,7 +1683,7 @@ struct ContentView: View {
     }
 
     private var sidebarNotesHeader: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 4) {
             Text(isShowingArchive ? "Archive" : "Notes")
                 .font(FontManager.heading(size: 13, weight: .medium))
                 .foregroundColor(Color("SecondaryTextColor"))
@@ -1674,6 +1724,7 @@ struct ContentView: View {
                 .buttonStyle(.plain)
                 .macPointingHandCursor()
                 .hoverContainer(cornerRadius: 8)
+                .padding(.trailing, -4)
             }
         }
         .padding(.leading, sidebarItemLeadingPadding)
@@ -1900,10 +1951,27 @@ struct ContentView: View {
         }
     }
 
+    private func removeMarkingFromNote(_ marking: Marking) {
+        // Remove from store
+        markingStore.remove(marking.id)
+
+        // Remove [[mark]]...[[/mark]] tags around the marked text in the note
+        if var note = notesManager.notes.first(where: { $0.id == marking.noteID }) {
+            let tag = "[[mark]]"
+            let endTag = "[[/mark]]"
+            let needle = tag + marking.markedText + endTag
+            if note.content.contains(needle) {
+                note.content = note.content.replacingOccurrences(of: needle, with: marking.markedText)
+                notesManager.updateNote(note)
+            }
+        }
+    }
+
     private func presentSettings() {
         withAnimation(.easeInOut(duration: 0.18)) {
             isSearchPresented = false
             isSettingsPresented = true
+            isShowingMarks = false
         }
     }
 
@@ -2079,7 +2147,7 @@ struct ContentView: View {
     }
 
     private var collapsedTopBarRow: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 4) {
             sidebarTopBarIcon(assetName: "IconLayoutAlignLeft") {
                 withAnimation(sidebarVisibilityAnimation) {
                     isSidebarVisible = true
@@ -2142,6 +2210,10 @@ struct ContentView: View {
                     notesManager.loadDeletedNotes()
                     isTrashPresented = true
                 }
+            }
+
+            sidebarMenuItem(assetName: "IconSettingsGear1", label: "Settings", isActive: isSettingsPresented) {
+                presentSettings()
             }
         }
         .padding(.horizontal, 8)
@@ -2455,6 +2527,7 @@ struct ContentView: View {
                     }
                     .buttonStyle(.plain)
                     .macPointingHandCursor()
+                    .padding(.trailing, -4)
                 }
                 .padding(.leading, 8)
                 .padding(.trailing, 4)
@@ -2633,7 +2706,7 @@ struct ContentView: View {
     // MARK: - Split Pane Controls
 
     private func splitPaneControls(isLeftPane: Bool, isPrimaryPane: Bool) -> some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 4) {
             // Flashcards: toggle note picker overlay on this pane
             Button {
                 let target: SplitPickerPane = isPrimaryPane ? .primary : .secondary
@@ -2823,6 +2896,10 @@ struct ContentView: View {
     // MARK: - Actions
 
     private func handleNoteTap(_ note: Note, _ interaction: NoteSelectionInteraction) {
+        // Dismiss overlay views when selecting a note
+        if isShowingMarks { isShowingMarks = false }
+        if isSettingsPresented { isSettingsPresented = false }
+
         let visibleNoteIDs = visibleSidebarNotesInOrder.map(\.id)
         let reduction = NoteSelectionReducer.apply(
             interaction: interaction,
@@ -3903,6 +3980,7 @@ struct NoteListCard: View {
                 .macPointingHandCursor()
                 .allowsHitTesting(isLeadingIconVisible && onLeadingIconTap != nil)
                 .animation(.easeInOut(duration: 0.12), value: isLeadingIconVisible)
+                .padding(.leading, -2)
 
                 Circle()
                     .fill(leadingIconTint)
