@@ -566,12 +566,6 @@ struct NoteListCard: View {
         isRenaming = false
     }
 
-    private static let dateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "dd.MM.yyyy"
-        return f
-    }()
-
     private static let dayMonthFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "dd.MM"
