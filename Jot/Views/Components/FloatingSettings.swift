@@ -823,7 +823,10 @@ struct SettingsPage: View {
     }
 
     private func fontSizePill(_ size: CGFloat?, label: String? = nil, isSelected: Bool, wide: Bool = false, action: @escaping () -> Void) -> some View {
-        let isHovered = hoveredFontSize == (size ?? -1)
+        let isHovered: Bool = hoveredFontSize == (size ?? -1)
+        let pillWidth: CGFloat = wide ? 64 : 40
+        let pillFill: Color = isSelected ? Color("SettingsSelectionOrange") : (colorScheme == .light ? Color.white : Color("SettingsOptionCardColor"))
+        let pillStroke: Color = colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.08)
 
         return Button(action: action) {
             Text(label ?? "\(Int(size ?? 0))")
@@ -833,14 +836,14 @@ struct SettingsPage: View {
                         ? Color("ButtonPrimaryTextColor")
                         : Color("SettingsPlaceholderTextColor")
                 )
-                .frame(width: wide ? 64 : 40, height: 32)
+                .frame(width: pillWidth, height: 32)
                 .background(
                     Capsule()
-                        .fill(isSelected ? Color("SettingsSelectionOrange") : (colorScheme == .light ? Color.white : Color("SettingsOptionCardColor")))
+                        .fill(pillFill)
                 )
                 .overlay(
                     Capsule()
-                        .stroke(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.08), lineWidth: 1)
+                        .stroke(pillStroke, lineWidth: 1)
                 )
                 .shadow(color: .black.opacity(0.06), radius: 3, x: 0, y: 1)
                 .shadow(color: .black.opacity(0.03), radius: 1, x: 0, y: 0)
@@ -858,22 +861,24 @@ struct SettingsPage: View {
     }
 
     private var customFontSizeField: some View {
-        let isActive = !isPresetSize || isCustomFontSize
-
-        let isCustomSelected = isActive && !isPresetSize
+        let isActive: Bool = !isPresetSize || isCustomFontSize
+        let isCustomSelected: Bool = isActive && !isPresetSize
+        let fieldFg: Color = isCustomSelected ? Color("ButtonPrimaryTextColor") : Color("SettingsPrimaryTextColor")
+        let fieldFill: Color = isCustomSelected ? Color("SettingsSelectionOrange") : (colorScheme == .light ? Color.white : Color("SettingsOptionCardColor"))
+        let fieldStroke: Color = colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.08)
 
         return TextField("", text: $customFontSizeText)
             .font(FontManager.metadata(size: 13, weight: .medium))
-            .foregroundColor(isCustomSelected ? Color("ButtonPrimaryTextColor") : Color("SettingsPrimaryTextColor"))
+            .foregroundColor(fieldFg)
             .multilineTextAlignment(.center)
             .frame(width: 40, height: 32)
             .background(
                 Capsule()
-                    .fill(isCustomSelected ? Color("SettingsSelectionOrange") : (colorScheme == .light ? Color.white : Color("SettingsOptionCardColor")))
+                    .fill(fieldFill)
             )
             .overlay(
                 Capsule()
-                    .stroke(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.08), lineWidth: 1)
+                    .stroke(fieldStroke, lineWidth: 1)
             )
             .shadow(color: .black.opacity(0.06), radius: 3, x: 0, y: 1)
             .shadow(color: .black.opacity(0.03), radius: 1, x: 0, y: 0)
