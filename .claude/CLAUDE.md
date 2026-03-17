@@ -74,8 +74,10 @@ Before any feature implementation:
 |------|--------|
 | New feature | `superpowers:brainstorming` → `superpowers:writing-plans` → `superpowers:test-driven-development` |
 | Bug | `debugging` skill (reproduce-first — see Bug Workflow below) |
-| Design / UI from Figma | `figma-to-swiftui` → `figma-design` → `frontend-design` (invoke all three -- `figma-to-swiftui` handles the translation, `figma-design` for Figma API specifics, `frontend-design` for polish) |
-| Icons | Always download from Figma via `figma-to-swiftui` -- never use placeholders unless explicitly told |
+| Design / UI from Figma (Swift) | `figma-to-swiftui` → `figma-design` → `frontend-design` (invoke all three -- Swift/SwiftUI projects only) |
+| Design / UI from Figma (Web/RN) | `figma-design` → `frontend-design` (invoke both -- web, React Native, websites, any non-Swift project) |
+| Icons (Swift) | Always download from Figma via `figma-to-swiftui` -- never use placeholders unless explicitly told |
+| Icons (Web/RN) | Always download from Figma via `figma-design` -- never use placeholders unless explicitly told |
 | Completion | `superpowers:verification-before-completion` → `superpowers:requesting-code-review` |
 | Multi-task | `superpowers:dispatching-parallel-agents` |
 

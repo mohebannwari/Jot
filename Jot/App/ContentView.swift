@@ -1164,11 +1164,7 @@ struct ContentView: View {
                     }
                 }
 
-                // Settings -- sits below scroll, content clips naturally
-                sidebarMenuItem(assetName: "IconSettingsGear1", label: "Settings", isActive: isSettingsPresented) {
-                    presentSettings()
-                }
-                .padding(.bottom, sidebarSettingsBottomPadding)
+                // Settings moved to sidebarMenuContainer (under Archive)
             }
             .padding(.top, sidebarMenuTop)
             .frame(width: sidebarDesignColumnWidth, alignment: .leading)
@@ -1572,6 +1568,9 @@ struct ContentView: View {
                     isShowingArchive.toggle()
                 }
             }
+            sidebarMenuItem(assetName: "IconSettingsGear1", label: "Settings", isActive: isSettingsPresented) {
+                presentSettings()
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -1678,7 +1677,7 @@ struct ContentView: View {
             }
         }
         .padding(.leading, sidebarItemLeadingPadding)
-        .padding(.trailing, sidebarItemTrailingPadding)
+        .padding(.trailing, sidebarItemTrailingPadding - 4)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -2136,10 +2135,6 @@ struct ContentView: View {
             .scrollIndicators(.never)
             .padding(.top, -6)
             .padding(.bottom, 4)
-
-            sidebarMenuItem(assetName: "IconSettingsGear1", label: "Settings", isActive: isSettingsPresented) {
-                presentSettings()
-            }
         }
         .padding(.horizontal, 8)
         .frame(width: floatingSidebarWidth)
@@ -2453,7 +2448,8 @@ struct ContentView: View {
                     .buttonStyle(.plain)
                     .macPointingHandCursor()
                 }
-                .padding(.horizontal, 8)
+                .padding(.leading, 8)
+                .padding(.trailing, 4)
 
                 ForEach(completedSessions) { session in
                     splitSessionContainer(session: session)
@@ -3883,7 +3879,7 @@ struct NoteListCard: View {
                             .opacity(isLeadingIconVisible && isShowingHoverVariant ? 1 : 0)
                     }
                 }
-                .padding(4)
+                .padding(2)
                 .background(
                     RoundedRectangle(cornerRadius: 999, style: .continuous)
                         .fill(currentBg)

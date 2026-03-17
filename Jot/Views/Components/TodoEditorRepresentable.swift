@@ -466,12 +466,65 @@ final class DividerSizeAttachmentCell: NSTextAttachmentCell {
     override var cellSize: NSSize { displaySize }
     override nonisolated func cellBaselineOffset() -> NSPoint { .zero }
 
+    // Deterministic pseudo-random: consistent across redraws, no flicker
+    private func hash(_ seed: Int) -> CGFloat {
+        var h = UInt64(bitPattern: Int64(seed))
+        h = h &* 6364136223846793005 &+ 1442695040888963407
+        h = (h >> 33) ^ h
+        return CGFloat(h % 10000) / 10000.0  // 0.0 ..< 1.0
+    }
+
     override func draw(withFrame cellFrame: NSRect, in controlView: NSView?) {
-        // Draw the divider line directly — no overlay view needed
-        let lineY = cellFrame.midY
-        let lineRect = NSRect(x: cellFrame.minX + 10, y: lineY, width: cellFrame.width - 20, height: 1)
-        NSColor.labelColor.withAlphaComponent(0.3).setFill()
-        NSBezierPath(rect: lineRect).fill()
+        let baseY = cellFrame.midY
+        let startX = cellFrame.minX
+        let endX = cellFrame.maxX
+        let totalWidth = endX - startX
+
+        let path = NSBezierPath()
+        path.lineWidth = 0.9
+        path.lineCapStyle = .round
+        path.lineJoinStyle = .round
+
+        // Walk across with irregular steps, drifting vertically like a real hand
+        var x = startX
+        var y = baseY
+        var drift: CGFloat = 0  // slow vertical wander
+        var i = 0
+
+        path.move(to: NSPoint(x: x, y: y))
+
+        while x < endX {
+            let r1 = hash(i &* 31 &+ 7)
+            let r2 = hash(i &* 47 &+ 13)
+            let r3 = hash(i &* 73 &+ 29)
+            let r4 = hash(i &* 97 &+ 41)
+
+            // Irregular segment length: 6–18pt (a hand doesn't move in equal steps)
+            let segLen = 6.0 + r1 * 12.0
+            let nextX = min(x + segLen, endX)
+            let midX = (x + nextX) / 2
+
+            // Slow vertical drift: the baseline wanders up/down over the line
+            drift += (r2 - 0.5) * 1.2
+            drift *= 0.85  // dampen so it doesn't wander too far
+
+            // Per-segment jitter: small, asymmetric bumps
+            let bumpUp = (r3 - 0.5) * 2.8
+            let bumpDown = (r4 - 0.5) * 2.8
+
+            let nextY = baseY + drift
+
+            path.curve(to: NSPoint(x: nextX, y: nextY),
+                       controlPoint1: NSPoint(x: midX - segLen * 0.15, y: y + bumpUp),
+                       controlPoint2: NSPoint(x: midX + segLen * 0.15, y: nextY + bumpDown))
+
+            x = nextX
+            y = nextY
+            i += 1
+        }
+
+        NSColor.labelColor.withAlphaComponent(0.2).setStroke()
+        path.stroke()
     }
 
     override func draw(withFrame cellFrame: NSRect, in controlView: NSView?,

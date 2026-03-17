@@ -396,6 +396,12 @@ struct TodoRichTextEditor: View {
             }
             if !filter.isEmpty && matches.isEmpty {
                 dismissNotePicker()
+                // Notify NoteDetailView to re-enable scroll (.scrollDisabled)
+                NotificationCenter.default.post(
+                    name: .hideNotePicker,
+                    object: nil,
+                    userInfo: editorInstanceID.map { ["editorInstanceID": $0] }
+                )
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .notePickerNavigateUp))
@@ -609,6 +615,13 @@ struct TodoRichTextEditor: View {
         let atLoc = notePickerAtLocation
 
         dismissNotePicker()
+
+        // Notify NoteDetailView to re-enable scroll (.scrollDisabled)
+        NotificationCenter.default.post(
+            name: .hideNotePicker,
+            object: nil,
+            userInfo: editorInstanceID.map { ["editorInstanceID": $0] }
+        )
 
         NotificationCenter.default.post(
             name: .applyNotePickerSelection,
