@@ -20,6 +20,7 @@ struct Note: Identifiable, Codable, Equatable {
     var isLocked: Bool = false
     var isDeleted: Bool = false
     var deletedDate: Date?
+    var stickers: [Sticker] = []
 
     init(
         title: String,

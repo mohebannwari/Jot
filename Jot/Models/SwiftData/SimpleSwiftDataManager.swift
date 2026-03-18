@@ -363,6 +363,16 @@ final class SimpleSwiftDataManager: ObservableObject {
 
             noteEntity.updateTitle(updatedNote.title)
             noteEntity.updateContent(updatedNote.content)
+            // Persist stickers
+            if updatedNote.stickers.isEmpty {
+                noteEntity.stickersData = nil
+            } else {
+                do {
+                    noteEntity.stickersData = try JSONEncoder().encode(updatedNote.stickers)
+                } catch {
+                    logger.error("Failed to encode stickers: \(error)")
+                }
+            }
             // Preserve metadata from the authoritative local notes array — the editor's
             // noteForPersist may carry stale isPinned/isLocked/folderID values.
             noteEntity.folderID = existingNote?.folderID ?? updatedNote.folderID

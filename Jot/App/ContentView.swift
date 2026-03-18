@@ -1943,7 +1943,7 @@ struct ContentView: View {
         || isBatchDeleteConfirmationPresented || isBatchMoveAlertPresented
         || isBatchExportSheetPresented || isSplitMenuVisible
         || splitPickerOverlayPane != nil || quickLookContext != nil
-        || isDragImportOverlayVisible
+        || isDragImportOverlayVisible || isFloatingSidebarVisible
     }
 
     @ViewBuilder
@@ -2135,6 +2135,14 @@ struct ContentView: View {
             .scrollIndicators(.never)
             .padding(.top, -6)
             .padding(.bottom, 4)
+
+            // Trash -- only visible when there are deleted notes
+            if !notesManager.deletedNotes.isEmpty {
+                sidebarMenuItem(assetName: "delete", label: "Trash") {
+                    notesManager.loadDeletedNotes()
+                    isTrashPresented = true
+                }
+            }
         }
         .padding(.horizontal, 8)
         .frame(width: floatingSidebarWidth)

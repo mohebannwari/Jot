@@ -98,6 +98,9 @@ struct NoteToolsBar: View {
                     toolButton(icon: "IconLightBulbSimple", tooltip: "Callout") {
                         postToolAction(.callout)
                     }
+                    toolButton(icon: "IconDossier", tooltip: "Tabs") {
+                        postToolAction(.tabs)
+                    }
                     // Insertable Objects
                     toolButton(icon: "IconTable", tooltip: "Table") {
                         postToolAction(.table)
@@ -107,6 +110,9 @@ struct NoteToolsBar: View {
                     }
                     toolButton(icon: "IconDivider", tooltip: "Insert Divider") {
                         postToolAction(.divider)
+                    }
+                    toolButton(icon: "IconSticker", tooltip: "Post-it") {
+                        postToolAction(.sticker)
                     }
                     // Collapse chevron
                     Button {
