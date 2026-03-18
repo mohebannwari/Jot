@@ -387,6 +387,11 @@ extension Notification.Name {
     static let openSettings = Notification.Name("openSettings")
     static let noteToolsBarAction = Notification.Name("NoteToolsBarAction")
     static let applyTextColor = Notification.Name("applyTextColor")
+    static let applyHighlightColor = Notification.Name("applyHighlightColor")
+    static let highlightTextClicked = Notification.Name("highlightTextClicked")
+    static let setHighlightEditRange = Notification.Name("setHighlightEditRange")
+    static let removeHighlightColor = Notification.Name("removeHighlightColor")
+    static let removeTextColor = Notification.Name("removeTextColor")
     static let todoToolbarAction = Notification.Name("TodoToolbarAction")
     static let forceSaveNote = Notification.Name("forceSaveNote")
 }

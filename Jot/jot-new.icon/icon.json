@@ -4,7 +4,7 @@
   },
   "groups" : [
     {
-      "blur-material" : 1,
+      "blur-material" : null,
       "layers" : [
         {
           "blend-mode-specializations" : [
@@ -15,7 +15,7 @@
           ],
           "glass-specializations" : [
             {
-              "value" : true
+              "value" : false
             },
             {
               "appearance" : "dark",
@@ -26,6 +26,7 @@
               "value" : true
             }
           ],
+          "hidden" : false,
           "image-name" : "IconFeather2.png",
           "name" : "IconFeather2",
           "position" : {
@@ -48,7 +49,7 @@
       "shadow-specializations" : [
         {
           "value" : {
-            "kind" : "layer-color",
+            "kind" : "none",
             "opacity" : 1
           }
         },
@@ -69,7 +70,7 @@
       ],
       "specular" : true,
       "translucency" : {
-        "enabled" : true,
+        "enabled" : false,
         "value" : 0.5
       }
     }
