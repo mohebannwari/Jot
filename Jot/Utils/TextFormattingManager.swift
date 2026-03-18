@@ -16,6 +16,7 @@ class TextFormattingManager: ObservableObject {
         @Published var isItalic = false
         @Published var isUnderline = false
         @Published var isStrikethrough = false
+        @Published var isHighlight = false
         @Published var currentAlignment: NSTextAlignment = .left
         @Published var currentHeadingLevel: HeadingLevel = .none
 
@@ -135,7 +136,7 @@ class TextFormattingManager: ObservableObject {
                 toggleBlockQuote(to: textView, in: selectedRange)
             case .highlight:
                 return  // Highlight requires a color parameter — handled separately via applyHighlight()
-            case .searchOnPage, .table, .callout, .codeBlock, .fileLink:
+            case .searchOnPage, .table, .callout, .codeBlock, .fileLink, .sticker, .tabs:
                 return
             }
 
@@ -162,6 +163,24 @@ class TextFormattingManager: ObservableObject {
         ) {
             guard let textStorage = textView.textStorage else { return }
 
+            // Toggle: if all text in range is already at this heading level, revert to body
+            var allMatchLevel = range.length > 0
+            if range.length > 0 {
+                textStorage.enumerateAttribute(.font, in: range, options: []) { value, _, stop in
+                    if let font = value as? NSFont {
+                        if font.pointSize != level.fontSize {
+                            allMatchLevel = false
+                            stop.pointee = true
+                        }
+                    } else {
+                        allMatchLevel = false
+                        stop.pointee = true
+                    }
+                }
+            }
+
+            let effectiveLevel = allMatchLevel ? .none : level
+
             let snapshot = captureSnapshot(textStorage, range: range)
 
             textStorage.beginEditing()
@@ -169,18 +188,18 @@ class TextFormattingManager: ObservableObject {
             // Remove existing heading attributes
             textStorage.removeAttribute(.font, range: range)
 
-            let weight: FontManager.Weight = level.fontWeight == .semibold ? .semibold : .regular
-            let font = FontManager.headingNS(size: level.fontSize, weight: weight)
+            let weight: FontManager.Weight = effectiveLevel.fontWeight == .semibold ? .semibold : .regular
+            let font = FontManager.headingNS(size: effectiveLevel.fontSize, weight: weight)
             textStorage.addAttribute(.font, value: font, range: range)
 
             // Update paragraph style for spacing
             let paragraphStyle = NSMutableParagraphStyle()
-            paragraphStyle.paragraphSpacingBefore = level == .none ? 0 : 8
-            paragraphStyle.paragraphSpacing = level == .none ? 4 : 12
+            paragraphStyle.paragraphSpacingBefore = effectiveLevel == .none ? 0 : 8
+            paragraphStyle.paragraphSpacing = effectiveLevel == .none ? 4 : 12
             textStorage.addAttribute(.paragraphStyle, value: paragraphStyle, range: range)
 
             textStorage.endEditing()
-            currentHeadingLevel = level
+            currentHeadingLevel = effectiveLevel
 
             registerUndo(textView: textView, snapshot: snapshot, actionName: "Heading")
         }
@@ -192,15 +211,15 @@ class TextFormattingManager: ObservableObject {
             let snapshot = captureSnapshot(textStorage, range: range)
             textStorage.beginEditing()
 
-            var hasBold = false
+            var allBold = true
             textStorage.enumerateAttribute(.font, in: range, options: []) { value, _, _ in
                 if let font = value as? NSFont {
                     let traits = NSFontManager.shared.traits(of: font)
-                    if traits.contains(.boldFontMask) { hasBold = true }
-                }
+                    if !traits.contains(.boldFontMask) { allBold = false }
+                } else { allBold = false }
             }
 
-            if hasBold {
+            if allBold {
                 textStorage.enumerateAttribute(.font, in: range, options: []) { value, subRange, _ in
                     if let font = value as? NSFont {
                         let newFont = NSFontManager.shared.convert(font, toNotHaveTrait: .boldFontMask)
@@ -227,15 +246,15 @@ class TextFormattingManager: ObservableObject {
             let snapshot = captureSnapshot(textStorage, range: range)
             textStorage.beginEditing()
 
-            var hasItalic = false
+            var allItalic = true
             textStorage.enumerateAttribute(.font, in: range, options: []) { value, _, _ in
                 if let font = value as? NSFont {
                     let traits = NSFontManager.shared.traits(of: font)
-                    if traits.contains(.italicFontMask) { hasItalic = true }
-                }
+                    if !traits.contains(.italicFontMask) { allItalic = false }
+                } else { allItalic = false }
             }
 
-            if hasItalic {
+            if allItalic {
                 textStorage.enumerateAttribute(.font, in: range, options: []) { value, subRange, _ in
                     if let font = value as? NSFont {
                         let newFont = NSFontManager.shared.convert(font, toNotHaveTrait: .italicFontMask)
@@ -304,31 +323,24 @@ class TextFormattingManager: ObservableObject {
         // MARK: - Lists
 
         private func toggleBulletList(to textView: NSTextView, in range: NSRange) {
-            guard let textStorage = textView.textStorage else { return }
+            guard textView.textStorage != nil else { return }
 
-            textStorage.beginEditing()
-
-            // Get paragraph range
             let paragraphRange = (textView.string as NSString).paragraphRange(for: range)
             let text = (textView.string as NSString).substring(with: paragraphRange)
 
-            // Check if it's already a bullet list
             if text.hasPrefix("• ") {
-                // Remove bullet
                 let newText = String(text.dropFirst(2))
                 if textView.shouldChangeText(in: paragraphRange, replacementString: newText) {
                     textView.replaceCharacters(in: paragraphRange, with: newText)
+                    textView.didChangeText()
                 }
             } else {
-                // Add bullet
                 let newText = "• " + text
                 if textView.shouldChangeText(in: paragraphRange, replacementString: newText) {
                     textView.replaceCharacters(in: paragraphRange, with: newText)
+                    textView.didChangeText()
                 }
             }
-
-            textStorage.endEditing()
-            textView.didChangeText()
         }
 
         private func toggleNumberedList(to textView: NSTextView, in range: NSRange) {
@@ -337,23 +349,19 @@ class TextFormattingManager: ObservableObject {
             let paragraphRange = (textStorage.string as NSString).paragraphRange(for: range)
             let text = (textStorage.string as NSString).substring(with: paragraphRange)
 
-            // Check if already a numbered list (has orderedListNumber attribute at start)
             let hasOL = paragraphRange.length > 0
                 && textStorage.attribute(.orderedListNumber, at: paragraphRange.location, effectiveRange: nil) != nil
 
-            textStorage.beginEditing()
-
             if hasOL {
-                // Remove numbered prefix — find the "N. " prefix length
                 if let dotRange = text.range(of: ". ") {
                     let prefixLen = text.distance(from: text.startIndex, to: dotRange.upperBound)
                     let removeRange = NSRange(location: paragraphRange.location, length: prefixLen)
                     if textView.shouldChangeText(in: removeRange, replacementString: "") {
-                        textStorage.replaceCharacters(in: removeRange, with: "")
+                        textView.replaceCharacters(in: removeRange, with: "")
+                        textView.didChangeText()
                     }
                 }
             } else {
-                // Remove bullet if present, then add numbered prefix
                 var insertText = text
                 if insertText.hasPrefix("• ") {
                     insertText = String(insertText.dropFirst(2))
@@ -365,11 +373,9 @@ class TextFormattingManager: ObservableObject {
                     // Mark the prefix with the orderedListNumber attribute
                     let prefixRange = NSRange(location: paragraphRange.location, length: prefix.count)
                     textStorage.addAttribute(.orderedListNumber, value: 1, range: prefixRange)
+                    textView.didChangeText()
                 }
             }
-
-            textStorage.endEditing()
-            textView.didChangeText()
         }
 
         // MARK: - Block Quote
@@ -459,6 +465,18 @@ class TextFormattingManager: ObservableObject {
             storage.beginEditing()
             storage.addAttribute(.backgroundColor, value: bgColor, range: range)
             storage.addAttribute(.highlightColor, value: hex, range: range)
+
+            // Strip highlight from newline characters — prevents full-width background
+            // extension and highlight bleeding into new paragraphs
+            let text = storage.string as NSString
+            for pos in range.location..<NSMaxRange(range) {
+                if text.character(at: pos) == 0x0A {
+                    let nlRange = NSRange(location: pos, length: 1)
+                    storage.removeAttribute(.backgroundColor, range: nlRange)
+                    storage.removeAttribute(.highlightColor, range: nlRange)
+                }
+            }
+
             storage.endEditing()
 
             textView.needsDisplay = true
@@ -472,8 +490,14 @@ class TextFormattingManager: ObservableObject {
             let snapshot = captureSnapshot(storage, range: range)
 
             storage.beginEditing()
-            storage.removeAttribute(.backgroundColor, range: range)
-            storage.removeAttribute(.highlightColor, range: range)
+            // Only strip .backgroundColor where .highlightColor is present to avoid
+            // collateral damage on search highlights or other background colors
+            storage.enumerateAttribute(.highlightColor, in: range, options: []) { value, subRange, _ in
+                if value != nil {
+                    storage.removeAttribute(.backgroundColor, range: subRange)
+                    storage.removeAttribute(.highlightColor, range: subRange)
+                }
+            }
             storage.endEditing()
 
             textView.needsDisplay = true
@@ -591,7 +615,7 @@ class TextFormattingManager: ObservableObject {
                 textView.didChangeText()
 
                 // Select the "url" part for easy replacement
-                let newRange = NSRange(location: range.location + selectedText.count + 3, length: 3)
+                let newRange = NSRange(location: range.location + (selectedText as NSString).length + 3, length: 3)
                 textView.setSelectedRange(newRange)
             }
         }
@@ -630,6 +654,22 @@ class TextFormattingManager: ObservableObject {
             registerUndo(textView: textView, snapshot: snapshot, actionName: "Text Color")
         }
 
+        func removeTextColor(range: NSRange, from textView: NSTextView) {
+            guard range.length > 0, let storage = textView.textStorage else { return }
+            guard NSMaxRange(range) <= storage.length else { return }
+
+            let snapshot = captureSnapshot(storage, range: range)
+
+            storage.beginEditing()
+            storage.removeAttribute(Self.customTextColorKey, range: range)
+            storage.addAttribute(.foregroundColor, value: NSColor.labelColor, range: range)
+            storage.endEditing()
+
+            textView.layoutManager?.invalidateDisplay(forCharacterRange: range)
+            textView.needsDisplay = true
+            registerUndo(textView: textView, snapshot: snapshot, actionName: "Remove Text Color")
+        }
+
         static func nsColorFromHex(_ hex: String) -> NSColor {
             let clean = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
             var int: UInt64 = 0
@@ -645,7 +685,33 @@ class TextFormattingManager: ObservableObject {
 
         func updateFormattingState(from textView: NSTextView) {
             let selectedRange = textView.selectedRange()
-            guard selectedRange.length > 0, let textStorage = textView.textStorage else { return }
+
+            if selectedRange.length == 0 {
+                // No selection — reflect typing attributes at insertion point
+                let attrs = textView.typingAttributes
+                if let font = attrs[.font] as? NSFont {
+                    let traits = NSFontManager.shared.traits(of: font)
+                    isBold = traits.contains(.boldFontMask)
+                    isItalic = traits.contains(.italicFontMask)
+                } else {
+                    isBold = false
+                    isItalic = false
+                }
+                isUnderline = (attrs[.underlineStyle] as? Int ?? 0) != 0
+                isStrikethrough = (attrs[.strikethroughStyle] as? Int ?? 0) != 0
+                // Check storage directly — typing attributes may not carry custom keys
+                if let storage = textView.textStorage, selectedRange.location < storage.length {
+                    isHighlight = storage.attribute(.highlightColor, at: selectedRange.location, effectiveRange: nil) as? String != nil
+                } else {
+                    isHighlight = false
+                }
+                if let paragraphStyle = attrs[.paragraphStyle] as? NSParagraphStyle {
+                    currentAlignment = paragraphStyle.alignment
+                }
+                return
+            }
+
+            guard let textStorage = textView.textStorage else { return }
 
             // Check for bold/italic via NSFontManager trait masks for broad compatibility
             textStorage.enumerateAttribute(.font, in: selectedRange, options: []) {
@@ -671,6 +737,14 @@ class TextFormattingManager: ObservableObject {
                 isStrikethrough = (value as? Int ?? 0) != 0
                 stop.pointee = true
             }
+
+            // Check for highlight — any highlighted run in selection activates the button
+            var foundHighlight = false
+            textStorage.enumerateAttribute(.highlightColor, in: selectedRange, options: []) {
+                value, _, stop in
+                if (value as? String) != nil { foundHighlight = true; stop.pointee = true }
+            }
+            isHighlight = foundHighlight
 
             // Check alignment
             textStorage.enumerateAttribute(.paragraphStyle, in: selectedRange, options: []) {

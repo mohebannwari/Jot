@@ -81,7 +81,7 @@ struct TodoRichTextEditor: View {
     @State private var codePasteRange: NSRange = NSRange(location: 0, length: 0)
     @State private var codePasteLanguage: String = "plaintext"
 
-    static let commandMenuActions: [EditTool] = [.imageUpload, .fileLink, .voiceRecord, .link, .todo, .bulletList, .numberedList, .blockQuote, .codeBlock, .callout, .divider, .table]
+    static let commandMenuActions: [EditTool] = [.imageUpload, .fileLink, .voiceRecord, .link, .todo, .bulletList, .numberedList, .blockQuote, .codeBlock, .callout, .tabs, .divider, .table]
     static let commandMenuOuterPadding: CGFloat = CommandMenuLayout.outerPadding
     static let commandMenuHorizontalPadding = commandMenuOuterPadding * 2
     static let commandMenuVerticalPadding = commandMenuOuterPadding * 2
@@ -104,17 +104,11 @@ struct TodoRichTextEditor: View {
         set { InlineNSTextView.isPanelOverlayActive = newValue }
     }
 
-
-    init(
-        text: Binding<String>,
-        focusRequestID: UUID? = nil,
-        onToolbarAction: ((EditTool) -> Void)? = nil,
-        onCommandMenuSelection: ((EditTool) -> Void)? = nil
-    ) {
-        self._text = text
-        self.focusRequestID = focusRequestID
-        self.onToolbarAction = onToolbarAction
-        self.onCommandMenuSelection = onCommandMenuSelection
+    /// Sync menu state to the per-instance vars on InlineNSTextView via notification.
+    private func syncMenuState(_ updates: [String: Any]) {
+        var info = updates
+        if let eid = editorInstanceID { info["editorInstanceID"] = eid }
+        NotificationCenter.default.post(name: .syncEditorMenuState, object: nil, userInfo: info)
     }
 
     private var bottomInset: CGFloat {
@@ -184,7 +178,7 @@ struct TodoRichTextEditor: View {
                     URLPasteOptionMenu(
                         onMention: {
                             withAnimation(.smooth(duration: 0.15)) { showURLPasteMenu = false }
-                            InlineNSTextView.isURLPasteMenuShowing = false
+                            syncMenuState(["isURLPasteMenuShowing": false])
                             NotificationCenter.default.post(
                                 name: .urlPasteSelectMention,
                                 object: [
@@ -195,7 +189,7 @@ struct TodoRichTextEditor: View {
                         },
                         onPasteAsURL: {
                             withAnimation(.smooth(duration: 0.15)) { showURLPasteMenu = false }
-                            InlineNSTextView.isURLPasteMenuShowing = false
+                            syncMenuState(["isURLPasteMenuShowing": false])
                             NotificationCenter.default.post(
                                 name: .urlPasteSelectPlainLink,
                                 object: [
@@ -226,7 +220,7 @@ struct TodoRichTextEditor: View {
                         language: codePasteLanguage,
                         onCodeBlock: {
                             withAnimation(.smooth(duration: 0.15)) { showCodePasteMenu = false }
-                            InlineNSTextView.isCodePasteMenuShowing = false
+                            syncMenuState(["isCodePasteMenuShowing": false])
                             NotificationCenter.default.post(
                                 name: .codePasteSelectCodeBlock,
                                 object: [
@@ -238,7 +232,7 @@ struct TodoRichTextEditor: View {
                         },
                         onPlainText: {
                             withAnimation(.smooth(duration: 0.15)) { showCodePasteMenu = false }
-                            InlineNSTextView.isCodePasteMenuShowing = false
+                            syncMenuState(["isCodePasteMenuShowing": false])
                             NotificationCenter.default.post(
                                 name: .codePasteSelectPlainText,
                                 object: [
@@ -297,8 +291,7 @@ struct TodoRichTextEditor: View {
                     commandMenuRevealed = true
                 }
 
-                InlineNSTextView.isCommandMenuShowing = true
-                InlineNSTextView.commandSlashLocation = slashLocation
+                syncMenuState(["isCommandMenuShowing": true, "commandSlashLocation": slashLocation])
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("HideCommandMenu")))
@@ -374,8 +367,7 @@ struct TodoRichTextEditor: View {
                     notePickerRevealed = true
                 }
 
-                InlineNSTextView.isNotePickerShowing = true
-                InlineNSTextView.notePickerAtLocation = atLocation
+                syncMenuState(["isNotePickerShowing": true, "notePickerAtLocation": atLocation])
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .hideNotePicker))
@@ -456,12 +448,12 @@ struct TodoRichTextEditor: View {
             withAnimation(.smooth(duration: 0.2)) {
                 showURLPasteMenu = true
             }
-            InlineNSTextView.isURLPasteMenuShowing = true
+            syncMenuState(["isURLPasteMenuShowing": true])
         }
         .onReceive(NotificationCenter.default.publisher(for: .urlPasteDismiss)) { _ in
             if showURLPasteMenu {
                 withAnimation(.smooth(duration: 0.15)) { showURLPasteMenu = false }
-                InlineNSTextView.isURLPasteMenuShowing = false
+                syncMenuState(["isURLPasteMenuShowing": false])
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .codePasteDetected)) { notification in
@@ -488,12 +480,12 @@ struct TodoRichTextEditor: View {
             withAnimation(.smooth(duration: 0.2)) {
                 showCodePasteMenu = true
             }
-            InlineNSTextView.isCodePasteMenuShowing = true
+            syncMenuState(["isCodePasteMenuShowing": true])
         }
         .onReceive(NotificationCenter.default.publisher(for: .codePasteDismiss)) { _ in
             if showCodePasteMenu {
                 withAnimation(.smooth(duration: 0.15)) { showCodePasteMenu = false }
-                InlineNSTextView.isCodePasteMenuShowing = false
+                syncMenuState(["isCodePasteMenuShowing": false])
             }
         }
     }
@@ -507,12 +499,11 @@ struct TodoRichTextEditor: View {
     /// Two-phase dismiss: reverse entrance animation, then remove from hierarchy
     private func dismissCommandMenu() {
         // Guard against re-entry: the .hideCommandMenu notification handler
-        // at line 1028 also calls this function, so bail if already dismissed.
-        guard showCommandMenu || InlineNSTextView.isCommandMenuShowing else { return }
+        // also calls this function, so bail if already dismissed.
+        guard showCommandMenu else { return }
 
         // Immediately stop keyboard interception
-        InlineNSTextView.isCommandMenuShowing = false
-        InlineNSTextView.commandSlashLocation = -1
+        syncMenuState(["isCommandMenuShowing": false, "commandSlashLocation": -1])
 
         // Notify NoteDetailView to re-enable scroll (deferred to avoid
         // re-entrant SwiftUI state updates during the current transaction)
@@ -594,8 +585,7 @@ struct TodoRichTextEditor: View {
     // MARK: - Note Picker Helpers
 
     private func dismissNotePicker() {
-        InlineNSTextView.isNotePickerShowing = false
-        InlineNSTextView.notePickerAtLocation = -1
+        syncMenuState(["isNotePickerShowing": false, "notePickerAtLocation": -1])
 
         withAnimation(.smooth(duration: 0.25)) {
             notePickerRevealed = false

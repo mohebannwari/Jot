@@ -43,6 +43,12 @@ struct NoteDetailView: View {
     @State private var glassElementsVisible = false
     @Namespace private var glassNamespace
 
+    // MARK: - Sticker state
+    @State private var editedStickers: [Sticker] = []
+    @State private var lastSavedStickers: [Sticker] = []
+    @State private var isPlacingSticker = false
+    @State private var selectedStickerID: UUID? = nil
+
     // MARK: - Overlay state (accessed by +Actions extension)
     @State var showVoiceRecorderOverlay = false
     @State private var showImagePicker = false
@@ -95,6 +101,15 @@ struct NoteDetailView: View {
     @State private var showFloatingToolbar = false
     @State private var floatingToolbarOffset = CGPoint.zero
     @State private var floatingToolbarPlaceAbove = false
+    @State private var toolbarIsBold = false
+    @State private var toolbarIsItalic = false
+    @State private var toolbarIsUnderline = false
+    @State private var toolbarIsStrikethrough = false
+    @State private var toolbarIsHighlight = false
+    @State private var showHighlightColorPicker = false
+    @State private var highlightPickerOffset = CGPoint.zero
+    @State private var lastSelectionBottomY: CGFloat = 0
+    @State private var lastSelectionCenterX: CGFloat = 0
 
     // MARK: - Constants
 
@@ -147,6 +162,8 @@ struct NoteDetailView: View {
         self._aiSummaryText = State(initialValue: parsed.summary)
         self._aiKeyPointsItems = State(initialValue: parsed.keyPoints)
         self._aiBlockLoadedFromContent = State(initialValue: parsed.summary != nil || parsed.keyPoints != nil)
+        self._editedStickers = State(initialValue: note.stickers)
+        self._lastSavedStickers = State(initialValue: note.stickers)
     }
 
     // MARK: - Body
@@ -282,7 +299,7 @@ struct NoteDetailView: View {
                 focusRequestID: localEditorFocusID ?? focusRequestID,
                 editorInstanceID: editorInstanceID,
                 onToolbarAction: handleEditToolAction,
-                onCommandMenuSelection: handleCommandMenuSelection,
+                onCommandMenuSelection: { performAuxiliaryToolAction($0) },
                 availableNotes: availableNotes,
                 onNavigateToNote: onNavigateToNote
             )
@@ -299,12 +316,21 @@ struct NoteDetailView: View {
         .padding(.top, 48 + contentTopInsetAdjustment)
         .padding(.horizontal, 60)
         .frame(maxWidth: .infinity, minHeight: scrollViewHeight, alignment: .topLeading)
+        .overlay(alignment: .topLeading) {
+            StickerCanvasOverlay(
+                stickers: $editedStickers,
+                isPlacingSticker: $isPlacingSticker,
+                selectedStickerID: $selectedStickerID,
+                onChanged: { scheduleAutosave() }
+            )
+        }
         .background(
             Color.clear
                 .contentShape(Rectangle())
                 .onTapGesture {
                     titleFocused = false
                     localEditorFocusID = UUID()
+                    selectedStickerID = nil  // deselect stickers
                 }
         )
     }
@@ -404,6 +430,10 @@ struct NoteDetailView: View {
             editContentPanelOverlay
                 .allowsHitTesting(showEditContentPanel)
         }
+        .overlay {
+            highlightColorPickerOverlay
+                .allowsHitTesting(showHighlightColorPicker)
+        }
         .preference(
             key: BottomOverlayActivePreferenceKey.self,
             value: false  // mic capsule is compact — NoteToolsBar stays visible
@@ -449,10 +479,11 @@ struct NoteDetailView: View {
             let contentWithAI = editedContent + Self.buildAIBlock(summary: aiSummaryText, keyPoints: aiKeyPointsItems)
             let oldSnapshot = DraftSnapshot(title: editedTitle, content: contentWithAI)
             let oldNote = noteForPersist
-            if oldSnapshot != lastSavedSnapshot {
+            if oldSnapshot != lastSavedSnapshot || oldNote.stickers != editedStickers {
                 var updated = oldNote
                 updated.title = oldSnapshot.title
                 updated.content = oldSnapshot.content
+                updated.stickers = editedStickers
                 updated.date = Date()
                 onSave(updated)
             }
@@ -483,6 +514,10 @@ struct NoteDetailView: View {
                     titleFocused = true
                 }
             }
+            editedStickers = note.stickers
+            lastSavedStickers = note.stickers
+            isPlacingSticker = false
+            selectedStickerID = nil
             showVoiceRecorderOverlay = false; showLinkInputOverlay = false; showImagePicker = false; showFileLinkPicker = false
             capturedSelectionRange = NSRange(location: NSNotFound, length: 0)
             capturedSelectionText = ""; capturedSelectionWindowRect = .zero
@@ -554,6 +589,38 @@ struct NoteDetailView: View {
         .onReceive(NotificationCenter.default.publisher(for: .showInNoteSearchAndReplace)) { notification in
             if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
             presentSearchOnPage()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .highlightTextClicked)) { notification in
+            guard let userInfo = notification.userInfo else { return }
+            if let nid = userInfo["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
+
+            guard let selectionWindowX = userInfo["selectionWindowX"] as? CGFloat,
+                  let selectionWindowY = userInfo["selectionWindowY"] as? CGFloat,
+                  let selectionWidth = userInfo["selectionWidth"] as? CGFloat,
+                  let selectionHeight = userInfo["selectionHeight"] as? CGFloat else { return }
+
+            // Compute picker position below the highlighted text
+            let windowHeight = userInfo["windowHeight"] as? CGFloat
+                ?? NSApp.keyWindow?.contentView?.bounds.height ?? 800
+            let selTopFromTop = max(0, windowHeight - (selectionWindowY + selectionHeight))
+            let selBottomFromTop = selTopFromTop + selectionHeight
+
+            highlightPickerOffset = CGPoint(
+                x: selectionWindowX + selectionWidth / 2,
+                y: selBottomFromTop
+            )
+
+            // Store the range for re-coloring via notification
+            if let rangeValue = userInfo["charRange"] as? NSValue {
+                NotificationCenter.default.post(
+                    name: .setHighlightEditRange,
+                    object: nil,
+                    userInfo: ["range": rangeValue, "editorInstanceID": editorInstanceID]
+                )
+            }
+
+            // Show remove button only when opened from clicking on existing highlight
+            withAnimation(.jotSmoothFast) { showHighlightColorPicker = true }
         }
     }
 
@@ -684,6 +751,11 @@ struct NoteDetailView: View {
                     position: floatingToolbarOffset,
                     placeAbove: floatingToolbarPlaceAbove,
                     width: 250,
+                    isBoldActive: toolbarIsBold,
+                    isItalicActive: toolbarIsItalic,
+                    isUnderlineActive: toolbarIsUnderline,
+                    isStrikethroughActive: toolbarIsStrikethrough,
+                    isHighlightActive: toolbarIsHighlight,
                     onToolAction: handleEditToolAction
                 )
                 .position(x: clampedCenterX, y: centerY)
@@ -700,16 +772,75 @@ struct NoteDetailView: View {
                     paneWidth - colorPillWidth / 2 - edgeInset
                 )
 
-                FloatingColorPicker(onColorSelected: { [editorInstanceID] hex in
-                    NotificationCenter.default.post(
-                        name: .applyTextColor,
-                        object: nil,
-                        userInfo: ["hex": hex, "editorInstanceID": editorInstanceID]
-                    )
-                })
+                FloatingColorPicker(
+                    onColorSelected: { [editorInstanceID] hex in
+                        NotificationCenter.default.post(
+                            name: .applyTextColor, object: nil,
+                            userInfo: ["hex": hex, "editorInstanceID": editorInstanceID]
+                        )
+                    },
+                    onRemove: { [editorInstanceID] in
+                        NotificationCenter.default.post(
+                            name: .removeTextColor, object: nil,
+                            userInfo: ["editorInstanceID": editorInstanceID]
+                        )
+                    }
+                )
                 .position(x: clampedColorX, y: colorPickerY)
                 .transition(.scale(scale: 0.9).combined(with: .opacity))
                 .zIndex(99)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var highlightColorPickerOverlay: some View {
+        if showHighlightColorPicker {
+            GeometryReader { geometry in
+                // Full-screen tap target for click-outside dismissal
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        withAnimation(.smooth(duration: 0.15)) {
+                            showHighlightColorPicker = false
+                        }
+                    }
+
+                let parentFrame = geometry.frame(in: .global)
+                let localX = highlightPickerOffset.x - parentFrame.minX
+                let localY = highlightPickerOffset.y - parentFrame.minY
+                let pickerWidth: CGFloat = 186
+                let paneWidth = geometry.size.width
+                let edgeInset: CGFloat = 12
+                let gap: CGFloat = 8
+                let pickerHeight: CGFloat = 36
+                // highlightPickerOffset.x is selection center, .y is selection bottom
+                let centerX = min(
+                    max(localX, pickerWidth / 2 + edgeInset),
+                    paneWidth - pickerWidth / 2 - edgeInset
+                )
+                let centerY = localY + gap + pickerHeight / 2
+
+                FloatingColorPicker(
+                    onColorSelected: { [editorInstanceID] hex in
+                        NotificationCenter.default.post(
+                            name: .applyHighlightColor, object: nil,
+                            userInfo: ["hex": hex, "editorInstanceID": editorInstanceID]
+                        )
+                    },
+                    onRemove: { [editorInstanceID] in
+                        NotificationCenter.default.post(
+                            name: .removeHighlightColor, object: nil,
+                            userInfo: ["editorInstanceID": editorInstanceID]
+                        )
+                        withAnimation(.smooth(duration: 0.15)) {
+                            showHighlightColorPicker = false
+                        }
+                    }
+                )
+                .position(x: centerX, y: centerY)
+                .transition(.scale(scale: 0.9).combined(with: .opacity))
+                .zIndex(101)
             }
         }
     }
@@ -747,10 +878,31 @@ struct NoteDetailView: View {
                     visibleHeight: visibleHeight
                 )
 
+                // Save selection bottom position for highlight picker
+                let windowHeight = userInfo["windowHeight"] as? CGFloat
+                    ?? NSApp.keyWindow?.contentView?.bounds.height ?? visibleHeight
+                let selTopFromTop = max(0, windowHeight - (selectionWindowY + selectionHeight))
+                self.lastSelectionBottomY = selTopFromTop + selectionHeight
+                self.lastSelectionCenterX = selectionWindowX + selectionWidth / 2
+
+                // Update formatting state for toolbar button highlights
+                self.toolbarIsBold = userInfo["isBold"] as? Bool ?? false
+                self.toolbarIsItalic = userInfo["isItalic"] as? Bool ?? false
+                self.toolbarIsUnderline = userInfo["isUnderline"] as? Bool ?? false
+                self.toolbarIsStrikethrough = userInfo["isStrikethrough"] as? Bool ?? false
+                self.toolbarIsHighlight = userInfo["isHighlight"] as? Bool ?? false
+
                 withAnimation(.jotSmoothFast) {
                     self.floatingToolbarOffset = result.origin
                     self.floatingToolbarPlaceAbove = result.placeAbove
                     self.showFloatingToolbar = true
+                }
+
+                // Dismiss highlight picker when toolbar reappears
+                if self.showHighlightColorPicker {
+                    withAnimation(.smooth(duration: 0.15)) {
+                        self.showHighlightColorPicker = false
+                    }
                 }
             } else {
                 withAnimation(.smooth(duration: 0.15)) {
@@ -761,8 +913,9 @@ struct NoteDetailView: View {
     }
 
     private func handleNoteToolsBarNotification(_ notification: Notification) {
-        if let notifID = notification.userInfo?["editorInstanceID"] as? UUID,
-           notifID != self.editorInstanceID { return }
+        if let notifID = notification.userInfo?["editorInstanceID"] as? UUID {
+            guard notifID == self.editorInstanceID else { return }
+        }
         if let rawValue = notification.object as? String,
            let tool = EditTool(rawValue: rawValue)
         {
@@ -1099,10 +1252,9 @@ struct NoteDetailView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .liquidGlass(in: Capsule())
-        .onAppear {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                withAnimation(.jotSpring) { aiPanelState = .none }
-            }
+        .task {
+            try? await Task.sleep(for: .seconds(3))
+            withAnimation(.jotSpring) { aiPanelState = .none }
         }
     }
 
@@ -1322,15 +1474,18 @@ struct NoteDetailView: View {
             title: editedTitle,
             content: contentWithAI
         )
-        guard snapshot != lastSavedSnapshot else { return }
+        let stickersDirty = editedStickers != lastSavedStickers
+        guard snapshot != lastSavedSnapshot || stickersDirty else { return }
 
         var updatedNote = noteForPersist
         updatedNote.title = editedTitle
         updatedNote.content = contentWithAI
+        updatedNote.stickers = editedStickers
         updatedNote.date = Date()
 
         onSave(updatedNote)
         lastSavedSnapshot = snapshot
+        lastSavedStickers = editedStickers
     }
 
     func scheduleAutosave() {
@@ -1340,6 +1495,25 @@ struct NoteDetailView: View {
         }
         autosaveWorkItem = workItem
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: workItem)
+    }
+
+    private func insertStickerAtCenter() {
+        // Position relative to current scroll viewport, not scroll content top
+        let visibleTop = max(0, -titleOffset + 48 + contentTopInsetAdjustment)
+        let x: CGFloat = 80
+        let y: CGFloat = visibleTop + 80
+        let newSticker = Sticker(
+            color: .green,
+            text: "",
+            positionX: x,
+            positionY: y,
+            size: 200,
+            fontSize: 12,
+            textColorDark: true,
+            zIndex: (editedStickers.map(\.zIndex).max() ?? 0) + 1
+        )
+        editedStickers.append(newSticker)
+        scheduleAutosave()
     }
 
     private func handleEditToolAction(_ tool: EditTool) {
@@ -1357,10 +1531,6 @@ struct NoteDetailView: View {
             NotificationCenter.default.post(
                 name: .applyEditTool, object: nil, userInfo: info)
         }
-    }
-
-    private func handleCommandMenuSelection(_ tool: EditTool) {
-        _ = performAuxiliaryToolAction(tool)
     }
 
     @discardableResult
@@ -1383,6 +1553,34 @@ struct NoteDetailView: View {
         case .fileLink:
             hideLinkInputOverlay()
             showFileLinkPicker = true
+            return true
+        case .sticker:
+            insertStickerAtCenter()
+            return true
+        case .highlight:
+            if toolbarIsHighlight {
+                // Toggle off: remove existing highlight from selected text
+                NotificationCenter.default.post(
+                    name: .removeHighlightColor, object: nil,
+                    userInfo: ["editorInstanceID": editorInstanceID]
+                )
+                toolbarIsHighlight = false
+                return true
+            }
+            // Reset highlight edit range so initial apply uses lastKnownSelectionRange
+            NotificationCenter.default.post(
+                name: .setHighlightEditRange, object: nil,
+                userInfo: ["range": NSValue(range: NSRange(location: NSNotFound, length: 0)),
+                           "editorInstanceID": editorInstanceID]
+            )
+            // Apply default yellow highlight — handler computes layout rect
+            // and posts highlightTextClicked with correct position
+            NotificationCenter.default.post(
+                name: .applyHighlightColor, object: nil,
+                userInfo: ["hex": "FFFF00", "editorInstanceID": editorInstanceID]
+            )
+            // Dismiss floating toolbar — picker show + position handled by highlightTextClicked
+            withAnimation(.smooth(duration: 0.15)) { showFloatingToolbar = false }
             return true
         default:
             return false

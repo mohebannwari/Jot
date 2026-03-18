@@ -414,6 +414,23 @@ final class NoteCodeBlockAttachment: NSTextAttachment {
     }
 }
 
+// MARK: - Tabs Container Attachment
+
+final class NoteTabsAttachment: NSTextAttachment {
+    var tabsData: TabsContainerData
+    let tabsID = UUID()
+
+    init(tabsData: TabsContainerData) {
+        self.tabsData = tabsData
+        super.init(data: nil, ofType: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("NoteTabsAttachment does not support init(coder:)")
+    }
+}
+
 final class CodeBlockSizeAttachmentCell: NSTextAttachmentCell {
     let displaySize: CGSize
 
@@ -1156,6 +1173,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         private var tableOverlays: [ObjectIdentifier: NoteTableOverlayView] = [:]
         private var calloutOverlays: [ObjectIdentifier: CalloutOverlayView] = [:]
         private var codeBlockOverlays: [ObjectIdentifier: CodeBlockOverlayView] = [:]
+        private var tabsOverlays: [ObjectIdentifier: TabsContainerOverlayView] = [:]
 
         private weak var overlayHostView: NSView?
         /// True when applyInitialText ran but the view was not in the hierarchy
@@ -1190,6 +1208,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 self.updateTableOverlays(in: tv)
                 self.updateCalloutOverlays(in: tv)
                 self.updateCodeBlockOverlays(in: tv)
+                self.updateTabsOverlays(in: tv)
 
             }
             pendingOverlayUpdate = work
@@ -1247,6 +1266,9 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     lastKnownSelectionText = (textView.string as NSString).substring(with: selectedRange)
                     lastKnownSelectionWindowRect = selectionRectInWindow
 
+                    // Update formatting state for the current selection
+                    formatter.updateFormattingState(from: textView)
+
                     // Post notification with selection info - let the view calculate toolbar position
                     var info: [String: Any] = [
                         "hasSelection": true,
@@ -1257,7 +1279,13 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                         "selectionWindowY": selectionRectInWindow.origin.y,
                         "selectionWindowX": selectionRectInWindow.origin.x,
                         "visibleWidth": visibleRect.width,
-                        "visibleHeight": visibleRect.height
+                        "visibleHeight": visibleRect.height,
+                        "isBold": formatter.isBold,
+                        "isItalic": formatter.isItalic,
+                        "isUnderline": formatter.isUnderline,
+                        "isStrikethrough": formatter.isStrikethrough,
+                        "isHighlight": formatter.isHighlight,
+                        "windowHeight": textView.window?.contentView?.bounds.height ?? 800
                     ]
                     if let eid = editorInstanceID { info["editorInstanceID"] = eid }
                     NotificationCenter.default.post(
@@ -1295,6 +1323,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         // Last known non-empty selection — cached here so clicking the AI tools button
         // (which clears the NSTextView selection) doesn't lose context for Edit Content.
         private var lastKnownSelectionRange: NSRange = NSRange(location: NSNotFound, length: 0)
+        var highlightEditRange: NSRange = NSRange(location: NSNotFound, length: 0)
         private var lastKnownSelectionText: String = ""
         private var lastKnownSelectionWindowRect: CGRect = .zero
 
@@ -1775,6 +1804,11 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     return cursor
                 }
             }
+            for (_, overlay) in tabsOverlays {
+                if let cursor = overlay.cursorForPoint(windowPoint) {
+                    return cursor
+                }
+            }
             return nil
         }
 
@@ -1789,12 +1823,18 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             nonisolated(unsafe) let manager = typingAnimationManager
             let imgOverlays = imageOverlays.values.map { $0 }
             let tblOverlays = tableOverlays.values.map { $0 }
+            let callOverlays = calloutOverlays.values.map { $0 }
+            let codeOverlays = codeBlockOverlays.values.map { $0 }
+            let tabOverlays = tabsOverlays.values.map { $0 }
             observers.forEach { NotificationCenter.default.removeObserver($0) }
             observers.removeAll()
             Task { @MainActor in
                 manager?.clearAllAnimations()
                 imgOverlays.forEach { $0.removeFromSuperview() }
                 tblOverlays.forEach { $0.removeFromSuperview() }
+                callOverlays.forEach { $0.removeFromSuperview() }
+                codeOverlays.forEach { $0.removeFromSuperview() }
+                tabOverlays.forEach { $0.removeFromSuperview() }
             }
         }
 
@@ -1871,21 +1911,12 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             ) { [weak self] notification in
                 if let nid = notification.userInfo?["editorInstanceID"] as? UUID,
                    let myID = self?.editorInstanceID, nid != myID { return }
-                NSLog("📝 Coordinator: Received insertVoiceTranscriptInEditor notification")
                 // We're on main queue (specified in observer), use assumeIsolated for synchronous execution
                 // This prevents race condition with view dismissal that occurred with Task wrapper
                 MainActor.assumeIsolated {
-                    guard let self = self else {
-                        NSLog("⚠️ Coordinator deallocated before transcript insertion")
-                        return
-                    }
-                    guard let transcript = notification.object as? String else {
-                        NSLog("📝 Coordinator: No transcript in notification object")
-                        return
-                    }
-                    NSLog("📝 Coordinator: Got transcript: %@", transcript)
+                    guard let self = self else { return }
+                    guard let transcript = notification.object as? String else { return }
                     self.insertVoiceTranscript(transcript: transcript)
-                    NSLog("📝 Coordinator: Transcript insertion completed")
                 }
             }
 
@@ -1894,17 +1925,9 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             ) { [weak self] notification in
                 if let nid = notification.userInfo?["editorInstanceID"] as? UUID,
                    let myID = self?.editorInstanceID, nid != myID { return }
-                NSLog("📝 Coordinator: Received insertImageInEditor notification")
-                guard let filename = notification.object as? String else {
-                    NSLog("📝 Coordinator: No filename in notification object")
-                    return
-                }
-                NSLog("📝 Coordinator: Got image filename: %@", filename)
+                guard let filename = notification.object as? String else { return }
                 Task { @MainActor [weak self] in
-                    guard let self = self else {
-                        NSLog("⚠️ Coordinator deallocated before image insertion")
-                        return
-                    }
+                    guard let self = self else { return }
                     self.insertImage(filename: filename)
                 }
             }
@@ -1924,6 +1947,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                         self.insertCallout()
                     } else if tool == .codeBlock {
                         self.insertCodeBlock()
+                    } else if tool == .tabs {
+                        self.insertTabs()
                     } else {
                         self.formatter.applyFormatting(to: textView, tool: tool)
                         self.styleTodoParagraphs()
@@ -1971,6 +1996,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                         self.insertCallout()
                     } else if tool == .codeBlock {
                         self.insertCodeBlock()
+                    } else if tool == .tabs {
+                        self.insertTabs()
                     } else {
                         self.formatter.applyFormatting(to: textView, tool: tool)
                     }
@@ -2175,6 +2202,119 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 }
             }
 
+            let removeColor = NotificationCenter.default.addObserver(
+                forName: .removeTextColor, object: nil, queue: .main
+            ) { [weak self] notification in
+                if let expectedID = self?.editorInstanceID,
+                   let notifID = notification.userInfo?["editorInstanceID"] as? UUID,
+                   notifID != expectedID { return }
+                MainActor.assumeIsolated { [weak self] in
+                    guard let self = self, let textView = self.textView else { return }
+                    let range = self.lastKnownSelectionRange
+                    guard range.length > 0 else { return }
+                    self.formatter.removeTextColor(range: range, from: textView)
+                    self.syncText()
+                }
+            }
+
+            let applyHighlight = NotificationCenter.default.addObserver(
+                forName: .applyHighlightColor, object: nil, queue: .main
+            ) { [weak self] notification in
+                guard let hex = notification.userInfo?["hex"] as? String else { return }
+                if let expectedID = self?.editorInstanceID,
+                   let notifID = notification.userInfo?["editorInstanceID"] as? UUID,
+                   notifID != expectedID { return }
+                MainActor.assumeIsolated { [weak self] in
+                    guard let self = self, let textView = self.textView else { return }
+                    let range = self.highlightEditRange.length > 0
+                        ? self.highlightEditRange
+                        : self.lastKnownSelectionRange
+                    guard range.length > 0 else { return }
+                    self.formatter.applyHighlight(hex: hex, range: range, to: textView)
+                    self.syncText()
+                    // Save range for subsequent color changes from the picker
+                    self.highlightEditRange = range
+                    // Collapse selection so highlight color is visible (not hidden by blue selection)
+                    textView.setSelectedRange(NSRange(location: range.location + range.length, length: 0))
+
+                    // Post layout-accurate position for the color picker
+                    if let layoutManager = textView.layoutManager,
+                       let textContainer = textView.textContainer {
+                        let glyphRange = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+                        let boundingRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+                        let rectInView = NSRect(
+                            x: boundingRect.origin.x + textView.textContainerOrigin.x,
+                            y: boundingRect.origin.y + textView.textContainerOrigin.y,
+                            width: boundingRect.width,
+                            height: boundingRect.height)
+                        let rectInWindow = textView.convert(rectInView, to: nil)
+                        var posInfo: [String: Any] = [
+                            "selectionWindowX": rectInWindow.origin.x,
+                            "selectionWindowY": rectInWindow.origin.y,
+                            "selectionWidth": rectInWindow.width,
+                            "selectionHeight": rectInWindow.height,
+                            "windowHeight": textView.window?.contentView?.bounds.height ?? 800,
+                            "charRange": NSValue(range: range)
+                        ]
+                        if let eid = self.editorInstanceID { posInfo["editorInstanceID"] = eid }
+                        NotificationCenter.default.post(
+                            name: .highlightTextClicked, object: nil, userInfo: posInfo
+                        )
+                    }
+                }
+            }
+
+            let setHighlightRange = NotificationCenter.default.addObserver(
+                forName: .setHighlightEditRange, object: nil, queue: .main
+            ) { [weak self] notification in
+                if let expectedID = self?.editorInstanceID,
+                   let notifID = notification.userInfo?["editorInstanceID"] as? UUID,
+                   notifID != expectedID { return }
+                MainActor.assumeIsolated { [weak self] in
+                    if let rangeValue = notification.userInfo?["range"] as? NSValue {
+                        self?.highlightEditRange = rangeValue.rangeValue
+                    }
+                }
+            }
+
+            let removeHighlight = NotificationCenter.default.addObserver(
+                forName: .removeHighlightColor, object: nil, queue: .main
+            ) { [weak self] notification in
+                if let expectedID = self?.editorInstanceID,
+                   let notifID = notification.userInfo?["editorInstanceID"] as? UUID,
+                   notifID != expectedID { return }
+                MainActor.assumeIsolated { [weak self] in
+                    guard let self = self, let textView = self.textView else { return }
+                    var range = self.highlightEditRange.length > 0
+                        ? self.highlightEditRange
+                        : self.lastKnownSelectionRange
+                    guard range.length > 0 else { return }
+                    // Expand to full contiguous highlight span
+                    if let storage = textView.textStorage,
+                       range.location != NSNotFound,
+                       NSMaxRange(range) <= storage.length,
+                       storage.attribute(.highlightColor, at: range.location, effectiveRange: nil) != nil {
+                        var fullRange = range
+                        _ = storage.attribute(.highlightColor, at: range.location,
+                                              longestEffectiveRange: &fullRange,
+                                              in: NSRange(location: 0, length: storage.length))
+                        range = fullRange
+                    }
+                    // Only proceed if range actually contains highlighted text
+                    guard range.location != NSNotFound,
+                          NSMaxRange(range) <= (textView.textStorage?.length ?? 0) else { return }
+                    var hasHighlight = false
+                    textView.textStorage?.enumerateAttribute(.highlightColor, in: range, options: []) { value, _, stop in
+                        if value != nil { hasHighlight = true; stop.pointee = true }
+                    }
+                    guard hasHighlight else { return }
+
+                    self.formatter.removeHighlight(range: range, from: textView)
+                    self.syncText()
+                    self.highlightEditRange = NSRange(location: NSNotFound, length: 0)
+                }
+            }
+
             let settingsObserver = NotificationCenter.default.addObserver(
                 forName: ThemeManager.editorSettingsChangedNotification,
                 object: nil,
@@ -2240,6 +2380,25 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 }
             }
 
+            // Sync menu state from SwiftUI → InlineNSTextView instance vars
+            let syncMenuState = NotificationCenter.default.addObserver(
+                forName: .syncEditorMenuState, object: nil, queue: .main
+            ) { [weak self] notification in
+                if let nid = notification.userInfo?["editorInstanceID"] as? UUID,
+                   let myID = self?.editorInstanceID, nid != myID { return }
+                Task { @MainActor [weak self] in
+                    guard let self = self,
+                          let textView = self.textView as? InlineNSTextView else { return }
+                    let info = notification.userInfo
+                    if let v = info?["isCommandMenuShowing"] as? Bool { textView.isCommandMenuShowing = v }
+                    if let v = info?["commandSlashLocation"] as? Int { textView.commandSlashLocation = v }
+                    if let v = info?["isURLPasteMenuShowing"] as? Bool { textView.isURLPasteMenuShowing = v }
+                    if let v = info?["isCodePasteMenuShowing"] as? Bool { textView.isCodePasteMenuShowing = v }
+                    if let v = info?["isNotePickerShowing"] as? Bool { textView.isNotePickerShowing = v }
+                    if let v = info?["notePickerAtLocation"] as? Int { textView.notePickerAtLocation = v }
+                }
+            }
+
             observers = [
                 windowKey,
                 insertTodo, insertLink, insertFileLink, insertVoiceTranscript, insertImage, applyTool, applyCommandMenuTool,
@@ -2249,7 +2408,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 editReplace, proofreadReplaceAll,
                 urlPasteMention, urlPasteSelectPlainLink, urlPasteDismiss,
                 codePasteSelectCodeBlock, codePasteSelectPlainText, codePasteDismissObserver,
-                applyColor, settingsObserver,
+                applyColor, removeColor, applyHighlight, removeHighlight, setHighlightRange, settingsObserver, syncMenuState,
             ]
         }
 
@@ -2401,6 +2560,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 updateTableOverlays(in: textView)
                 updateCalloutOverlays(in: textView)
                 updateCodeBlockOverlays(in: textView)
+                updateTabsOverlays(in: textView)
 
             }
         }
@@ -2428,18 +2588,17 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             }
 
             let isDark = currentColorScheme == .dark
-            let baseColor: NSColor = NSColor.labelColor
-            let dimAlpha: CGFloat = isDark ? 0.4 : 0.25
-            let dimColor = baseColor.withAlphaComponent(dimAlpha)
+            let dimColor: NSColor = (isDark ? NSColor.white : NSColor.black)
+                .withAlphaComponent(isDark ? 0.4 : 0.25)
 
             let fullRange = NSRange(location: 0, length: storage.length)
             let clampedIndex = resolved.isEmpty ? 0 : min(activeIndex, resolved.count - 1)
-            storage.beginEditing()
-            storage.addAttribute(.foregroundColor, value: dimColor, range: fullRange)
+
+            guard let layoutManager = textView.layoutManager else { return }
+            layoutManager.addTemporaryAttribute(.foregroundColor, value: dimColor, forCharacterRange: fullRange)
             if !resolved.isEmpty {
-                storage.addAttribute(.foregroundColor, value: baseColor, range: resolved[clampedIndex].range)
+                layoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: resolved[clampedIndex].range)
             }
-            storage.endEditing()
 
             // Track all resolved ranges
             for item in resolved {
@@ -2454,6 +2613,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
 
         private func clearProofreadOverlays() {
             guard let textView = self.textView,
+                  let layoutManager = textView.layoutManager,
                   let storage = textView.textStorage else {
                 proofreadPillViews.forEach { $0.view.removeFromSuperview() }
                 proofreadPillViews.removeAll()
@@ -2465,23 +2625,10 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             proofreadPillViews.forEach { $0.view.removeFromSuperview() }
             proofreadPillViews.removeAll()
 
-            // Restore full text opacity — preserve user-applied custom colors
+            // Remove temporary dim overlay — original storage colors are untouched
             if storage.length > 0 {
                 let fullRange = NSRange(location: 0, length: storage.length)
-                storage.beginEditing()
-                storage.enumerateAttribute(
-                    TextFormattingManager.customTextColorKey, in: fullRange, options: []
-                ) { value, range, _ in
-                    if value as? Bool == true {
-                        // Custom-colored text: restore full alpha but keep the original color
-                        if let color = storage.attribute(.foregroundColor, at: range.location, effectiveRange: nil) as? NSColor {
-                            storage.addAttribute(.foregroundColor, value: color.withAlphaComponent(1.0), range: range)
-                        }
-                    } else {
-                        storage.addAttribute(.foregroundColor, value: NSColor.labelColor, range: range)
-                    }
-                }
-                storage.endEditing()
+                layoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: fullRange)
             }
             proofreadHighlightedRanges.removeAll()
         }
@@ -3217,6 +3364,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             updateTableOverlays(in: textView)
             updateCalloutOverlays(in: textView)
             updateCodeBlockOverlays(in: textView)
+            updateTabsOverlays(in: textView)
 
             needsDeferredOverlaySetup = true
         }
@@ -3253,6 +3401,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             updateTableOverlays(in: textView)
             updateCalloutOverlays(in: textView)
             updateCodeBlockOverlays(in: textView)
+            updateTabsOverlays(in: textView)
 
         }
 
@@ -3260,6 +3409,9 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             guard let textView = notification.object as? NSTextView, textView == self.textView,
                 !isUpdating
             else { return }
+
+            // Invalidate stale highlight edit range — text edits shift character positions
+            highlightEditRange = NSRange(location: NSNotFound, length: 0)
 
             // Trigger typing animation for newly inserted characters
             if let location = pendingAnimationLocation,
@@ -3349,7 +3501,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             // Check for Enter key in todo paragraph
             if replacementString == "\n", isInTodoParagraph(range: affectedCharRange) {
                 // If the current todo is empty, exit todo mode instead of creating another
-                let storage = textView.textStorage!
+                guard let storage = textView.textStorage else { return true }
                 let loc = max(0, min(storage.length, affectedCharRange.location))
                 let paraRange = (storage.string as NSString).paragraphRange(
                     for: NSRange(location: loc, length: 0))
@@ -3389,7 +3541,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
 
             // Check for Enter key in numbered list paragraph
             if replacementString == "\n", let olNum = orderedListNumber(at: affectedCharRange) {
-                let storage = textView.textStorage!
+                guard let storage = textView.textStorage else { return true }
                 let loc = max(0, min(storage.length, affectedCharRange.location))
                 let paraRange = (storage.string as NSString).paragraphRange(
                     for: NSRange(location: loc, length: 0))
@@ -3450,7 +3602,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
 
             // Check for Enter key in bullet list paragraph
             if replacementString == "\n", isInBulletParagraph(range: affectedCharRange) {
-                let storage = textView.textStorage!
+                guard let storage = textView.textStorage else { return true }
                 let loc = max(0, min(storage.length, affectedCharRange.location))
                 let paraRange = (storage.string as NSString).paragraphRange(
                     for: NSRange(location: loc, length: 0))
@@ -3510,7 +3662,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             // Check for Enter key in block quote paragraph
             if replacementString == "\n",
                isInBlockQuoteParagraph(range: affectedCharRange) {
-                let storage = textView.textStorage!
+                guard let storage = textView.textStorage else { return true }
                 let loc = max(0, min(storage.length, affectedCharRange.location))
                 let paraRange = (storage.string as NSString).paragraphRange(
                     for: NSRange(location: loc, length: 0))
@@ -3573,7 +3725,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
 
             // Smart backspace: delete an empty todo paragraph entirely
             if replacementString == "" {
-                let storage = textView.textStorage!
+                guard let storage = textView.textStorage else { return true }
                 if isInTodoParagraph(range: affectedCharRange) {
                     let loc = max(0, min(storage.length, affectedCharRange.location))
                     let paraRange = (storage.string as NSString).paragraphRange(
@@ -3942,38 +4094,6 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             syncText()
         }
 
-        /// Handles command menu tool application
-        private func handleCommandMenuToolApplication(_ notification: Notification) {
-            guard let info = notification.object as? [String: Any],
-                let tool = info["tool"] as? EditTool,
-                let slashLocation = info["slashLocation"] as? Int,
-                let textView = textView,
-                let textStorage = textView.textStorage
-            else { return }
-
-            // Remove the "/" character that triggered the menu
-            if slashLocation >= 0 && slashLocation < textStorage.length {
-                let slashRange = NSRange(location: slashLocation, length: 1)
-                if textView.shouldChangeText(in: slashRange, replacementString: "") {
-                    textStorage.replaceCharacters(in: slashRange, with: "")
-                    textView.didChangeText()
-                    // Position cursor at the location where "/" was removed
-                    textView.setSelectedRange(NSRange(location: slashLocation, length: 0))
-                }
-            }
-
-            // Apply the selected tool
-            // Special handling for todo checkbox to use proper attachment instead of text
-            if tool == .todo {
-                insertTodo()
-            } else {
-                formatter.applyFormatting(to: textView, tool: tool)
-            }
-
-            // Sync the text back
-            syncText()
-        }
-
         // MARK: - Todo Handling
 
         fileprivate func insertTodo() {
@@ -4151,26 +4271,16 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         }
 
         private func insertVoiceTranscript(transcript: String) {
-            NSLog("📝 insertVoiceTranscript: Called with transcript: %@", transcript)
-            guard textView != nil else {
-                NSLog("📝 insertVoiceTranscript: textView is nil")
-                return
-            }
+            guard textView != nil else { return }
             let trimmed = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty else {
-                NSLog("📝 insertVoiceTranscript: trimmed transcript is empty")
-                return
-            }
+            guard !trimmed.isEmpty else { return }
 
-            NSLog("📝 insertVoiceTranscript: Inserting trimmed text: %@", trimmed)
-            // Add proper spacing and formatting
             let formatted = trimmed + " "
             replaceSelection(
                 with: NSAttributedString(
                     string: formatted,
                     attributes: Self.baseTypingAttributes(for: currentColorScheme)))
             syncText()
-            NSLog("📝 insertVoiceTranscript: Completed")
         }
         
         private func insertImage(filename: String) {
@@ -4380,6 +4490,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
 
             updateCalloutOverlays(in: textView)
             updateCodeBlockOverlays(in: textView)
+            updateTabsOverlays(in: textView)
 
             syncText()
         }
@@ -4439,18 +4550,73 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             }
 
             updateCodeBlockOverlays(in: textView)
+            updateTabsOverlays(in: textView)
+            syncText()
+        }
+
+        // MARK: - Tabs Container Insertion
+
+        private func makeTabsAttachment(tabsData: TabsContainerData) -> NSMutableAttributedString {
+            var containerWidth = textView?.textContainer?.containerSize.width ?? TabsContainerOverlayView.minWidth
+            if containerWidth < 1 { containerWidth = TabsContainerOverlayView.minWidth }
+            let height = TabsContainerOverlayView.totalHeight(for: tabsData)
+            let size = CGSize(width: containerWidth, height: height)
+
+            let attachment = NoteTabsAttachment(tabsData: tabsData)
+            attachment.attachmentCell = CodeBlockSizeAttachmentCell(size: size)
+            attachment.bounds = CGRect(origin: .zero, size: size)
+
+            let attributed = NSMutableAttributedString(attachment: attachment)
+            let range = NSRange(location: 0, length: attributed.length)
+            let blockStyle = NSMutableParagraphStyle()
+            blockStyle.alignment = .left
+            blockStyle.paragraphSpacing = 8
+            blockStyle.paragraphSpacingBefore = 8
+            attributed.addAttribute(.paragraphStyle, value: blockStyle, range: range)
+            return attributed
+        }
+
+        private func insertTabs() {
+            let data = TabsContainerData.empty()
+            guard let textView = textView,
+                  let textStorage = textView.textStorage else { return }
+
+            let baseAttrs = Self.baseTypingAttributes(for: currentColorScheme)
+            let composed = NSMutableAttributedString()
+
+            let insertAt = min(textView.selectedRange().location, textStorage.length)
+            let nsString = textStorage.string as NSString
+
+            if insertAt > 0 {
+                let prevChar = nsString.character(at: insertAt - 1)
+                if let scalar = Unicode.Scalar(prevChar),
+                   !CharacterSet.newlines.contains(scalar) {
+                    composed.append(NSAttributedString(string: "\n", attributes: baseAttrs))
+                }
+            }
+
+            composed.append(makeTabsAttachment(tabsData: data))
+            composed.append(NSAttributedString(string: "\n", attributes: baseAttrs))
+
+            let replaceRange = NSRange(location: insertAt, length: 0)
+            if textView.shouldChangeText(in: replaceRange, replacementString: composed.string) {
+                isUpdating = true
+                textStorage.beginEditing()
+                textStorage.replaceCharacters(in: replaceRange, with: composed)
+                textStorage.endEditing()
+                textView.setSelectedRange(NSRange(location: insertAt + composed.length, length: 0))
+                textView.didChangeText()
+                isUpdating = false
+            }
+
+            updateTabsOverlays(in: textView)
             syncText()
         }
 
         private func insertFileAttachment(
             using storedFile: FileAttachmentStorageManager.StoredFile
         ) {
-            NSLog("📄 insertFileAttachment: Called with stored filename: %@",
-                  storedFile.storedFilename)
-            guard let textView = textView else {
-                NSLog("📄 insertFileAttachment: textView is nil")
-                return
-            }
+            guard let textView = textView else { return }
 
             let selectionRange = textView.selectedRange()
             let storageString = textView.textStorage?.string ?? ""
@@ -4482,7 +4648,6 @@ struct TodoEditorRepresentable: NSViewRepresentable {
 
             replaceSelection(with: composed)
             syncText()
-            NSLog("📄 insertFileAttachment: Completed")
         }
 
         private func needsLeadingSpace(before range: NSRange, in text: NSString) -> Bool {
@@ -4524,14 +4689,6 @@ struct TodoEditorRepresentable: NSViewRepresentable {
 
             if textView.shouldChangeText(in: range, replacementString: attributed.string) {
                 isUpdating = true
-                
-                // Check if we're inserting an attachment
-                attributed.enumerateAttribute(.attachment, in: NSRange(location: 0, length: attributed.length), options: []) { value, range, _ in
-                    if let attachment = value as? NSTextAttachment {
-                        NSLog("📝 replaceSelection: Inserting attachment at range %@, has image: %@", NSStringFromRange(range), attachment.image != nil ? "YES" : "NO")
-                    }
-                }
-                
                 textView.textStorage?.beginEditing()
                 textView.textStorage?.replaceCharacters(in: range, with: attributed)
                 textView.textStorage?.endEditing()
@@ -4553,6 +4710,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             updateTableOverlays(in: textView)
             updateCalloutOverlays(in: textView)
             updateCodeBlockOverlays(in: textView)
+            updateTabsOverlays(in: textView)
 
         }
 
@@ -5124,6 +5282,176 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             }
         }
 
+        // MARK: - Tabs Container Overlay Management
+
+        func updateTabsOverlays(in textView: NSTextView) {
+            guard let textStorage = textView.textStorage,
+                  let layoutManager = textView.layoutManager,
+                  let textContainer = textView.textContainer else { return }
+
+            let hostView: NSView = textView
+            var seenIDs = Set<ObjectIdentifier>()
+            let fullRange = NSRange(location: 0, length: textStorage.length)
+            guard fullRange.length > 0 else {
+                tabsOverlays.values.forEach { $0.removeFromSuperview() }
+                tabsOverlays.removeAll()
+                return
+            }
+
+            textStorage.enumerateAttribute(.attachment, in: fullRange, options: []) { val, range, _ in
+                guard let attachment = val as? NoteTabsAttachment else { return }
+                let id = ObjectIdentifier(attachment)
+                seenIDs.insert(id)
+
+                // ── WIDTH / HEIGHT CORRECTION ──
+                let containerW = max(textContainer.containerSize.width, 100)
+                let effectiveMin = min(TabsContainerOverlayView.minWidth, containerW)
+                let currentWidth = attachment.bounds.width
+                let expectedHeight = TabsContainerOverlayView.totalHeight(for: attachment.tabsData)
+                let atMinFromDeserialization = currentWidth <= effectiveMin && containerW > effectiveMin
+                let needsCorrection = currentWidth < effectiveMin
+                    || currentWidth > containerW
+                    || abs(attachment.bounds.height - expectedHeight) > 1
+                    || atMinFromDeserialization
+                if needsCorrection {
+                    let correctedWidth: CGFloat
+                    if atMinFromDeserialization {
+                        correctedWidth = containerW
+                    } else {
+                        correctedWidth = max(effectiveMin, min(containerW, currentWidth))
+                    }
+                    let newSize = CGSize(width: correctedWidth, height: expectedHeight)
+                    attachment.attachmentCell = CodeBlockSizeAttachmentCell(size: newSize)
+                    attachment.bounds = CGRect(origin: .zero, size: newSize)
+                    layoutManager.invalidateLayout(forCharacterRange: range, actualCharacterRange: nil)
+                }
+
+                // ── LAYOUT & POSITIONING ──
+                let glyphRange = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+                if glyphRange.length > 0 { layoutManager.ensureLayout(forGlyphRange: glyphRange) }
+                guard glyphRange.length > 0 else { return }
+                let glyphRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+
+                let overlayRect = CGRect(
+                    x: glyphRect.origin.x + textView.textContainerOrigin.x,
+                    y: glyphRect.origin.y + textView.textContainerOrigin.y,
+                    width: attachment.bounds.width,
+                    height: attachment.bounds.height
+                )
+
+                // ── OVERLAY CREATION OR UPDATE ──
+                let overlay: TabsContainerOverlayView
+                if let existing = tabsOverlays[id] {
+                    overlay = existing
+                    overlay.tabsData = attachment.tabsData
+                } else {
+                    overlay = TabsContainerOverlayView(tabsData: attachment.tabsData)
+                    overlay.parentTextView = textView
+
+                    // ── onDataChanged ──
+                    overlay.onDataChanged = { [weak self, weak textStorage, weak textView, weak attachment] newData in
+                        guard let self = self, let ts = textStorage, let tv = textView, let att = attachment else { return }
+                        att.tabsData = newData
+                        let newHeight = TabsContainerOverlayView.totalHeight(for: newData)
+                        let newSize = CGSize(width: att.bounds.width, height: newHeight)
+                        att.attachmentCell = CodeBlockSizeAttachmentCell(size: newSize)
+                        att.bounds = CGRect(origin: .zero, size: newSize)
+                        let fr = NSRange(location: 0, length: ts.length)
+                        ts.enumerateAttribute(.attachment, in: fr, options: []) { val, charRange, stop in
+                            if val as AnyObject === att {
+                                tv.layoutManager?.invalidateLayout(
+                                    forCharacterRange: charRange, actualCharacterRange: nil)
+                                stop.pointee = true
+                            }
+                        }
+                        self.syncText()
+                    }
+
+                    // ── onDeleteTabs ──
+                    overlay.onDeleteTabs = { [weak self, weak textStorage, weak textView, weak attachment] in
+                        guard let self = self, let ts = textStorage,
+                              let tv = textView, let att = attachment else { return }
+                        let fr = NSRange(location: 0, length: ts.length)
+                        ts.enumerateAttribute(.attachment, in: fr, options: []) { val, charRange, stop in
+                            if val as AnyObject === att {
+                                var deleteStart = charRange.location
+                                var deleteEnd = charRange.location + charRange.length
+                                let nsString = ts.string as NSString
+                                if deleteStart > 0 {
+                                    let prev = nsString.character(at: deleteStart - 1)
+                                    if let scalar = Unicode.Scalar(prev),
+                                       CharacterSet.newlines.contains(scalar) { deleteStart -= 1 }
+                                }
+                                if deleteEnd < nsString.length {
+                                    let next = nsString.character(at: deleteEnd)
+                                    if let scalar = Unicode.Scalar(next),
+                                       CharacterSet.newlines.contains(scalar) { deleteEnd += 1 }
+                                }
+                                let deleteRange = NSRange(location: deleteStart,
+                                                         length: deleteEnd - deleteStart)
+                                if tv.shouldChangeText(in: deleteRange, replacementString: "") {
+                                    ts.replaceCharacters(in: deleteRange, with: "")
+                                    tv.didChangeText()
+                                }
+                                stop.pointee = true
+                            }
+                        }
+                        self.syncText()
+                    }
+
+                    // ── onWidthChanged ──
+                    overlay.onWidthChanged = { [weak self, weak textStorage, weak layoutManager, weak attachment, weak textView] newWidth in
+                        guard let self = self, let ts = textStorage, let lm = layoutManager, let att = attachment,
+                              let tc = textView?.textContainer else { return }
+                        let effMin = min(TabsContainerOverlayView.minWidth, tc.containerSize.width)
+                        let clamped = max(effMin, min(newWidth, tc.containerSize.width))
+                        let newSize = CGSize(width: clamped, height: att.bounds.height)
+                        att.attachmentCell = CodeBlockSizeAttachmentCell(size: newSize)
+                        att.bounds = CGRect(origin: .zero, size: newSize)
+                        let fr = NSRange(location: 0, length: ts.length)
+                        ts.enumerateAttribute(.attachment, in: fr, options: []) { val, charRange, stop in
+                            if val as AnyObject === att {
+                                lm.invalidateLayout(forCharacterRange: charRange, actualCharacterRange: nil)
+                                stop.pointee = true
+                            }
+                        }
+                        self.syncText()
+                    }
+
+                    // ── onHeightChanged ──
+                    overlay.onHeightChanged = { [weak self, weak textStorage, weak layoutManager, weak attachment] newHeight in
+                        guard let self = self, let ts = textStorage, let lm = layoutManager, let att = attachment else { return }
+                        att.tabsData.containerHeight = newHeight
+                        let totalH = TabsContainerOverlayView.totalHeight(for: att.tabsData)
+                        let newSize = CGSize(width: att.bounds.width, height: totalH)
+                        att.attachmentCell = CodeBlockSizeAttachmentCell(size: newSize)
+                        att.bounds = CGRect(origin: .zero, size: newSize)
+                        let fr = NSRange(location: 0, length: ts.length)
+                        ts.enumerateAttribute(.attachment, in: fr, options: []) { val, charRange, stop in
+                            if val as AnyObject === att {
+                                lm.invalidateLayout(forCharacterRange: charRange, actualCharacterRange: nil)
+                                stop.pointee = true
+                            }
+                        }
+                        self.syncText()
+                    }
+
+                    hostView.addSubview(overlay)
+                    tabsOverlays[id] = overlay
+                }
+
+                overlay.currentContainerWidth = containerW
+                overlay.frame = overlayRect.integral
+            }
+
+            // ── CLEANUP ──
+            let toRemove = tabsOverlays.keys.filter { !seenIDs.contains($0) }
+            for key in toRemove {
+                tabsOverlays[key]?.removeFromSuperview()
+                tabsOverlays.removeValue(forKey: key)
+            }
+        }
+
         private func updateImageRatio(
             _ newRatio: CGFloat,
             attachment: NoteImageAttachment,
@@ -5272,6 +5600,18 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 if substringRange.length == 0 { break }
                 defer { paragraphRange.location = NSMaxRange(substringRange) }
 
+                // Strip highlight from paragraph-terminating newlines — prevents full-width
+                // background extension and highlight bleeding when Enter is pressed
+                let lastCharIndex = NSMaxRange(substringRange) - 1
+                if lastCharIndex >= 0,
+                   lastCharIndex < textStorage.length,
+                   (textStorage.string as NSString).character(at: lastCharIndex) == 0x0A,
+                   textStorage.attribute(.highlightColor, at: lastCharIndex, effectiveRange: nil) != nil {
+                    let nlRange = NSRange(location: lastCharIndex, length: 1)
+                    textStorage.removeAttribute(.backgroundColor, range: nlRange)
+                    textStorage.removeAttribute(.highlightColor, range: nlRange)
+                }
+
                 var isTodoParagraph = false
                 var isWebClipParagraph = false
                 var isImageParagraph = false
@@ -5306,7 +5646,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                         // Other block-level attachments (image, callout, code block)
                         else if attachment is NoteImageAttachment
                                 || attachment is NoteCalloutAttachment
-                                || attachment is NoteCodeBlockAttachment {
+                                || attachment is NoteCodeBlockAttachment
+                                || attachment is NoteTabsAttachment {
                             isImageParagraph = true
                             stop.pointee = true
                         }
@@ -5513,6 +5854,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     output.append(calloutAttachment.calloutData.serialize())
                 } else if let codeBlockAttachment = attributes[.attachment] as? NoteCodeBlockAttachment {
                     output.append(codeBlockAttachment.codeBlockData.serialize())
+                } else if let tabsAttachment = attributes[.attachment] as? NoteTabsAttachment {
+                    output.append(tabsAttachment.tabsData.serialize())
                 } else if attributes[.attachment] is NoteDividerAttachment {
                     output.append("[[divider]]")
                 } else if let notelinkAttachment = attributes[.attachment] as? NotelinkAttachment {
@@ -6015,6 +6358,33 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                             continue
                         }
                     }
+                } else if text[index...].hasPrefix("[[tabs|") {
+                    flushBuffer()
+                    let remaining = text[index...]
+                    if let closingRange = remaining.range(of: "[[/tabs]]") {
+                        let tabsText = String(remaining[remaining.startIndex..<closingRange.upperBound])
+                        if let tabsData = TabsContainerData.deserialize(from: tabsText) {
+                            let baseAttributes = Self.baseTypingAttributes(for: currentColorScheme)
+                            if result.length > 0,
+                               let lastScalar = result.string.unicodeScalars.last,
+                               !CharacterSet.newlines.contains(lastScalar) {
+                                result.append(NSAttributedString(string: "\n", attributes: baseAttributes))
+                            }
+                            let attachment = makeTabsAttachment(tabsData: tabsData)
+                            result.append(attachment)
+                            let afterClosing = closingRange.upperBound
+                            if afterClosing < text.endIndex {
+                                if !text[afterClosing].isNewline {
+                                    result.append(NSAttributedString(string: "\n", attributes: baseAttributes))
+                                }
+                            } else {
+                                result.append(NSAttributedString(string: "\n", attributes: baseAttributes))
+                            }
+                            index = closingRange.upperBound
+                            lastWasWebClip = false
+                            continue
+                        }
+                    }
                 } else if text[index...].hasPrefix("[[callout|") {
                     flushBuffer()
                     let remaining = text[index...]
@@ -6468,17 +6838,17 @@ struct TodoEditorRepresentable: NSViewRepresentable {
 }
 
 final class InlineNSTextView: NSTextView {
-    // Static flag to track command menu visibility for keyboard event handling
-    static var isCommandMenuShowing = false
-    static var commandSlashLocation: Int = -1
+    // Per-instance menu state for keyboard event handling (avoids cross-editor contamination in split views)
+    var isCommandMenuShowing = false
+    var commandSlashLocation: Int = -1
 
     // URL paste menu state
-    static var isURLPasteMenuShowing = false
-    static var isCodePasteMenuShowing = false
+    var isURLPasteMenuShowing = false
+    var isCodePasteMenuShowing = false
 
     // Note picker state (triggered by "@")
-    static var isNotePickerShowing = false
-    static var notePickerAtLocation: Int = -1
+    var isNotePickerShowing = false
+    var notePickerAtLocation: Int = -1
 
     /// When true, mouseMoved sets arrow cursor instead of allowing NSTextView's I-beam.
     /// Set by ContentView when any full-screen panel overlay (settings, search, trash) is open.
@@ -6505,7 +6875,8 @@ final class InlineNSTextView: NSTextView {
         if isURL && !pastedText.isEmpty {
             let afterLocation = selectedRange().location
             let pastedLength = afterLocation - beforeLocation
-            if pastedLength > 0 {
+            let storageLen = textStorage?.length ?? 0
+            if pastedLength > 0, beforeLocation + pastedLength <= storageLen {
                 let pastedRange = NSRange(location: beforeLocation, length: pastedLength)
 
                 // Style the pasted URL with blue text
@@ -6555,7 +6926,8 @@ final class InlineNSTextView: NSTextView {
             if isCode {
                 let afterLocation = selectedRange().location
                 let pastedLength = afterLocation - beforeLocation
-                if pastedLength > 0 {
+                let codeStorageLen = textStorage?.length ?? 0
+                if pastedLength > 0, beforeLocation + pastedLength <= codeStorageLen {
                     let pastedRange = NSRange(location: beforeLocation, length: pastedLength)
 
                     let insertedText: String
@@ -6906,6 +7278,54 @@ final class InlineNSTextView: NSTextView {
         actionDelegate?.endAttachmentHover()
         window?.makeFirstResponder(self)
         super.mouseDown(with: event)
+
+        // After click completes, check if we clicked on highlighted text (single click only)
+        if event.clickCount == 1,
+           let textStorage = self.textStorage,
+           let layoutManager = self.layoutManager,
+           let textContainer = self.textContainer {
+            let point = convert(event.locationInWindow, from: nil)
+            let pointInContainer = CGPoint(
+                x: point.x - textContainerOrigin.x,
+                y: point.y - textContainerOrigin.y)
+            let glyphIndex = layoutManager.glyphIndex(for: pointInContainer, in: textContainer)
+            if glyphIndex < layoutManager.numberOfGlyphs {
+                let charIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
+                if charIndex < textStorage.length,
+                   let highlightHex = textStorage.attribute(.highlightColor, at: charIndex, effectiveRange: nil) as? String {
+                    // Find the full contiguous highlighted range (longestEffectiveRange spans across attribute runs that differ in other keys like .underlineStyle)
+                    var effectiveRange = NSRange()
+                    _ = textStorage.attribute(.highlightColor, at: charIndex, longestEffectiveRange: &effectiveRange, in: NSRange(location: 0, length: textStorage.length))
+
+                    // Get the rect of the highlighted range for positioning
+                    let glyphRange = layoutManager.glyphRange(forCharacterRange: effectiveRange, actualCharacterRange: nil)
+                    let boundingRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+                    let rectInView = NSRect(
+                        x: boundingRect.origin.x + textContainerOrigin.x,
+                        y: boundingRect.origin.y + textContainerOrigin.y,
+                        width: boundingRect.width,
+                        height: boundingRect.height)
+                    let rectInWindow = convert(rectInView, to: nil)
+
+                    var info: [String: Any] = [
+                        "hex": highlightHex,
+                        "fromClick": true,
+                        "selectionWindowX": rectInWindow.origin.x,
+                        "selectionWindowY": rectInWindow.origin.y,
+                        "selectionWidth": rectInWindow.width,
+                        "selectionHeight": rectInWindow.height,
+                        "windowHeight": window?.contentView?.bounds.height ?? 800,
+                        "charRange": NSValue(range: effectiveRange)
+                    ]
+                    if let eid = editorInstanceID { info["editorInstanceID"] = eid }
+                    NotificationCenter.default.post(
+                        name: .highlightTextClicked,
+                        object: nil,
+                        userInfo: info
+                    )
+                }
+            }
+        }
     }
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
@@ -7021,7 +7441,7 @@ final class InlineNSTextView: NSTextView {
         let eidInfo: [String: Any]? = editorInstanceID.map { ["editorInstanceID": $0] }
 
         // Handle URL paste menu keyboard navigation
-        if InlineNSTextView.isURLPasteMenuShowing {
+        if isURLPasteMenuShowing {
             switch event.keyCode {
             case 126:  // Up Arrow
                 NotificationCenter.default.post(name: .urlPasteNavigateUp, object: nil, userInfo: eidInfo)
@@ -7044,7 +7464,7 @@ final class InlineNSTextView: NSTextView {
         }
 
         // Handle code paste menu keyboard navigation
-        if InlineNSTextView.isCodePasteMenuShowing {
+        if isCodePasteMenuShowing {
             switch event.keyCode {
             case 126:  // Up Arrow
                 NotificationCenter.default.post(name: .codePasteNavigateUp, object: nil, userInfo: eidInfo)
@@ -7066,7 +7486,7 @@ final class InlineNSTextView: NSTextView {
         }
 
         // Handle note picker keyboard navigation (triggered by "@")
-        if InlineNSTextView.isNotePickerShowing {
+        if isNotePickerShowing {
             switch event.keyCode {
             case 126:  // Up Arrow
                 NotificationCenter.default.post(name: .notePickerNavigateUp, object: nil, userInfo: eidInfo)
@@ -7083,7 +7503,7 @@ final class InlineNSTextView: NSTextView {
             case 51:  // Backspace
                 super.keyDown(with: event)
                 let cursor = selectedRange().location
-                let atLoc = InlineNSTextView.notePickerAtLocation
+                let atLoc = notePickerAtLocation
                 if cursor <= atLoc || atLoc < 0 {
                     NotificationCenter.default.post(name: .hideNotePicker, object: nil, userInfo: eidInfo)
                 } else {
@@ -7095,7 +7515,7 @@ final class InlineNSTextView: NSTextView {
                 super.keyDown(with: event)
                 // Update the note picker filter after the character is inserted
                 let cursor = selectedRange().location
-                let atLoc = InlineNSTextView.notePickerAtLocation
+                let atLoc = notePickerAtLocation
                 if cursor <= atLoc || atLoc < 0 {
                     NotificationCenter.default.post(name: .hideNotePicker, object: nil, userInfo: eidInfo)
                 } else {
@@ -7107,7 +7527,7 @@ final class InlineNSTextView: NSTextView {
         }
 
         // Only intercept keys if command menu is showing
-        guard InlineNSTextView.isCommandMenuShowing else {
+        guard isCommandMenuShowing else {
             super.keyDown(with: event)
             return
         }
@@ -7134,7 +7554,7 @@ final class InlineNSTextView: NSTextView {
         case 51:  // Backspace
             super.keyDown(with: event)
             let cursor = selectedRange().location
-            let slashLoc = InlineNSTextView.commandSlashLocation
+            let slashLoc = commandSlashLocation
             if cursor <= slashLoc || slashLoc < 0 {
                 NotificationCenter.default.post(name: .hideCommandMenu, object: nil, userInfo: eidInfo)
             } else {
@@ -7156,7 +7576,7 @@ final class InlineNSTextView: NSTextView {
         // Check if we're inserting "@" to trigger note picker
         if let str = string as? String, str == "@" {
             // Dismiss if already showing
-            if InlineNSTextView.isNotePickerShowing {
+            if isNotePickerShowing {
                 NotificationCenter.default.post(name: .hideNotePicker, object: nil, userInfo: eidInfo)
             }
 
@@ -7191,7 +7611,7 @@ final class InlineNSTextView: NSTextView {
         }
 
         // If note picker is showing, insert character and update filter
-        if InlineNSTextView.isNotePickerShowing {
+        if isNotePickerShowing {
             super.insertText(string, replacementRange: replacementRange)
             let filterText = readNotePickerFilterText()
             NotificationCenter.default.post(
@@ -7202,7 +7622,7 @@ final class InlineNSTextView: NSTextView {
         // Check if we're inserting "/" to trigger command menu
         if let str = string as? String, str == "/" {
             // If menu is already showing, hide it and start fresh
-            if InlineNSTextView.isCommandMenuShowing {
+            if isCommandMenuShowing {
                 NotificationCenter.default.post(name: .hideCommandMenu, object: nil, userInfo: eidInfo)
             }
 
@@ -7239,7 +7659,7 @@ final class InlineNSTextView: NSTextView {
         }
 
         // If command menu is showing, insert the character and update the filter
-        if InlineNSTextView.isCommandMenuShowing {
+        if isCommandMenuShowing {
             super.insertText(string, replacementRange: replacementRange)
             let filterText = readCommandFilterText()
             NotificationCenter.default.post(
@@ -7467,7 +7887,7 @@ final class InlineNSTextView: NSTextView {
 
     /// Reads the text typed after the "@" character to use as a filter for note picker
     private func readNotePickerFilterText() -> String {
-        let atLoc = InlineNSTextView.notePickerAtLocation
+        let atLoc = notePickerAtLocation
         guard atLoc >= 0,
               let textStorage = self.textStorage else { return "" }
         let cursor = selectedRange().location
@@ -7480,7 +7900,7 @@ final class InlineNSTextView: NSTextView {
 
     /// Reads the text typed after the slash character to use as a filter
     private func readCommandFilterText() -> String {
-        let slashLoc = InlineNSTextView.commandSlashLocation
+        let slashLoc = commandSlashLocation
         guard slashLoc >= 0,
               let textStorage = self.textStorage else { return "" }
         let cursor = selectedRange().location
@@ -7581,8 +8001,23 @@ private final class TodoCheckboxAttachmentCell: NSTextAttachmentCell {
         with event: NSEvent, in cellFrame: NSRect, of controlView: NSView?,
         atCharacterIndex charIndex: Int, untilMouseUp flag: Bool
     ) -> Bool {
-        isChecked.toggle()
-        if let textView = controlView as? NSTextView {
+        guard let textView = controlView as? NSTextView,
+              let storage = textView.textStorage else {
+            isChecked.toggle()
+            return true
+        }
+
+        // Register the change with the undo manager via shouldChangeText/didChangeText
+        let attachmentRange = NSRange(location: charIndex, length: 1)
+        guard attachmentRange.location < storage.length else {
+            isChecked.toggle()
+            return true
+        }
+
+        if textView.shouldChangeText(in: attachmentRange, replacementString: nil) {
+            isChecked.toggle()
+            // Force re-render of the attachment cell image
+            storage.edited(.editedAttributes, range: attachmentRange, changeInLength: 0)
             textView.didChangeText()
             NotificationCenter.default.post(name: NSText.didChangeNotification, object: textView)
         }
@@ -7704,6 +8139,9 @@ extension Notification.Name {
     static let notePickerNavigateDown = Notification.Name("NotePickerNavigateDown")
     static let notePickerSelect = Notification.Name("NotePickerSelect")
     static let applyNotePickerSelection = Notification.Name("ApplyNotePickerSelection")
+
+    // Editor menu state sync (SwiftUI → NSTextView instance)
+    static let syncEditorMenuState = Notification.Name("SyncEditorMenuState")
 
     // Notelink navigation
     static let navigateToNoteLink = Notification.Name("NavigateToNoteLink")

@@ -13,7 +13,14 @@ struct FloatingEditToolbar: View {
     var position: CGPoint
     var placeAbove: Bool
     var width: CGFloat = 250
-    
+
+    // Formatting state from TextFormattingManager
+    var isBoldActive: Bool = false
+    var isItalicActive: Bool = false
+    var isUnderlineActive: Bool = false
+    var isStrikethroughActive: Bool = false
+    var isHighlightActive: Bool = false
+
     // State management
     @State private var selectedTool: EditTool? = nil
     @State private var hoveredTool: EditTool? = nil
@@ -207,7 +214,7 @@ struct FloatingEditToolbar: View {
             FloatingToolButton(
                 tool: .bold,
                 assetName: "IconBold",
-                isSelected: selectedTool == .bold,
+                isSelected: isBoldActive,
                 isHovered: hoveredTool == .bold,
                 action: { handleToolAction(.bold) },
                 onHoverChange: { hovering, frame in
@@ -226,7 +233,7 @@ struct FloatingEditToolbar: View {
             FloatingToolButton(
                 tool: .italic,
                 assetName: "IconItalic",
-                isSelected: selectedTool == .italic,
+                isSelected: isItalicActive,
                 isHovered: hoveredTool == .italic,
                 action: { handleToolAction(.italic) },
                 onHoverChange: { hovering, frame in
@@ -245,7 +252,7 @@ struct FloatingEditToolbar: View {
             FloatingToolButton(
                 tool: .underline,
                 assetName: "IconUnderline",
-                isSelected: selectedTool == .underline,
+                isSelected: isUnderlineActive,
                 isHovered: hoveredTool == .underline,
                 action: { handleToolAction(.underline) },
                 onHoverChange: { hovering, frame in
@@ -264,7 +271,7 @@ struct FloatingEditToolbar: View {
             FloatingToolButton(
                 tool: .strikethrough,
                 assetName: "IconStrikeThrough",
-                isSelected: selectedTool == .strikethrough,
+                isSelected: isStrikethroughActive,
                 isHovered: hoveredTool == .strikethrough,
                 action: { handleToolAction(.strikethrough) },
                 onHoverChange: { hovering, frame in
@@ -279,9 +286,28 @@ struct FloatingEditToolbar: View {
                     }
                 }
             )
+
+            FloatingToolButton(
+                tool: .highlight,
+                assetName: "IconMarker",
+                isSelected: isHighlightActive,
+                isHovered: hoveredTool == .highlight,
+                action: { handleToolAction(.highlight) },
+                onHoverChange: { hovering, frame in
+                    hoveredTool = hovering ? .highlight : nil
+                    tooltipFrame = frame
+                    if hovering {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                            if hoveredTool == .highlight { showTooltip = true }
+                        }
+                    } else {
+                        showTooltip = false
+                    }
+                }
+            )
         }
     }
-    
+
     private var listTool: some View {
         HStack(spacing: 2) {
             FloatingToolButton(
@@ -652,6 +678,8 @@ enum EditTool: String, CaseIterable {
     case highlight
     case callout
     case fileLink
+    case sticker
+    case tabs
 
     var isToggleable: Bool {
         switch self {
@@ -695,6 +723,8 @@ enum EditTool: String, CaseIterable {
         case .highlight: return "Highlight"
         case .callout: return "Callout"
         case .fileLink: return "Attach File"
+        case .sticker: return "Post-it"
+        case .tabs: return "Tabs"
         }
     }
 

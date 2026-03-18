@@ -188,6 +188,7 @@ final class CodeBlockOverlayView: NSView {
 
     override func layout() {
         super.layout()
+        needsDisplay = true
 
         layer?.shadowPath = CGPath(
             roundedRect: bounds,
@@ -306,9 +307,10 @@ final class CodeBlockOverlayView: NSView {
         langLabel.textColor          = secondary
         chevronView.contentTintColor = secondary
 
+        // border/default: #D6D3D1 (light) / #44403C (dark)
         layer?.borderColor = dark
-            ? NSColor.white.withAlphaComponent(0.06).cgColor
-            : NSColor.black.withAlphaComponent(0.08).cgColor
+            ? NSColor(srgbRed: 68/255, green: 64/255, blue: 60/255, alpha: 1).cgColor
+            : NSColor(srgbRed: 214/255, green: 211/255, blue: 209/255, alpha: 1).cgColor
 
         needsDisplay = true
     }
@@ -379,14 +381,12 @@ final class CodeBlockOverlayView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
-        let dark = isDarkMode
-
-        let outerBg = NSColor(named: "BlockContainerColor")
-            ?? (dark
-                ? NSColor(srgbRed: 41/255,  green: 37/255,  blue: 36/255,  alpha: 1)   // stone-800 #292524
-                : NSColor(srgbRed: 214/255, green: 211/255, blue: 209/255, alpha: 1))  // stone-300 #D6D3D1
-        outerBg.setFill()
-        NSBezierPath(roundedRect: bounds, xRadius: outerRadius, yRadius: outerRadius).fill()
+        // Only fill the code body region — outer container is border-only
+        let bodyBg = isDarkMode
+            ? NSColor(srgbRed: 12/255, green: 10/255, blue: 9/255, alpha: 1)   // #0C0A09
+            : NSColor.white
+        bodyBg.setFill()
+        NSBezierPath(roundedRect: codeBodyView.frame, xRadius: innerRadius, yRadius: innerRadius).fill()
     }
 
     // MARK: - Appearance Change

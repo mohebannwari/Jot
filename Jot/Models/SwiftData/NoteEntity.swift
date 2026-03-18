@@ -45,6 +45,9 @@ final class NoteEntity {
             .count
     }
 
+    // MARK: - Sticker Storage
+    var stickersData: Data?
+
     // MARK: - Web Clip Support
     var webClipURL: String?
     var webClipTitle: String?
@@ -111,6 +114,9 @@ final class NoteEntity {
         )
         self.id = note.id
         self.isLocked = note.isLocked
+        if !note.stickers.isEmpty {
+            self.stickersData = try? JSONEncoder().encode(note.stickers)
+        }
 
         // Extract web clip data from content if present
         self.extractWebClipData()
@@ -172,6 +178,9 @@ final class NoteEntity {
         note.id = id
         note.date = modifiedAt
         note.createdAt = createdAt
+        if let data = stickersData {
+            note.stickers = (try? JSONDecoder().decode([Sticker].self, from: data)) ?? []
+        }
         return note
     }
 }

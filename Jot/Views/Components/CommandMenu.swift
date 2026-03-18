@@ -264,6 +264,8 @@ extension EditTool {
         case .highlight: return nil
         case .callout: return "IconLightBulbSimple"
         case .fileLink: return "IconFileLink"
+        case .sticker: return "IconSticker"
+        case .tabs: return "IconDossier"
         }
     }
 
@@ -300,6 +302,8 @@ extension EditTool {
         case .highlight: return "highlighter"
         case .callout: return "info.circle.fill"
         case .fileLink: return "paperclip"
+        case .sticker: return "note.text"
+        case .tabs: return "rectangle.split.3x1"
         }
     }
 }
