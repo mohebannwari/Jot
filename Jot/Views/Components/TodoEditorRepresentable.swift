@@ -3996,74 +3996,23 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 forGlyphRange: NSRange(location: glyphIndex, length: 1), in: textContainer)
 
             // Convert to text view's coordinate space
-            // This accounts for text container origin (insets/padding)
             let cursorX = glyphRect.origin.x + textView.textContainerOrigin.x
             let cursorY = glyphRect.origin.y + textView.textContainerOrigin.y
             let cursorHeight = glyphRect.height
 
-            // Menu dimensions
-            let menuGap: CGFloat = 4
-            let safetyMargin: CGFloat = 20
-            let menuContentHeight = CommandMenuLayout.idealHeight(for: TodoRichTextEditor.commandMenuActions.count)
-            let menuHeight = menuContentHeight + TodoRichTextEditor.commandMenuVerticalPadding
-            let menuWidth = TodoRichTextEditor.commandMenuTotalWidth
+            // Send the raw cursor position in text-view-local coordinates.
+            // The SwiftUI layer (clampedCommandMenuPosition) handles above/below
+            // placement using the actual viewport geometry, same pattern as the
+            // floating toolbar's submenu positioning.
+            let menuPosition = CGPoint(x: cursorX, y: cursorY)
 
-            // Get the visible rect to check against actual viewport, not total text view bounds
-            let visibleRect = textView.visibleRect
-
-            // Check if there's enough space below the cursor in the VISIBLE area
-            // This is the key: we check against visibleRect.maxY, not bounds.height
-            let cursorBottomY = cursorY + cursorHeight
-            let spaceBelow = visibleRect.maxY - cursorBottomY
-            let shouldShowAbove = spaceBelow < (menuHeight + menuGap + safetyMargin)
-
-            // Position menu above or below cursor depending on available space
-            var xPosition = cursorX
-            var yPosition: CGFloat
-            if shouldShowAbove {
-                // Position above cursor
-                yPosition = cursorY - menuHeight - menuGap
-            } else {
-                // Position below cursor (default)
-                yPosition = cursorY + cursorHeight + menuGap
-            }
-
-            // Clamp X within visible bounds to avoid clipping
-            let minX = visibleRect.minX + safetyMargin
-            let maxX = visibleRect.maxX - menuWidth - safetyMargin
-            if minX <= maxX {
-                xPosition = min(max(xPosition, minX), maxX)
-            } else {
-                xPosition = max(
-                    visibleRect.minX + menuGap,
-                    visibleRect.maxX - menuWidth - menuGap
-                )
-            }
-
-            // Clamp Y to keep menu fully visible
-            let minY = visibleRect.minY + safetyMargin
-            let maxY = visibleRect.maxY - menuHeight - safetyMargin
-            if minY <= maxY {
-                yPosition = min(max(yPosition, minY), maxY)
-            } else {
-                yPosition = max(
-                    visibleRect.minY + menuGap,
-                    visibleRect.maxY - menuHeight - menuGap
-                )
-            }
-
-            let menuPosition = CGPoint(x: xPosition, y: yPosition)
-
-            // Only need extra space when menu shows below cursor AND there's not enough space
-            let needsExtraSpace = !shouldShowAbove && spaceBelow < (menuHeight + menuGap + safetyMargin)
-
-            // Post notification to show menu
             NotificationCenter.default.post(
                 name: .showCommandMenu,
                 object: [
                     "position": menuPosition,
+                    "cursorHeight": cursorHeight,
                     "slashLocation": insertLocation,
-                    "needsSpace": needsExtraSpace
+                    "needsSpace": false
                 ],
                 userInfo: editorInstanceID.map { ["editorInstanceID": $0] }
             )

@@ -45,6 +45,7 @@ struct TodoRichTextEditor: View {
     @State private var showCommandMenu = false
     @State private var commandMenuRevealed = false
     @State private var commandMenuPosition: CGPoint = .zero
+    @State private var commandMenuCursorHeight: CGFloat = 20
     @State private var commandMenuSelectedIndex = 0
     @State private var commandSlashLocation: Int = -1
     @State private var commandMenuFilterText = ""
@@ -144,8 +145,8 @@ struct TodoRichTextEditor: View {
                         onSelect: { tool in handleCommandMenuSelection(tool) }
                     )
                     .offset(
-                        x: clampedCommandMenuPosition(for: geometry.size).x,
-                        y: clampedCommandMenuPosition(for: geometry.size).y
+                        x: clampedCommandMenuPosition(for: geometry).x,
+                        y: clampedCommandMenuPosition(for: geometry).y
                     )
                     .allowsHitTesting(commandMenuRevealed)
                     .transition(.identity)
@@ -280,6 +281,7 @@ struct TodoRichTextEditor: View {
                 let slashLocation = info["slashLocation"] as? Int
             {
                 commandMenuPosition = position
+                commandMenuCursorHeight = info["cursorHeight"] as? CGFloat ?? 20
                 commandSlashLocation = slashLocation
                 commandMenuSelectedIndex = 0
                 commandMenuFilterText = ""
@@ -547,31 +549,39 @@ struct TodoRichTextEditor: View {
         }
     }
 
-    private func clampedCommandMenuPosition(for containerSize: CGSize) -> CGPoint {
-        let contentHeight = CommandMenuLayout.idealHeight(for: filteredCommandMenuTools.count)
-        let totalHeight = contentHeight + Self.commandMenuVerticalPadding
+    private func clampedCommandMenuPosition(for geometry: GeometryProxy) -> CGPoint {
+        let containerSize = geometry.size
+        let menuGap: CGFloat = 4
+        let menuHeight = CommandMenuLayout.idealHeight(for: filteredCommandMenuTools.count) + Self.commandMenuVerticalPadding
+        let cursorHeight = commandMenuCursorHeight
+        let bottomReserve: CGFloat = 50 // bottom toolbar overlay
+
+        // Clamp X
         let maxX = max(0, containerSize.width - Self.commandMenuTotalWidth)
         let clampedX = min(max(commandMenuPosition.x, 0), maxX)
 
-        // Use the actual window visible height to detect clipping,
-        // since containerSize may be the scroll content size (not viewport)
-        let visibleHeight: CGFloat
-        if let windowHeight = NSApp.keyWindow?.contentView?.bounds.height {
-            visibleHeight = windowHeight
+        // Determine above/below using viewport geometry (same pattern as
+        // floating toolbar submenu positioning in NoteDetailView).
+        // commandMenuPosition is in text-view-local coords (scrollable content).
+        // Convert to viewport-relative by using the overlay's global frame.
+        let globalFrame = geometry.frame(in: .global)
+        let cursorViewportY = commandMenuPosition.y + globalFrame.minY
+        let cursorBottomViewport = cursorViewportY + cursorHeight
+
+        let windowHeight = NSApp.keyWindow?.contentView?.bounds.height ?? globalFrame.height
+        let spaceBelow = windowHeight - cursorBottomViewport - bottomReserve
+        let fitsBelow = spaceBelow >= (menuHeight + menuGap)
+
+        let yPosition: CGFloat
+        if fitsBelow {
+            // Below cursor
+            yPosition = commandMenuPosition.y + cursorHeight + menuGap
         } else {
-            visibleHeight = containerSize.height
+            // Above cursor
+            yPosition = commandMenuPosition.y - menuHeight - menuGap
         }
 
-        // The menu position Y is in text-view-local coordinates.
-        // Check if it would clip against the visible viewport bottom.
-        let clampedY: CGFloat
-        if commandMenuPosition.y + totalHeight > visibleHeight - 50 {
-            // Flip above: go up by the menu height + the cursor line (~24pt)
-            clampedY = max(0, commandMenuPosition.y - totalHeight - 24)
-        } else {
-            clampedY = max(0, commandMenuPosition.y)
-        }
-        return CGPoint(x: clampedX, y: clampedY)
+        return CGPoint(x: clampedX, y: max(0, yPosition))
     }
 
     private func clampedURLPasteMenuPosition(for containerSize: CGSize) -> CGPoint {
