@@ -179,7 +179,7 @@ public final class AudioRecorder: NSObject, ObservableObject, AudioRecorderServi
         duration = accumulatedDuration
 
         let url = fileURL
-        audioFileQueue.sync { audioFile = nil }
+        audioFileQueue.async { [weak self] in self?.audioFile = nil }
         fileURL = nil
         accumulatedDuration = 0
         state = .idle
@@ -209,7 +209,7 @@ public final class AudioRecorder: NSObject, ObservableObject, AudioRecorderServi
         if let url = fileURL {
             try? FileManager.default.removeItem(at: url)
         }
-        audioFileQueue.sync { audioFile = nil }
+        audioFileQueue.async { [weak self] in self?.audioFile = nil }
         fileURL = nil
         accumulatedDuration = 0
         startDate = nil

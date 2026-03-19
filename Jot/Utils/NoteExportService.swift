@@ -787,19 +787,20 @@ final class NoteExportService {
     /// Sanitize a URL to only allow safe schemes (http, https, mailto, tel).
     /// Returns "#" for disallowed schemes like javascript: or data:.
     private func sanitizeURL(_ url: String) -> String {
-        let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let allowedSchemes = ["http:", "https:", "mailto:", "tel:"]
+        let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
         // Allow scheme-relative URLs and relative paths
         if trimmed.hasPrefix("//") || trimmed.hasPrefix("/") || trimmed.hasPrefix("#") {
             return url
         }
-        // If it has a scheme, it must be in the allowlist
-        if trimmed.contains(":") {
-            let hasAllowedScheme = allowedSchemes.contains { trimmed.hasPrefix($0) }
-            if !hasAllowedScheme {
-                return "#"
-            }
+        // Use URL parser for robust scheme extraction (handles Unicode, encoding, etc.)
+        let allowedSchemes: Set<String> = ["http", "https", "mailto", "tel"]
+        if let parsed = URL(string: trimmed), let scheme = parsed.scheme?.lowercased() {
+            return allowedSchemes.contains(scheme) ? url : "#"
         }
-        return url
+        // No parseable scheme — allow (relative URL)
+        if !trimmed.contains(":") {
+            return url
+        }
+        return "#"
     }
 }

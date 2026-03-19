@@ -54,7 +54,7 @@ class ThumbnailCache: ObservableObject {
         loadingUrls.insert(url)
 
         metadataFetcher.fetchMetadata(from: url) { [weak self] metadata in
-            DispatchQueue.main.async {
+            Task { @MainActor in
                 self?.insertMetadata(metadata, for: url)
                 self?.loadingUrls.remove(url)
                 completion(metadata)
