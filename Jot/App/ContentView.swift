@@ -506,6 +506,7 @@ struct ContentView: View {
         }
         .background {
             Color.clear
+                .padding(-40)
                 .ignoresSafeArea()
                 .liquidGlass(in: Rectangle())
         }
@@ -1098,6 +1099,27 @@ struct ContentView: View {
         }
     }
 
+    // MARK: - DEV Theme Toggle (temporary)
+
+    private var devThemeToggle: some View {
+        let isLight = themeManager.currentTheme == .light
+        return HStack(spacing: 2) {
+            DevThemeButton(symbol: "sun.max.fill", active: isLight) {
+                themeManager.setTheme(.light)
+            }
+            DevThemeButton(symbol: "moon.fill", active: !isLight) {
+                themeManager.setTheme(.dark)
+            }
+        }
+        .padding(3)
+        .background(
+            Capsule(style: .continuous)
+                .fill(Color.primary.opacity(0.03))
+        )
+        .padding(.horizontal, 8)
+        .padding(.bottom, 4)
+    }
+
     // MARK: - Sidebar
 
     @ViewBuilder
@@ -1155,6 +1177,9 @@ struct ContentView: View {
                 .scrollIndicators(.never)
                 .padding(.top, -6)
                 .padding(.bottom, 4)
+
+                // DEV: Quick light/dark toggle
+                HStack { devThemeToggle; Spacer() }
 
                 // Trash -- only visible when there are deleted notes
                 if !notesManager.deletedNotes.isEmpty {
@@ -4658,6 +4683,37 @@ private extension View {
                     .strokeBorder(strokeColor, lineWidth: 2)
                     .padding(1)
             }
+    }
+}
+
+// MARK: - DEV Theme Toggle Button (temporary)
+
+private struct DevThemeButton: View {
+    let symbol: String
+    let active: Bool
+    let action: () -> Void
+
+    @State private var isPressed = false
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(active ? Color.primary : Color.primary.opacity(0.15))
+            .frame(width: 34, height: 28)
+            .contentShape(Capsule())
+            .background(
+                Capsule(style: .continuous)
+                    .fill(active ? Color.primary.opacity(0.07) : Color.clear)
+            )
+            .scaleEffect(isPressed ? 0.96 : 1.0)
+            .animation(.easeInOut(duration: 0.15), value: isPressed)
+            .animation(.easeInOut(duration: 0.2), value: active)
+            .onTapGesture { action() }
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { _ in isPressed = true }
+                    .onEnded { _ in isPressed = false }
+            )
     }
 }
 

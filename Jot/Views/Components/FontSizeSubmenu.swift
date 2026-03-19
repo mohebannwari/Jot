@@ -12,7 +12,7 @@ struct FontSizeSubmenu: View {
     var onSizeSelected: ((CGFloat) -> Void)?
     var onDismiss: (() -> Void)?
 
-    @State private var visible = false
+    @State private var isRevealed = false
     @State private var customSizeText = ""
     @FocusState private var isCustomFieldFocused: Bool
 
@@ -22,15 +22,22 @@ struct FontSizeSubmenu: View {
         VStack(spacing: 0) {
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 0) {
-                    ForEach(sizes, id: \.self) { size in
+                    ForEach(Array(sizes.enumerated()), id: \.element) { index, size in
                         sizeRow(size)
+                            .opacity(isRevealed ? 1 : 0)
+                            .offset(y: isRevealed ? 0 : 8)
+                            .scaleEffect(isRevealed ? 1 : 0.92, anchor: .top)
+                            .animation(
+                                .bouncy(duration: 0.4).delay(Double(index) * 0.03),
+                                value: isRevealed
+                            )
                     }
                 }
             }
             .frame(maxHeight: 240)
 
             Rectangle()
-                .fill(Color(hex: "#44403c").opacity(0.15))
+                .fill(Color.primary.opacity(0.15))
                 .frame(height: 0.5)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
@@ -59,10 +66,10 @@ struct FontSizeSubmenu: View {
         .padding(4)
         .frame(width: 120)
         .liquidGlass(in: RoundedRectangle(cornerRadius: 16))
-        .scaleEffect(visible ? 1 : 0.9, anchor: .top)
-        .opacity(visible ? 1 : 0)
         .onAppear {
-            withAnimation(.spring(duration: 0.2)) { visible = true }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                isRevealed = true
+            }
         }
     }
 

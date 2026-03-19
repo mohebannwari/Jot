@@ -551,9 +551,26 @@ struct TodoRichTextEditor: View {
         let contentHeight = CommandMenuLayout.idealHeight(for: filteredCommandMenuTools.count)
         let totalHeight = contentHeight + Self.commandMenuVerticalPadding
         let maxX = max(0, containerSize.width - Self.commandMenuTotalWidth)
-        let maxY = max(0, containerSize.height - totalHeight)
         let clampedX = min(max(commandMenuPosition.x, 0), maxX)
-        let clampedY = min(max(commandMenuPosition.y, 0), maxY)
+
+        // Use the actual window visible height to detect clipping,
+        // since containerSize may be the scroll content size (not viewport)
+        let visibleHeight: CGFloat
+        if let windowHeight = NSApp.keyWindow?.contentView?.bounds.height {
+            visibleHeight = windowHeight
+        } else {
+            visibleHeight = containerSize.height
+        }
+
+        // The menu position Y is in text-view-local coordinates.
+        // Check if it would clip against the visible viewport bottom.
+        let clampedY: CGFloat
+        if commandMenuPosition.y + totalHeight > visibleHeight - 50 {
+            // Flip above: go up by the menu height + the cursor line (~24pt)
+            clampedY = max(0, commandMenuPosition.y - totalHeight - 24)
+        } else {
+            clampedY = max(0, commandMenuPosition.y)
+        }
         return CGPoint(x: clampedX, y: clampedY)
     }
 

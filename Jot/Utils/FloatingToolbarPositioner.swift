@@ -40,8 +40,8 @@ enum FloatingToolbarPositioner {
         visibleWidth: CGFloat,
         visibleHeight: CGFloat,
         toolbarWidth: CGFloat,
-        toolbarHeight: CGFloat = 36,
-        gap: CGFloat = 14
+        toolbarHeight: CGFloat = 46,
+        gap: CGFloat = 30
     ) -> Result {
 
         // Resolve actual window dimensions

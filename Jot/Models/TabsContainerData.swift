@@ -10,6 +10,7 @@ import Foundation
 struct TabPane {
     var name: String
     var content: String
+    var colorHex: String?  // nil = default (uncolored)
 }
 
 struct TabsContainerData {
@@ -20,6 +21,17 @@ struct TabsContainerData {
     static let defaultHeight: CGFloat = 222
     static let minHeight: CGFloat = 100
     static let maxHeight: CGFloat = 600
+
+    /// Available tab colors — 500 shades that work in both light and dark modes
+    static let tabColors: [(name: String, hex: String)] = [
+        ("Red",    "#EF4444"),
+        ("Orange", "#F97316"),
+        ("Amber",  "#F59E0B"),
+        ("Green",  "#22C55E"),
+        ("Blue",   "#3B82F6"),
+        ("Purple", "#A855F7"),
+        ("Pink",   "#EC4899"),
+    ]
 
     static func empty() -> TabsContainerData {
         TabsContainerData(
@@ -50,14 +62,21 @@ struct TabsContainerData {
         panes[index].name = newName.isEmpty ? "Untitled" : newName
     }
 
+    mutating func setTabColor(at index: Int, colorHex: String?) {
+        guard panes.indices.contains(index) else { return }
+        panes[index].colorHex = colorHex
+    }
+
     // MARK: - Serialization
 
-    // Format: [[tabs|activeIndex|height|Name1\tName2]]content1\t\tcontent2[[/tabs]]
+    // Old format: [[tabs|activeIndex|height|Name1\tName2]]content1\t\tcontent2[[/tabs]]
+    // New format: [[tabs|activeIndex|height|Name1\tName2|color1\tcolor2]]content1\t\tcontent2[[/tabs]]
 
     func serialize() -> String {
         let names = panes.map { Self.escape($0.name) }.joined(separator: "\t")
+        let colors = panes.map { $0.colorHex ?? "" }.joined(separator: "\t")
         let contents = panes.map { Self.escape($0.content) }.joined(separator: "\t\t")
-        return "[[tabs|\(activeIndex)|\(Int(containerHeight))|\(names)]]\(contents)[[/tabs]]"
+        return "[[tabs|\(activeIndex)|\(Int(containerHeight))|\(names)|\(colors)]]\(contents)[[/tabs]]"
     }
 
     static func deserialize(from text: String) -> TabsContainerData? {
@@ -66,13 +85,21 @@ struct TabsContainerData {
         guard let closeBracket = afterPrefix.range(of: "]]") else { return nil }
 
         let header = String(afterPrefix[afterPrefix.startIndex..<closeBracket.lowerBound])
-        let parts = header.split(separator: "|", maxSplits: 2, omittingEmptySubsequences: false)
-        guard parts.count == 3 else { return nil }
+        let parts = header.split(separator: "|", maxSplits: 3, omittingEmptySubsequences: false)
+        guard parts.count >= 3 else { return nil }
 
         guard let activeIdx = Int(parts[0]) else { return nil }
         let height = CGFloat(Int(parts[1]) ?? Int(defaultHeight))
 
         let names = String(parts[2]).components(separatedBy: "\t").map { unescape($0) }
+
+        // Colors (optional 4th field — backward compatible)
+        let colors: [String?]
+        if parts.count >= 4 {
+            colors = String(parts[3]).components(separatedBy: "\t").map { $0.isEmpty ? nil : $0 }
+        } else {
+            colors = names.map { _ in nil }
+        }
 
         let contentStart = closeBracket.upperBound
         let remaining = afterPrefix[contentStart...]
@@ -89,7 +116,8 @@ struct TabsContainerData {
         var panes: [TabPane] = []
         for i in 0..<names.count {
             let content = i < contents.count ? contents[i] : ""
-            panes.append(TabPane(name: names[i], content: content))
+            let color = i < colors.count ? colors[i] : nil
+            panes.append(TabPane(name: names[i], content: content, colorHex: color))
         }
         guard !panes.isEmpty else { return nil }
 

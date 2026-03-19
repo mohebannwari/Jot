@@ -33,7 +33,7 @@ final class TabsContainerOverlayView: NSView {
     private let tabChipPadV:   CGFloat = 8
     private let tabsRowPad:    CGFloat = 8     // symmetric 8px all sides
     private let tabsRowGap:    CGFloat = 0
-    private let dividerW:      CGFloat = 2
+    private let dividerW:      CGFloat = 1
     private let dividerH:      CGFloat = 10
     private let plusSize:       CGFloat = 32
     private let plusIconSz:    CGFloat = 18
@@ -53,6 +53,9 @@ final class TabsContainerOverlayView: NSView {
     // MARK: - Subviews
 
     private let tabsRowView  = _FlippedContainerView()
+    private var plusButton: _TabsPlusButton!
+    private var overflowButton: _TabsOverflowButton!
+
     private let contentBody  = _FlippedContainerView()
     private let contentTextView: NSTextView = {
         let tv = NSTextView()
@@ -114,9 +117,21 @@ final class TabsContainerOverlayView: NSView {
         layer?.cornerCurve   = .continuous
         layer?.masksToBounds = false
 
-        // Tabs row
+        // Tabs row — clips overflow
         tabsRowView.wantsLayer = true
+        tabsRowView.layer?.masksToBounds = true
         addSubview(tabsRowView)
+
+        // Plus button (pinned to right edge)
+        plusButton = _TabsPlusButton(size: plusSize, iconSize: plusIconSz)
+        plusButton.onClick = { [weak self] in self?.addNewTab() }
+        tabsRowView.addSubview(plusButton)
+
+        // Overflow chevron (hidden by default)
+        overflowButton = _TabsOverflowButton(height: tabChipPadV * 2 + 16, iconSize: 16)
+        overflowButton.onClick = { [weak self] in self?.showOverflowMenu() }
+        overflowButton.isHidden = true
+        tabsRowView.addSubview(overflowButton)
 
         // Content body — all 4 corners rounded
         contentBody.wantsLayer = true
@@ -154,6 +169,15 @@ final class TabsContainerOverlayView: NSView {
         // Tabs row
         tabsRowView.frame = CGRect(x: op, y: op, width: W - 2 * op, height: trh)
 
+        // Plus button — pinned to right edge of tabs row
+        let chipH = tabChipPadV * 2 + 16
+        let chipY = round((Self.tabsRowHeight - chipH) / 2)
+        let plusX = tabsRowView.bounds.width - tabsRowPad - plusSize
+        plusButton.frame = CGRect(x: plusX, y: chipY + (chipH - plusSize) / 2, width: plusSize, height: plusSize)
+
+        // Re-evaluate overflow after width change
+        layoutChipsWithOverflow()
+
         // Content body (4px gap below tabs row)
         let gap = Self.tabsContentGap
         let bodyH = max(bounds.height - op - trh - gap - op, 20)
@@ -181,13 +205,15 @@ final class TabsContainerOverlayView: NSView {
     // MARK: - Tabs Row Rebuild
 
     private func rebuildTabsRow() {
-        tabsRowView.subviews.forEach { $0.removeFromSuperview() }
+        // Remove only chip/divider subviews (keep plusButton and overflowButton)
+        for chip in tabChips { chip.removeFromSuperview() }
+        for entry in tabDividers { entry.view.removeFromSuperview() }
         tabChips.removeAll()
         tabDividers.removeAll()
 
-        var x: CGFloat = tabsRowPad
         let chipH = tabChipPadV * 2 + 16  // 8 + 16 lineHeight + 8 = 32
         let chipY = round((Self.tabsRowHeight - chipH) / 2)
+        var x: CGFloat = tabsRowPad
 
         for (i, pane) in tabsData.panes.enumerated() {
             let chip = _TabChipView(
@@ -196,7 +222,8 @@ final class TabsContainerOverlayView: NSView {
                 isDark: isDarkMode,
                 cornerRadius: chipH / 2,  // pill
                 padH: tabChipPadH,
-                padV: tabChipPadV
+                padV: tabChipPadV,
+                colorHex: pane.colorHex
             )
 
             chip.onClick = { [weak self] in self?.selectTab(at: i) }
@@ -235,12 +262,7 @@ final class TabsContainerOverlayView: NSView {
             }
         }
 
-        // Plus button — far right
-        let plusBtn = _TabsPlusButton(size: plusSize, iconSize: plusIconSz)
-        let plusX = tabsRowView.bounds.width - tabsRowPad - plusSize
-        plusBtn.frame = CGRect(x: plusX, y: chipY + (chipH - plusSize) / 2, width: plusSize, height: plusSize)
-        plusBtn.onClick = { [weak self] in self?.addNewTab() }
-        tabsRowView.addSubview(plusBtn)
+        layoutChipsWithOverflow()
     }
 
     /// Reposition existing chips and dividers without recreating them (used during live rename)
@@ -256,7 +278,6 @@ final class TabsContainerOverlayView: NSView {
             chip.frame = f
             x += f.width
 
-            // Reposition divider that sits after this chip (if any)
             if let divEntry = tabDividers.first(where: { $0.afterIndex == i }) {
                 var df = divEntry.view.frame
                 df.origin.x = x + tabsRowGap / 2 - dividerW / 2
@@ -266,6 +287,113 @@ final class TabsContainerOverlayView: NSView {
 
             x += tabsRowGap
         }
+
+        layoutChipsWithOverflow()
+    }
+
+    /// Show/hide chips and the overflow chevron based on available width.
+    /// If the active tab is in overflow, move just that chip to the end of the visible area.
+    private func layoutChipsWithOverflow() {
+        guard !tabChips.isEmpty else {
+            overflowButton.isHidden = true
+            return
+        }
+
+        let rowW = tabsRowView.bounds.width
+        guard rowW > 0 else { return }
+
+        let chipH = tabChipPadV * 2 + 16
+        let chipY = round((Self.tabsRowHeight - chipH) / 2)
+        let overflowW = overflowButton.fittingSize.width
+        let plusX = rowW - tabsRowPad - plusSize
+        let maxChipX = plusX
+
+        let activeIdx = tabsData.activeIndex
+
+        // Determine which chips fit in their natural order
+        var firstOverflowIdx: Int? = nil
+        for (i, chip) in tabChips.enumerated() {
+            if chip.frame.maxX + overflowW > maxChipX {
+                firstOverflowIdx = i
+                break
+            }
+        }
+
+        guard let overflowIdx = firstOverflowIdx else {
+            // All chips fit — show everything, hide overflow
+            for chip in tabChips { chip.isHidden = false }
+            for entry in tabDividers { entry.view.isHidden = false }
+            overflowButton.isHidden = true
+            return
+        }
+
+        // There is overflow. Check if active tab is among the hidden ones.
+        let activeIsOverflowed = activeIdx >= overflowIdx
+
+        if activeIsOverflowed && activeIdx < tabChips.count {
+            // Move the active chip to the end of the visible area (before overflow button)
+            let activeChip = tabChips[activeIdx]
+            let activeW = activeChip.frame.width
+
+            // Find where to place it: right before the overflow button
+            let overflowX = plusX - overflowW
+            let activeX = overflowX - activeW - tabsRowGap
+
+            activeChip.frame = CGRect(x: activeX, y: chipY, width: activeW, height: chipH)
+            activeChip.isHidden = false
+
+            // Now recalculate: hide chips that don't fit before the active chip
+            let maxBeforeActive = activeX - tabsRowGap
+            for (i, chip) in tabChips.enumerated() {
+                if i == activeIdx { continue }
+                if i >= overflowIdx || chip.frame.maxX > maxBeforeActive {
+                    chip.isHidden = true
+                } else {
+                    chip.isHidden = false
+                }
+            }
+        } else {
+            // Active is visible — just hide overflowed chips normally
+            for (i, chip) in tabChips.enumerated() {
+                chip.isHidden = i >= overflowIdx
+            }
+        }
+
+        // Hide dividers adjacent to hidden chips
+        for entry in tabDividers {
+            let afterIdx = entry.afterIndex
+            let beforeIdx = afterIdx + 1
+            let afterHidden = afterIdx < tabChips.count && tabChips[afterIdx].isHidden
+            let beforeHidden = beforeIdx < tabChips.count && tabChips[beforeIdx].isHidden
+            entry.view.isHidden = afterHidden || beforeHidden
+        }
+
+        // Position overflow button
+        let overflowX = plusX - overflowW
+        overflowButton.frame = CGRect(
+            x: overflowX, y: chipY,
+            width: overflowW, height: chipH
+        )
+        overflowButton.isHidden = false
+    }
+
+    /// Pop up an NSMenu listing all tabs (active tab gets a checkmark)
+    private func showOverflowMenu() {
+        let menu = NSMenu()
+        for (i, pane) in tabsData.panes.enumerated() {
+            let item = NSMenuItem(title: pane.name, action: #selector(overflowMenuSelectTab(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = i
+            item.state = (i == tabsData.activeIndex) ? .on : .off
+            menu.addItem(item)
+        }
+        let origin = NSPoint(x: overflowButton.frame.minX, y: overflowButton.frame.maxY + 4)
+        menu.popUp(positioning: nil, at: origin, in: tabsRowView)
+    }
+
+    @objc private func overflowMenuSelectTab(_ sender: NSMenuItem) {
+        guard let index = sender.representedObject as? Int else { return }
+        selectTab(at: index)
     }
 
     // MARK: - Tab Actions
@@ -307,6 +435,29 @@ final class TabsContainerOverlayView: NSView {
         renameItem.representedObject = index
         menu.addItem(renameItem)
 
+        // Color submenu
+        let colorItem = NSMenuItem(title: "Color", action: nil, keyEquivalent: "")
+        let colorSub = NSMenu()
+
+        let noneItem = NSMenuItem(title: "None", action: #selector(contextMenuSetColor(_:)), keyEquivalent: "")
+        noneItem.target = self
+        noneItem.representedObject = ["index": index, "color": ""] as [String: Any]
+        if tabsData.panes[index].colorHex == nil { noneItem.state = .on }
+        colorSub.addItem(noneItem)
+        colorSub.addItem(.separator())
+
+        for entry in TabsContainerData.tabColors {
+            let item = NSMenuItem(title: entry.name, action: #selector(contextMenuSetColor(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = ["index": index, "color": entry.hex] as [String: Any]
+            item.image = Self.colorSwatchImage(hex: entry.hex)
+            if tabsData.panes[index].colorHex == entry.hex { item.state = .on }
+            colorSub.addItem(item)
+        }
+
+        colorItem.submenu = colorSub
+        menu.addItem(colorItem)
+
         if tabsData.panes.count > 1 {
             let deleteItem = NSMenuItem(title: "Delete Tab", action: #selector(contextMenuDeleteTab(_:)), keyEquivalent: "")
             deleteItem.target = self
@@ -323,9 +474,31 @@ final class TabsContainerOverlayView: NSView {
         NSMenu.popUpContextMenu(menu, with: event, for: self)
     }
 
+    /// Generate a small circle swatch image for a color menu item
+    private static func colorSwatchImage(hex: String) -> NSImage? {
+        guard let color = NSColor.fromHex(hex) else { return nil }
+        let size: CGFloat = 12
+        let image = NSImage(size: NSSize(width: size, height: size), flipped: false) { rect in
+            color.setFill()
+            NSBezierPath(ovalIn: rect.insetBy(dx: 0.5, dy: 0.5)).fill()
+            return true
+        }
+        image.isTemplate = false
+        return image
+    }
+
     @objc private func contextMenuRename(_ sender: NSMenuItem) {
         guard let index = sender.representedObject as? Int else { return }
         beginRename(at: index)
+    }
+
+    @objc private func contextMenuSetColor(_ sender: NSMenuItem) {
+        guard let info = sender.representedObject as? [String: Any],
+              let index = info["index"] as? Int,
+              let colorStr = info["color"] as? String else { return }
+        let color: String? = colorStr.isEmpty ? nil : colorStr
+        tabsData.setTabColor(at: index, colorHex: color)
+        onDataChanged?(tabsData)
     }
 
     @objc private func contextMenuDeleteTab(_ sender: NSMenuItem) {
@@ -391,11 +564,11 @@ final class TabsContainerOverlayView: NSView {
             : NSColor.white
     }
 
-    /// border/default: #D6D3D1 (light) / #44403C (dark) — from Figma variable tokens
+    /// Match settings tile border: black 8% (light) / white 6% (dark)
     private static func borderColor(isDark: Bool) -> NSColor {
         isDark
-            ? NSColor(srgbRed: 68/255, green: 64/255, blue: 60/255, alpha: 1)   // #44403C
-            : NSColor(srgbRed: 214/255, green: 211/255, blue: 209/255, alpha: 1) // #D6D3D1
+            ? NSColor(white: 1.0, alpha: 0.06)
+            : NSColor(white: 0.0, alpha: 0.08)
     }
 
     private func updateColors() {
@@ -455,6 +628,22 @@ extension TabsContainerOverlayView: NSTextViewDelegate {
 }
 
 
+// MARK: - NSColor Hex Helper
+
+private extension NSColor {
+    static func fromHex(_ hex: String) -> NSColor? {
+        var h = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+        if h.hasPrefix("#") { h.removeFirst() }
+        guard h.count == 6, let val = UInt64(h, radix: 16) else { return nil }
+        return NSColor(
+            srgbRed: CGFloat((val >> 16) & 0xFF) / 255,
+            green:   CGFloat((val >> 8) & 0xFF) / 255,
+            blue:    CGFloat(val & 0xFF) / 255,
+            alpha:   1
+        )
+    }
+}
+
 // MARK: - Private Helper Views
 
 private final class _FlippedContainerView: NSView {
@@ -472,6 +661,7 @@ private final class _TabChipView: NSView, NSTextFieldDelegate {
 
     private let label: NSTextField
     private let isActive: Bool
+    private let colorHex: String?
     private let padH: CGFloat
     private let padV: CGFloat
     private var isEditing = false
@@ -479,18 +669,25 @@ private final class _TabChipView: NSView, NSTextFieldDelegate {
 
     override var isFlipped: Bool { true }
 
-    init(label text: String, isActive: Bool, isDark: Bool, cornerRadius: CGFloat, padH: CGFloat, padV: CGFloat) {
+    init(label text: String, isActive: Bool, isDark: Bool, cornerRadius: CGFloat, padH: CGFloat, padV: CGFloat, colorHex: String? = nil) {
         self.isActive = isActive
+        self.colorHex = colorHex
         self.padH = padH
         self.padV = padV
 
         self.label = NSTextField(labelWithString: text)
         self.label.font = NSFont.systemFont(ofSize: 13, weight: .medium)
-        // Active: text/primary (#1a1a1a / white)
-        // Inactive: text/placeholder (rgba(26,26,26,0.7) / rgba(255,255,255,0.7))
-        self.label.textColor = isActive
-            ? (isDark ? NSColor.white : NSColor(srgbRed: 26/255, green: 26/255, blue: 26/255, alpha: 1))
-            : (isDark ? NSColor(white: 1.0, alpha: 0.7) : NSColor(srgbRed: 26/255, green: 26/255, blue: 26/255, alpha: 0.7))
+
+        // Active + colored: white text on solid color bg
+        // Active (no color): text/primary
+        // Inactive: text/placeholder (70% opacity) — color not shown
+        if isActive && colorHex != nil {
+            self.label.textColor = .white
+        } else {
+            self.label.textColor = isActive
+                ? (isDark ? NSColor.white : NSColor(srgbRed: 26/255, green: 26/255, blue: 26/255, alpha: 1))
+                : (isDark ? NSColor(white: 1.0, alpha: 0.7) : NSColor(srgbRed: 26/255, green: 26/255, blue: 26/255, alpha: 0.7))
+        }
         self.label.isBordered = false
         self.label.drawsBackground = false
         self.label.focusRingType = .none
@@ -514,7 +711,9 @@ private final class _TabChipView: NSView, NSTextFieldDelegate {
     }
 
     private func updateChipColor() {
-        if isActive {
+        if isActive, let hex = colorHex, let color = NSColor.fromHex(hex) {
+            layer?.backgroundColor = color.cgColor
+        } else if isActive {
             let dark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
             layer?.backgroundColor = (dark
                 ? NSColor(srgbRed: 12/255, green: 10/255, blue: 9/255, alpha: 1)
@@ -640,6 +839,53 @@ private final class _TabChipView: NSView, NSTextFieldDelegate {
 
     override func resetCursorRects() {
         addCursorRect(bounds, cursor: isEditing ? .iBeam : .pointingHand)
+    }
+}
+
+// MARK: - Overflow Chevron Button
+
+private final class _TabsOverflowButton: NSView {
+
+    var onClick: (() -> Void)?
+
+    override var isFlipped: Bool { true }
+
+    private let btnHeight: CGFloat
+
+    init(height: CGFloat, iconSize: CGFloat) {
+        self.btnHeight = height
+        let w: CGFloat = 32
+        super.init(frame: CGRect(origin: .zero, size: CGSize(width: w, height: height)))
+        wantsLayer = true
+        layer?.cornerRadius = height / 2
+        layer?.cornerCurve  = .continuous
+        layer?.masksToBounds = true
+
+        let iconView = NSImageView(frame: CGRect(
+            x: (w - iconSize) / 2,
+            y: (height - iconSize) / 2,
+            width: iconSize,
+            height: iconSize
+        ))
+        let img = NSImage(named: "IconChevronDownSmall") ?? NSImage(systemSymbolName: "chevron.down", accessibilityDescription: nil)
+        img?.isTemplate = true
+        iconView.image = img
+        iconView.imageScaling = .scaleProportionallyUpOrDown
+        iconView.contentTintColor = NSColor(named: "IconSecondaryColor") ?? .secondaryLabelColor
+        addSubview(iconView)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    override var fittingSize: NSSize { NSSize(width: 32, height: btnHeight) }
+
+    override func mouseDown(with event: NSEvent) {
+        onClick?()
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .pointingHand)
     }
 }
 

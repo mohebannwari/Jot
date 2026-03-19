@@ -26,6 +26,13 @@ struct ToolbarWidthKey: PreferenceKey {
     }
 }
 
+struct ToolbarHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 46
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
 struct PillOffsetKey: PreferenceKey {
     static var defaultValue: [ToolbarSubmenuType: CGFloat] = [:]
     static func reduce(value: inout [ToolbarSubmenuType: CGFloat], nextValue: () -> [ToolbarSubmenuType: CGFloat]) {
@@ -65,24 +72,28 @@ struct FloatingEditToolbar: View {
 
     private var pillBg: Color {
         colorScheme == .dark
-            ? Color(red: 12/255, green: 10/255, blue: 9/255)  // #0C0A09 — bg/blocks, matches tabs text area
-            : Color(hex: "#e7e5e4")
+            ? Color(hex: "#292524")
+            : Color.white
     }
 
     private var pillTextColor: Color {
         colorScheme == .dark ? .white : Color("PrimaryTextColor")
     }
 
-    private var pillBorder: Color {
+    private var pillShadowColor: Color {
         colorScheme == .dark
-            ? Color.white.opacity(0.2)
-            : Color.black.opacity(0.15)
+            ? Color.black.opacity(0.5)
+            : Color.black.opacity(0.12)
+    }
+
+    private var pillShadowRadius: CGFloat {
+        colorScheme == .dark ? 3 : 2
     }
 
     var body: some View {
         HStack(spacing: 12) {
             // Section 1: Pickers
-            HStack(spacing: 2) {
+            HStack(spacing: 4) {
                 textStylePill
                 fontSizePill
                 fontPickerPill
@@ -108,16 +119,28 @@ struct FloatingEditToolbar: View {
                 .opacity(toolsVisible ? 1 : 0)
                 .scaleEffect(toolsVisible ? 1 : 0.85)
         }
-        .padding(.horizontal, 4)
-        .padding(.vertical, 1)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
         .fixedSize()
         .coordinateSpace(name: "toolbar")
         .background(
             GeometryReader { geo in
-                Color.clear.preference(key: ToolbarWidthKey.self, value: geo.size.width)
+                Color.clear
+                    .preference(key: ToolbarWidthKey.self, value: geo.size.width)
+                    .preference(key: ToolbarHeightKey.self, value: geo.size.height)
             }
         )
         .thinLiquidGlass(in: Capsule())
+        .onContinuousHover { phase in
+            switch phase {
+            case .active:
+                NSCursor.arrow.set()
+            case .ended:
+                break
+            @unknown default:
+                break
+            }
+        }
         .animation(.bouncy(duration: 0.4), value: toolsVisible)
         .onAppear {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
@@ -147,8 +170,8 @@ struct FloatingEditToolbar: View {
         } label: {
             HStack(spacing: 0) {
                 Text(currentTextStyleLabel)
-                    .font(.system(size: 12, weight: .medium))
-                    .tracking(-0.3)
+                    .font(.system(size: 13, weight: .medium))
+                    .tracking(-0.4)
                     .lineLimit(1)
                     .foregroundColor(pillTextColor)
                 Image("IconChevronDownSmall")
@@ -158,15 +181,15 @@ struct FloatingEditToolbar: View {
                     .frame(width: 18, height: 18)
                     .foregroundColor(pillTextColor.opacity(0.6))
             }
-            .padding(.leading, 8)
-            .padding(.trailing, 4)
-            .padding(.vertical, 2)
+            .padding(.leading, 12)
+            .padding(.trailing, 8)
+            .padding(.vertical, 8)
         }
         .buttonStyle(.plain)
         .background(
             Capsule()
                 .fill(pillBg)
-                .overlay(Capsule().stroke(pillBorder, lineWidth: 0.7))
+                .shadow(color: pillShadowColor, radius: pillShadowRadius, x: 0, y: 1)
         )
         .background(GeometryReader { geo in
             Color.clear.preference(key: PillOffsetKey.self, value: [.textOptions: geo.frame(in: .named("toolbar")).midX])
@@ -187,8 +210,8 @@ struct FloatingEditToolbar: View {
         } label: {
             HStack(spacing: 0) {
                 Text("\(Int(currentFontSize))")
-                    .font(.system(size: 12, weight: .medium))
-                    .tracking(-0.3)
+                    .font(.system(size: 13, weight: .medium))
+                    .tracking(-0.4)
                     .lineLimit(1)
                     .foregroundColor(pillTextColor)
                     .monospacedDigit()
@@ -199,15 +222,15 @@ struct FloatingEditToolbar: View {
                     .frame(width: 18, height: 18)
                     .foregroundColor(pillTextColor.opacity(0.6))
             }
-            .padding(.leading, 8)
-            .padding(.trailing, 4)
-            .padding(.vertical, 2)
+            .padding(.leading, 12)
+            .padding(.trailing, 8)
+            .padding(.vertical, 8)
         }
         .buttonStyle(.plain)
         .background(
             Capsule()
                 .fill(pillBg)
-                .overlay(Capsule().stroke(pillBorder, lineWidth: 0.7))
+                .shadow(color: pillShadowColor, radius: pillShadowRadius, x: 0, y: 1)
         )
         .background(GeometryReader { geo in
             Color.clear.preference(key: PillOffsetKey.self, value: [.fontSize: geo.frame(in: .named("toolbar")).midX])
@@ -236,14 +259,15 @@ struct FloatingEditToolbar: View {
                     .frame(width: 18, height: 18)
                     .foregroundColor(pillTextColor.opacity(0.6))
             }
-            .padding(.horizontal, 2)
-            .padding(.vertical, 2)
+            .padding(.leading, 12)
+            .padding(.trailing, 8)
+            .padding(.vertical, 8)
         }
         .buttonStyle(.plain)
         .background(
             Capsule()
                 .fill(pillBg)
-                .overlay(Capsule().stroke(pillBorder, lineWidth: 0.7))
+                .shadow(color: pillShadowColor, radius: pillShadowRadius, x: 0, y: 1)
         )
         .background(GeometryReader { geo in
             Color.clear.preference(key: PillOffsetKey.self, value: [.fontFamily: geo.frame(in: .named("toolbar")).midX])
@@ -261,7 +285,7 @@ struct FloatingEditToolbar: View {
             HStack(spacing: 0) {
                 Circle()
                     .fill(currentTextColorHex != nil ? Color(hex: currentTextColorHex!) : pillTextColor)
-                    .frame(width: 14, height: 14)
+                    .frame(width: 18, height: 18)
                 Image("IconChevronDownSmall")
                     .renderingMode(.template)
                     .resizable()
@@ -269,15 +293,15 @@ struct FloatingEditToolbar: View {
                     .frame(width: 18, height: 18)
                     .foregroundColor(pillTextColor.opacity(0.6))
             }
-            .padding(.leading, 4)
-            .padding(.trailing, 2)
-            .padding(.vertical, 2)
+            .padding(.leading, 8)
+            .padding(.trailing, 4)
+            .padding(.vertical, 8)
         }
         .buttonStyle(.plain)
         .background(
             Capsule()
                 .fill(pillBg)
-                .overlay(Capsule().stroke(pillBorder, lineWidth: 0.7))
+                .shadow(color: pillShadowColor, radius: pillShadowRadius, x: 0, y: 1)
         )
         .background(GeometryReader { geo in
             Color.clear.preference(key: PillOffsetKey.self, value: [.color: geo.frame(in: .named("toolbar")).midX])

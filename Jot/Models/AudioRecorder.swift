@@ -59,6 +59,7 @@ public final class AudioRecorder: NSObject, ObservableObject, AudioRecorderServi
     private let engine = AVAudioEngine()
     private let bridgeMixer = AVAudioMixerNode()
     private var audioFile: AVAudioFile?
+    private let audioFileQueue = DispatchQueue(label: "com.jot.audiofile")
     private var isConfigured = false
     private var tapInstalled = false
     private var accumulatedDuration: TimeInterval = 0
@@ -177,20 +178,8 @@ public final class AudioRecorder: NSObject, ObservableObject, AudioRecorderServi
         startDate = nil
         duration = accumulatedDuration
 
-        // CRITICAL: Ensure audio file buffers are flushed before releasing
-        if audioFile != nil {
-            // Small delay to ensure final buffer writes complete
-            // AVAudioFile writes are async, so we need to give them time to finish
-            do {
-                try await Task.sleep(for: .milliseconds(100))
-                NSLog("AudioRecorder.stop: Audio file finalized")
-            } catch {
-                NSLog("AudioRecorder.stop: Sleep interrupted: %@", error.localizedDescription)
-            }
-        }
-
         let url = fileURL
-        audioFile = nil  // Release after ensuring write completion
+        audioFileQueue.sync { audioFile = nil }
         fileURL = nil
         accumulatedDuration = 0
         state = .idle
@@ -220,7 +209,7 @@ public final class AudioRecorder: NSObject, ObservableObject, AudioRecorderServi
         if let url = fileURL {
             try? FileManager.default.removeItem(at: url)
         }
-        audioFile = nil
+        audioFileQueue.sync { audioFile = nil }
         fileURL = nil
         accumulatedDuration = 0
         startDate = nil
@@ -236,7 +225,7 @@ public final class AudioRecorder: NSObject, ObservableObject, AudioRecorderServi
         duration = 0
         state = .idle
         fileURL = nil
-        audioFile = nil
+        audioFileQueue.sync { audioFile = nil }
         accumulatedDuration = 0
         startDate = nil
         targetSampleRate = defaultSampleRate
@@ -356,12 +345,14 @@ extension AudioRecorder {
         ) { [weak self] buffer, _ in
             guard let self else { return }
             let computedLevels = self.computeLevels(from: buffer)
-            if let audioFile = self.audioFile {
-                do {
-                    try audioFile.write(from: buffer)
-                } catch {
-                    self.dispatchToMain {
-                        self.error = .engineUnavailable
+            self.audioFileQueue.sync {
+                if let audioFile = self.audioFile {
+                    do {
+                        try audioFile.write(from: buffer)
+                    } catch {
+                        self.dispatchToMain {
+                            self.error = .engineUnavailable
+                        }
                     }
                 }
             }

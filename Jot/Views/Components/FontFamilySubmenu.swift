@@ -12,7 +12,7 @@ struct FontFamilySubmenu: View {
     var onFamilySelected: ((BodyFontStyle) -> Void)?
     var onDismiss: (() -> Void)?
 
-    @State private var visible = false
+    @State private var isRevealed = false
 
     private let families: [(style: BodyFontStyle, label: String)] = [
         (.default, "Charter"),
@@ -22,17 +22,24 @@ struct FontFamilySubmenu: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            ForEach(families, id: \.style.rawValue) { item in
+            ForEach(Array(families.enumerated()), id: \.element.style.rawValue) { index, item in
                 familyRow(item.style, label: item.label)
+                    .opacity(isRevealed ? 1 : 0)
+                    .offset(y: isRevealed ? 0 : 8)
+                    .scaleEffect(isRevealed ? 1 : 0.92, anchor: .top)
+                    .animation(
+                        .bouncy(duration: 0.4).delay(Double(index) * 0.03),
+                        value: isRevealed
+                    )
             }
         }
         .padding(4)
         .frame(width: 140)
         .liquidGlass(in: RoundedRectangle(cornerRadius: 16))
-        .scaleEffect(visible ? 1 : 0.9, anchor: .top)
-        .opacity(visible ? 1 : 0)
         .onAppear {
-            withAnimation(.spring(duration: 0.2)) { visible = true }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                isRevealed = true
+            }
         }
     }
 

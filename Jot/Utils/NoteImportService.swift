@@ -887,8 +887,21 @@ final class NoteImportService {
     }
 
     private func isDefaultTextColor(_ color: NSColor) -> Bool {
+        // Check for known system text colors by catalog name
+        if let catalogName = color.colorNameComponent as String? {
+            let systemNames: Set<String> = ["labelColor", "textColor", "controlTextColor",
+                                            "secondaryLabelColor", "tertiaryLabelColor",
+                                            "quaternaryLabelColor"]
+            if systemNames.contains(catalogName) { return true }
+        }
+
         guard let c = color.usingColorSpace(.sRGB) else { return true }
-        return c.redComponent < 0.15 && c.greenComponent < 0.15 && c.blueComponent < 0.15
+        let r = c.redComponent, g = c.greenComponent, b = c.blueComponent
+
+        // Near-black (light mode default) or near-white (dark mode labelColor resolved)
+        let isNearBlack = r < 0.15 && g < 0.15 && b < 0.15
+        let isNearWhite = r > 0.85 && g > 0.85 && b > 0.85
+        return isNearBlack || isNearWhite
     }
 
     private func hexFromNSColor(_ color: NSColor) -> String {

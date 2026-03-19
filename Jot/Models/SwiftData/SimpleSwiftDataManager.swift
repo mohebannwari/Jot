@@ -67,7 +67,7 @@ final class SimpleSwiftDataManager: ObservableObject {
         hasCompletedMigrationCheck = true
         loadFolders()
 
-        Task {
+        Task { @MainActor in
             self.loadNotes(isInitialLoad: true)
         }
     }
@@ -107,7 +107,7 @@ final class SimpleSwiftDataManager: ObservableObject {
     }
 
     private func loadNotes(isInitialLoad: Bool = false) {
-        Task {
+        Task { @MainActor in
             defer {
                 if isInitialLoad {
                     self.hasLoadedInitialNotes = true
@@ -902,7 +902,7 @@ final class SimpleSwiftDataManager: ObservableObject {
     func searchNotes(query: String, limit: Int = 100) async -> [Note] {
         let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedQuery.isEmpty else {
-            return notes
+            return notes.filter { !$0.isLocked }
         }
 
         let sanitizedTagQuery = normalizedQuery.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
@@ -915,13 +915,13 @@ final class SimpleSwiftDataManager: ObservableObject {
             descriptor.fetchLimit = limit
 
             let entities = try modelContext.fetch(descriptor)
-            let results = entities.map { $0.toNote() }
+            let results = entities.map { $0.toNote() }.filter { !$0.isLocked }
             logger.info("Search for '\(query)' returned \(results.count) results")
             return results
         } catch {
             logger.error("Search failed: \(error)")
             // Fallback to in-memory search with limit
-            let filtered = notes.filter { note in
+            let filtered = notes.filter { !$0.isLocked }.filter { note in
                 let titleMatches = note.title.localizedCaseInsensitiveContains(normalizedQuery) ||
                     (hasDistinctTagQuery && note.title.localizedCaseInsensitiveContains(sanitizedTagQuery))
                 let contentMatches = note.content.localizedCaseInsensitiveContains(normalizedQuery) ||

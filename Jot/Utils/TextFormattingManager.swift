@@ -797,6 +797,8 @@ class TextFormattingManager: ObservableObject {
 
     // MARK: - Per-Selection Font Family
 
+    static let customFontFamilyKey = NSAttributedString.Key("JotCustomFontFamily")
+
     func applyFontFamily(_ style: BodyFontStyle, to textView: NSTextView, range: NSRange) {
         guard let textStorage = textView.textStorage, range.length > 0 else { return }
 
@@ -837,6 +839,8 @@ class TextFormattingManager: ObservableObject {
 
             textStorage.addAttribute(.font, value: newFont, range: subRange)
         }
+        // Mark as explicitly user-set so fixInconsistentFonts() skips this range
+        textStorage.addAttribute(Self.customFontFamilyKey, value: true, range: range)
         textStorage.endEditing()
 
         registerUndo(textView: textView, snapshot: snapshot, actionName: "Change Font Family")

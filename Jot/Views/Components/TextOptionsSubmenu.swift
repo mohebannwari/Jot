@@ -16,38 +16,47 @@ struct TextOptionsSubmenu: View {
     var onToolAction: ((EditTool) -> Void)?
     var onDismiss: (() -> Void)?
 
-    @State private var visible = false
+    @State private var isRevealed = false
+
+    private var rows: [(icon: String, label: String, tool: EditTool, isActive: Bool)] {
+        [
+            ("IconNumber1Circle", "Heading 1", .h1, false),
+            ("IconNumber2Circle", "Heading 2", .h2, false),
+            ("IconNumber3Circle", "Heading 3", .h3, false),
+            ("IconTitleCase", "Body", .titleCase, false),
+            ("IconBold", "Bold", .bold, isBoldActive),
+            ("IconItalic", "Italic", .italic, isItalicActive),
+            ("IconUnderline", "Underline", .underline, isUnderlineActive),
+            ("IconStrikeThrough", "Strikethrough", .strikethrough, isStrikethroughActive),
+            ("IconBulletList", "Bulleted List", .bulletList, false),
+            ("IconNumberedList", "Numbered List", .numberedList, false),
+            ("IconDashList", "Dashed List", .dashedList, false),
+        ]
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            // Headings + Body
-            submenuRow(icon: "IconNumber1Circle", label: "Heading 1", tool: .h1)
-            submenuRow(icon: "IconNumber2Circle", label: "Heading 2", tool: .h2)
-            submenuRow(icon: "IconNumber3Circle", label: "Heading 3", tool: .h3)
-            submenuRow(icon: "IconTitleCase", label: "Body", tool: .titleCase)
-
-            submenuDivider
-
-            // Text styles
-            submenuRow(icon: "IconBold", label: "Bold", tool: .bold, isActive: isBoldActive)
-            submenuRow(icon: "IconItalic", label: "Italic", tool: .italic, isActive: isItalicActive)
-            submenuRow(icon: "IconUnderline", label: "Underline", tool: .underline, isActive: isUnderlineActive)
-            submenuRow(icon: "IconStrikeThrough", label: "Strikethrough", tool: .strikethrough, isActive: isStrikethroughActive)
-
-            submenuDivider
-
-            // Lists
-            submenuRow(icon: "IconBulletList", label: "Bulleted List", tool: .bulletList)
-            submenuRow(icon: "IconNumberedList", label: "Numbered List", tool: .numberedList)
-            submenuRow(icon: "IconDashList", label: "Dashed List", tool: .dashedList)
+            ForEach(Array(rows.enumerated()), id: \.element.tool.rawValue) { index, row in
+                if index == 4 || index == 8 {
+                    submenuDivider
+                }
+                submenuRow(icon: row.icon, label: row.label, tool: row.tool, isActive: row.isActive)
+                    .opacity(isRevealed ? 1 : 0)
+                    .offset(y: isRevealed ? 0 : 8)
+                    .scaleEffect(isRevealed ? 1 : 0.92, anchor: .top)
+                    .animation(
+                        .bouncy(duration: 0.4).delay(Double(index) * 0.03),
+                        value: isRevealed
+                    )
+            }
         }
         .padding(4)
         .frame(width: 170)
         .liquidGlass(in: RoundedRectangle(cornerRadius: 16))
-        .scaleEffect(visible ? 1 : 0.9, anchor: .top)
-        .opacity(visible ? 1 : 0)
         .onAppear {
-            withAnimation(.spring(duration: 0.2)) { visible = true }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                isRevealed = true
+            }
         }
     }
 
@@ -66,7 +75,7 @@ struct TextOptionsSubmenu: View {
 
     private var submenuDivider: some View {
         Rectangle()
-            .fill(Color(hex: "#44403c").opacity(0.15))
+            .fill(Color.primary.opacity(0.15))
             .frame(height: 0.5)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)

@@ -221,24 +221,24 @@ final class NoteExportService {
         case .pdf:
             return await generatePreviewImage(for: note)
         case .markdown:
-            return generateTextPreviewImage(buildMarkdownString(notes: [note]))
+            return await generateTextPreviewImage(buildMarkdownString(notes: [note]))
         case .html:
-            return generateTextPreviewImage(buildHTMLString(notes: [note], title: note.title))
+            return await generateTextPreviewImage(buildHTMLString(notes: [note], title: note.title))
         case .plainText:
-            return generateTextPreviewImage(buildPlainTextString(notes: [note]))
+            return await generateTextPreviewImage(buildPlainTextString(notes: [note]))
         }
     }
 
     /// High-resolution text preview for the Quick Look overlay (~2× standard size).
-    func generateQuickLookTextImage(_ text: String) -> NSImage? {
+    @MainActor func generateQuickLookTextImage(_ text: String) -> NSImage? {
         generateTextPreviewImage(text, size: CGSize(width: 1164, height: 1718))
     }
 
-    private func generateTextPreviewImage(_ text: String) -> NSImage? {
+    @MainActor private func generateTextPreviewImage(_ text: String) -> NSImage? {
         generateTextPreviewImage(text, size: CGSize(width: 456, height: 674))
     }
 
-    private func generateTextPreviewImage(_ text: String, size: CGSize) -> NSImage? {
+    @MainActor private func generateTextPreviewImage(_ text: String, size: CGSize) -> NSImage? {
         let image = NSImage(size: size)
         image.lockFocus()
         NSColor.white.setFill()
@@ -593,13 +593,6 @@ final class NoteExportService {
         // Strip AI metadata block — it's internal persistence, not user content
         let cleanContent = NoteDetailView.stripAIBlock(content).content
         var text = escapeHTML(cleanContent)
-        // Need to use escaped versions for tag matching since we escaped first
-        // Actually, let's convert BEFORE escaping for structural tags, then escape content
-        // Re-approach: convert tags first on raw content, then escape only the text portions
-        // This is complex — simpler to work on raw content and escape selectively
-
-        // Reset — work on raw content
-        text = cleanContent
         // Headings
         text = text.replacingOccurrences(of: "[[h1]]", with: "<h1>")
         text = text.replacingOccurrences(of: "[[/h1]]", with: "</h1>")
@@ -648,7 +641,17 @@ final class NoteExportService {
         text = text.replacingOccurrences(of: "[[divider]]", with: "<hr>")
         // Links
         if let regex = try? NSRegularExpression(pattern: #"\[\[link\|([^|]+)\|([^\]]+)\]\]"#) {
-            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "<a href=\"$1\">$2</a>")
+            let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
+            for match in matches.reversed() {
+                if let urlRange = Range(match.range(at: 1), in: text),
+                   let labelRange = Range(match.range(at: 2), in: text),
+                   let fullRange = Range(match.range, in: text) {
+                    let url = String(text[urlRange])
+                    let label = String(text[labelRange])
+                    let sanitizedURL = sanitizeURL(url)
+                    text = text.replacingCharacters(in: fullRange, with: "<a href=\"\(sanitizedURL)\">\(label)</a>")
+                }
+            }
         }
         // Images (embed as base64 if available, otherwise reference)
         if let regex = try? NSRegularExpression(pattern: #"\[\[image\|\|\|([^\]|]+)(?:\|\|\|[0-9]*\.?[0-9]+)?\]\]"#) {
@@ -674,7 +677,17 @@ final class NoteExportService {
         }
         // Web clips
         if let regex = try? NSRegularExpression(pattern: #"\[\[webclip\|([^|]*)\|([^|]*)\|([^|]*)\|([^\]]*)\]\]"#) {
-            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "<a href=\"$1\" class=\"webclip\">$2</a>")
+            let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
+            for match in matches.reversed() {
+                if let urlRange = Range(match.range(at: 1), in: text),
+                   let labelRange = Range(match.range(at: 2), in: text),
+                   let fullRange = Range(match.range, in: text) {
+                    let url = String(text[urlRange])
+                    let label = String(text[labelRange])
+                    let sanitizedURL = sanitizeURL(url)
+                    text = text.replacingCharacters(in: fullRange, with: "<a href=\"\(sanitizedURL)\" class=\"webclip\">\(label)</a>")
+                }
+            }
         }
         // Table markup
         if let regex = try? NSRegularExpression(pattern: #"\[\[table\|[^\]]*\]\]"#) {
@@ -769,5 +782,24 @@ final class NoteExportService {
             .replacingOccurrences(of: ">", with: "&gt;")
             .replacingOccurrences(of: "\"", with: "&quot;")
             .replacingOccurrences(of: "'", with: "&#39;")
+    }
+
+    /// Sanitize a URL to only allow safe schemes (http, https, mailto, tel).
+    /// Returns "#" for disallowed schemes like javascript: or data:.
+    private func sanitizeURL(_ url: String) -> String {
+        let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let allowedSchemes = ["http:", "https:", "mailto:", "tel:"]
+        // Allow scheme-relative URLs and relative paths
+        if trimmed.hasPrefix("//") || trimmed.hasPrefix("/") || trimmed.hasPrefix("#") {
+            return url
+        }
+        // If it has a scheme, it must be in the allowlist
+        if trimmed.contains(":") {
+            let hasAllowedScheme = allowedSchemes.contains { trimmed.hasPrefix($0) }
+            if !hasAllowedScheme {
+                return "#"
+            }
+        }
+        return url
     }
 }

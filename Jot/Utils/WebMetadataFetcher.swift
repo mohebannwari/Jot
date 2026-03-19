@@ -118,6 +118,7 @@ class WebMetadataFetcher: ObservableObject {
                 didResume = true
                 #if os(macOS)
                 window.orderOut(nil)
+                window.close()
                 #endif
                 continuation.resume(returning: image)
             }

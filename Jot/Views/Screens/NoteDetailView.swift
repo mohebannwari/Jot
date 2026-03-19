@@ -114,8 +114,10 @@ struct NoteDetailView: View {
     @State private var toolbarFontFamily: String = "default"
     @State private var toolbarTextColorHex: String? = nil
     @State private var measuredToolbarWidth: CGFloat = 300
+    @State private var measuredToolbarHeight: CGFloat = 46
     @State private var activeToolbarSubmenu: ToolbarSubmenuType? = nil
     @State private var pillOffsets: [ToolbarSubmenuType: CGFloat] = [:]
+    @State private var measuredSubmenuHeight: CGFloat = 0
 
     // MARK: - Constants
 
@@ -746,7 +748,7 @@ struct NoteDetailView: View {
                 let localX = floatingToolbarOffset.x - parentFrame.minX
                 let localY = floatingToolbarOffset.y - parentFrame.minY
                 let toolbarWidth: CGFloat = measuredToolbarWidth
-                let toolbarHeight: CGFloat = 36
+                let toolbarHeight: CGFloat = measuredToolbarHeight
                 let paneWidth: CGFloat = geometry.size.width
                 let edgeInset: CGFloat = 12
                 let centerX: CGFloat = localX + toolbarWidth / 2
@@ -794,6 +796,11 @@ struct NoteDetailView: View {
                         measuredToolbarWidth = width
                     }
                 }
+                .onPreferenceChange(ToolbarHeightKey.self) { height in
+                    if abs(measuredToolbarHeight - height) > 1 {
+                        measuredToolbarHeight = height
+                    }
+                }
                 .onPreferenceChange(PillOffsetKey.self) { offsets in
                     pillOffsets = offsets
                 }
@@ -801,18 +808,23 @@ struct NoteDetailView: View {
                 .transition(.scale(scale: 0.9).combined(with: .opacity))
                 .zIndex(101)
 
-                // Submenus — below the toolbar, consistent 4px gap for all
+                // Submenus — below toolbar if space, above if clipped
                 if let submenu = activeToolbarSubmenu {
-                    let submenuGap: CGFloat = 4
+                    let submenuGap: CGFloat = 8
                     let submenuMaxWidth: CGFloat = submenu == .textOptions ? 170 : (submenu == .color ? 186 : (submenu == .fontFamily ? 140 : 120))
-                    // Top Y = toolbar bottom + gap
-                    let submenuTopY = centerY + toolbarHeight / 2 + submenuGap
+                    // Use measured height if available, otherwise estimate for initial layout
+                    let submenuH: CGFloat = measuredSubmenuHeight > 0 ? measuredSubmenuHeight : (submenu == .textOptions ? 340 : (submenu == .fontSize ? 290 : (submenu == .fontFamily ? 95 : 36)))
+                    let paneHeight = geometry.size.height
+                    let toolbarBottom = centerY + toolbarHeight / 2
+                    let toolbarTop = centerY - toolbarHeight / 2
+                    // Check if submenu fits below
+                    let fitsBelow = toolbarBottom + submenuGap + submenuH < paneHeight - 10
+                    let submenuTopY = fitsBelow
+                        ? toolbarBottom + submenuGap
+                        : max(4, toolbarTop - submenuGap - submenuH)
                     let toolbarLeftEdge = clampedCenterX - toolbarWidth / 2
-                    // textOptions: left-aligned with toolbar; others: centered under their pill
                     let pillMidX = pillOffsets[submenu] ?? toolbarWidth / 2
-                    let submenuLeftX: CGFloat = submenu == .textOptions
-                        ? toolbarLeftEdge
-                        : min(max(toolbarLeftEdge + pillMidX - submenuMaxWidth / 2, edgeInset), paneWidth - submenuMaxWidth - edgeInset)
+                    let submenuLeftX: CGFloat = min(max(toolbarLeftEdge + pillMidX - submenuMaxWidth / 2, edgeInset), paneWidth - submenuMaxWidth - edgeInset)
 
                     Group {
                         switch submenu {
@@ -870,10 +882,20 @@ struct NoteDetailView: View {
                         }
                     }
                     .fixedSize()
+                    .background(GeometryReader { submenuGeo in
+                        Color.clear.onAppear {
+                            measuredSubmenuHeight = submenuGeo.size.height
+                        }
+                        .onChange(of: submenuGeo.size.height) { _, newH in
+                            measuredSubmenuHeight = newH
+                        }
+                    })
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .offset(x: submenuLeftX, y: submenuTopY)
-                    .transition(.scale(scale: 0.9, anchor: .top).combined(with: .opacity))
-                    .zIndex(102)
+                    .zIndex(10000)
+                    .onChange(of: activeToolbarSubmenu) { _, _ in
+                        measuredSubmenuHeight = 0
+                    }
                 }
             }
         }

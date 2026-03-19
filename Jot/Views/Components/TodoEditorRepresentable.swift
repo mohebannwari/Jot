@@ -1872,6 +1872,10 @@ struct TodoEditorRepresentable: NSViewRepresentable {
 
         func configure(with textView: NSTextView) {
             self.textView = textView
+            // Remove all existing notification observers before re-registering
+            // to prevent accumulation when updateNSView calls configure() repeatedly.
+            observers.forEach { NotificationCenter.default.removeObserver($0) }
+            observers.removeAll()
             // Always host overlays on the text view itself so they are
             // positioned in text-view-local coordinates and scroll
             // naturally with the content. Using the clip view required
@@ -4189,12 +4193,23 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             let paragraphBreak = NSAttributedString(
                 string: "\n", attributes: Self.baseTypingAttributes(for: currentColorScheme))
 
+            // Preserve selected text — place it after the checkbox instead of deleting it
+            let selectedRange = textView.selectedRange()
+            var selectedText: NSAttributedString?
+            if selectedRange.length > 0, let storage = textView.textStorage,
+               NSMaxRange(selectedRange) <= storage.length {
+                selectedText = storage.attributedSubstring(from: selectedRange)
+            }
+
             let composed = NSMutableAttributedString()
-            if textView.selectedRange().location != 0 {
+            if selectedRange.location != 0 {
                 composed.append(paragraphBreak)
             }
             composed.append(todoAttachment)
             composed.append(space)
+            if let selectedText {
+                composed.append(selectedText)
+            }
 
             replaceSelection(with: composed)
             styleTodoParagraphs()
@@ -5613,7 +5628,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 // a completely different typeface (e.g. Helvetica into a Charter doc).
                 if let currentFont = attributes[.font] as? NSFont {
                     let isHeading = Self.headingLevel(for: currentFont) != nil
-                    if !isHeading {
+                    let hasCustomFontFamily = attributes[TextFormattingManager.customFontFamilyKey] as? Bool == true
+                    if !isHeading && !hasCustomFontFamily {
                         let currentFamily = currentFont.familyName ?? currentFont.fontName
                         let expectedFamily = expectedFont.familyName ?? expectedFont.fontName
                         if currentFamily != expectedFamily
@@ -6772,10 +6788,12 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             let style = NSMutableParagraphStyle()
             style.lineHeightMultiple = spacing.multiplier
             style.minimumLineHeight = scaledHeight
-            style.maximumLineHeight = scaledHeight + 4
+            style.maximumLineHeight = scaledHeight
             style.paragraphSpacing = 10
             style.firstLineHeadIndent = 0
-            style.headIndent = checkboxAttachmentWidth + 2
+            // Indent wrapped lines to align with text after checkbox + 2 spaces
+            // checkboxAttachmentWidth (22) + approximate width of 2 spaces (~14pt at body size)
+            style.headIndent = checkboxAttachmentWidth + 14
             return style
         }
 

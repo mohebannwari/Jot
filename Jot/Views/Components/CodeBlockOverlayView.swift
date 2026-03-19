@@ -307,10 +307,10 @@ final class CodeBlockOverlayView: NSView {
         langLabel.textColor          = secondary
         chevronView.contentTintColor = secondary
 
-        // border/default: #D6D3D1 (light) / #44403C (dark)
+        // Match settings tile border: black 8% (light) / white 6% (dark)
         layer?.borderColor = dark
-            ? NSColor(srgbRed: 68/255, green: 64/255, blue: 60/255, alpha: 1).cgColor
-            : NSColor(srgbRed: 214/255, green: 211/255, blue: 209/255, alpha: 1).cgColor
+            ? NSColor(white: 1.0, alpha: 0.06).cgColor
+            : NSColor(white: 0.0, alpha: 0.08).cgColor
 
         needsDisplay = true
     }

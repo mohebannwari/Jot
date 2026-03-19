@@ -82,9 +82,13 @@ final class NoteAuthenticationManager: ObservableObject {
     }
 
     private func authenticateWithCustomPassword(noteID: UUID, input: String, completion: @escaping (Bool) -> Void) {
-        guard let stored = KeychainManager.loadPassword(), stored == input else {
+        guard let stored = KeychainManager.loadPassword(), KeychainManager.verifyPassword(input, against: stored) else {
             completion(false)
             return
+        }
+        // Migrate plaintext to hashed on successful auth
+        if !stored.contains(":") {
+            KeychainManager.savePassword(input)
         }
         unlockedNoteIDs.insert(noteID)
         completion(true)

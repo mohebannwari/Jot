@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import Security
 
@@ -9,7 +10,16 @@ enum KeychainManager {
     static func savePassword(_ password: String) -> Bool {
         deletePassword()
 
-        guard let data = password.data(using: .utf8) else { return false }
+        var saltBytes = [UInt8](repeating: 0, count: 16)
+        _ = SecRandomCopyBytes(kSecRandomDefault, saltBytes.count, &saltBytes)
+        let salt = saltBytes.map { String(format: "%02x", $0) }.joined()
+
+        let salted = salt + password
+        let hash = SHA256.hash(data: Data(salted.utf8))
+        let hashHex = hash.map { String(format: "%02x", $0) }.joined()
+        let stored = "\(salt):\(hashHex)"
+
+        guard let data = stored.data(using: .utf8) else { return false }
 
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -21,6 +31,22 @@ enum KeychainManager {
 
         let status = SecItemAdd(query as CFDictionary, nil)
         return status == errSecSuccess
+    }
+
+    static func verifyPassword(_ input: String, against stored: String) -> Bool {
+        if stored.contains(":") {
+            let parts = stored.split(separator: ":", maxSplits: 1)
+            guard parts.count == 2 else { return false }
+            let salt = String(parts[0])
+            let expectedHash = String(parts[1])
+            let salted = salt + input
+            let hash = SHA256.hash(data: Data(salted.utf8))
+            let hashHex = hash.map { String(format: "%02x", $0) }.joined()
+            return hashHex == expectedHash
+        } else {
+            // Migration: old plaintext format
+            return stored == input
+        }
     }
 
     static func loadPassword() -> String? {

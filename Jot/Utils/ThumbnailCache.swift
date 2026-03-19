@@ -9,6 +9,7 @@
 import Foundation
 import SwiftUI
 import Combine
+import CryptoKit
 
 @MainActor
 class ThumbnailCache: ObservableObject {
@@ -23,6 +24,12 @@ class ThumbnailCache: ObservableObject {
     private let metadataFetcher = WebMetadataFetcher()
 
     private init() {}
+
+    /// Returns a fixed-length SHA256 hex filename for the given URL string.
+    private static func thumbnailFilename(for url: String) -> String {
+        let digest = SHA256.hash(data: Data(url.utf8))
+        return digest.map { String(format: "%02x", $0) }.joined() + ".jpg"
+    }
 
     func getMetadata(for url: String) -> WebMetadata? {
         return metadataCache[url]
@@ -71,20 +78,19 @@ class ThumbnailCache: ObservableObject {
 
     /// Save thumbnail to disk on a background thread.
     func cacheThumbnail(_ image: NSImage, for url: String) {
+        let filename = Self.thumbnailFilename(for: url)
         Task.detached(priority: .utility) {
             guard let tiffData = image.tiffRepresentation,
                   let bitmap = NSBitmapImageRep(data: tiffData),
                   let jpegData = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.8]) else {
                 return
             }
-
-            let filename = url.addingPercentEncoding(withAllowedCharacters: .urlHostAllowed) ?? "default"
             let documentsPath = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
             let thumbnailsDir = documentsPath?.appendingPathComponent("WebClipThumbnails", isDirectory: true)
 
             if let thumbnailsDir = thumbnailsDir {
                 try? FileManager.default.createDirectory(at: thumbnailsDir, withIntermediateDirectories: true)
-                let filePath = thumbnailsDir.appendingPathComponent("\(filename).jpg")
+                let filePath = thumbnailsDir.appendingPathComponent(filename)
                 try? jpegData.write(to: filePath)
             }
         }
@@ -92,13 +98,13 @@ class ThumbnailCache: ObservableObject {
 
     /// Load cached thumbnail from disk on a background thread.
     func loadCachedThumbnail(for url: String) async -> NSImage? {
+        let filename = Self.thumbnailFilename(for: url)
         return await Task.detached(priority: .utility) {
-            let filename = url.addingPercentEncoding(withAllowedCharacters: .urlHostAllowed) ?? "default"
             let documentsPath = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
             let thumbnailsDir = documentsPath?.appendingPathComponent("WebClipThumbnails", isDirectory: true)
 
             if let thumbnailsDir = thumbnailsDir {
-                let filePath = thumbnailsDir.appendingPathComponent("\(filename).jpg")
+                let filePath = thumbnailsDir.appendingPathComponent(filename)
                 return NSImage(contentsOf: filePath)
             }
 
