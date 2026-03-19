@@ -78,6 +78,7 @@ struct FloatingColorPicker: View {
         .animation(.bouncy(duration: 0.15), value: isPressed)
         .onHover { hovering in
             hoveredHex = hovering ? hex : nil
+            if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
         }
     }
 
@@ -111,6 +112,9 @@ struct FloatingColorPicker: View {
         .opacity(circlesVisible ? 1.0 : 0)
         .animation(.bouncy(duration: 0.4), value: circlesVisible)
         .animation(.bouncy(duration: 0.2), value: hasCustom)
+        .onHover { hovering in
+            if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+        }
     }
 
     private func removeButton(action: @escaping () -> Void) -> some View {
@@ -136,6 +140,9 @@ struct FloatingColorPicker: View {
         .scaleEffect(circlesVisible ? 1.0 : 0.6)
         .opacity(circlesVisible ? 1.0 : 0)
         .animation(.bouncy(duration: 0.4), value: circlesVisible)
+        .onHover { hovering in
+            if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+        }
     }
 
     private func openSystemColorPicker() {

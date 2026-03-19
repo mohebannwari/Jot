@@ -39,9 +39,9 @@ enum FloatingToolbarPositioner {
         selectionHeight: CGFloat,
         visibleWidth: CGFloat,
         visibleHeight: CGFloat,
-        toolbarWidth: CGFloat = 250,
+        toolbarWidth: CGFloat,
         toolbarHeight: CGFloat = 36,
-        gap: CGFloat = 2
+        gap: CGFloat = 14
     ) -> Result {
 
         // Resolve actual window dimensions
@@ -79,28 +79,28 @@ enum FloatingToolbarPositioner {
         let clampedBelowTop = min(max(targetBelowTop, minTop), maxTop)
         let belowMaintainsGap = clampedBelowTop >= (selectionBottomFromTop + gap - 0.5)
 
-        // Decide vertical placement
+        // Decide vertical placement — prefer BELOW selection
         var placeAbove = false
         var chosenToolbarTop: CGFloat
 
-        if aboveMaintainsGap {
-            placeAbove = true
-            chosenToolbarTop = clampedAboveTop
-        } else if belowMaintainsGap {
+        if belowMaintainsGap {
             placeAbove = false
             chosenToolbarTop = clampedBelowTop
-        } else if fitsAbove && !fitsBelow {
+        } else if aboveMaintainsGap {
             placeAbove = true
             chosenToolbarTop = clampedAboveTop
         } else if fitsBelow && !fitsAbove {
             placeAbove = false
             chosenToolbarTop = clampedBelowTop
-        } else if availableAbove >= availableBelow {
+        } else if fitsAbove && !fitsBelow {
             placeAbove = true
             chosenToolbarTop = clampedAboveTop
-        } else {
+        } else if availableBelow >= availableAbove {
             placeAbove = false
             chosenToolbarTop = clampedBelowTop
+        } else {
+            placeAbove = true
+            chosenToolbarTop = clampedAboveTop
         }
 
         // Horizontal centering with edge clamping

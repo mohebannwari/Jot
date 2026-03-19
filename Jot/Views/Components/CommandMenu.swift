@@ -266,6 +266,7 @@ extension EditTool {
         case .fileLink: return "IconFileLink"
         case .sticker: return "IconSticker"
         case .tabs: return "IconDossier"
+        case .dashedList: return "IconDashList"
         }
     }
 
@@ -304,6 +305,7 @@ extension EditTool {
         case .fileLink: return "paperclip"
         case .sticker: return "note.text"
         case .tabs: return "rectangle.split.3x1"
+        case .dashedList: return "list.dash"
         }
     }
 }
