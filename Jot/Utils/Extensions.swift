@@ -393,6 +393,8 @@ extension Notification.Name {
     static let removeHighlightColor = Notification.Name("removeHighlightColor")
     static let removeTextColor = Notification.Name("removeTextColor")
     static let todoToolbarAction = Notification.Name("TodoToolbarAction")
+    static let applyFontSize = Notification.Name("applyFontSize")
+    static let applyFontFamily = Notification.Name("applyFontFamily")
     static let forceSaveNote = Notification.Name("forceSaveNote")
 }
 

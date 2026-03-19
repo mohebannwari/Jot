@@ -1270,6 +1270,35 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     formatter.updateFormattingState(from: textView)
 
                     // Post notification with selection info - let the view calculate toolbar position
+                    // Extract font size, family, and text color from selection start
+                    var selFontSize: CGFloat = ThemeManager.currentBodyFontSize()
+                    var selFontFamily: String = "default"
+                    var selTextColorHex: String? = nil
+                    if let storage = textView.textStorage, selectedRange.location < storage.length {
+                        if let font = storage.attribute(.font, at: selectedRange.location, effectiveRange: nil) as? NSFont {
+                            selFontSize = font.pointSize
+                            let familyName = font.familyName ?? ""
+                            if familyName.contains("Charter") {
+                                selFontFamily = "default"
+                            } else if familyName.contains("Menlo") || familyName.contains("SF Mono") || familyName.contains("Courier") {
+                                selFontFamily = "mono"
+                            } else {
+                                selFontFamily = "system"
+                            }
+                        }
+                        if let colorHex = storage.attribute(.foregroundColor, at: selectedRange.location, effectiveRange: nil) as? NSColor {
+                            let c = colorHex.usingColorSpace(.sRGB) ?? colorHex
+                            let hex = String(format: "#%02x%02x%02x",
+                                             Int(round(c.redComponent * 255)),
+                                             Int(round(c.greenComponent * 255)),
+                                             Int(round(c.blueComponent * 255)))
+                            // Only report non-default colors (not label color)
+                            if colorHex != NSColor.labelColor {
+                                selTextColorHex = hex
+                            }
+                        }
+                    }
+
                     var info: [String: Any] = [
                         "hasSelection": true,
                         "selectionX": selectionX,
@@ -1285,8 +1314,11 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                         "isUnderline": formatter.isUnderline,
                         "isStrikethrough": formatter.isStrikethrough,
                         "isHighlight": formatter.isHighlight,
-                        "windowHeight": textView.window?.contentView?.bounds.height ?? 800
+                        "windowHeight": textView.window?.contentView?.bounds.height ?? 800,
+                        "fontSize": selFontSize,
+                        "fontFamily": selFontFamily
                     ]
+                    if let hex = selTextColorHex { info["textColorHex"] = hex }
                     if let eid = editorInstanceID { info["editorInstanceID"] = eid }
                     NotificationCenter.default.post(
                         name: .textSelectionChanged,
@@ -1941,6 +1973,11 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 guard let tool = EditTool(rawValue: raw) else { return }
                 Task { @MainActor [weak self] in
                     guard let self = self, let textView = self.textView else { return }
+                    // Disable animations so list/heading changes apply instantly
+                    NSAnimationContext.beginGrouping()
+                    NSAnimationContext.current.duration = 0
+                    CATransaction.begin()
+                    CATransaction.setDisableActions(true)
                     if tool == .table {
                         self.insertTable()
                     } else if tool == .callout {
@@ -1954,6 +1991,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                         self.styleTodoParagraphs()
                         self.syncText()
                     }
+                    CATransaction.commit()
+                    NSAnimationContext.endGrouping()
                 }
             }
 
@@ -2399,6 +2438,39 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 }
             }
 
+            let applyFontSize = NotificationCenter.default.addObserver(
+                forName: .applyFontSize, object: nil, queue: .main
+            ) { [weak self] notification in
+                guard let size = notification.userInfo?["size"] as? CGFloat else { return }
+                if let expectedID = self?.editorInstanceID,
+                   let notifID = notification.userInfo?["editorInstanceID"] as? UUID,
+                   notifID != expectedID { return }
+                MainActor.assumeIsolated { [weak self] in
+                    guard let self = self, let textView = self.textView else { return }
+                    let range = self.lastKnownSelectionRange
+                    guard range.length > 0 else { return }
+                    self.formatter.applyFontSize(size, to: textView, range: range)
+                    self.syncText()
+                }
+            }
+
+            let applyFontFamily = NotificationCenter.default.addObserver(
+                forName: .applyFontFamily, object: nil, queue: .main
+            ) { [weak self] notification in
+                guard let styleRaw = notification.userInfo?["style"] as? String,
+                      let style = BodyFontStyle(rawValue: styleRaw) else { return }
+                if let expectedID = self?.editorInstanceID,
+                   let notifID = notification.userInfo?["editorInstanceID"] as? UUID,
+                   notifID != expectedID { return }
+                MainActor.assumeIsolated { [weak self] in
+                    guard let self = self, let textView = self.textView else { return }
+                    let range = self.lastKnownSelectionRange
+                    guard range.length > 0 else { return }
+                    self.formatter.applyFontFamily(style, to: textView, range: range)
+                    self.syncText()
+                }
+            }
+
             observers = [
                 windowKey,
                 insertTodo, insertLink, insertFileLink, insertVoiceTranscript, insertImage, applyTool, applyCommandMenuTool,
@@ -2408,7 +2480,9 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 editReplace, proofreadReplaceAll,
                 urlPasteMention, urlPasteSelectPlainLink, urlPasteDismiss,
                 codePasteSelectCodeBlock, codePasteSelectPlainText, codePasteDismissObserver,
-                applyColor, removeColor, applyHighlight, removeHighlight, setHighlightRange, settingsObserver, syncMenuState,
+                applyColor, removeColor, applyHighlight, removeHighlight, setHighlightRange,
+                applyFontSize, applyFontFamily,
+                settingsObserver, syncMenuState,
             ]
         }
 

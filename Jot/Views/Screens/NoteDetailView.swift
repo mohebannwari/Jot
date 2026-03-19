@@ -110,6 +110,12 @@ struct NoteDetailView: View {
     @State private var highlightPickerOffset = CGPoint.zero
     @State private var lastSelectionBottomY: CGFloat = 0
     @State private var lastSelectionCenterX: CGFloat = 0
+    @State private var toolbarFontSize: CGFloat = 16
+    @State private var toolbarFontFamily: String = "default"
+    @State private var toolbarTextColorHex: String? = nil
+    @State private var measuredToolbarWidth: CGFloat = 300
+    @State private var activeToolbarSubmenu: ToolbarSubmenuType? = nil
+    @State private var pillOffsets: [ToolbarSubmenuType: CGFloat] = [:]
 
     // MARK: - Constants
 
@@ -739,7 +745,7 @@ struct NoteDetailView: View {
                 let parentFrame = geometry.frame(in: .global)
                 let localX = floatingToolbarOffset.x - parentFrame.minX
                 let localY = floatingToolbarOffset.y - parentFrame.minY
-                let toolbarWidth: CGFloat = 250
+                let toolbarWidth: CGFloat = measuredToolbarWidth
                 let toolbarHeight: CGFloat = 36
                 let paneWidth: CGFloat = geometry.size.width
                 let edgeInset: CGFloat = 12
@@ -748,47 +754,127 @@ struct NoteDetailView: View {
                 let centerY: CGFloat = localY + toolbarHeight / 2
 
                 FloatingEditToolbar(
-                    position: floatingToolbarOffset,
-                    placeAbove: floatingToolbarPlaceAbove,
-                    width: 250,
                     isBoldActive: toolbarIsBold,
                     isItalicActive: toolbarIsItalic,
                     isUnderlineActive: toolbarIsUnderline,
                     isStrikethroughActive: toolbarIsStrikethrough,
                     isHighlightActive: toolbarIsHighlight,
-                    onToolAction: handleEditToolAction
-                )
-                .position(x: clampedCenterX, y: centerY)
-                .transition(.scale(scale: 0.9).combined(with: .opacity))
-                .zIndex(101)
-
-                // Color picker — positioned ABOVE the toolbar, centered, with 4px gap
-                let colorPillWidth: CGFloat = 186
-                let colorPillHeight: CGFloat = 36
-                let colorPickerGap: CGFloat = 4
-                let colorPickerY: CGFloat = centerY - toolbarHeight / 2 - colorPickerGap - colorPillHeight / 2
-                let clampedColorX: CGFloat = min(
-                    max(colorPillWidth / 2 + edgeInset, clampedCenterX),
-                    paneWidth - colorPillWidth / 2 - edgeInset
-                )
-
-                FloatingColorPicker(
+                    currentFontSize: toolbarFontSize,
+                    currentFontFamily: toolbarFontFamily,
+                    currentTextColorHex: toolbarTextColorHex,
+                    activeSubmenu: $activeToolbarSubmenu,
+                    onToolAction: handleEditToolAction,
+                    onFontSizeSelected: { [editorInstanceID] size in
+                        NotificationCenter.default.post(
+                            name: .applyFontSize, object: nil,
+                            userInfo: ["size": size, "editorInstanceID": editorInstanceID]
+                        )
+                    },
+                    onFontFamilySelected: { [editorInstanceID] style in
+                        NotificationCenter.default.post(
+                            name: .applyFontFamily, object: nil,
+                            userInfo: ["style": style.rawValue, "editorInstanceID": editorInstanceID]
+                        )
+                    },
                     onColorSelected: { [editorInstanceID] hex in
                         NotificationCenter.default.post(
                             name: .applyTextColor, object: nil,
                             userInfo: ["hex": hex, "editorInstanceID": editorInstanceID]
                         )
                     },
-                    onRemove: { [editorInstanceID] in
+                    onColorRemoved: { [editorInstanceID] in
                         NotificationCenter.default.post(
                             name: .removeTextColor, object: nil,
                             userInfo: ["editorInstanceID": editorInstanceID]
                         )
                     }
                 )
-                .position(x: clampedColorX, y: colorPickerY)
+                .onPreferenceChange(ToolbarWidthKey.self) { width in
+                    if abs(measuredToolbarWidth - width) > 1 {
+                        measuredToolbarWidth = width
+                    }
+                }
+                .onPreferenceChange(PillOffsetKey.self) { offsets in
+                    pillOffsets = offsets
+                }
+                .position(x: clampedCenterX, y: centerY)
                 .transition(.scale(scale: 0.9).combined(with: .opacity))
-                .zIndex(99)
+                .zIndex(101)
+
+                // Submenus — below the toolbar, consistent 4px gap for all
+                if let submenu = activeToolbarSubmenu {
+                    let submenuGap: CGFloat = 4
+                    let submenuMaxWidth: CGFloat = submenu == .textOptions ? 170 : (submenu == .color ? 186 : (submenu == .fontFamily ? 140 : 120))
+                    // Top Y = toolbar bottom + gap
+                    let submenuTopY = centerY + toolbarHeight / 2 + submenuGap
+                    let toolbarLeftEdge = clampedCenterX - toolbarWidth / 2
+                    // textOptions: left-aligned with toolbar; others: centered under their pill
+                    let pillMidX = pillOffsets[submenu] ?? toolbarWidth / 2
+                    let submenuLeftX: CGFloat = submenu == .textOptions
+                        ? toolbarLeftEdge
+                        : min(max(toolbarLeftEdge + pillMidX - submenuMaxWidth / 2, edgeInset), paneWidth - submenuMaxWidth - edgeInset)
+
+                    Group {
+                        switch submenu {
+                        case .textOptions:
+                            TextOptionsSubmenu(
+                                isBoldActive: toolbarIsBold,
+                                isItalicActive: toolbarIsItalic,
+                                isUnderlineActive: toolbarIsUnderline,
+                                isStrikethroughActive: toolbarIsStrikethrough,
+                                onToolAction: handleEditToolAction,
+                                onDismiss: { withAnimation(.spring(duration: 0.2)) { activeToolbarSubmenu = nil } }
+                            )
+                        case .fontSize:
+                            FontSizeSubmenu(
+                                currentSize: toolbarFontSize,
+                                onSizeSelected: { [editorInstanceID] size in
+                                    NotificationCenter.default.post(
+                                        name: .applyFontSize, object: nil,
+                                        userInfo: ["size": size, "editorInstanceID": editorInstanceID]
+                                    )
+                                    toolbarFontSize = size
+                                },
+                                onDismiss: { withAnimation(.spring(duration: 0.2)) { activeToolbarSubmenu = nil } }
+                            )
+                        case .fontFamily:
+                            FontFamilySubmenu(
+                                currentFamily: toolbarFontFamily,
+                                onFamilySelected: { [editorInstanceID] style in
+                                    NotificationCenter.default.post(
+                                        name: .applyFontFamily, object: nil,
+                                        userInfo: ["style": style.rawValue, "editorInstanceID": editorInstanceID]
+                                    )
+                                    toolbarFontFamily = style.rawValue
+                                },
+                                onDismiss: { withAnimation(.spring(duration: 0.2)) { activeToolbarSubmenu = nil } }
+                            )
+                        case .color:
+                            FloatingColorPicker(
+                                onColorSelected: { [editorInstanceID] hex in
+                                    NotificationCenter.default.post(
+                                        name: .applyTextColor, object: nil,
+                                        userInfo: ["hex": hex, "editorInstanceID": editorInstanceID]
+                                    )
+                                    toolbarTextColorHex = hex
+                                },
+                                onRemove: { [editorInstanceID] in
+                                    NotificationCenter.default.post(
+                                        name: .removeTextColor, object: nil,
+                                        userInfo: ["editorInstanceID": editorInstanceID]
+                                    )
+                                    toolbarTextColorHex = nil
+                                    withAnimation(.spring(duration: 0.2)) { activeToolbarSubmenu = nil }
+                                }
+                            )
+                        }
+                    }
+                    .fixedSize()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .offset(x: submenuLeftX, y: submenuTopY)
+                    .transition(.scale(scale: 0.9, anchor: .top).combined(with: .opacity))
+                    .zIndex(102)
+                }
             }
         }
     }
@@ -875,7 +961,8 @@ struct NoteDetailView: View {
                     selectionWidth: selectionWidth,
                     selectionHeight: selectionHeight,
                     visibleWidth: visibleWidth,
-                    visibleHeight: visibleHeight
+                    visibleHeight: visibleHeight,
+                    toolbarWidth: self.measuredToolbarWidth
                 )
 
                 // Save selection bottom position for highlight picker
@@ -891,6 +978,9 @@ struct NoteDetailView: View {
                 self.toolbarIsUnderline = userInfo["isUnderline"] as? Bool ?? false
                 self.toolbarIsStrikethrough = userInfo["isStrikethrough"] as? Bool ?? false
                 self.toolbarIsHighlight = userInfo["isHighlight"] as? Bool ?? false
+                self.toolbarFontSize = userInfo["fontSize"] as? CGFloat ?? 16
+                self.toolbarFontFamily = userInfo["fontFamily"] as? String ?? "default"
+                self.toolbarTextColorHex = userInfo["textColorHex"] as? String
 
                 withAnimation(.jotSmoothFast) {
                     self.floatingToolbarOffset = result.origin
@@ -907,6 +997,7 @@ struct NoteDetailView: View {
             } else {
                 withAnimation(.smooth(duration: 0.15)) {
                     self.showFloatingToolbar = false
+                    self.activeToolbarSubmenu = nil
                 }
             }
         }
@@ -1372,33 +1463,66 @@ struct NoteDetailView: View {
 
     // MARK: - Backlinks
 
-    private var backlinkPillColor: Color {
+    private var backlinkContainerBg: Color {
         colorScheme == .dark
-            ? Color(red: 0.792, green: 0.541, blue: 0.016)  // Yellow 600 #ca8a04
-            : Color(red: 0.918, green: 0.702, blue: 0.031)  // Yellow 500 #eab308
+            ? Color(red: 0.047, green: 0.039, blue: 0.035)  // #0c0a09
+            : .white
+    }
+
+    private var backlinkBorderColor: Color {
+        colorScheme == .dark
+            ? Color.white.opacity(0.06)
+            : Color.black.opacity(0.08)
+    }
+
+    private var backlinkPillBg: Color {
+        colorScheme == .dark
+            ? Color(red: 0.110, green: 0.098, blue: 0.090)  // #1c1917
+            : Color(red: 0.906, green: 0.898, blue: 0.894)  // #e7e5e4
     }
 
     @ViewBuilder
     private var backlinksSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 0) {
+            // Header
             Text("Referenced by")
                 .font(FontManager.metadata(size: 11, weight: .medium))
-                .foregroundStyle(Color("SecondaryTextColor"))
+                .foregroundStyle(.primary.opacity(0.7))
                 .textCase(.uppercase)
-                .tracking(0.5)
+                .tracking(-0.2)
+                .padding(.top, 8)
+                .padding(.bottom, 4)
+                .padding(.horizontal, 8)
 
-            HStack(spacing: 6) {
+            // Pills — wrapping flow layout
+            FlowLayout(spacing: 5) {
                 ForEach(backlinks) { backlink in
                     Button {
                         onNavigateToNote?(backlink.id)
                     } label: {
-                        Text(backlink.title)
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(.black)
-                            .lineLimit(1)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 4)
-                            .background(backlinkPillColor, in: Capsule(style: .continuous))
+                        HStack(spacing: 0) {
+                            Image("IconNoteText")
+                                .resizable()
+                                .renderingMode(.template)
+                                .frame(width: 14, height: 14)
+
+                            Text(backlink.title)
+                                .font(.system(size: 12, weight: .medium))
+                                .lineLimit(1)
+                                .padding(.horizontal, 4)
+
+                            Image("arrow-up-right")
+                                .resizable()
+                                .renderingMode(.template)
+                                .frame(width: 14, height: 14)
+                        }
+                        .foregroundStyle(.primary)
+                        .padding(4)
+                        .background(backlinkPillBg, in: Capsule(style: .continuous))
+                        .overlay(
+                            Capsule(style: .continuous)
+                                .strokeBorder(backlinkBorderColor, lineWidth: 0.5)
+                        )
                     }
                     .buttonStyle(.plain)
                     .onHover { inside in
@@ -1406,7 +1530,20 @@ struct NoteDetailView: View {
                     }
                 }
             }
+            .padding(.top, 4)
+            .padding(.bottom, 8)
+            .padding(.horizontal, 8)
         }
+        .padding(2)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(backlinkContainerBg)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(backlinkBorderColor, lineWidth: 1)
+        )
+        .frame(maxWidth: 400, alignment: .leading)
         .transition(.opacity)
     }
 
@@ -1580,7 +1717,7 @@ struct NoteDetailView: View {
                 userInfo: ["hex": "FFFF00", "editorInstanceID": editorInstanceID]
             )
             // Dismiss floating toolbar — picker show + position handled by highlightTextClicked
-            withAnimation(.smooth(duration: 0.15)) { showFloatingToolbar = false }
+            withAnimation(.smooth(duration: 0.15)) { showFloatingToolbar = false; activeToolbarSubmenu = nil }
             return true
         default:
             return false

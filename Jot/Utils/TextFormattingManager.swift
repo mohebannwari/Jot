@@ -80,7 +80,7 @@ class TextFormattingManager: ObservableObject {
             // Some tools don't require text selection
             let toolsNotRequiringSelection: [EditTool] = [
                 .textSelect, .divider, .lineBreak, .todo, .imageUpload, .voiceRecord,
-                .bulletList, .numberedList, .h1, .h2, .h3, .blockQuote,
+                .bulletList, .numberedList, .dashedList, .h1, .h2, .h3, .blockQuote,
             ]
 
             if selectedRange.length == 0 && !toolsNotRequiringSelection.contains(tool) {
@@ -110,6 +110,8 @@ class TextFormattingManager: ObservableObject {
                 toggleBulletList(to: textView, in: selectedRange)
             case .numberedList:
                 toggleNumberedList(to: textView, in: selectedRange)
+            case .dashedList:
+                toggleDashedList(to: textView, in: selectedRange)
             case .todo:
                 insertTodo(to: textView)
             case .indentLeft:
@@ -323,23 +325,21 @@ class TextFormattingManager: ObservableObject {
         // MARK: - Lists
 
         private func toggleBulletList(to textView: NSTextView, in range: NSRange) {
-            guard textView.textStorage != nil else { return }
+            guard let textStorage = textView.textStorage else { return }
 
             let paragraphRange = (textView.string as NSString).paragraphRange(for: range)
             let text = (textView.string as NSString).substring(with: paragraphRange)
 
-            if text.hasPrefix("• ") {
+            if text.hasPrefix("\u{2022} ") {
                 let newText = String(text.dropFirst(2))
-                if textView.shouldChangeText(in: paragraphRange, replacementString: newText) {
-                    textView.replaceCharacters(in: paragraphRange, with: newText)
-                    textView.didChangeText()
-                }
+                textStorage.beginEditing()
+                textStorage.replaceCharacters(in: paragraphRange, with: newText)
+                textStorage.endEditing()
             } else {
-                let newText = "• " + text
-                if textView.shouldChangeText(in: paragraphRange, replacementString: newText) {
-                    textView.replaceCharacters(in: paragraphRange, with: newText)
-                    textView.didChangeText()
-                }
+                let newText = "\u{2022} " + text
+                textStorage.beginEditing()
+                textStorage.replaceCharacters(in: paragraphRange, with: newText)
+                textStorage.endEditing()
             }
         }
 
@@ -352,30 +352,25 @@ class TextFormattingManager: ObservableObject {
             let hasOL = paragraphRange.length > 0
                 && textStorage.attribute(.orderedListNumber, at: paragraphRange.location, effectiveRange: nil) != nil
 
+            textStorage.beginEditing()
             if hasOL {
                 if let dotRange = text.range(of: ". ") {
                     let prefixLen = text.distance(from: text.startIndex, to: dotRange.upperBound)
                     let removeRange = NSRange(location: paragraphRange.location, length: prefixLen)
-                    if textView.shouldChangeText(in: removeRange, replacementString: "") {
-                        textView.replaceCharacters(in: removeRange, with: "")
-                        textView.didChangeText()
-                    }
+                    textStorage.replaceCharacters(in: removeRange, with: "")
                 }
             } else {
                 var insertText = text
-                if insertText.hasPrefix("• ") {
+                if insertText.hasPrefix("\u{2022} ") {
                     insertText = String(insertText.dropFirst(2))
                 }
                 let prefix = "1. "
                 let newText = prefix + insertText
-                if textView.shouldChangeText(in: paragraphRange, replacementString: newText) {
-                    textView.replaceCharacters(in: paragraphRange, with: newText)
-                    // Mark the prefix with the orderedListNumber attribute
-                    let prefixRange = NSRange(location: paragraphRange.location, length: prefix.count)
-                    textStorage.addAttribute(.orderedListNumber, value: 1, range: prefixRange)
-                    textView.didChangeText()
-                }
+                textStorage.replaceCharacters(in: paragraphRange, with: newText)
+                let prefixRange = NSRange(location: paragraphRange.location, length: prefix.count)
+                textStorage.addAttribute(.orderedListNumber, value: 1, range: prefixRange)
             }
+            textStorage.endEditing()
         }
 
         // MARK: - Block Quote
@@ -754,5 +749,98 @@ class TextFormattingManager: ObservableObject {
                     stop.pointee = true
                 }
             }
+    }
+
+    // MARK: - Dashed List
+
+    private func toggleDashedList(to textView: NSTextView, in range: NSRange) {
+        guard let textStorage = textView.textStorage else { return }
+
+        let paragraphRange = (textView.string as NSString).paragraphRange(for: range)
+        let text = (textView.string as NSString).substring(with: paragraphRange)
+
+        textStorage.beginEditing()
+        if text.hasPrefix("- ") {
+            let newText = String(text.dropFirst(2))
+            textStorage.replaceCharacters(in: paragraphRange, with: newText)
+        } else {
+            var insertText = text
+            if insertText.hasPrefix("\u{2022} ") {
+                insertText = String(insertText.dropFirst(2))
+            }
+            let newText = "- " + insertText
+            textStorage.replaceCharacters(in: paragraphRange, with: newText)
+        }
+        textStorage.endEditing()
+    }
+
+    // MARK: - Per-Selection Font Size
+
+    func applyFontSize(_ size: CGFloat, to textView: NSTextView, range: NSRange) {
+        guard let textStorage = textView.textStorage, range.length > 0 else { return }
+
+        let snapshot = captureSnapshot(textStorage, range: range)
+
+        textStorage.beginEditing()
+        textStorage.enumerateAttribute(.font, in: range, options: []) { value, subRange, _ in
+            let existingFont = value as? NSFont ?? NSFont.systemFont(ofSize: size)
+            let descriptor = existingFont.fontDescriptor
+            let newFont = NSFont(descriptor: descriptor, size: size) ?? existingFont
+            textStorage.addAttribute(.font, value: newFont, range: subRange)
+        }
+        textStorage.endEditing()
+
+        registerUndo(textView: textView, snapshot: snapshot, actionName: "Change Font Size")
+        textView.needsDisplay = true
+        updateFormattingState(from: textView)
+    }
+
+    // MARK: - Per-Selection Font Family
+
+    func applyFontFamily(_ style: BodyFontStyle, to textView: NSTextView, range: NSRange) {
+        guard let textStorage = textView.textStorage, range.length > 0 else { return }
+
+        let snapshot = captureSnapshot(textStorage, range: range)
+
+        textStorage.beginEditing()
+        textStorage.enumerateAttribute(.font, in: range, options: []) { value, subRange, _ in
+            let existingFont = value as? NSFont ?? NSFont.systemFont(ofSize: 16)
+            let size = existingFont.pointSize
+            let traits = existingFont.fontDescriptor.symbolicTraits
+
+            let weight: FontManager.Weight
+            if traits.contains(.bold) {
+                weight = .semibold
+            } else {
+                weight = .regular
+            }
+
+            var newFont: NSFont
+            switch style {
+            case .default:
+                newFont = FontManager.headingNS(size: size, weight: weight)
+            case .system:
+                let nsWeight: NSFont.Weight = weight == .semibold ? .semibold : .regular
+                newFont = NSFont.systemFont(ofSize: size, weight: nsWeight)
+            case .mono:
+                let nsWeight: NSFont.Weight = weight == .semibold ? .semibold : .regular
+                newFont = NSFont.monospacedSystemFont(ofSize: size, weight: nsWeight)
+            }
+
+            // Preserve italic trait
+            if traits.contains(.italic) {
+                let italicDescriptor = newFont.fontDescriptor.withSymbolicTraits(
+                    newFont.fontDescriptor.symbolicTraits.union(.italic)
+                )
+                newFont = NSFont(descriptor: italicDescriptor, size: size) ?? newFont
+            }
+
+            textStorage.addAttribute(.font, value: newFont, range: subRange)
+        }
+        textStorage.endEditing()
+
+        registerUndo(textView: textView, snapshot: snapshot, actionName: "Change Font Family")
+        textView.needsDisplay = true
+        updateFormattingState(from: textView)
     }
 }
