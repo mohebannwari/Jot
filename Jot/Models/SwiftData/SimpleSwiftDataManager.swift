@@ -963,7 +963,11 @@ final class SimpleSwiftDataManager: ObservableObject {
 
     func loadMoreNotes(offset: Int = 0) {
         do {
+            let predicate = #Predicate<NoteEntity> {
+                $0.isArchived == false && $0.isDeleted == false
+            }
             var descriptor = FetchDescriptor<NoteEntity>(
+                predicate: predicate,
                 sortBy: [SortDescriptor(\.modifiedAt, order: .reverse)]
             )
             descriptor.fetchOffset = offset

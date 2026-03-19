@@ -110,10 +110,11 @@ final class NoteEntity {
             isPinned: note.isPinned,
             isArchived: note.isArchived,
             isLocked: note.isLocked,
+            isDeleted: note.isDeleted,
+            deletedDate: note.deletedDate,
             folderID: note.folderID
         )
         self.id = note.id
-        self.isLocked = note.isLocked
         if !note.stickers.isEmpty {
             self.stickersData = try? JSONEncoder().encode(note.stickers)
         }
