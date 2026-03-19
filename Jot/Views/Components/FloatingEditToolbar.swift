@@ -284,7 +284,7 @@ struct FloatingEditToolbar: View {
         } label: {
             HStack(spacing: 0) {
                 Circle()
-                    .fill(currentTextColorHex != nil ? Color(hex: currentTextColorHex!) : pillTextColor)
+                    .fill(currentTextColorHex.flatMap { Color(hex: $0) } ?? pillTextColor)
                     .frame(width: 18, height: 18)
                 Image("IconChevronDownSmall")
                     .renderingMode(.template)

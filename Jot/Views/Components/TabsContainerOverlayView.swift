@@ -399,7 +399,9 @@ final class TabsContainerOverlayView: NSView {
     // MARK: - Tab Actions
 
     private func selectTab(at index: Int) {
-        guard index != tabsData.activeIndex else { return }
+        guard index != tabsData.activeIndex,
+              tabsData.panes.indices.contains(index),
+              tabsData.panes.indices.contains(tabsData.activeIndex) else { return }
         // Save current content
         tabsData.panes[tabsData.activeIndex].content = contentTextView.string
         tabsData.activeIndex = index
@@ -407,6 +409,7 @@ final class TabsContainerOverlayView: NSView {
     }
 
     private func addNewTab() {
+        guard tabsData.panes.indices.contains(tabsData.activeIndex) else { return }
         tabsData.panes[tabsData.activeIndex].content = contentTextView.string
         tabsData.addTab()
         onDataChanged?(tabsData)
@@ -502,7 +505,8 @@ final class TabsContainerOverlayView: NSView {
     }
 
     @objc private func contextMenuDeleteTab(_ sender: NSMenuItem) {
-        guard let index = sender.representedObject as? Int else { return }
+        guard let index = sender.representedObject as? Int,
+              tabsData.panes.indices.contains(tabsData.activeIndex) else { return }
         tabsData.panes[tabsData.activeIndex].content = contentTextView.string
         tabsData.removeTab(at: index)
         onDataChanged?(tabsData)

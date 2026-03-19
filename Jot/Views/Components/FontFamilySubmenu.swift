@@ -102,5 +102,8 @@ private struct FontFamilyRow: View {
             isHovered = hovering
             if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
         }
+        .onDisappear {
+            if isHovered { NSCursor.pop() }
+        }
     }
 }
