@@ -10,11 +10,31 @@ final class SpotlightIndexer {
 
     private let index = CSSearchableIndex.default()
     private let domainID = "com.jot.notes"
-    private var exportService: NoteExportService { NoteExportService.shared }
-    /// Max characters for Spotlight content preview
     private let contentPreviewLimit = 300
 
     private init() {}
+
+    /// Builds a searchable item from a note. Extracted for testability and DRY.
+    func buildSearchableItem(for note: Note) -> CSSearchableItem {
+        let attrs = CSSearchableItemAttributeSet(contentType: UTType.text)
+        attrs.title = note.title.isEmpty ? "Untitled" : note.title
+
+        // Locked notes: title only, no content exposed to Spotlight
+        if !note.isLocked {
+            let plainText = NoteExportService.shared.convertMarkupToPlainText(note.content)
+            attrs.contentDescription = String(plainText.prefix(contentPreviewLimit))
+        }
+
+        attrs.keywords = note.tags
+        attrs.lastUsedDate = note.date
+        attrs.contentCreationDate = note.createdAt
+
+        return CSSearchableItem(
+            uniqueIdentifier: note.id.uuidString,
+            domainIdentifier: domainID,
+            attributeSet: attrs
+        )
+    }
 
     /// Index a single note. Automatically deindexes if the note is deleted or archived.
     func indexNote(_ note: Note) {
@@ -23,74 +43,30 @@ final class SpotlightIndexer {
             return
         }
 
-        let attrs = CSSearchableItemAttributeSet(contentType: UTType.text)
-        attrs.title = note.title.isEmpty ? "Untitled" : note.title
-
-        // Locked notes: title only, no content exposed to Spotlight
-        if !note.isLocked {
-            let plainText = exportService.convertMarkupToPlainText(note.content)
-            attrs.contentDescription = String(plainText.prefix(contentPreviewLimit))
-        }
-
-        attrs.keywords = note.tags
-        attrs.lastUsedDate = note.date
-        attrs.contentCreationDate = note.createdAt
-
-        let item = CSSearchableItem(
-            uniqueIdentifier: note.id.uuidString,
-            domainIdentifier: domainID,
-            attributeSet: attrs
-        )
-
-        index.indexSearchableItems([item]) { error in
-            if let error {
-                NSLog("SpotlightIndexer: Failed to index note: %@", error.localizedDescription)
-            }
-        }
+        let item = buildSearchableItem(for: note)
+        index.indexSearchableItems([item])
     }
 
     /// Remove notes from the Spotlight index.
     func deindexNotes(ids: Set<UUID>) {
         guard !ids.isEmpty else { return }
-        index.deleteSearchableItems(withIdentifiers: ids.map(\.uuidString)) { error in
-            if let error {
-                NSLog("SpotlightIndexer: Failed to deindex notes: %@", error.localizedDescription)
-            }
-        }
+        index.deleteSearchableItems(withIdentifiers: ids.map(\.uuidString))
     }
 
-    /// Full reindex of all active notes. Called on app launch.
+    /// Full reindex of all active notes. Runs on a background thread to avoid
+    /// blocking the UI on launch. CoreSpotlight upserts by uniqueIdentifier,
+    /// so we don't need to delete-then-reindex (no race condition window).
+    /// Full reindex of all active notes. Prepares content on the main actor
+    /// (where NoteExportService lives), then indexes on a background thread.
     func reindexAll(_ notes: [Note]) {
+        // Build items on the main actor (NoteExportService is @MainActor)
         let items: [CSSearchableItem] = notes
             .filter { !$0.isDeleted && !$0.isArchived }
-            .map { note in
-                let attrs = CSSearchableItemAttributeSet(contentType: UTType.text)
-                attrs.title = note.title.isEmpty ? "Untitled" : note.title
-                if !note.isLocked {
-                    let plainText = exportService.convertMarkupToPlainText(note.content)
-                    attrs.contentDescription = String(plainText.prefix(contentPreviewLimit))
-                }
-                attrs.keywords = note.tags
-                attrs.lastUsedDate = note.date
-                attrs.contentCreationDate = note.createdAt
-                return CSSearchableItem(
-                    uniqueIdentifier: note.id.uuidString,
-                    domainIdentifier: domainID,
-                    attributeSet: attrs
-                )
-            }
+            .map { buildSearchableItem(for: $0) }
 
-        // Replace entire index to stay in sync
-        let idx = index
-        idx.deleteAllSearchableItems { error in
-            if let error {
-                NSLog("SpotlightIndexer: Failed to clear index: %@", error.localizedDescription)
-            }
-            idx.indexSearchableItems(items) { error in
-                if let error {
-                    NSLog("SpotlightIndexer: Failed to reindex all: %@", error.localizedDescription)
-                }
-            }
+        // Index on background -- CoreSpotlight upserts by uniqueIdentifier
+        Task.detached(priority: .utility) {
+            CSSearchableIndex.default().indexSearchableItems(items)
         }
     }
 }

@@ -2503,7 +2503,10 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         @MainActor
         private func handlePrint() {
             guard let textView = self.textView,
-                  let window = textView.window else { return }
+                  let window = textView.window,
+                  // Only print from the focused editor (prevents both editors
+                  // printing simultaneously in split view)
+                  window.firstResponder === textView else { return }
 
             let printInfo = NSPrintInfo.shared.copy() as! NSPrintInfo
             printInfo.leftMargin = 72

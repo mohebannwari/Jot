@@ -5,38 +5,75 @@ import CoreSpotlight
 @MainActor
 final class SpotlightIndexerTests: XCTestCase {
 
-    func testIndexNoteDoesNotCrash() {
-        let note = Note(title: "Test Note", content: "Some content", tags: ["test"])
-        SpotlightIndexer.shared.indexNote(note)
-        // Verify no crash -- CSSearchableIndex is async
+    func testBuildSearchableItemSetsTitle() {
+        let note = Note(title: "My Note", content: "Body text")
+        let item = SpotlightIndexer.shared.buildSearchableItem(for: note)
+
+        XCTAssertEqual(item.uniqueIdentifier, note.id.uuidString)
+        XCTAssertEqual(item.attributeSet.title, "My Note")
     }
 
-    func testIndexLockedNoteDoesNotExposeContent() {
+    func testBuildSearchableItemUsesUntitledForEmptyTitle() {
+        let note = Note(title: "", content: "Body")
+        let item = SpotlightIndexer.shared.buildSearchableItem(for: note)
+
+        XCTAssertEqual(item.attributeSet.title, "Untitled")
+    }
+
+    func testBuildSearchableItemIncludesContentForUnlockedNote() {
+        let note = Note(title: "Test", content: "Some content here")
+        let item = SpotlightIndexer.shared.buildSearchableItem(for: note)
+
+        XCTAssertNotNil(item.attributeSet.contentDescription)
+        XCTAssertTrue(item.attributeSet.contentDescription?.contains("Some content here") ?? false)
+    }
+
+    func testBuildSearchableItemExcludesContentForLockedNote() {
         let note = Note(title: "Secret", content: "Hidden content", isLocked: true)
-        // Locked notes should still be indexable (title only)
+        let item = SpotlightIndexer.shared.buildSearchableItem(for: note)
+
+        XCTAssertEqual(item.attributeSet.title, "Secret")
+        XCTAssertNil(item.attributeSet.contentDescription)
+    }
+
+    func testBuildSearchableItemIncludesKeywords() {
+        let note = Note(title: "Tagged", content: "Body", tags: ["swift", "ios"])
+        let item = SpotlightIndexer.shared.buildSearchableItem(for: note)
+
+        XCTAssertEqual(item.attributeSet.keywords, ["swift", "ios"])
+    }
+
+    func testBuildSearchableItemTruncatesLongContent() {
+        let longContent = String(repeating: "x", count: 500)
+        let note = Note(title: "Long", content: longContent)
+        let item = SpotlightIndexer.shared.buildSearchableItem(for: note)
+
+        XCTAssertEqual(item.attributeSet.contentDescription?.count, 300)
+    }
+
+    func testIndexNoteDoesNotCrash() {
+        let note = Note(title: "Test", content: "Body")
         SpotlightIndexer.shared.indexNote(note)
     }
 
     func testDeindexDoesNotCrash() {
-        let id = UUID()
-        SpotlightIndexer.shared.deindexNotes(ids: [id])
+        SpotlightIndexer.shared.deindexNotes(ids: [UUID()])
     }
 
     func testDeindexEmptySetIsNoOp() {
         SpotlightIndexer.shared.deindexNotes(ids: [])
     }
 
-    func testDeletedNoteIsDeindexed() {
+    func testIndexDeletedNoteDeindexesInstead() {
         var note = Note(title: "Deleted", content: "Body")
         note.isDeleted = true
-        // indexNote should detect isDeleted and deindex instead
+        // Should call deindex path, not index
         SpotlightIndexer.shared.indexNote(note)
     }
 
-    func testArchivedNoteIsDeindexed() {
+    func testIndexArchivedNoteDeindexesInstead() {
         var note = Note(title: "Archived", content: "Body")
         note.isArchived = true
-        // indexNote should detect isArchived and deindex instead
         SpotlightIndexer.shared.indexNote(note)
     }
 
@@ -47,16 +84,5 @@ final class SpotlightIndexerTests: XCTestCase {
             Note(title: "Locked", content: "Secret", isLocked: true),
         ]
         SpotlightIndexer.shared.reindexAll(notes)
-    }
-
-    func testReindexAllFiltersDeletedAndArchived() {
-        var deleted = Note(title: "Deleted", content: "Body")
-        deleted.isDeleted = true
-        var archived = Note(title: "Archived", content: "Body")
-        archived.isArchived = true
-        let active = Note(title: "Active", content: "Body")
-
-        // Should only index the active note, not crash
-        SpotlightIndexer.shared.reindexAll([deleted, archived, active])
     }
 }

@@ -23,10 +23,4 @@ final class PrintKeyHandler {
         }
     }
 
-    func uninstall() {
-        if let monitor {
-            NSEvent.removeMonitor(monitor)
-        }
-        monitor = nil
-    }
 }
