@@ -2475,6 +2475,16 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 }
             }
 
+            let printNote = NotificationCenter.default.addObserver(
+                forName: .printCurrentNote, object: nil, queue: .main
+            ) { [weak self] notification in
+                if let nid = notification.userInfo?["editorInstanceID"] as? UUID,
+                   let myID = self?.editorInstanceID, nid != myID { return }
+                Task { @MainActor [weak self] in
+                    self?.handlePrint()
+                }
+            }
+
             observers = [
                 windowKey,
                 insertTodo, insertLink, insertFileLink, insertVoiceTranscript, insertImage, applyTool, applyCommandMenuTool,
@@ -2486,8 +2496,38 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 codePasteSelectCodeBlock, codePasteSelectPlainText, codePasteDismissObserver,
                 applyColor, removeColor, applyHighlight, removeHighlight, setHighlightRange,
                 applyFontSize, applyFontFamily,
-                settingsObserver, syncMenuState,
+                settingsObserver, syncMenuState, printNote,
             ]
+        }
+
+        @MainActor
+        private func handlePrint() {
+            guard let textView = self.textView,
+                  let window = textView.window,
+                  // Only print from the focused editor (prevents both editors
+                  // printing simultaneously in split view)
+                  window.firstResponder === textView else { return }
+
+            let printInfo = NSPrintInfo.shared.copy() as! NSPrintInfo
+            printInfo.leftMargin = 72
+            printInfo.rightMargin = 72
+            printInfo.topMargin = 72
+            printInfo.bottomMargin = 72
+            printInfo.isHorizontallyCentered = false
+            printInfo.isVerticallyCentered = false
+
+            // Force light appearance for readable print output
+            let savedAppearance = textView.appearance
+            textView.appearance = NSAppearance(named: .aqua)
+
+            let op = NSPrintOperation(view: textView, printInfo: printInfo)
+            op.showsPrintPanel = true
+            op.showsProgressPanel = true
+            // runModal pins to a specific window -- avoids responder chain
+            // validation that fails in non-document SwiftUI apps
+            op.runModal(for: window, delegate: nil, didRun: nil, contextInfo: nil)
+
+            textView.appearance = savedAppearance
         }
 
         private func applyEditorSettings() {

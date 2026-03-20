@@ -400,6 +400,8 @@ extension Notification.Name {
     static let createNewFolder = Notification.Name("createNewFolder")
     static let trashFocusedNote = Notification.Name("trashFocusedNote")
     static let navigateNote = Notification.Name("navigateNote")
+    static let openNoteFromSpotlight = Notification.Name("openNoteFromSpotlight")
+    static let printCurrentNote = Notification.Name("printCurrentNote")
 }
 
 // MARK: - AI Notification Names
