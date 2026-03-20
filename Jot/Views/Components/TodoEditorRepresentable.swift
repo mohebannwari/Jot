@@ -4418,9 +4418,10 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             let tableWidth = min(tableData.contentWidth, containerWidth)
 
             let tableHeight = NoteTableOverlayView.computeTableHeight(for: tableData) + 1  // +1 for border
+            let addRowButtonPadding: CGFloat = 8 + 24 + 4  // gap + button height + breathing room
 
             let attachment = NoteTableAttachment(tableData: tableData)
-            let cellSize = CGSize(width: tableWidth, height: tableHeight)
+            let cellSize = CGSize(width: tableWidth, height: tableHeight + addRowButtonPadding)
             attachment.attachmentCell = TableSizeAttachmentCell(size: cellSize)
             attachment.bounds = CGRect(origin: .zero, size: cellSize)
 
@@ -4961,7 +4962,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 // Correct size drift (row/column count may have changed).
                 let containerWidth = textContainer.containerSize.width > 0 ? textContainer.containerSize.width : 400
                 let expectedWidth = min(attachment.tableData.contentWidth, containerWidth)
-                let expectedHeight = NoteTableOverlayView.computeTableHeight(for: attachment.tableData) + 1
+                let expectedHeight = NoteTableOverlayView.computeTableHeight(for: attachment.tableData) + 1 + 36  // +36 for add-row button space
                 let sizeDrift = abs(attachment.bounds.height - expectedHeight) + abs(attachment.bounds.width - expectedWidth)
                 if sizeDrift > 1 {
                     let newSize = CGSize(width: expectedWidth, height: expectedHeight)
@@ -4999,7 +5000,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                         att.tableData = newData
 
                         // Recalculate attachment size from content width
-                        let newHeight = NoteTableOverlayView.computeTableHeight(for: newData) + 1
+                        let newHeight = NoteTableOverlayView.computeTableHeight(for: newData) + 1 + 36  // +36 for add-row button space
                         let containerWidth = tv.textContainer?.containerSize.width ?? 400
                         let newWidth = min(newData.contentWidth, containerWidth)
                         let newSize = CGSize(width: newWidth, height: newHeight)

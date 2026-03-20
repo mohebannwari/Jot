@@ -1213,7 +1213,7 @@ struct NoteDetailView: View {
                 }
             }
             .padding(.horizontal, 24)
-            .padding(.bottom, 18)
+            .padding(.bottom, 56)
             .animation(.jotSpring, value: showVoiceRecorderOverlay)
             .animation(.jotSpring, value: showLinkInputOverlay)
             .animation(.jotSpring, value: showSearchOnPageOverlay)
@@ -1238,6 +1238,7 @@ struct NoteDetailView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
+        .liquidGlass(in: Capsule())
     }
 
     private func aiErrorPill(message: String) -> some View {

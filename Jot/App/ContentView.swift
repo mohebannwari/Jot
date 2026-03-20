@@ -777,9 +777,16 @@ struct ContentView: View {
                     let primW = dragging ? ((totalDetailWidth - splitGap) * 0.5).rounded() : totalDetailWidth
                     let secW = dragging ? (totalDetailWidth - primW - splitGap).rounded() : 0
 
-                    let placeholderRect = RoundedRectangle(cornerRadius: splitRadius, style: .continuous)
-                        .strokeBorder(style: StrokeStyle(lineWidth: 2, lineCap: .round, dash: [6, 6]))
-                        .foregroundColor(colorScheme == .dark ? .white : .black)
+                    let placeholderRect = ZStack {
+                        RoundedRectangle(cornerRadius: splitRadius, style: .continuous)
+                            .fill(Color.accentColor.opacity(colorScheme == .dark ? 0.18 : 0.08))
+                        RoundedRectangle(cornerRadius: splitRadius, style: .continuous)
+                            .strokeBorder(style: StrokeStyle(lineWidth: 1, lineCap: .round, dash: [4, 3]))
+                            .foregroundColor(Color.accentColor.opacity(colorScheme == .dark ? 0.55 : 0.4))
+                        Image(systemName: "plus")
+                            .font(.system(size: 24, weight: .light))
+                            .foregroundColor(Color.accentColor.opacity(colorScheme == .dark ? 0.85 : 0.7))
+                    }
                         .frame(width: secW)
                         .frame(maxHeight: .infinity)
                         .opacity(dragging ? 1 : 0)
@@ -981,10 +988,14 @@ struct ContentView: View {
         )
         .frame(width: width)
         .frame(maxHeight: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                .fill(Color.accentColor.opacity(colorScheme == .dark ? 0.18 : 0.08))
+        )
         .overlay(
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .strokeBorder(style: StrokeStyle(lineWidth: 2, lineCap: .round, dash: [6, 6]))
-                .foregroundColor(colorScheme == .dark ? .white : .black)
+                .strokeBorder(style: StrokeStyle(lineWidth: 1, lineCap: .round, dash: [4, 3]))
+                .foregroundColor(Color.accentColor.opacity(colorScheme == .dark ? 0.55 : 0.4))
         )
     }
 
@@ -2674,17 +2685,17 @@ struct ContentView: View {
                 .shadow(color: .black.opacity(0.03), radius: 1, x: 0, y: 0)
         } else {
             Capsule()
-                .fill(Color.gray.opacity(0.12))
+                .fill(Color.accentColor.opacity(colorScheme == .dark ? 0.18 : 0.08))
                 .overlay(
                     Capsule()
                         .strokeBorder(
                             style: StrokeStyle(
-                                lineWidth: 1.5,
+                                lineWidth: 1,
                                 lineCap: .round,
-                                dash: [6, 8]
+                                dash: [4, 3]
                             )
                         )
-                        .foregroundColor(Color.gray.opacity(0.3))
+                        .foregroundColor(Color.accentColor.opacity(colorScheme == .dark ? 0.55 : 0.4))
                 )
                 .frame(maxWidth: .infinity)
                 .frame(height: 34)
@@ -4238,7 +4249,9 @@ struct NoteListCard: View {
             .padding(8)
             .frame(width: 220, height: 34)
             .background(Capsule().fill(Color("ButtonPrimaryBgColor")))
-            .contentShape(.dragPreview, Capsule())
+            .rotationEffect(.degrees(-5))
+            .frame(width: 230, height: 54)
+            .contentShape(.dragPreview, RoundedRectangle(cornerRadius: 17))
         }
         .contextMenu {
             noteContextMenuContent
