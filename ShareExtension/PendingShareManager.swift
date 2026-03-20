@@ -1,0 +1,1 @@
+../Jot/Utils/PendingShareManager.swift

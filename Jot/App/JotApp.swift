@@ -24,6 +24,7 @@ struct JotApp: App {
             fatalError("Failed to initialize data store: \(error). The app cannot continue without persistence.")
         }
         _notesManager = StateObject(wrappedValue: manager)
+        SimpleSwiftDataManager.shared = manager
 
         // Clean up temporary files on app launch
         Self.cleanupTemporaryFiles()

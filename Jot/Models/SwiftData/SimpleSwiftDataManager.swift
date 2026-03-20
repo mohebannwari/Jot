@@ -7,6 +7,9 @@ import OSLog
 @MainActor
 final class SimpleSwiftDataManager: ObservableObject {
 
+    /// Singleton set during JotApp.init() so App Intents can access the data layer in-process.
+    static var shared: SimpleSwiftDataManager?
+
     @Published var notes: [Note] = [] {
         didSet {
             guard !suppressDerivedRecompute else { return }
