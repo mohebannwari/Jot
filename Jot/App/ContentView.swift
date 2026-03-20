@@ -502,6 +502,10 @@ struct ContentView: View {
                 guard let direction = notification.userInfo?["direction"] as? String else { return }
                 navigateToAdjacentNote(direction: direction == "up" ? .up : .down)
             }
+            .onReceive(NotificationCenter.default.publisher(for: .openNoteFromSpotlight)) { notification in
+                guard let noteID = notification.userInfo?["noteID"] as? UUID else { return }
+                openNoteByID(noteID)
+            }
             .onReceive(NotificationCenter.default.publisher(for: .exportSingleNote)) { notification in
                 guard let noteID = notification.userInfo?["noteID"] as? UUID,
                       let note = notesManager.notes.first(where: { $0.id == noteID }) else { return }
@@ -548,6 +552,7 @@ struct ContentView: View {
             searchEngine.setFolders(notesManager.folders)
             notesManager.loadDeletedNotes()
             reconcileSelectionWithCurrentNotes()
+            SpotlightIndexer.shared.reindexAll(notesManager.notes)
         }
         .onChange(of: notesManager.notes) { _, notes in
             searchEngine.setNotes(notes)
@@ -3358,6 +3363,16 @@ struct ContentView: View {
                     _ = notesManager.moveNote(id: noteID, toFolderID: folderSnapshot.id)
                 }
             }
+        }
+    }
+
+    /// Navigate to a specific note by UUID -- used by Spotlight deep links.
+    private func openNoteByID(_ noteID: UUID) {
+        guard let note = notesManager.notes.first(where: { $0.id == noteID }) else { return }
+        withAnimation(.jotSpring) {
+            selectedNote = note
+            selectedNoteIDs = [note.id]
+            selectionAnchorID = note.id
         }
     }
 

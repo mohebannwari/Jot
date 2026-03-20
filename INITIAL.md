@@ -1,125 +1,166 @@
-# Batch 1: Comprehensive Keyboard Shortcuts + Toast-based Undo
+# Batch 2: Spotlight Integration + Printing (Cmd+P)
 
 ## What We're Building
 
-Two foundational features for Jot that improve keyboard-driven workflows and add safety nets for destructive operations.
+Two independent macOS system integration features that make Jot a better citizen on the platform.
 
 ---
 
-## Feature 1: Comprehensive Keyboard Shortcuts (DES-265)
+## Feature 1: Spotlight Integration (DES-267)
 
 ### Current State
-The app has basic formatting shortcuts (Cmd+B/I/U, Cmd+Z/Shift+Z, Cmd+1/2/3 for headings, Cmd+Shift+8/7 for lists, Cmd+Shift+X/H/K for strikethrough/highlight/link) all handled in `TodoEditorRepresentable.swift` via `performKeyEquivalent` and `keyDown`. Global shortcuts exist for Cmd+F (find), Cmd+H (replace), Cmd+Shift+F/Cmd+K (search), Cmd+S (save), Cmd+. (toggle sidebar) in `ContentView.swift`. A selection menu in `NoteSelectionCommands.swift` covers Cmd+A (select all), Delete (delete selected), Cmd+Shift+E (export), Cmd+Shift+M (move).
+- No CoreSpotlight indexing exists
+- No deep linking or `onContinueUserActivity` handling
+- No `NSApplicationDelegateAdaptor` in JotApp.swift
+- No URL scheme in Info.plist
+- `NoteExportService.convertMarkupToPlainText()` already strips all markup tags -- reusable for indexing
 
-### What's Missing
+### What We're Adding
+- Index all notes in macOS Spotlight via `CSSearchableIndex`
+- Clicking a Spotlight result opens Jot and navigates to that note
+- Locked notes indexed by title only (no content exposed)
+- Deleted/archived notes removed from index
+- Incremental re-index on app launch (skip unchanged)
+- Real-time index updates on create/save/delete
 
-**Note Management:**
-- Cmd+N -- Create new note (no shortcut exists)
-- Cmd+Shift+N -- Create new folder (no shortcut exists)
-- Cmd+Backspace -- Move selected note to trash (Delete key works in selection mode but not for single focused note)
+### Architecture
 
-**Formatting (already exists, verify/enhance):**
-- Cmd+1/2/3 -- Headings (EXISTS in TodoEditorRepresentable line 7435-7441)
-- Cmd+Shift+L -- Toggle bulleted list (currently Cmd+Shift+8, add Cmd+Shift+L as alias)
-- Cmd+Shift+O -- Toggle numbered list (currently Cmd+Shift+7, add alias)
-- Cmd+L -- Insert link (currently Cmd+Shift+K, also add Cmd+L)
-- Cmd+Shift+X -- Strikethrough (EXISTS)
-- Cmd+Shift+H -- Highlight (EXISTS)
+**New file: `Jot/Utils/SpotlightIndexer.swift`**
+- `@MainActor` class that wraps `CSSearchableIndex.default()`
+- `indexNote(_ note: Note)` -- creates `CSSearchableItem` with attributes
+- `deindexNote(id: UUID)` -- removes item from index
+- `reindexAll(_ notes: [Note])` -- bulk index, skip unchanged via modifiedAt comparison
+- Uses `NoteExportService.convertMarkupToPlainText()` for content extraction
+- Domain identifier: `"com.jot.notes"`
 
-**Navigation:**
-- Up/Down arrow in sidebar to navigate between notes (no keyboard nav exists in sidebar)
-- Cmd+Shift+] / Cmd+Shift+[ -- Next/previous note (alternative navigation)
+**Modified: `Jot/App/JotApp.swift`**
+- Add `NSApplicationDelegateAdaptor` for handling `application(_:continue:)` user activity
+- Handle `CSSearchableItemActionType` to extract note UUID and navigate
 
-**Editor:**
-- Tab/Shift+Tab -- Increase/decrease indent (verify if exists)
-- Cmd+Shift+. -- Block quote (EXISTS at line 7465)
+**Modified: `Jot/App/ContentView.swift`**
+- Add a `@State var pendingSpotlightNoteID: UUID?` or use a notification
+- When the app opens from Spotlight, select and display the target note
 
-### Implementation Approach
-- Add new note/folder commands to the menu bar via `CommandGroup` in JotApp.swift or ContentView.swift
-- Sidebar keyboard nav needs focus state management -- when sidebar is focused, arrow keys move note selection
-- Format shortcuts that already exist just need menu bar visibility for discoverability
-- All new shortcuts must use `.keyboardShortcut()` SwiftUI modifiers for menu items
+**Modified: `Jot/Models/SwiftData/SimpleSwiftDataManager.swift`**
+- After `addNote()`, `updateNote()` -- call `SpotlightIndexer.shared.indexNote()`
+- After `moveToTrash()`, `deleteNotes()` -- call `SpotlightIndexer.shared.deindexNotes()`
+- After `restoreFromTrash()` -- call `SpotlightIndexer.shared.indexNote()` again
+- After `archiveNotes()` -- deindex; after `unarchiveNotes()` -- re-index
+
+### Searchable Attributes
+```
+title          -- note.title (high relevance)
+contentDescription -- plain text of note.content (stripped of markup)
+keywords       -- note.tags
+lastUsedDate   -- note.date (modifiedAt)
+thumbnailData  -- nil (no thumbnail for notes)
+```
+
+### Deep Link Flow
+```
+User taps Spotlight result
+→ macOS sends NSUserActivity with CSSearchableItemActionType
+→ AppDelegate.application(_:continue:) fires
+→ Extract note UUID from activity.userInfo
+→ Post notification with UUID
+→ ContentView receives notification, selects note
+```
 
 ### Key Files
-- `Jot/App/ContentView.swift` -- menu bar, sidebar, note management actions
-- `Jot/App/JotApp.swift` -- CommandGroup definitions
-- `Jot/App/NoteSelectionCommands.swift` -- selection-related commands
-- `Jot/Views/Components/TodoEditorRepresentable.swift` -- editor key handling (performKeyEquivalent, keyDown at lines 7401-7480)
+- New: `Jot/Utils/SpotlightIndexer.swift`
+- Modified: `Jot/App/JotApp.swift` -- AppDelegate adaptor
+- Modified: `Jot/App/ContentView.swift` -- deep link receiver
+- Modified: `Jot/Models/SwiftData/SimpleSwiftDataManager.swift` -- index hooks
+- Reuse: `Jot/Utils/NoteExportService.swift` -- `convertMarkupToPlainText()` at line 461
 
 ---
 
-## Feature 2: Toast-based Undo for Destructive Operations (DES-266)
+## Feature 2: Printing (DES-268)
 
 ### Current State
-No toast/notification system exists. No app-level undo beyond NSTextView's built-in undo for text edits. Destructive operations execute immediately with no undo path except manual reversal (e.g., restore from trash).
+- No print support exists
+- Editor is `InlineNSTextView` (custom NSTextView) wrapped in `TodoEditorRepresentable`
+- Coordinator stores `private weak var textView: NSTextView?` (line 1151)
+- All editor actions use NotificationCenter pattern (8138+ notification names)
+- Images/tables/code blocks are overlay views, NOT NSTextAttachments -- won't print natively
+- PDF export exists in `NoteExportService` but rebuilds layout manually (doesn't use NSTextView)
 
-### Operations That Need Undo Toasts
+### What We're Adding
+- Cmd+P opens native macOS print dialog for the current note
+- File > Print menu item via `CommandGroup(replacing: .printItem)`
+- NSTextView's native rich text printing (formatting, colors, fonts)
+- Print-friendly appearance (force light mode for printing)
+- Note title and date as print header
 
-| Operation | Function | File | Reverse |
-|-----------|----------|------|---------|
-| Delete (trash) | `moveToTrash(ids:)` line 501 | SimpleSwiftDataManager | `restoreFromTrash(ids:)` |
-| Archive | `archiveNotes(ids:)` line 420 | SimpleSwiftDataManager | `unarchiveNotes(ids:)` |
-| Pin/Unpin | `togglePin(id:)` line 659 | SimpleSwiftDataManager | `togglePin(id:)` again |
-| Move to folder | `moveNotes(ids:toFolderID:)` line 862 | SimpleSwiftDataManager | `moveNotes(ids:toFolderID: originalFolderID)` |
-| Delete folder | `deleteFolder(id:)` line 787 | SimpleSwiftDataManager | Recreate folder + reassign notes |
-| Archive folder | `archiveFolder(_:)` line 270 | SimpleSwiftDataManager | `unarchiveFolder(_:)` |
+### Architecture
 
-### Design Requirements
-- Floating pill/toast at the bottom-center of the window
-- Shows operation description + "Undo" button
-- Auto-dismisses after 5 seconds
-- Latest action replaces previous toast (no stacking)
-- Liquid Glass styling consistent with app design
-- Smooth enter/exit animation using `.jotSpring` pattern
+**New file: `Jot/App/PrintCommands.swift`**
+- `CommandGroup(replacing: .printItem)` with Cmd+P
+- Posts `.printCurrentNote` notification
 
-### Implementation Approach
-- New `UndoToastManager` as `@Observable` class, injected as `@EnvironmentObject`
-- New `UndoToast` SwiftUI view with Liquid Glass material
-- Each destructive action captures the undo closure BEFORE executing
-- Toast manager holds the current toast (message + undo closure + timer)
-- Overlay placed in ContentView's ZStack (same level as other floating elements)
-- Timer auto-dismisses; clicking Undo executes closure and dismisses
+**Modified: `Jot/Views/Components/TodoEditorRepresentable.swift`**
+- Add `.printCurrentNote` notification name
+- In Coordinator's `configure(with:)`, register observer
+- Implement `printNote()` that:
+  1. Gets the textView reference
+  2. Creates NSPrintInfo with 1-inch margins
+  3. Creates NSPrintOperation
+  4. Runs the print operation
 
-### Animation
-- Enter: `.transition(.move(edge: .bottom).combined(with: .opacity))` with `.jotSpring`
-- Exit: same transition reversed
-- Toast should not interfere with other floating UI (search, toolbar, settings)
+**Modified: `Jot/App/JotApp.swift`**
+- Add `PrintCommands()` to `.commands {}`
+
+### Printing Approach
+NSTextView has built-in print support via `NSPrintOperation(view: textView)`. This automatically handles:
+- Rich text formatting (bold, italic, underline, strikethrough, colors)
+- Custom fonts (Charter, System, Mono)
+- Paragraph styles (alignment, indentation, line spacing)
+- Multi-page pagination
+
+**Not included in MVP:**
+- Images (overlay views, not NSTextAttachments)
+- Code block backgrounds (overlay views)
+- Tables (overlay views)
+- Custom headers/footers (can add later)
+
+### Notification Flow
+```
+Cmd+P → PrintCommands posts .printCurrentNote
+→ Coordinator observes, filters by editorInstanceID
+→ Coordinator calls printNote() on its NSTextView
+→ Native macOS print dialog appears
+```
 
 ### Key Files
-- New: `Jot/Utils/UndoToastManager.swift`
-- New: `Jot/Views/Components/UndoToast.swift`
-- Modified: `Jot/App/ContentView.swift` -- overlay placement + integrate with delete/archive/pin/move actions
-- Modified: `Jot/Models/SwiftData/SimpleSwiftDataManager.swift` -- no changes needed here, undo closures call existing reverse functions
-
-### Existing Patterns to Follow
-- Animation: `withAnimation(.jotSpring)` and `.transition(.scale.combined(with: .opacity))`
-- Glass styling: `GlassEffects.swift` helpers (`liquidGlass(in:)`, `tintedLiquidGlass(in:tint:)`)
-- Overlay placement: same pattern as `FloatingSearch`, `FloatingToolbar`
+- New: `Jot/App/PrintCommands.swift`
+- Modified: `Jot/Views/Components/TodoEditorRepresentable.swift` -- notification observer + printNote()
+- Modified: `Jot/App/JotApp.swift` -- add PrintCommands
+- Modified: `Jot/Utils/Extensions.swift` -- new Notification.Name constants
 
 ---
 
 ## Acceptance Criteria
 
-### Keyboard Shortcuts
-- [ ] Cmd+N creates a new note
-- [ ] Cmd+Shift+N creates a new folder
-- [ ] Cmd+Backspace moves focused note to trash
-- [ ] Arrow keys navigate notes in sidebar when sidebar is focused
-- [ ] All formatting shortcuts visible in menu bar for discoverability
-- [ ] No conflicts with existing system or app shortcuts
+### Spotlight
+- [ ] Notes appear in Spotlight search results (Cmd+Space)
+- [ ] Clicking a result opens Jot to the correct note
+- [ ] New/edited notes indexed within seconds
+- [ ] Deleted notes removed from index
+- [ ] Archived notes removed from index
+- [ ] Locked notes indexed by title only (no content)
+- [ ] Restored notes re-indexed
 
-### Toast Undo
-- [ ] Toast appears after: delete, archive, pin/unpin, move to folder, delete folder, archive folder
-- [ ] Clicking "Undo" reverses the operation correctly
-- [ ] Toast auto-dismisses after 5 seconds
-- [ ] New action replaces previous toast
-- [ ] Liquid Glass styling matches app design
-- [ ] Animation is smooth (enter/exit)
-- [ ] Toast doesn't block other floating UI elements
+### Printing
+- [ ] Cmd+P opens native macOS print dialog
+- [ ] Printed output preserves text formatting (bold, italic, colors, fonts)
+- [ ] Multi-page notes paginate correctly
+- [ ] File > Print menu item visible in menu bar
+- [ ] Print works in both light and dark mode (output is always light)
 
 ---
 
 ## Out of Scope
-- Customizable keyboard shortcuts (future feature)
-- Multiple undo (only most recent operation)
-- Undo for permanent delete (intentionally irreversible)
+- Spotlight: Custom result thumbnails
+- Spotlight: Indexing archived notes
+- Printing: Images, tables, code blocks in print output (v2)
+- Printing: Custom headers/footers with note title/date (v2)

@@ -9,6 +9,7 @@ import SwiftUI
 
 @main
 struct JotApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var notesManager: SimpleSwiftDataManager
     @StateObject private var themeManager = ThemeManager()
     @StateObject private var authManager = NoteAuthenticationManager()
@@ -26,6 +27,9 @@ struct JotApp: App {
 
         // Clean up temporary files on app launch
         Self.cleanupTemporaryFiles()
+
+        // Install Cmd+P handler at NSEvent level (bypasses SwiftUI/macOS print validation)
+        PrintKeyHandler.shared.install()
     }
 
     /// Clean up temporary files that may have accumulated from previous sessions
@@ -88,6 +92,9 @@ struct JotApp: App {
             NoteSelectionCommands()
             NoteManagementCommands()
             FormatMenuCommands()
+            // Replace system Print menu with empty group to suppress macOS's
+            // printing validation. Cmd+P is handled by PrintKeyHandler via NSEvent.
+            CommandGroup(replacing: .printItem) { }
             CommandGroup(replacing: .appSettings) {
                 Button("Settings...") {
                     NotificationCenter.default.post(name: .openSettings, object: nil)

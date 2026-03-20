@@ -332,6 +332,7 @@ final class SimpleSwiftDataManager: ObservableObject {
             try modelContext.save()
             let note = noteEntity.toNote()
             notes.insert(note, at: 0)
+            SpotlightIndexer.shared.indexNote(note)
             logger.info("Added note: \(title)")
             return note
         } catch {
@@ -399,6 +400,9 @@ final class SimpleSwiftDataManager: ObservableObject {
             }
 
             logger.info("Updated note: \(updatedNote.title)")
+            if let index = notes.firstIndex(where: { $0.id == updatedNote.id }) {
+                SpotlightIndexer.shared.indexNote(notes[index])
+            }
 
         } catch {
             logger.error("Failed to update note: \(error)")
@@ -439,6 +443,7 @@ final class SimpleSwiftDataManager: ObservableObject {
             try modelContext.save()
             notes.removeAll { ids.contains($0.id) }
             loadArchivedNotes()
+            SpotlightIndexer.shared.deindexNotes(ids: ids)
             logger.info("Archived \(toArchive.count) notes in batch")
             return toArchive.count
         } catch {
@@ -470,6 +475,10 @@ final class SimpleSwiftDataManager: ObservableObject {
             try modelContext.save()
             archivedNotes.removeAll { ids.contains($0.id) }
             loadNotes()
+            // Re-index unarchived notes in Spotlight
+            for entity in toUnarchive {
+                SpotlightIndexer.shared.indexNote(entity.toNote())
+            }
             logger.info("Unarchived \(toUnarchive.count) notes in batch")
             return toUnarchive.count
         } catch {
@@ -523,6 +532,7 @@ final class SimpleSwiftDataManager: ObservableObject {
             notes.removeAll { ids.contains($0.id) }
             archivedNotes.removeAll { ids.contains($0.id) }
             loadDeletedNotes()
+            SpotlightIndexer.shared.deindexNotes(ids: ids)
             logger.info("Moved \(toTrash.count) notes to trash")
             return toTrash.count
         } catch {
@@ -555,6 +565,10 @@ final class SimpleSwiftDataManager: ObservableObject {
             try modelContext.save()
             deletedNotes.removeAll { ids.contains($0.id) }
             loadNotes()
+            // Re-index restored notes in Spotlight
+            for entity in toRestore {
+                SpotlightIndexer.shared.indexNote(entity.toNote())
+            }
             logger.info("Restored \(toRestore.count) notes from trash")
             return toRestore.count
         } catch {
@@ -584,6 +598,7 @@ final class SimpleSwiftDataManager: ObservableObject {
 
             try modelContext.save()
             deletedNotes.removeAll { ids.contains($0.id) }
+            SpotlightIndexer.shared.deindexNotes(ids: ids)
             logger.info("Permanently deleted \(toDelete.count) notes")
             return toDelete.count
         } catch {

@@ -4,6 +4,18 @@ iOS 26+ / macOS 26+ note-taking app in SwiftUI with Apple Liquid Glass design sy
 
 ---
 
+## Prohibited — Read This First
+
+These rules are absolute. No exceptions. No rationalizations. No "just this once."
+
+1. **Never guess when debugging.** Every bug — regardless of how trivial, minor, or "obvious" it seems — requires root cause investigation before any fix is attempted. Dispatch subagents to research the problem. Read documentation. Check entitlements, plists, build settings, sandbox permissions. The cost of one proper investigation is always less than four wrong guesses. If you catch yourself thinking "let me just try changing X," stop. You are about to waste time.
+
+2. **No log-based debugging.** Do not add `NSLog`, `print()`, `os_log`, or any temporary logging statements to diagnose issues. Logs pollute the codebase, require rebuild-relaunch cycles, and encourage guess-and-check instead of thinking. Use subagents to research the problem, read Apple documentation via Context7/WebSearch, check system configuration (entitlements, plist, sandbox), and reason about the architecture. If you need runtime observation, use Xcode's debugger, not log statements.
+
+3. **No fix without root cause.** Proposing a fix before identifying the root cause is prohibited. "I think it might be X" is not a root cause. A root cause is: "The app sandbox requires `com.apple.security.print` for `NSPrintOperation` to function, and this entitlement is missing from Jot.entitlements." Specificity or silence.
+
+---
+
 ## Subagent Architecture — Context Window is Everything
 
 **The primary law: the lead-agent context window is sacred. Never pollute it with lookups, searches, or doc reads.**
