@@ -554,6 +554,10 @@ struct ContentView: View {
             reconcileSelectionWithCurrentNotes()
             SpotlightIndexer.shared.reindexAll(notesManager.notes)
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            guard notesManager.hasLoadedInitialNotes else { return }
+            processPendingShares()
+        }
         .onChange(of: notesManager.notes) { _, notes in
             searchEngine.setNotes(notes)
             reconcileSelectionWithCurrentNotes(notes)
@@ -561,8 +565,9 @@ struct ContentView: View {
         .onChange(of: notesManager.folders) { _, folders in
             searchEngine.setFolders(folders)
         }
-        .onChange(of: notesManager.hasLoadedInitialNotes) { _, _ in
+        .onChange(of: notesManager.hasLoadedInitialNotes) { _, loaded in
             reconcileSelectionWithCurrentNotes()
+            if loaded { processPendingShares() }
         }
         .onChange(of: notesManager.hasCompletedMigrationCheck) { _, _ in
             reconcileSelectionWithCurrentNotes()
@@ -3373,6 +3378,63 @@ struct ContentView: View {
             selectedNote = note
             selectedNoteIDs = [note.id]
             selectionAnchorID = note.id
+        }
+    }
+
+    private func processPendingShares() {
+        let shares = PendingShareManager.consumeAll()
+        guard !shares.isEmpty else { return }
+
+        var lastNote: Note?
+
+        for share in shares {
+            switch share.type {
+            case .url:
+                let title = share.title ?? "Shared Link"
+                let url = share.content ?? ""
+                let content = "[[webclip|\(title)||\(url)]]"
+                lastNote = notesManager.addNote(title: title, content: content)
+
+            case .text:
+                let title = share.title ?? "Shared Text"
+                let content = share.content ?? ""
+                lastNote = notesManager.addNote(title: title, content: content)
+
+            case .image:
+                guard let base64 = share.imageData,
+                      let imageData = Data(base64Encoded: base64) else { continue }
+
+                // Write to temp file, save via ImageStorageManager
+                let tempURL = FileManager.default.temporaryDirectory
+                    .appendingPathComponent(UUID().uuidString + ".jpg")
+                do {
+                    try imageData.write(to: tempURL)
+                } catch { continue }
+
+                Task {
+                    if let filename = await ImageStorageManager.shared.saveImage(from: tempURL) {
+                        let note = notesManager.addNote(
+                            title: share.title ?? "Shared Image",
+                            content: "[[image|||\(filename)]]"
+                        )
+                        try? FileManager.default.removeItem(at: tempURL)
+                        withAnimation(.jotSpring) {
+                            selectedNote = note
+                            selectedNoteIDs = [note.id]
+                            selectionAnchorID = note.id
+                        }
+                    }
+                }
+            }
+        }
+
+        // Select the last non-image note (images handle their own selection in the Task)
+        if let note = lastNote {
+            withAnimation(.jotSpring) {
+                selectedNote = note
+                selectedNoteIDs = [note.id]
+                selectionAnchorID = note.id
+            }
         }
     }
 
