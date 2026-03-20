@@ -399,7 +399,6 @@ extension Notification.Name {
     static let createNewNote = Notification.Name("createNewNote")
     static let createNewFolder = Notification.Name("createNewFolder")
     static let trashFocusedNote = Notification.Name("trashFocusedNote")
-    static let formatMenuAction = Notification.Name("formatMenuAction")
     static let navigateNote = Notification.Name("navigateNote")
 }
 

@@ -1303,7 +1303,8 @@ struct ContentView: View {
                         },
                         onDeleteFolder: deleteFolder,
                         onDropNotesIntoFolder: { noteIDs, folderID in
-                            batchMoveNotesWithUndo(noteIDs, toFolderID: folderID)
+                            moveNotesToFolder(noteIDs, folderID)
+                            return true
                         },
                         splitNoteIDs: splitNoteIDs,
                         onSplitIconTap: activateSplitForNote,
@@ -3047,45 +3048,13 @@ struct ContentView: View {
         return true
     }
 
-    private func batchMoveNotes(_ noteIDs: Set<UUID>, toFolderID: UUID?) -> Bool {
-        guard !noteIDs.isEmpty else { return false }
-        let count = notesManager.moveNotes(ids: noteIDs, toFolderID: toFolderID)
-        return count > 0
-    }
-
-    @discardableResult
-    private func batchMoveNotesWithUndo(_ noteIDs: Set<UUID>, toFolderID: UUID?) -> Bool {
-        guard !noteIDs.isEmpty else { return false }
-
-        // Capture original folders for undo
-        var originalFolders: [(UUID, UUID?)] = []
-        for noteID in noteIDs {
-            if let note = notesManager.notes.first(where: { $0.id == noteID }) {
-                originalFolders.append((noteID, note.folderID))
-            }
-        }
-
-        let count = notesManager.moveNotes(ids: noteIDs, toFolderID: toFolderID)
-        guard count > 0 else { return false }
-
-        if let toFolderID { expandedFolderIDs.insert(toFolderID) }
-
-        let folderName = notesManager.folders.first(where: { $0.id == toFolderID })?.name ?? "Unfiled"
-        let message = count == 1 ? "Moved to \(folderName)" : "Moved \(count) notes to \(folderName)"
-        undoToastManager.show(message) { [weak notesManager] in
-            for (noteID, originalFolder) in originalFolders {
-                _ = notesManager?.moveNote(id: noteID, toFolderID: originalFolder)
-            }
-        }
-        return true
-    }
-
+    /// Moves notes to a folder with undo toast. Used by both context menu and drag-drop.
     private func moveNotesToFolder(_ noteIDs: Set<UUID>, _ folderID: UUID?) {
         guard !noteIDs.isEmpty else { return }
 
         HapticManager.shared.buttonTap()
 
-        // Capture original folder assignments for undo
+        // Capture original folder assignments for undo before mutation
         var originalFolders: [(UUID, UUID?)] = []
         for noteID in noteIDs {
             if let note = notesManager.notes.first(where: { $0.id == noteID }) {
@@ -3093,23 +3062,23 @@ struct ContentView: View {
             }
         }
 
+        // Perform the move
+        let moved: Int
         if noteIDs.count == 1, let noteID = noteIDs.first {
-            let moved = moveNote(noteID: noteID, toFolderID: folderID)
-            guard moved else { return }
+            let success = moveNote(noteID: noteID, toFolderID: folderID)
+            moved = success ? 1 : 0
         } else {
-            let moved = notesManager.moveNotes(ids: noteIDs, toFolderID: folderID)
-            guard moved > 0 else { return }
-
-            if let folderID {
+            moved = notesManager.moveNotes(ids: noteIDs, toFolderID: folderID)
+            if moved > 0, let folderID {
                 expandedFolderIDs.insert(folderID)
             }
-
             reconcileSelectionWithCurrentNotes()
         }
 
+        guard moved > 0 else { return }
+
         let folderName = notesManager.folders.first(where: { $0.id == folderID })?.name ?? "Unfiled"
-        let count = noteIDs.count
-        let message = count == 1 ? "Moved to \(folderName)" : "Moved \(count) notes to \(folderName)"
+        let message = moved == 1 ? "Moved to \(folderName)" : "Moved \(moved) notes to \(folderName)"
         undoToastManager.show(message) { [weak notesManager] in
             for (noteID, originalFolder) in originalFolders {
                 _ = notesManager?.moveNote(id: noteID, toFolderID: originalFolder)
@@ -3363,9 +3332,8 @@ struct ContentView: View {
     private func deleteFolder(_ folder: Folder) {
         HapticManager.shared.buttonTap()
 
-        // Capture folder info and note IDs for undo before mutation
-        let folderName = folder.name
-        let folderColor = folder.colorHex
+        // Capture full folder value and note IDs for undo before mutation
+        let folderSnapshot = folder
         let noteIDsInFolder = notesManager.notes
             .filter { $0.folderID == folder.id }
             .map(\.id)
@@ -3382,12 +3350,12 @@ struct ContentView: View {
 
         synchronizeDetailPaneWithSelection()
 
-        undoToastManager.show("Deleted folder \"\(folderName)\"") { [weak notesManager] in
+        undoToastManager.show("Deleted folder \"\(folder.name)\"") { [weak notesManager] in
             guard let notesManager else { return }
-            // Recreate the folder and move notes back into it
-            if let newFolder = notesManager.createFolder(name: folderName, colorHex: folderColor) {
+            // Restore folder with original UUID and move notes back
+            if let _ = notesManager.restoreFolder(folderSnapshot) {
                 for noteID in noteIDsInFolder {
-                    _ = notesManager.moveNote(id: noteID, toFolderID: newFolder.id)
+                    _ = notesManager.moveNote(id: noteID, toFolderID: folderSnapshot.id)
                 }
             }
         }
