@@ -733,6 +733,24 @@ final class SimpleSwiftDataManager: ObservableObject {
         }
     }
 
+    /// Restores a previously deleted folder, preserving its original UUID and metadata.
+    /// Used by the undo system to faithfully reverse a folder deletion.
+    @discardableResult
+    func restoreFolder(_ folder: Folder) -> Folder? {
+        let entity = FolderEntity(from: folder)
+        modelContext.insert(entity)
+
+        do {
+            try modelContext.save()
+            let restored = entity.toFolder()
+            folders.insert(restored, at: 0)
+            return restored
+        } catch {
+            logger.error("Failed to restore folder: \(error)")
+            return nil
+        }
+    }
+
     func renameFolder(id: UUID, name: String) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }

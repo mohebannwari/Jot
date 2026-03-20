@@ -1,0 +1,17 @@
+ID,Feature,Description,Tier,Priority,Batch,Status
+1,Comprehensive Keyboard Shortcuts,"Cmd+N (new note), Cmd+Shift+N (new folder), Cmd+1/2/3 (headings), Cmd+Delete (trash), Cmd+Shift+L (toggle list), Cmd+L (insert link), arrow-key sidebar navigation",Non-Negotiable,High,Batch 1,Planned
+2,Toast-based Undo,"Floating undo toast (5s) after destructive ops: delete, move, archive, pin/unpin. Single undo step with revert action.",Non-Negotiable,High,Batch 1,Planned
+3,Spotlight Integration,"CSSearchableIndex for note titles and content. Notes appear in macOS Spotlight with deep links back to Jot.",Non-Negotiable,High,Batch 2,Planned
+4,Printing (Cmd+P),"Native NSPrintOperation for current note. Respects formatting, images, and layout.",Nice-to-Have,High,Batch 2,Planned
+5,Share Extension,"macOS share sheet target. Capture URLs, text, and images from any app into a new Jot note. New extension target.",Nice-to-Have,High,Batch 3,Planned
+6,Siri Shortcuts & App Intents,"App Intents framework: create note, open note, search notes, append to note. Surfaces in Shortcuts app and Siri.",Nice-to-Have,High,Batch 3,Planned
+7,Auto Local Backups,"Periodic automatic backup of SwiftData store to user-configured folder. Configurable frequency. Restore from backup UI.",Non-Negotiable,Medium,Batch 4,Planned
+8,Note History / Versioning,"Periodic snapshots on significant edits. Timeline viewer to browse and restore previous versions.",Nice-to-Have,Medium,Batch 4,Planned
+9,Widgets (WidgetKit),"Desktop/Notification Center widgets: pinned notes, recent notes. New WidgetKit extension target.",Nice-to-Have,Medium,Batch 5,Planned
+10,Reminders / Due Dates,"Optional date+time per note with macOS notification. Lightweight reminder, not a task manager.",Nice-to-Have,Medium,Batch 5,Planned
+11,Global Quick Note Hotkey,"System-wide hotkey summons floating capture window from any app. Type, dismiss, saved.",Simplicity,Medium,Batch 6,Planned
+12,Smart Folders,"Auto-populating folders based on rules: tags, modification date, unchecked todos. Rule editor UI.",Simplicity,Medium,Batch 6,Planned
+13,Templates,"Pre-structured note templates plus Save as Template. Template picker on new note creation.",Simplicity,Medium,Batch 6,Planned
+14,Backlinks Panel,"Reverse @mentions panel showing which notes reference the current note.",Simplicity,Skipped,N/A,Skipped
+15,Focus Mode,"Distraction-free writing: hide sidebar/toolbar, expand editor. Optional typewriter mode.",Simplicity,Skipped,N/A,Skipped
+16,Quick Capture from Clipboard,"Global shortcut to create note from clipboard content instantly.",Simplicity,Skipped,N/A,Skipped

@@ -170,6 +170,7 @@ struct ContentView: View {
     @EnvironmentObject private var notesManager: SimpleSwiftDataManager
     @EnvironmentObject private var themeManager: ThemeManager
     @EnvironmentObject private var authManager: NoteAuthenticationManager
+    @EnvironmentObject private var undoToastManager: UndoToastManager
     @State private var lockPasswordInput: String = ""
     @State private var lockAuthFailed: Bool = false
     @State private var selectedNote: Note?
@@ -483,6 +484,24 @@ struct ContentView: View {
             .onReceive(NotificationCenter.default.publisher(for: .openSettings)) { _ in
                 presentSettings()
             }
+            .onReceive(NotificationCenter.default.publisher(for: .createNewNote)) { _ in
+                createAndOpenNewNote()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .createNewFolder)) { _ in
+                isCreateFolderAlertPresented = true
+                pendingFolderCreationIntent = .standalone
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .trashFocusedNote)) { _ in
+                if let note = selectedNote {
+                    requestDeleteNotes([note.id])
+                } else if !selectedNoteIDs.isEmpty {
+                    requestDeleteNotes(selectedNoteIDs)
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .navigateNote)) { notification in
+                guard let direction = notification.userInfo?["direction"] as? String else { return }
+                navigateToAdjacentNote(direction: direction == "up" ? .up : .down)
+            }
             .onReceive(NotificationCenter.default.publisher(for: .exportSingleNote)) { notification in
                 guard let noteID = notification.userInfo?["noteID"] as? UUID,
                       let note = notesManager.notes.first(where: { $0.id == noteID }) else { return }
@@ -497,6 +516,12 @@ struct ContentView: View {
                 } else if eid == splitEditorID && activeSplitPane != .secondary {
                     activeSplitPane = .secondary
                 }
+            }
+            .overlay(alignment: .bottom) {
+                UndoToast()
+                    .padding(.bottom, 24)
+                    .allowsHitTesting(undoToastManager.currentToast != nil)
+                    .animation(.jotSpring, value: undoToastManager.currentToast?.id)
             }
     }
 
@@ -1274,11 +1299,12 @@ struct ContentView: View {
                             notesManager.updateNote(updatedNote)
                         },
                         onArchiveFolder: { folder in
-                            notesManager.archiveFolder(folder)
+                            archiveFolderWithUndo(folder)
                         },
                         onDeleteFolder: deleteFolder,
                         onDropNotesIntoFolder: { noteIDs, folderID in
-                            batchMoveNotes(noteIDs, toFolderID: folderID)
+                            moveNotesToFolder(noteIDs, folderID)
+                            return true
                         },
                         splitNoteIDs: splitNoteIDs,
                         onSplitIconTap: activateSplitForNote,
@@ -3022,30 +3048,42 @@ struct ContentView: View {
         return true
     }
 
-    private func batchMoveNotes(_ noteIDs: Set<UUID>, toFolderID: UUID?) -> Bool {
-        guard !noteIDs.isEmpty else { return false }
-        let count = notesManager.moveNotes(ids: noteIDs, toFolderID: toFolderID)
-        return count > 0
-    }
-
+    /// Moves notes to a folder with undo toast. Used by both context menu and drag-drop.
     private func moveNotesToFolder(_ noteIDs: Set<UUID>, _ folderID: UUID?) {
         guard !noteIDs.isEmpty else { return }
 
         HapticManager.shared.buttonTap()
 
-        if noteIDs.count == 1, let noteID = noteIDs.first {
-            _ = moveNote(noteID: noteID, toFolderID: folderID)
-            return
+        // Capture original folder assignments for undo before mutation
+        var originalFolders: [(UUID, UUID?)] = []
+        for noteID in noteIDs {
+            if let note = notesManager.notes.first(where: { $0.id == noteID }) {
+                originalFolders.append((noteID, note.folderID))
+            }
         }
 
-        let moved = notesManager.moveNotes(ids: noteIDs, toFolderID: folderID)
+        // Perform the move
+        let moved: Int
+        if noteIDs.count == 1, let noteID = noteIDs.first {
+            let success = moveNote(noteID: noteID, toFolderID: folderID)
+            moved = success ? 1 : 0
+        } else {
+            moved = notesManager.moveNotes(ids: noteIDs, toFolderID: folderID)
+            if moved > 0, let folderID {
+                expandedFolderIDs.insert(folderID)
+            }
+            reconcileSelectionWithCurrentNotes()
+        }
+
         guard moved > 0 else { return }
 
-        if let folderID {
-            expandedFolderIDs.insert(folderID)
+        let folderName = notesManager.folders.first(where: { $0.id == folderID })?.name ?? "Unfiled"
+        let message = moved == 1 ? "Moved to \(folderName)" : "Moved \(moved) notes to \(folderName)"
+        undoToastManager.show(message) { [weak notesManager] in
+            for (noteID, originalFolder) in originalFolders {
+                _ = notesManager?.moveNote(id: noteID, toFolderID: originalFolder)
+            }
         }
-
-        reconcileSelectionWithCurrentNotes()
     }
 
     private func setPinState(for noteIDs: Set<UUID>, pinned: Bool) {
@@ -3053,11 +3091,27 @@ struct ContentView: View {
 
         HapticManager.shared.buttonTap()
 
+        var toggledIDs: [UUID] = []
         for noteID in noteIDs {
             guard let note = notesManager.notes.first(where: { $0.id == noteID }) else { continue }
             guard note.isPinned != pinned else { continue }
+            // Notes in folders can't be pinned -- togglePin silently ignores them
+            guard note.folderID == nil else { continue }
             withAnimation(.easeInOut(duration: 0.25)) {
                 notesManager.togglePin(id: noteID)
+            }
+            toggledIDs.append(noteID)
+        }
+
+        guard !toggledIDs.isEmpty else { return }
+
+        let message = pinned
+            ? (toggledIDs.count == 1 ? "Note pinned" : "Pinned \(toggledIDs.count) notes")
+            : (toggledIDs.count == 1 ? "Note unpinned" : "Unpinned \(toggledIDs.count) notes")
+        let idsToRevert = toggledIDs
+        undoToastManager.show(message) { [weak notesManager] in
+            for id in idsToRevert {
+                notesManager?.togglePin(id: id)
             }
         }
     }
@@ -3077,6 +3131,12 @@ struct ContentView: View {
     private func deleteNotesNow(_ noteIDs: Set<UUID>) {
         guard !noteIDs.isEmpty else { return }
 
+        // Capture note titles for toast message before mutation
+        let names = noteIDs.compactMap { id in
+            notesManager.notes.first { $0.id == id }?.title
+        }
+        let idsToRestore = noteIDs
+
         let deleted = notesManager.deleteNotes(ids: noteIDs)
         guard deleted > 0 else { return }
 
@@ -3088,10 +3148,19 @@ struct ContentView: View {
         }
 
         reconcileSelectionWithCurrentNotes()
+
+        let message = deleted == 1
+            ? "Moved \"\(names.first ?? "Note")\" to trash"
+            : "Moved \(deleted) notes to trash"
+        undoToastManager.show(message) { [weak notesManager] in
+            _ = notesManager?.restoreFromTrash(ids: idsToRestore)
+        }
     }
 
     private func archiveNotes(_ noteIDs: Set<UUID>) {
         guard !noteIDs.isEmpty else { return }
+
+        let idsToUnarchive = noteIDs
 
         HapticManager.shared.buttonTap()
         let archived = notesManager.archiveNotes(ids: noteIDs)
@@ -3104,6 +3173,11 @@ struct ContentView: View {
         }
 
         reconcileSelectionWithCurrentNotes()
+
+        let message = archived == 1 ? "Note archived" : "Archived \(archived) notes"
+        undoToastManager.show(message) { [weak notesManager] in
+            _ = notesManager?.unarchiveNotes(ids: idsToUnarchive)
+        }
     }
 
     private func unarchiveNotes(_ noteIDs: Set<UUID>) {
@@ -3257,6 +3331,13 @@ struct ContentView: View {
 
     private func deleteFolder(_ folder: Folder) {
         HapticManager.shared.buttonTap()
+
+        // Capture full folder value and note IDs for undo before mutation
+        let folderSnapshot = folder
+        let noteIDsInFolder = notesManager.notes
+            .filter { $0.folderID == folder.id }
+            .map(\.id)
+
         notesManager.deleteFolder(id: folder.id)
         expandedFolderIDs.remove(folder.id)
         expandedArchivedFolderIDs.remove(folder.id)
@@ -3268,6 +3349,55 @@ struct ContentView: View {
         }
 
         synchronizeDetailPaneWithSelection()
+
+        undoToastManager.show("Deleted folder \"\(folder.name)\"") { [weak notesManager] in
+            guard let notesManager else { return }
+            // Restore folder with original UUID and move notes back
+            if let _ = notesManager.restoreFolder(folderSnapshot) {
+                for noteID in noteIDsInFolder {
+                    _ = notesManager.moveNote(id: noteID, toFolderID: folderSnapshot.id)
+                }
+            }
+        }
+    }
+
+    private enum NavigationDirection { case up, down }
+
+    private func navigateToAdjacentNote(direction: NavigationDirection) {
+        let notes = visibleSidebarNotesInOrder
+        guard !notes.isEmpty else { return }
+
+        let currentID = selectedNote?.id
+        let currentIndex = currentID.flatMap { id in notes.firstIndex(where: { $0.id == id }) }
+
+        let targetIndex: Int
+        switch direction {
+        case .up:
+            targetIndex = (currentIndex ?? 0) > 0 ? (currentIndex! - 1) : 0
+        case .down:
+            if let idx = currentIndex {
+                targetIndex = min(idx + 1, notes.count - 1)
+            } else {
+                targetIndex = 0
+            }
+        }
+
+        let targetNote = notes[targetIndex]
+        withAnimation(.jotSpring) {
+            selectedNote = targetNote
+            selectedNoteIDs = [targetNote.id]
+            selectionAnchorID = targetNote.id
+        }
+    }
+
+    private func archiveFolderWithUndo(_ folder: Folder) {
+        HapticManager.shared.buttonTap()
+        let folderCopy = folder
+        notesManager.archiveFolder(folder)
+
+        undoToastManager.show("Archived folder \"\(folder.name)\"") { [weak notesManager] in
+            notesManager?.unarchiveFolder(folderCopy)
+        }
     }
 
     private func handleSelectionCommand(_ action: NoteSelectionCommandAction) {
