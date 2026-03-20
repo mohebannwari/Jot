@@ -16,6 +16,12 @@ These rules are absolute. No exceptions. No rationalizations. No "just this once
 
 ---
 
+## Workflow — Always Follow
+
+Read and follow `workflow.md` at the project root before every task. It defines the complete development lifecycle, validation gates, and shipping process for this project. The global workflow at `~/.claude/workflow.md` contains universal rules (debugging, subagent architecture, philosophy); the project-level `workflow.md` layers Jot-specific conventions on top. Both are authoritative.
+
+---
+
 ## Subagent Architecture — Context Window is Everything
 
 **The primary law: the lead-agent context window is sacred. Never pollute it with lookups, searches, or doc reads.**
