@@ -12,6 +12,7 @@ struct JotApp: App {
     @StateObject private var notesManager: SimpleSwiftDataManager
     @StateObject private var themeManager = ThemeManager()
     @StateObject private var authManager = NoteAuthenticationManager()
+    @StateObject private var undoToastManager = UndoToastManager()
 
     init() {
         // Initialize SwiftData manager with error handling
@@ -76,6 +77,7 @@ struct JotApp: App {
                 .environmentObject(notesManager)
                 .environmentObject(themeManager)
                 .environmentObject(authManager)
+                .environmentObject(undoToastManager)
                 .preferredColorScheme(themeManager.resolvedColorScheme)
                 .containerShape(.rect(cornerRadius: 16))
         }
@@ -84,6 +86,8 @@ struct JotApp: App {
         .windowBackgroundDragBehavior(.disabled)
         .commands {
             NoteSelectionCommands()
+            NoteManagementCommands()
+            FormatMenuCommands()
             CommandGroup(replacing: .appSettings) {
                 Button("Settings...") {
                     NotificationCenter.default.post(name: .openSettings, object: nil)

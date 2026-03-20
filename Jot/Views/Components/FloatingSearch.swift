@@ -98,6 +98,8 @@ struct FloatingSearch: View {
             }
         } else {
             searchSurfaceContent
+                .padding(.horizontal, 4)
+                .padding(.vertical, 3)
                 .background(
                     .ultraThinMaterial,
                     in: RoundedRectangle(cornerRadius: surfaceCornerRadius, style: .continuous)

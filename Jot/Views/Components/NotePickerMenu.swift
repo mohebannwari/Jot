@@ -100,6 +100,8 @@ private extension View {
                 .glassEffectTransition(.materialize)
         } else {
             self
+                .padding(.horizontal, 4)
+                .padding(.vertical, 3)
                 .background(.ultraThinMaterial, in: shape)
                 .overlay(shape.stroke(Color.primary.opacity(0.06), lineWidth: 0.5))
         }

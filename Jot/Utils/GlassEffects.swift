@@ -18,6 +18,8 @@ extension View {
             self.glassEffect(.regular.interactive(true), in: shape)
         } else {
             self
+                .padding(.horizontal, 4)
+                .padding(.vertical, 3)
                 .background(.ultraThinMaterial, in: shape)
                 .overlay(shape.stroke(Color.primary.opacity(0.06), lineWidth: 0.5))
         }
@@ -38,6 +40,8 @@ extension View {
                 .glassEffect(.regular.tint(tint.opacity(tintOpacity)), in: shape)
         } else {
             self
+                .padding(.horizontal, 4)
+                .padding(.vertical, 3)
                 .background(.ultraThinMaterial, in: shape)
                 .background(shape.fill(tint.opacity(tintOpacity)))
                 .overlay(shape.stroke(Color.primary.opacity(strokeOpacity), lineWidth: 0.5))
@@ -52,7 +56,10 @@ extension View {
         if #available(iOS 26.0, macOS 26.0, *) {
             self.glassEffect(in: shape)
         } else {
-            self.background(.ultraThinMaterial, in: shape)
+            self
+                .padding(.horizontal, 3)
+                .padding(.vertical, 2)
+                .background(.ultraThinMaterial, in: shape)
         }
     }
     
