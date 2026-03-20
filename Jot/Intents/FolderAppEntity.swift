@@ -28,22 +28,25 @@ struct FolderAppEntity: AppEntity {
 }
 
 struct FolderQuery: EntityStringQuery {
+    @MainActor
     func entities(for identifiers: [UUID]) async throws -> [FolderAppEntity] {
-        guard let manager = await SimpleSwiftDataManager.shared else { return [] }
-        return await manager.folders
+        guard let manager = SimpleSwiftDataManager.shared else { return [] }
+        return manager.folders
             .filter { identifiers.contains($0.id) }
             .map { FolderAppEntity(from: $0) }
     }
 
+    @MainActor
     func entities(matching string: String) async throws -> [FolderAppEntity] {
-        guard let manager = await SimpleSwiftDataManager.shared else { return [] }
-        return await manager.folders
+        guard let manager = SimpleSwiftDataManager.shared else { return [] }
+        return manager.folders
             .filter { $0.name.localizedCaseInsensitiveContains(string) }
             .map { FolderAppEntity(from: $0) }
     }
 
+    @MainActor
     func suggestedEntities() async throws -> [FolderAppEntity] {
-        guard let manager = await SimpleSwiftDataManager.shared else { return [] }
-        return await manager.folders.map { FolderAppEntity(from: $0) }
+        guard let manager = SimpleSwiftDataManager.shared else { return [] }
+        return manager.folders.map { FolderAppEntity(from: $0) }
     }
 }

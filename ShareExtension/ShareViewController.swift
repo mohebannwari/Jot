@@ -12,26 +12,14 @@ import UniformTypeIdentifiers
 class ShareViewController: NSViewController {
 
     private var extractedShare: PendingShare?
-    private var extractedTitle = ""
-    private var isReady = false
+    private let viewModel = ShareViewModel()
 
     override func loadView() {
-        // Bindings to communicate extraction state to SwiftUI view
-        let titleBinding = Binding<String>(
-            get: { [weak self] in self?.extractedTitle ?? "" },
-            set: { [weak self] in self?.extractedTitle = $0 }
-        )
-        let readyBinding = Binding<Bool>(
-            get: { [weak self] in self?.isReady ?? false },
-            set: { [weak self] in self?.isReady = $0 }
-        )
-
         let hostingView = NSHostingView(
             rootView: ShareExtensionView(
                 onSave: { [weak self] title in self?.save(title: title) },
                 onCancel: { [weak self] in self?.cancel() },
-                extractedTitle: titleBinding,
-                isReady: readyBinding
+                viewModel: viewModel
             )
         )
         hostingView.frame = NSRect(x: 0, y: 0, width: 360, height: 160)
@@ -43,7 +31,10 @@ class ShareViewController: NSViewController {
     // MARK: - Content Extraction
 
     private func extractContent() {
-        guard let items = extensionContext?.inputItems as? [NSExtensionItem] else { return }
+        guard let items = extensionContext?.inputItems as? [NSExtensionItem] else {
+            markReady(share: nil)
+            return
+        }
 
         for item in items {
             guard let attachments = item.attachments else { continue }
@@ -68,24 +59,31 @@ class ShareViewController: NSViewController {
                 }
             }
         }
+
+        // No matching attachment type found -- enable Save with empty content
+        markReady(share: PendingShare(type: .text, title: nil, content: "", imageData: nil, timestamp: Date()))
     }
 
-    private func markReady(share: PendingShare) {
+    private func markReady(share: PendingShare?) {
         extractedShare = share
-        extractedTitle = share.title ?? ""
-        isReady = true
+        viewModel.extractedTitle = share?.title ?? ""
+        viewModel.isReady = true
     }
 
     private func extractURL(from attachment: NSItemProvider) {
         attachment.loadItem(forTypeIdentifier: UTType.url.identifier) { [weak self] data, _ in
-            guard let url = data as? URL else { return }
-            let share = PendingShare(
-                type: .url,
-                title: url.host ?? url.absoluteString,
-                content: url.absoluteString,
-                imageData: nil,
-                timestamp: Date()
-            )
+            let share: PendingShare
+            if let url = data as? URL {
+                share = PendingShare(
+                    type: .url,
+                    title: url.host ?? url.absoluteString,
+                    content: url.absoluteString,
+                    imageData: nil,
+                    timestamp: Date()
+                )
+            } else {
+                share = PendingShare(type: .text, title: nil, content: "", imageData: nil, timestamp: Date())
+            }
             DispatchQueue.main.async { self?.markReady(share: share) }
         }
     }
@@ -102,7 +100,12 @@ class ShareViewController: NSViewController {
                 imageData = rep.representation(using: .jpeg, properties: [.compressionFactor: 0.8])
             }
 
-            guard let raw = imageData else { return }
+            guard let raw = imageData else {
+                DispatchQueue.main.async {
+                    self?.markReady(share: PendingShare(type: .text, title: nil, content: "", imageData: nil, timestamp: Date()))
+                }
+                return
+            }
 
             // Resize if wider than 1200px
             let resized = Self.resizeImageData(raw, maxWidth: 1200)
@@ -121,15 +124,13 @@ class ShareViewController: NSViewController {
 
     private func extractText(from attachment: NSItemProvider) {
         attachment.loadItem(forTypeIdentifier: UTType.plainText.identifier) { [weak self] data, _ in
-            guard let text = data as? String else { return }
-            let title = String(text.prefix(100)).components(separatedBy: "\n").first ?? "Shared Text"
-            let share = PendingShare(
-                type: .text,
-                title: title,
-                content: text,
-                imageData: nil,
-                timestamp: Date()
-            )
+            let share: PendingShare
+            if let text = data as? String {
+                let title = String(text.prefix(100)).components(separatedBy: "\n").first ?? "Shared Text"
+                share = PendingShare(type: .text, title: title, content: text, imageData: nil, timestamp: Date())
+            } else {
+                share = PendingShare(type: .text, title: nil, content: "", imageData: nil, timestamp: Date())
+            }
             DispatchQueue.main.async { self?.markReady(share: share) }
         }
     }
