@@ -129,13 +129,13 @@ final class BackupManager: ObservableObject {
 
             // Serialize notes
             let allNotes = gatherAllNotes(from: notesManager)
-            let notesData = try JSONEncoder.jotPrettyPrinted.encode(allNotes)
+            let notesData = try JSONEncoder.jotBackup.encode(allNotes)
             try notesData.write(to: backupURL.appendingPathComponent("notes.json"))
 
             // Serialize folders
             notesManager.loadArchivedFolders()
             let allFolders = notesManager.folders + notesManager.archivedFolders
-            let foldersData = try JSONEncoder.jotPrettyPrinted.encode(allFolders)
+            let foldersData = try JSONEncoder.jotBackup.encode(allFolders)
             try foldersData.write(to: backupURL.appendingPathComponent("folders.json"))
 
             // Write manifest
@@ -146,7 +146,7 @@ final class BackupManager: ObservableObject {
                 noteCount: allNotes.count,
                 folderCount: allFolders.count
             )
-            let manifestData = try JSONEncoder.jotPrettyPrinted.encode(manifest)
+            let manifestData = try JSONEncoder.jotBackup.encode(manifest)
             try manifestData.write(to: backupURL.appendingPathComponent("manifest.json"))
 
             // Copy image and file directories
@@ -155,9 +155,7 @@ final class BackupManager: ObservableObject {
 
             // Validate by reading manifest back
             let readBack = try Data(contentsOf: backupURL.appendingPathComponent("manifest.json"))
-            let validationDecoder = JSONDecoder()
-            validationDecoder.dateDecodingStrategy = .iso8601
-            _ = try validationDecoder.decode(BackupManifest.self, from: readBack)
+            _ = try JSONDecoder.jotBackup.decode(BackupManifest.self, from: readBack)
 
             // Update last backup date
             let now = Date()
@@ -198,7 +196,7 @@ final class BackupManager: ObservableObject {
             guard fileManager.fileExists(atPath: manifestURL.path) else { continue }
 
             if let data = try? Data(contentsOf: manifestURL),
-               let manifest = try? JSONDecoder().decode(BackupManifest.self, from: data) {
+               let manifest = try? JSONDecoder.jotBackup.decode(BackupManifest.self, from: data) {
                 results.append((manifest: manifest, url: dir))
             }
         }
@@ -279,10 +277,10 @@ final class BackupManager: ObservableObject {
 
         do {
             let notesData = try Data(contentsOf: backupURL.appendingPathComponent("notes.json"))
-            let notes = try JSONDecoder().decode([Note].self, from: notesData)
+            let notes = try JSONDecoder.jotBackup.decode([Note].self, from: notesData)
 
             let foldersData = try Data(contentsOf: backupURL.appendingPathComponent("folders.json"))
-            let folders = try JSONDecoder().decode([Folder].self, from: foldersData)
+            let folders = try JSONDecoder.jotBackup.decode([Folder].self, from: foldersData)
 
             notesManager.importBackup(notes: notes, folders: folders)
 
@@ -393,7 +391,7 @@ final class BackupManager: ObservableObject {
             let manifestURL = dir.appendingPathComponent("manifest.json")
             guard fileManager.fileExists(atPath: manifestURL.path),
                   let data = try? Data(contentsOf: manifestURL),
-                  let manifest = try? JSONDecoder().decode(BackupManifest.self, from: data) else { continue }
+                  let manifest = try? JSONDecoder.jotBackup.decode(BackupManifest.self, from: data) else { continue }
             backups.append((timestamp: manifest.timestamp, url: dir))
         }
 
@@ -420,13 +418,21 @@ final class BackupManager: ObservableObject {
     }
 }
 
-// MARK: - JSON Encoder Extension
+// MARK: - JSON Codec Extensions
 
 private extension JSONEncoder {
-    static let jotPrettyPrinted: JSONEncoder = {
+    static let jotBackup: JSONEncoder = {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
         return encoder
+    }()
+}
+
+private extension JSONDecoder {
+    static let jotBackup: JSONDecoder = {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
     }()
 }

@@ -9,8 +9,6 @@ struct BackupSettingsPanel: View {
     @State private var showRestoreConfirmation = false
     @State private var selectedRestoreURL: URL?
     @State private var availableBackups: [(manifest: BackupManager.BackupManifest, url: URL)] = []
-    @State private var hoveredBackupNow = false
-    @State private var hoveredPickFolder = false
     @State private var backupSucceeded: Bool?
 
     var body: some View {
@@ -254,7 +252,7 @@ struct BackupSettingsPanel: View {
                     }
                 }
             } message: {
-                Text("This will replace all your current notes and folders with the backup. The app will quit and relaunch. This cannot be undone.")
+                Text("This will replace all your current notes and folders with the backup. The app will quit -- reopen it to complete the restore. This cannot be undone.")
             }
         }
     }

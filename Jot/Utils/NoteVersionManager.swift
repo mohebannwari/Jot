@@ -28,7 +28,10 @@ final class NoteVersionManager {
         let content = note.content
 
         // Skip if content hasn't changed since last schedule
-        let contentHash = (title + content).hashValue
+        var hasher = Hasher()
+        hasher.combine(title)
+        hasher.combine(content)
+        let contentHash = hasher.finalize()
         if lastScheduledContentHash[noteID] == contentHash {
             return
         }

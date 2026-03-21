@@ -40,7 +40,7 @@ final class SimpleSwiftDataManager: ObservableObject {
     @Published private(set) var hasCompletedMigrationCheck = false
 
     private let modelContainer: ModelContainer
-    let modelContext: ModelContext
+    private(set) var modelContext: ModelContext
     private let logger = Logger(subsystem: "com.jot.app", category: "SimpleSwiftDataManager")
 
     // MARK: - Performance Configuration
