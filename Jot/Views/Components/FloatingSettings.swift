@@ -121,7 +121,7 @@ struct SettingsPage: View {
             switch self {
             case .general: return "General"
             case .appearance: return "Appearance"
-            case .data: return "Data"
+            case .data: return "Backups"
             case .contact: return "Contact"
             case .about: return "About"
             }
@@ -1090,7 +1090,7 @@ struct SettingsPage: View {
                             ? type.selectedBackground(for: colorScheme)
                             : isHovered
                                 ? Color("HoverBackgroundColor")
-                                : Color(nsColor: NSColor.labelColor).opacity(0.04)
+                                : Color("SettingsInnerPillColor")
                     )
             )
         }

@@ -66,7 +66,7 @@ struct BackupSettingsPanel: View {
                             .padding(.vertical, 6)
                             .background(
                                 Capsule()
-                                    .fill(colorScheme == .dark ? Color(white: 0.18) : Color(white: 0.93))
+                                    .fill(Color("SettingsInnerPillColor"))
                             )
                     }
                     .buttonStyle(.plain)
@@ -155,7 +155,7 @@ struct BackupSettingsPanel: View {
                     .padding(.vertical, 4)
                     .background(
                         Capsule()
-                            .fill(colorScheme == .dark ? Color(white: 0.18) : Color(white: 0.93))
+                            .fill(Color("SettingsInnerPillColor"))
                     )
                 }
             }
