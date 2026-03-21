@@ -194,6 +194,7 @@ struct ContentView: View {
     @State private var hasAppliedInitialLaunchSelection = false
     @State private var isAutoCreatingStarterNote = false
     @State private var aiToolsState: AIToolsState = .collapsed
+    @State private var isVersionHistoryVisible = false
 
     @State private var isCreateFolderAlertPresented = false
     @State private var pendingFolderCreationIntent: FolderCreationIntent = .standalone
@@ -483,6 +484,12 @@ struct ContentView: View {
             }
             .onReceive(NotificationCenter.default.publisher(for: .openSettings)) { _ in
                 presentSettings()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .toggleVersionHistory)) { _ in
+                guard selectedNote != nil else { return }
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    isVersionHistoryVisible.toggle()
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .createNewNote)) { _ in
                 createAndOpenNewNote()
@@ -2297,24 +2304,44 @@ struct ContentView: View {
     @ViewBuilder
     private func detailPane(note: Note) -> some View {
         let isNoteLocked = note.isLocked && !authManager.isUnlocked(note.id)
-        ZStack {
-            NoteDetailView(
-                note: note,
-                editorInstanceID: primaryEditorID,
-                focusRequestID: detailFocusRequestID,
-                contentTopInsetAdjustment: isSidebarVisible ? 0 : detailToggleToContentExtraSpacingWhenSidebarHidden,
-                stickyHeaderTopPadding: splitControlsTopPadding,
-                onSave: { updated in saveUpdatedNote(updated) },
-                availableNotes: notePickerItems(excluding: note.id),
-                onNavigateToNote: navigateToNote,
-                backlinks: backlinks(for: note.id)
-            )
-            .blur(radius: isNoteLocked ? 20 : 0)
-            .allowsHitTesting(!isNoteLocked)
+        HStack(spacing: 0) {
+            ZStack {
+                NoteDetailView(
+                    note: note,
+                    editorInstanceID: primaryEditorID,
+                    focusRequestID: detailFocusRequestID,
+                    contentTopInsetAdjustment: isSidebarVisible ? 0 : detailToggleToContentExtraSpacingWhenSidebarHidden,
+                    stickyHeaderTopPadding: splitControlsTopPadding,
+                    onSave: { updated in saveUpdatedNote(updated) },
+                    availableNotes: notePickerItems(excluding: note.id),
+                    onNavigateToNote: navigateToNote,
+                    backlinks: backlinks(for: note.id)
+                )
+                .blur(radius: isNoteLocked ? 20 : 0)
+                .allowsHitTesting(!isNoteLocked)
 
-            if isNoteLocked {
-                noteLockOverlay(for: note)
+                if isNoteLocked {
+                    noteLockOverlay(for: note)
+                }
             }
+
+            if isVersionHistoryVisible {
+                Divider()
+                    .opacity(0.3)
+
+                NoteVersionHistoryPanel(
+                    noteID: note.id,
+                    isPresented: $isVersionHistoryVisible,
+                    onRestore: { version in
+                        restoreNoteVersion(version, for: note)
+                    }
+                )
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: isVersionHistoryVisible)
+        .onChange(of: note.id) { _, _ in
+            isVersionHistoryVisible = false
         }
     }
 
@@ -2951,6 +2978,22 @@ struct ContentView: View {
 
     private func saveSplitNote(_ updated: Note) {
         notesManager.updateNote(updated)
+    }
+
+    private func restoreNoteVersion(_ version: NoteVersion, for note: Note) {
+        // Flush any pending snapshot, then force-save current content as a pre-restore safety snapshot
+        NoteVersionManager.shared.flushPendingSnapshot(for: note.id, in: notesManager.modelContext)
+        NoteVersionManager.shared.forceSnapshot(for: note, in: notesManager.modelContext)
+
+        // Apply the version's content
+        var updated = note
+        updated.title = version.title
+        updated.content = version.content
+        updated.date = Date()
+        saveUpdatedNote(updated)
+
+        // Force the editor to reload with restored content
+        selectedNote = updated
     }
 
     private func openNote(_ note: Note, focusEditor: Bool = true, withHaptic: Bool = true) {
@@ -3767,11 +3810,11 @@ struct NotesSection: View {
                         ? "IconLock"
                         : (splitNoteIDs.contains(note.id) ? "IconArrowSplitUp" : nil),
                     hoverLeadingIconAssetName: note.isLocked ? "IconUnlocked" : nil,
-                    persistentLeadingIconBg: note.isLocked || splitNoteIDs.contains(note.id),
-                    leadingIconBgColor: note.isLocked ? Color.red : .blue,
-                    leadingIconFgColor: .white,
-                    hoverLeadingIconBgColor: note.isLocked ? Color.green : nil,
-                    hoverLeadingIconFgColor: nil,
+                    persistentLeadingIconBg: false,
+                    leadingIconBgColor: .clear,
+                    leadingIconFgColor: Color("SecondaryTextColor"),
+                    hoverLeadingIconBgColor: .clear,
+                    hoverLeadingIconFgColor: Color("SecondaryTextColor"),
                     onLeadingIconTap: note.isLocked
                         ? { onLockIconTap?(note) }
                         : (splitNoteIDs.contains(note.id) ? { onSplitIconTap?(note) } : nil),
@@ -4104,7 +4147,7 @@ struct NoteListCard: View {
                 let isLeadingIconVisible = !showLeadingIconOnHoverOnly || isHovered
                 let isShowingHoverVariant = isLeadingIconHovered && hoverLeadingIconAssetName != nil
                 let showBg = persistentLeadingIconBg || (isLeadingIconHovered && onLeadingIconTap != nil)
-                let currentFg = showBg
+                let currentFg = persistentLeadingIconBg
                     ? (isShowingHoverVariant ? (hoverLeadingIconFgColor ?? leadingIconFgColor) : leadingIconFgColor)
                     : leadingIconTint
                 let currentBg = showBg
@@ -4117,7 +4160,7 @@ struct NoteListCard: View {
                         .resizable()
                         .scaledToFit()
                         .foregroundColor(currentFg)
-                        .frame(width: 14, height: 14)
+                        .frame(width: 18, height: 18)
                         .opacity(isLeadingIconVisible && !isShowingHoverVariant ? 1 : 0)
 
                     if let hoverIcon = hoverLeadingIconAssetName {
@@ -4126,14 +4169,14 @@ struct NoteListCard: View {
                             .resizable()
                             .scaledToFit()
                             .foregroundColor(currentFg)
-                            .frame(width: 14, height: 14)
+                            .frame(width: 18, height: 18)
                             .opacity(isLeadingIconVisible && isShowingHoverVariant ? 1 : 0)
                     }
                 }
-                .padding(2)
                 .background(
                     RoundedRectangle(cornerRadius: 999, style: .continuous)
                         .fill(currentBg)
+                        .padding(-2)
                 )
                 .compositingGroup()
                 .drawingGroup()
@@ -4386,9 +4429,9 @@ struct PinnedNotesSection: View {
                             isActiveNote: note.id == activeNoteID,
                             leadingIconAssetName: "IconThumbtack",
                             hoverLeadingIconAssetName: "IconUnpin",
-                            persistentLeadingIconBg: true,
-                            leadingIconBgColor: Color.yellow,
-                            leadingIconFgColor: .black,
+                            persistentLeadingIconBg: false,
+                            leadingIconBgColor: .clear,
+                            leadingIconFgColor: Color("SecondaryTextColor"),
                             onLeadingIconTap: {
                                 onTogglePinForNotes([note.id], false)
                             },
@@ -4434,9 +4477,9 @@ struct PinnedNotesSection: View {
                         isActiveNote: peekNote.id == activeNoteID,
                         leadingIconAssetName: "IconThumbtack",
                         hoverLeadingIconAssetName: "IconUnpin",
-                        persistentLeadingIconBg: true,
-                        leadingIconBgColor: Color.yellow,
-                        leadingIconFgColor: .black,
+                        persistentLeadingIconBg: false,
+                        leadingIconBgColor: .clear,
+                        leadingIconFgColor: Color("SecondaryTextColor"),
                         onLeadingIconTap: {
                             onTogglePinForNotes([peekNote.id], false)
                         },
@@ -4547,11 +4590,11 @@ struct LockedNotesSection: View {
                             isActiveNote: note.id == activeNoteID,
                             leadingIconAssetName: "IconLock",
                             hoverLeadingIconAssetName: "IconUnlocked",
-                            persistentLeadingIconBg: true,
-                            leadingIconBgColor: Color.red,
-                            leadingIconFgColor: .white,
-                            hoverLeadingIconBgColor: Color.green,
-                            hoverLeadingIconFgColor: .white,
+                            persistentLeadingIconBg: false,
+                            leadingIconBgColor: .clear,
+                            leadingIconFgColor: Color("SecondaryTextColor"),
+                            hoverLeadingIconBgColor: .clear,
+                            hoverLeadingIconFgColor: Color("SecondaryTextColor"),
                             onLeadingIconTap: { onLockIconTap?(note) },
                             onTap: { interaction in onNoteTap(note, interaction) },
                             onTogglePin: { shouldPin in
@@ -4595,11 +4638,11 @@ struct LockedNotesSection: View {
                         isActiveNote: peekNote.id == activeNoteID,
                         leadingIconAssetName: "IconLock",
                         hoverLeadingIconAssetName: "IconUnlocked",
-                        persistentLeadingIconBg: true,
-                        leadingIconBgColor: Color.red,
-                        leadingIconFgColor: .white,
-                        hoverLeadingIconBgColor: Color.green,
-                        hoverLeadingIconFgColor: .white,
+                        persistentLeadingIconBg: false,
+                        leadingIconBgColor: .clear,
+                        leadingIconFgColor: Color("SecondaryTextColor"),
+                        hoverLeadingIconBgColor: .clear,
+                        hoverLeadingIconFgColor: Color("SecondaryTextColor"),
                         onLeadingIconTap: { onLockIconTap?(peekNote) },
                         onTap: { interaction in onNoteTap(peekNote, interaction) },
                         onTogglePin: { shouldPin in

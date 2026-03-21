@@ -40,7 +40,7 @@ final class SimpleSwiftDataManager: ObservableObject {
     @Published private(set) var hasCompletedMigrationCheck = false
 
     private let modelContainer: ModelContainer
-    private let modelContext: ModelContext
+    private(set) var modelContext: ModelContext
     private let logger = Logger(subsystem: "com.jot.app", category: "SimpleSwiftDataManager")
 
     // MARK: - Performance Configuration
@@ -49,7 +49,7 @@ final class SimpleSwiftDataManager: ObservableObject {
 
     init() throws {
         // Setup SwiftData container
-        let schema = Schema([NoteEntity.self, FolderEntity.self])
+        let schema = Schema([NoteEntity.self, FolderEntity.self, NoteVersionEntity.self])
         let configuration = ModelConfiguration(
             schema: schema,
             isStoredInMemoryOnly: false,
@@ -406,6 +406,9 @@ final class SimpleSwiftDataManager: ObservableObject {
             if let index = notes.firstIndex(where: { $0.id == updatedNote.id }) {
                 SpotlightIndexer.shared.indexNote(notes[index])
             }
+
+            // Schedule a debounced version snapshot
+            NoteVersionManager.shared.scheduleSnapshot(for: updatedNote, in: modelContext)
 
         } catch {
             logger.error("Failed to update note: \(error)")
@@ -972,6 +975,61 @@ final class SimpleSwiftDataManager: ObservableObject {
         }
     }
 
+
+    // MARK: - Backup Import
+
+    /// Replaces all notes and folders with data from a backup.
+    func importBackup(notes: [Note], folders: [Folder]) {
+        do {
+            // Clear all existing notes
+            let noteDescriptor = FetchDescriptor<NoteEntity>()
+            for entity in try modelContext.fetch(noteDescriptor) {
+                modelContext.delete(entity)
+            }
+
+            // Clear all existing folders
+            let folderDescriptor = FetchDescriptor<FolderEntity>()
+            for entity in try modelContext.fetch(folderDescriptor) {
+                modelContext.delete(entity)
+            }
+
+            // Clear all version snapshots (they reference the old notes)
+            let versionDescriptor = FetchDescriptor<NoteVersionEntity>()
+            for entity in try modelContext.fetch(versionDescriptor) {
+                modelContext.delete(entity)
+            }
+
+            // Insert notes from backup
+            for note in notes {
+                let entity = NoteEntity(from: note)
+                modelContext.insert(entity)
+            }
+
+            // Insert folders from backup
+            for folder in folders {
+                let entity = FolderEntity(from: folder)
+                modelContext.insert(entity)
+            }
+
+            try modelContext.save()
+
+            // Reload in-memory state
+            self.notes = notes.filter { !$0.isArchived && !$0.isDeleted }
+            self.archivedNotes = notes.filter { $0.isArchived && !$0.isDeleted }
+            self.deletedNotes = notes.filter { $0.isDeleted }
+            self.folders = folders.filter { !$0.isArchived }
+            self.archivedFolders = folders.filter { $0.isArchived }
+
+            // Re-index in Spotlight
+            for note in self.notes {
+                SpotlightIndexer.shared.indexNote(note)
+            }
+
+            logger.info("Imported backup: \(notes.count) notes, \(folders.count) folders")
+        } catch {
+            logger.error("Failed to import backup: \(error)")
+        }
+    }
 
     // MARK: - Testing Helpers
 

@@ -402,6 +402,7 @@ extension Notification.Name {
     static let navigateNote = Notification.Name("navigateNote")
     static let openNoteFromSpotlight = Notification.Name("openNoteFromSpotlight")
     static let printCurrentNote = Notification.Name("printCurrentNote")
+    static let toggleVersionHistory = Notification.Name("toggleVersionHistory")
 }
 
 // MARK: - AI Notification Names

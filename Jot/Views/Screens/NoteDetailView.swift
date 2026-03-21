@@ -28,6 +28,7 @@ struct NoteDetailView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @EnvironmentObject private var themeManager: ThemeManager
+    @EnvironmentObject private var notesManager: SimpleSwiftDataManager
 
     // MARK: - Core editing state
     @State private var editedTitle: String
@@ -496,6 +497,9 @@ struct NoteDetailView: View {
                 onSave(updated)
             }
             noteForPersist = note
+
+            // Flush any pending version snapshot for the outgoing note
+            NoteVersionManager.shared.flushPendingSnapshot(for: oldNoteID, in: notesManager.modelContext)
 
             // Cache current state (don't cache editPreview — it's contextual to a selection)
             if case .editPreview = aiPanelState {
