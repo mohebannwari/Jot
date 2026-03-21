@@ -118,7 +118,7 @@ struct NoteToolsBar: View {
                     Button {
                         NotificationCenter.default.post(name: .toggleVersionHistory, object: nil)
                     } label: {
-                        Image("IconStepBack")
+                        Image("IconBranchSimple")
                             .renderingMode(.template)
                             .resizable()
                             .scaledToFit()

@@ -82,7 +82,7 @@ struct TodoRichTextEditor: View {
     @State private var codePasteRange: NSRange = NSRange(location: 0, length: 0)
     @State private var codePasteLanguage: String = "plaintext"
 
-    static let commandMenuActions: [EditTool] = [.imageUpload, .fileLink, .voiceRecord, .link, .todo, .bulletList, .numberedList, .blockQuote, .codeBlock, .callout, .tabs, .divider, .table]
+    static let commandMenuActions: [EditTool] = [.imageUpload, .fileLink, .voiceRecord, .link, .todo, .bulletList, .numberedList, .blockQuote, .codeBlock, .callout, .tabs, .divider, .table, .sticker]
     static let commandMenuOuterPadding: CGFloat = CommandMenuLayout.outerPadding
     static let commandMenuHorizontalPadding = commandMenuOuterPadding * 2
     static let commandMenuVerticalPadding = commandMenuOuterPadding * 2
@@ -537,6 +537,23 @@ struct TodoRichTextEditor: View {
         let slashLoc = commandSlashLocation
 
         dismissCommandMenu()
+
+        // Sticker is a non-text action: remove the /slash text and post as a toolbar action
+        if tool == .sticker {
+            NotificationCenter.default.post(
+                name: .applyCommandMenuTool,
+                object: ["tool": tool, "slashLocation": slashLoc, "filterLength": filterLength, "cancelOnly": true],
+                userInfo: editorInstanceID.map { ["editorInstanceID": $0] }
+            )
+            var userInfo: [String: Any] = [:]
+            if let eid = editorInstanceID { userInfo["editorInstanceID"] = eid }
+            NotificationCenter.default.post(
+                name: .noteToolsBarAction,
+                object: EditTool.sticker.rawValue,
+                userInfo: userInfo.isEmpty ? nil : userInfo
+            )
+            return
+        }
 
         NotificationCenter.default.post(
             name: .applyCommandMenuTool,

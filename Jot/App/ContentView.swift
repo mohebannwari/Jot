@@ -195,6 +195,7 @@ struct ContentView: View {
     @State private var isAutoCreatingStarterNote = false
     @State private var aiToolsState: AIToolsState = .collapsed
     @State private var isVersionHistoryVisible = false
+    @State private var previewingVersion: NoteVersion?
 
     @State private var isCreateFolderAlertPresented = false
     @State private var pendingFolderCreationIntent: FolderCreationIntent = .standalone
@@ -489,6 +490,9 @@ struct ContentView: View {
                 guard selectedNote != nil else { return }
                 withAnimation(.easeInOut(duration: 0.2)) {
                     isVersionHistoryVisible.toggle()
+                    if !isVersionHistoryVisible {
+                        previewingVersion = nil
+                    }
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .createNewNote)) { _ in
@@ -877,7 +881,7 @@ struct ContentView: View {
             .onPreferenceChange(BottomOverlayActivePreferenceKey.self) { primaryBottomOverlayActive = $0 }
             .onPreferenceChange(BottomInputOverlayActivePreferenceKey.self) { primaryBottomInputOverlayActive = $0 }
             .overlay(alignment: .bottomTrailing) {
-                if AppleIntelligenceService.shared.isAvailable {
+                if AppleIntelligenceService.shared.isAvailable && !isVersionHistoryVisible {
                     AIToolsOverlay(state: $aiToolsState, editorInstanceID: primaryEditorID).padding(.trailing, 14).padding(.bottom, 14)
                 }
             }
@@ -2304,7 +2308,7 @@ struct ContentView: View {
     @ViewBuilder
     private func detailPane(note: Note) -> some View {
         let isNoteLocked = note.isLocked && !authManager.isUnlocked(note.id)
-        HStack(spacing: 0) {
+        ZStack(alignment: .trailing) {
             ZStack {
                 NoteDetailView(
                     note: note,
@@ -2319,30 +2323,88 @@ struct ContentView: View {
                 )
                 .blur(radius: isNoteLocked ? 20 : 0)
                 .allowsHitTesting(!isNoteLocked)
+                .opacity(previewingVersion != nil ? 0 : 1)
 
                 if isNoteLocked {
                     noteLockOverlay(for: note)
                 }
+
+                // Version preview overlay
+                if let version = previewingVersion {
+                    versionPreviewPane(version: version)
+                        .transition(.opacity)
+                }
             }
 
             if isVersionHistoryVisible {
-                Divider()
-                    .opacity(0.3)
-
                 NoteVersionHistoryPanel(
                     noteID: note.id,
                     isPresented: $isVersionHistoryVisible,
+                    previewingVersion: $previewingVersion,
                     onRestore: { version in
                         restoreNoteVersion(version, for: note)
                     }
                 )
+                .padding(.trailing, 8)
+                .padding(.vertical, 8)
+                .zIndex(10)
                 .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
         .animation(.easeInOut(duration: 0.2), value: isVersionHistoryVisible)
+        .animation(.easeInOut(duration: 0.15), value: previewingVersion?.id)
         .onChange(of: note.id) { _, _ in
             isVersionHistoryVisible = false
+            previewingVersion = nil
         }
+    }
+
+    /// Read-only preview of a version's content shown in the detail pane.
+    @ViewBuilder
+    private func versionPreviewPane(version: NoteVersion) -> some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 8) {
+                // Version timestamp badge
+                Text(version.createdAt, format: .dateTime.month(.abbreviated).day().year().hour().minute())
+                    .font(FontManager.heading(size: 11, weight: .medium))
+                    .foregroundColor(Color("SettingsPlaceholderTextColor"))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        Capsule()
+                            .fill(colorScheme == .dark ? Color(white: 0.18) : Color(white: 0.93))
+                    )
+
+                if !version.title.isEmpty {
+                    Text(version.title)
+                        .font(FontManager.heading(size: 28, weight: .bold))
+                        .tracking(-0.4)
+                        .foregroundColor(Color("PrimaryTextColor"))
+                }
+
+                Text(stripMarkup(version.content))
+                    .font(.system(size: ThemeManager.currentBodyFontSize()))
+                    .foregroundColor(Color("PrimaryTextColor"))
+                    .lineSpacing(ThemeManager.currentLineSpacing().multiplier)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.top, 80)
+            .padding(.horizontal, 48)
+            .padding(.bottom, 40)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func stripMarkup(_ content: String) -> String {
+        var text = content
+        let patterns = [
+            #"\[\[/?[a-z0-9:]+(?:\|[^\]]*?)?\]\]"#,
+            #"\[[ x]\]"#,
+        ]
+        for pattern in patterns {
+            text = text.replacingOccurrences(of: pattern, with: "", options: .regularExpression)
+        }
+        return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     // MARK: - Note Lock

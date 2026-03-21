@@ -61,12 +61,12 @@ struct BackupSettingsPanel: View {
                         Text(backupManager.backupFolderName != nil ? "Change" : "Select")
                             .font(FontManager.heading(size: 13, weight: .medium))
                             .tracking(-0.2)
-                            .foregroundColor(colorScheme == .light ? Color.white : Color.black)
+                            .foregroundColor(Color("PrimaryTextColor"))
                             .padding(.horizontal, 12)
                             .padding(.vertical, 6)
                             .background(
                                 Capsule()
-                                    .fill(colorScheme == .light ? Color.black : Color.white)
+                                    .fill(colorScheme == .dark ? Color(white: 0.18) : Color(white: 0.93))
                             )
                     }
                     .buttonStyle(.plain)
@@ -120,7 +120,7 @@ struct BackupSettingsPanel: View {
 
                     Spacer()
 
-                    HStack(spacing: 8) {
+                    HStack(spacing: 6) {
                         Button {
                             if themeManager.backupMaxCount > 1 {
                                 themeManager.backupMaxCount -= 1
@@ -129,15 +129,15 @@ struct BackupSettingsPanel: View {
                             Image(systemName: "minus")
                                 .font(.system(size: 11, weight: .medium))
                                 .foregroundColor(Color("SettingsPlaceholderTextColor"))
-                                .frame(width: 24, height: 24)
+                                .frame(width: 20, height: 20)
                         }
                         .buttonStyle(.plain)
 
                         Text("\(themeManager.backupMaxCount)")
-                            .font(FontManager.heading(size: 15, weight: .medium))
+                            .font(FontManager.heading(size: 13, weight: .medium))
                             .tracking(-0.3)
                             .foregroundColor(Color("PrimaryTextColor"))
-                            .frame(minWidth: 20, alignment: .center)
+                            .frame(minWidth: 16, alignment: .center)
 
                         Button {
                             if themeManager.backupMaxCount < 50 {
@@ -147,74 +147,21 @@ struct BackupSettingsPanel: View {
                             Image(systemName: "plus")
                                 .font(.system(size: 11, weight: .medium))
                                 .foregroundColor(Color("SettingsPlaceholderTextColor"))
-                                .frame(width: 24, height: 24)
+                                .frame(width: 20, height: 20)
                         }
                         .buttonStyle(.plain)
-
-                        Text("backups")
-                            .font(FontManager.heading(size: 13, weight: .regular))
-                            .foregroundColor(Color("SettingsPlaceholderTextColor"))
                     }
-                }
-
-                // Last backup info
-                if let lastDate = backupManager.lastBackupDate {
-                    HStack {
-                        Text("Last backup")
-                            .font(FontManager.heading(size: 15, weight: .medium))
-                            .tracking(-0.5)
-                            .foregroundColor(Color("PrimaryTextColor"))
-
-                        Spacer()
-
-                        Text(lastDate, style: .relative)
-                            .font(FontManager.heading(size: 13, weight: .regular))
-                            .foregroundColor(Color("SettingsPlaceholderTextColor"))
-                        + Text(" ago")
-                            .font(FontManager.heading(size: 13, weight: .regular))
-                            .foregroundColor(Color("SettingsPlaceholderTextColor"))
-                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 4)
+                    .background(
+                        Capsule()
+                            .fill(colorScheme == .dark ? Color(white: 0.18) : Color(white: 0.93))
+                    )
                 }
             }
 
-            // Action buttons
+            // Action buttons side by side
             HStack(spacing: 8) {
-                Button {
-                    backupSucceeded = nil
-                    Task {
-                        let success = await backupManager.performBackup(notesManager: notesManager)
-                        backupSucceeded = success
-                        if success {
-                            availableBackups = backupManager.listAvailableBackups()
-                        }
-                        // Clear status after 3 seconds
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                            backupSucceeded = nil
-                        }
-                    }
-                } label: {
-                    HStack(spacing: 4) {
-                        if backupManager.isBackingUp {
-                            ProgressView()
-                                .controlSize(.small)
-                        }
-                        Text(backupStatusText)
-                            .font(FontManager.heading(size: 13, weight: .medium))
-                            .tracking(-0.2)
-                    }
-                    .foregroundColor(colorScheme == .light ? Color.white : Color.black)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(
-                        Capsule()
-                            .fill(colorScheme == .light ? Color.black : Color.white)
-                    )
-                }
-                .buttonStyle(.plain)
-                .macPointingHandCursor()
-                .disabled(backupManager.isBackingUp || backupManager.backupFolderName == nil)
-                .opacity(backupManager.backupFolderName == nil ? 0.4 : 1)
-
                 if !availableBackups.isEmpty {
                     Menu {
                         ForEach(availableBackups, id: \.url) { backup in
@@ -233,8 +180,8 @@ struct BackupSettingsPanel: View {
                             .font(FontManager.heading(size: 13, weight: .medium))
                             .tracking(-0.2)
                             .foregroundColor(Color("PrimaryTextColor"))
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 11)
                             .background(
                                 Capsule()
                                     .stroke(colorScheme == .dark ? Color.white.opacity(0.15) : Color.black.opacity(0.15), lineWidth: 1)
@@ -243,17 +190,68 @@ struct BackupSettingsPanel: View {
                     .menuStyle(.button)
                     .buttonStyle(.plain)
                 }
-            }
-            .alert("Restore from Backup", isPresented: $showRestoreConfirmation) {
-                Button("Cancel", role: .cancel) {}
-                Button("Restore", role: .destructive) {
-                    if let url = selectedRestoreURL {
-                        backupManager.restoreBackup(url)
+
+                Button {
+                    backupSucceeded = nil
+                    Task {
+                        let success = await backupManager.performBackup(notesManager: notesManager)
+                        backupSucceeded = success
+                        if success {
+                            availableBackups = backupManager.listAvailableBackups()
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                            backupSucceeded = nil
+                        }
                     }
+                } label: {
+                    HStack(spacing: 4) {
+                        if backupManager.isBackingUp {
+                            ProgressView()
+                                .controlSize(.small)
+                        }
+                        Text(backupStatusText)
+                            .font(FontManager.heading(size: 13, weight: .medium))
+                            .tracking(-0.2)
+                    }
+                    .foregroundColor(colorScheme == .light ? Color.white : Color.black)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 11)
+                    .background(
+                        Capsule()
+                            .fill(colorScheme == .light ? Color.black : Color.white)
+                    )
                 }
-            } message: {
-                Text("This will replace all your current notes and folders with the backup. The app will quit -- reopen it to complete the restore. This cannot be undone.")
+                .buttonStyle(.plain)
+                .macPointingHandCursor()
+                .disabled(backupManager.isBackingUp || backupManager.backupFolderName == nil)
+                .opacity(backupManager.backupFolderName == nil ? 0.4 : 1)
             }
+
+            // Last backup metadata
+            if let lastDate = backupManager.lastBackupDate {
+                (Text("Last backup ")
+                    .font(FontManager.heading(size: 11, weight: .regular))
+                    .foregroundColor(Color("SettingsPlaceholderTextColor"))
+                + Text(lastDate, style: .relative)
+                    .font(FontManager.heading(size: 11, weight: .regular))
+                    .foregroundColor(Color("SettingsPlaceholderTextColor"))
+                + Text(" ago")
+                    .font(FontManager.heading(size: 11, weight: .regular))
+                    .foregroundColor(Color("SettingsPlaceholderTextColor")))
+            }
+
+            // Restore confirmation alert (attached to section VStack)
+            Color.clear.frame(height: 0)
+                .alert("Restore from Backup", isPresented: $showRestoreConfirmation) {
+                    Button("Cancel", role: .cancel) {}
+                    Button("Restore", role: .destructive) {
+                        if let url = selectedRestoreURL {
+                            backupManager.restoreBackup(url)
+                        }
+                    }
+                } message: {
+                    Text("This will replace all your current notes and folders with the backup. The app will quit -- reopen it to complete the restore. This cannot be undone.")
+                }
         }
     }
 
