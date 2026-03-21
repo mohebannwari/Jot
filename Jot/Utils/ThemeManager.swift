@@ -74,6 +74,20 @@ enum NoteSortOrder: String, CaseIterable {
     }
 }
 
+enum BackupFrequency: String, CaseIterable {
+    case manual = "manual"
+    case daily = "daily"
+    case weekly = "weekly"
+
+    var displayName: String {
+        switch self {
+        case .manual: return "Manual"
+        case .daily: return "Daily"
+        case .weekly: return "Weekly"
+        }
+    }
+}
+
 enum LockPasswordType: String, CaseIterable {
     case login = "login"
     case custom = "custom"
@@ -101,6 +115,13 @@ final class ThemeManager: ObservableObject {
     static let autoSortCheckedItemsKey = "AutoSortCheckedItems"
     static let useTouchIDKey = "LockedNotesUseTouchID"
     static let lockPasswordTypeKey = "LockPasswordType"
+
+    // Backup & versioning keys
+    static let backupFolderBookmarkKey = "BackupFolderBookmark"
+    static let backupFrequencyKey = "BackupFrequency"
+    static let backupMaxCountKey = "BackupMaxCount"
+    static let lastBackupDateKey = "LastBackupDate"
+    static let versionRetentionDaysKey = "VersionRetentionDays"
 
     static let editorSettingsChangedNotification = Notification.Name("EditorSettingsChanged")
 
@@ -203,6 +224,25 @@ final class ThemeManager: ObservableObject {
         }
     }
 
+    // Backup & versioning settings
+    @Published var backupFrequency: BackupFrequency {
+        didSet {
+            userDefaults.set(backupFrequency.rawValue, forKey: Self.backupFrequencyKey)
+        }
+    }
+
+    @Published var backupMaxCount: Int {
+        didSet {
+            userDefaults.set(backupMaxCount, forKey: Self.backupMaxCountKey)
+        }
+    }
+
+    @Published var versionRetentionDays: Int {
+        didSet {
+            userDefaults.set(versionRetentionDays, forKey: Self.versionRetentionDaysKey)
+        }
+    }
+
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
 
@@ -242,6 +282,16 @@ final class ThemeManager: ObservableObject {
 
         let savedLockType = userDefaults.string(forKey: Self.lockPasswordTypeKey) ?? LockPasswordType.login.rawValue
         self.lockPasswordType = LockPasswordType(rawValue: savedLockType) ?? .login
+
+        let savedBackupFrequency = userDefaults.string(forKey: Self.backupFrequencyKey) ?? BackupFrequency.manual.rawValue
+        self.backupFrequency = BackupFrequency(rawValue: savedBackupFrequency) ?? .manual
+
+        userDefaults.register(defaults: [
+            Self.backupMaxCountKey: 5,
+            Self.versionRetentionDaysKey: 30,
+        ])
+        self.backupMaxCount = userDefaults.integer(forKey: Self.backupMaxCountKey)
+        self.versionRetentionDays = userDefaults.integer(forKey: Self.versionRetentionDaysKey)
 
         // didSet doesn't fire during init — apply manually
         applyAppKitAppearance(self.currentTheme)

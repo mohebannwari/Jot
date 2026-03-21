@@ -114,6 +114,23 @@ struct NoteToolsBar: View {
                     toolButton(icon: "IconSticker", tooltip: "Post-it") {
                         postToolAction(.sticker)
                     }
+                    // Version history
+                    Button {
+                        NotificationCenter.default.post(name: .toggleVersionHistory, object: nil)
+                    } label: {
+                        Image("IconStepBack")
+                            .renderingMode(.template)
+                            .resizable()
+                            .scaledToFit()
+                            .foregroundColor(Color("IconSecondaryColor"))
+                            .frame(width: iconSize, height: iconSize)
+                            .padding(4)
+                            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .macPointingHandCursor()
+                    .glassTooltip("Version History")
+                    .hoverContainer(cornerRadius: 8)
                     // Collapse chevron
                     Button {
                         withAnimation(.jotSpring) { isExpanded = false }

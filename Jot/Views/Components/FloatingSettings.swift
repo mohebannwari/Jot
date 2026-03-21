@@ -103,6 +103,7 @@ struct SettingsPage: View {
     private enum SettingsTab: CaseIterable {
         case general
         case appearance
+        case data
         case contact
         case about
 
@@ -110,6 +111,7 @@ struct SettingsPage: View {
             switch self {
             case .general: return "IconSettingsGeneral"
             case .appearance: return "IconSettingsAppearance"
+            case .data: return "IconArchive1"
             case .contact: return "IconSettingsSupport"
             case .about: return "IconSettingsAbout"
             }
@@ -119,6 +121,7 @@ struct SettingsPage: View {
             switch self {
             case .general: return "General"
             case .appearance: return "Appearance"
+            case .data: return "Data"
             case .contact: return "Contact"
             case .about: return "About"
             }
@@ -214,6 +217,8 @@ struct SettingsPage: View {
                 generalPanel
             case .appearance:
                 appearancePanel
+            case .data:
+                BackupSettingsPanel()
             case .about:
                 aboutPanel
             case .contact:

@@ -15,7 +15,11 @@ struct JotApp: App {
     @StateObject private var authManager = NoteAuthenticationManager()
     @StateObject private var undoToastManager = UndoToastManager()
 
+    @MainActor
     init() {
+        // Check for pending backup restore BEFORE constructing the data store
+        let restoreAccessURL = BackupManager.checkAndPerformPendingRestore()
+
         // Initialize SwiftData manager with error handling
         let manager: SimpleSwiftDataManager
         do {
@@ -25,6 +29,20 @@ struct JotApp: App {
         }
         _notesManager = StateObject(wrappedValue: manager)
         SimpleSwiftDataManager.shared = manager
+
+        // Complete backup restore if pending (imports data into the fresh store)
+        BackupManager.performPostInitRestore(into: manager)
+        restoreAccessURL?.stopAccessingSecurityScopedResource()
+
+        // Prune expired version snapshots
+        let retentionDays = UserDefaults.standard.integer(forKey: ThemeManager.versionRetentionDaysKey)
+        if retentionDays > 0 {
+            NoteVersionManager.shared.pruneVersions(retentionDays: retentionDays, in: manager.modelContext)
+        }
+
+        // Start auto-backup timer if configured
+        BackupManager.shared.autoBackupIfDue(notesManager: manager)
+        BackupManager.shared.scheduleAutoBackup(notesManager: manager)
 
         // Clean up temporary files on app launch
         Self.cleanupTemporaryFiles()
