@@ -485,11 +485,11 @@ struct FolderSection: View {
                                 ? "IconLock"
                                 : (splitNoteIDs.contains(note.id) ? "IconArrowSplitUp" : nil),
                             hoverLeadingIconAssetName: note.isLocked ? "IconUnlocked" : nil,
-                            persistentLeadingIconBg: note.isLocked || splitNoteIDs.contains(note.id),
-                            leadingIconBgColor: note.isLocked ? Color.red : .blue,
-                            leadingIconFgColor: .white,
-                            hoverLeadingIconBgColor: note.isLocked ? Color.green : nil,
-                            hoverLeadingIconFgColor: nil,
+                            persistentLeadingIconBg: false,
+                            leadingIconBgColor: .clear,
+                            leadingIconFgColor: Color("SecondaryTextColor"),
+                            hoverLeadingIconBgColor: .clear,
+                            hoverLeadingIconFgColor: Color("SecondaryTextColor"),
                             onLeadingIconTap: note.isLocked
                                 ? { onLockIconTap?(note) }
                                 : (splitNoteIDs.contains(note.id) ? { onSplitIconTap?(note) } : nil),

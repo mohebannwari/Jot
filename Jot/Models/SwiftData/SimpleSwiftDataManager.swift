@@ -415,6 +415,23 @@ final class SimpleSwiftDataManager: ObservableObject {
         }
     }
 
+    /// Silently remove a note without moving it to trash (e.g. discarding an empty untitled note).
+    func discardNote(id: UUID) {
+        do {
+            let targetID = id
+            let predicate = #Predicate<NoteEntity> { $0.id == targetID }
+            let descriptor = FetchDescriptor<NoteEntity>(predicate: predicate)
+            if let entity = try modelContext.fetch(descriptor).first {
+                modelContext.delete(entity)
+                try modelContext.save()
+            }
+            notes.removeAll { $0.id == id }
+            SpotlightIndexer.shared.deindexNotes(ids: [id])
+        } catch {
+            logger.error("Failed to discard note: \(error)")
+        }
+    }
+
     func deleteNote(id: UUID) {
         moveToTrash(ids: [id])
     }

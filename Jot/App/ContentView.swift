@@ -9,6 +9,27 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
+// MARK: - Note Preview Hover PreferenceKey
+
+struct NotePreviewAnchorData: Equatable {
+    let noteID: UUID
+    let isLocked: Bool
+    let frame: CGRect // in "contentArea" coordinate space
+
+    static func == (lhs: NotePreviewAnchorData, rhs: NotePreviewAnchorData) -> Bool {
+        lhs.noteID == rhs.noteID && lhs.isLocked == rhs.isLocked && lhs.frame == rhs.frame
+    }
+}
+
+struct NotePreviewAnchorKey: PreferenceKey {
+    static var defaultValue: NotePreviewAnchorData? = nil
+    static func reduce(value: inout NotePreviewAnchorData?, nextValue: () -> NotePreviewAnchorData?) {
+        if let next = nextValue() {
+            value = next
+        }
+    }
+}
+
 enum SplitPosition { case left, right }
 enum SplitPickerPane { case primary, secondary }
 
@@ -240,6 +261,14 @@ struct ContentView: View {
     @State private var primaryBottomInputOverlayActive = false
     @State private var splitBottomInputOverlayActive = false
 
+    // Note preview on hover
+    @State private var previewNote: Note? = nil
+    @State private var previewAnchorFrame: CGRect = .zero
+    @State private var isPreviewVisible: Bool = false
+    @State private var previewHoverWorkItem: DispatchWorkItem? = nil
+    @State private var isHoveringPreviewCard: Bool = false
+    @State private var previewDismissWorkItem: DispatchWorkItem? = nil
+
     @Environment(\.colorScheme) private var colorScheme
 
     // Window corner radius from JotApp containerShape
@@ -272,6 +301,12 @@ struct ContentView: View {
     private let floatingSidebarDismissDelay: TimeInterval = 0.3
     private let splitGap: CGFloat = 8
     private let splitMinPaneWidth: CGFloat = 360
+    private let previewCardWidth: CGFloat = 300
+    private let previewCardMaxHeight: CGFloat = 250
+    private let previewCardTotalHeight: CGFloat = 304 // content (250) + options row (50) + glass padding (4)
+    private let previewCardSidebarGap: CGFloat = 24
+    private let previewHoverDelay: TimeInterval = 0.1
+    private let previewDismissDelay: TimeInterval = 0.3
     private let sidebarItemLeadingPadding: CGFloat = 8
     private let sidebarItemTrailingPadding: CGFloat = 8
     private let sidebarItemVPadding: CGFloat = 8
@@ -395,6 +430,7 @@ struct ContentView: View {
     /// Navigate to a note by ID (from notelink click).
     private func navigateToNote(_ noteID: UUID) {
         guard let target = notesManager.notes.first(where: { $0.id == noteID }) else { return }
+        discardPreviousNoteIfEmpty(switching: target)
         withAnimation(.jotSpring) {
             selectedNote = target
             selectedNoteIDs = [target.id]
@@ -729,6 +765,12 @@ struct ContentView: View {
             appWindowTrashOverlay().zIndex(5)
         }
         .coordinateSpace(name: "contentArea")
+        .onPreferenceChange(NotePreviewAnchorKey.self) { newValue in
+            handlePreviewHover(newValue, geometry: geometry)
+        }
+        .overlay(alignment: .topLeading) {
+            notePreviewOverlay(geometry: geometry, visibleSidebarWidth: visibleSidebarWidth)
+        }
         .overlay(alignment: .topLeading) {
             if isSplitMenuVisible {
                 SplitOptionMenu(
@@ -740,6 +782,110 @@ struct ContentView: View {
                 .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .topLeading)))
                 .animation(.jotSpring, value: isSplitMenuVisible)
             }
+        }
+    }
+
+    // MARK: - Note Preview Hover
+
+    private func handlePreviewHover(_ newValue: NotePreviewAnchorData?, geometry: GeometryProxy) {
+        previewHoverWorkItem?.cancel()
+        previewHoverWorkItem = nil
+        previewDismissWorkItem?.cancel()
+        previewDismissWorkItem = nil
+
+        if let data = newValue {
+            // Don't show preview for the note currently being edited
+            guard data.noteID != selectedNote?.id else { return }
+            // Mouse entered a note row — start delayed reveal
+            previewAnchorFrame = data.frame
+            let noteID = data.noteID
+            let workItem = DispatchWorkItem { [self] in
+                // Verify the note still exists before showing
+                if let note = notesManager.notes.first(where: { $0.id == noteID }) {
+                    previewNote = note
+                    withAnimation(.easeIn(duration: 0.2)) {
+                        isPreviewVisible = true
+                    }
+                }
+            }
+            previewHoverWorkItem = workItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + previewHoverDelay, execute: workItem)
+        } else {
+            // Mouse left note row — start dismiss timer (can be cancelled by preview card hover)
+            schedulePreviewDismiss()
+        }
+    }
+
+    private func schedulePreviewDismiss() {
+        previewDismissWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [self] in
+            guard !isHoveringPreviewCard else { return }
+            withAnimation(.easeOut(duration: 0.15)) {
+                isPreviewVisible = false
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                if !isPreviewVisible {
+                    previewNote = nil
+                }
+            }
+        }
+        previewDismissWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + previewDismissDelay, execute: workItem)
+    }
+
+    private func handlePreviewCardHover(_ hovering: Bool) {
+        isHoveringPreviewCard = hovering
+        if hovering {
+            previewDismissWorkItem?.cancel()
+            previewDismissWorkItem = nil
+        } else {
+            schedulePreviewDismiss()
+        }
+    }
+
+    @ViewBuilder
+    private func notePreviewOverlay(geometry: GeometryProxy, visibleSidebarWidth: CGFloat) -> some View {
+        if let note = previewNote {
+            let effectivePadding: CGFloat = isSidebarVisible ? windowContentPadding : 0
+            let previewX: CGFloat = {
+                if isSidebarVisible {
+                    return visibleSidebarWidth + effectivePadding + previewCardSidebarGap
+                } else {
+                    // Floating sidebar: position relative to floating sidebar
+                    return floatingSidebarWidth + floatingSidebarEdgeInset + previewCardSidebarGap
+                }
+            }()
+
+            let containerHeight = geometry.size.height
+            let anchorMidY = previewAnchorFrame.midY
+            // Clamp so the card stays within bounds (16pt margin from edges)
+            let margin: CGFloat = 16
+            let idealY = anchorMidY - previewCardTotalHeight / 2
+            let clampedY = min(max(idealY, margin), containerHeight - previewCardTotalHeight - margin)
+
+            NotePreviewCard(
+                note: note,
+                isPinned: note.isPinned,
+                isLocked: note.isLocked,
+                onTogglePin: { setPinState(for: [note.id], pinned: !note.isPinned) },
+                onToggleLock: { notesManager.toggleLock(id: note.id) },
+                onArchive: {
+                    archiveNotes([note.id])
+                    isPreviewVisible = false
+                    previewNote = nil
+                },
+                onDelete: {
+                    requestDeleteNotes([note.id])
+                    isPreviewVisible = false
+                    previewNote = nil
+                },
+                onHoverChanged: handlePreviewCardHover
+            )
+            .offset(x: previewX, y: clampedY)
+            .opacity(isPreviewVisible ? 1 : 0)
+            .offset(x: isPreviewVisible ? 0 : -4)
+            .animation(.easeIn(duration: 0.2), value: isPreviewVisible)
+            .zIndex(100)
         }
     }
 
@@ -3058,6 +3204,17 @@ struct ContentView: View {
         selectedNote = updated
     }
 
+    /// Silently discard the currently selected note if it has no title and no content.
+    private func discardPreviousNoteIfEmpty(switching newNote: Note) {
+        guard let prev = selectedNote, prev.id != newNote.id else { return }
+        // Never discard a note that's part of an active split session
+        guard !splitNoteIDs.contains(prev.id) else { return }
+        let freshPrev = notesManager.notes.first(where: { $0.id == prev.id }) ?? prev
+        guard freshPrev.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              freshPrev.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        notesManager.discardNote(id: freshPrev.id)
+    }
+
     private func openNote(_ note: Note, focusEditor: Bool = true, withHaptic: Bool = true) {
         if withHaptic {
             HapticManager.shared.noteInteraction()
@@ -3070,6 +3227,9 @@ struct ContentView: View {
         // Always resolve the freshest version from the authoritative notes array.
         // Sidebar derived collections may hold stale data after content-only saves.
         let freshNote = notesManager.notes.first(where: { $0.id == note.id }) ?? note
+
+        // Discard the note we're leaving if it was never given a title or content
+        discardPreviousNoteIfEmpty(switching: freshNote)
 
         // Schedule re-lock for the note we're leaving (if it was locked + unlocked)
         if let prev = selectedNote, prev.id != freshNote.id, prev.isLocked, authManager.isUnlocked(prev.id) {
@@ -3132,6 +3292,9 @@ struct ContentView: View {
             HapticManager.shared.noteInteraction()
         }
         let note = notesManager.addNote(title: "", content: "", folderID: folderID)
+
+        // Discard previous empty note before switching
+        discardPreviousNoteIfEmpty(switching: note)
 
         if let folderID {
             expandedFolderIDs.insert(folderID)
@@ -3490,6 +3653,7 @@ struct ContentView: View {
     /// Navigate to a specific note by UUID -- used by Spotlight deep links.
     private func openNoteByID(_ noteID: UUID) {
         guard let note = notesManager.notes.first(where: { $0.id == noteID }) else { return }
+        discardPreviousNoteIfEmpty(switching: note)
         withAnimation(.jotSpring) {
             selectedNote = note
             selectedNoteIDs = [note.id]
@@ -4334,6 +4498,21 @@ struct NoteListCard: View {
         .onHover { hovering in
             isHovered = hovering
         }
+        .background(
+            GeometryReader { geo in
+                Color.clear
+                    .preference(
+                        key: NotePreviewAnchorKey.self,
+                        value: isHovered
+                            ? NotePreviewAnchorData(
+                                noteID: note.id,
+                                isLocked: note.isLocked,
+                                frame: geo.frame(in: .named("contentArea"))
+                              )
+                            : nil
+                    )
+            }
+        )
         .draggable(
             TransferablePayload(items: getDragItems?() ?? [NoteDragItem(noteID: note.id)])
         ) {
@@ -4489,14 +4668,6 @@ struct PinnedNotesSection: View {
                             note: note,
                             isSelected: selectedNoteIDs.contains(note.id),
                             isActiveNote: note.id == activeNoteID,
-                            leadingIconAssetName: "IconThumbtack",
-                            hoverLeadingIconAssetName: "IconUnpin",
-                            persistentLeadingIconBg: false,
-                            leadingIconBgColor: .clear,
-                            leadingIconFgColor: Color("SecondaryTextColor"),
-                            onLeadingIconTap: {
-                                onTogglePinForNotes([note.id], false)
-                            },
                             onTap: { interaction in onNoteTap(note, interaction) },
                             onTogglePin: { shouldPin in
                                 onTogglePinForNotes(contextSelection(for: note), shouldPin)
@@ -4537,14 +4708,6 @@ struct PinnedNotesSection: View {
                         note: peekNote,
                         isSelected: selectedNoteIDs.contains(peekNote.id),
                         isActiveNote: peekNote.id == activeNoteID,
-                        leadingIconAssetName: "IconThumbtack",
-                        hoverLeadingIconAssetName: "IconUnpin",
-                        persistentLeadingIconBg: false,
-                        leadingIconBgColor: .clear,
-                        leadingIconFgColor: Color("SecondaryTextColor"),
-                        onLeadingIconTap: {
-                            onTogglePinForNotes([peekNote.id], false)
-                        },
                         onTap: { interaction in onNoteTap(peekNote, interaction) },
                         onTogglePin: { shouldPin in
                             onTogglePinForNotes(contextSelection(for: peekNote), shouldPin)
@@ -4650,14 +4813,6 @@ struct LockedNotesSection: View {
                             note: note,
                             isSelected: selectedNoteIDs.contains(note.id),
                             isActiveNote: note.id == activeNoteID,
-                            leadingIconAssetName: "IconLock",
-                            hoverLeadingIconAssetName: "IconUnlocked",
-                            persistentLeadingIconBg: false,
-                            leadingIconBgColor: .clear,
-                            leadingIconFgColor: Color("SecondaryTextColor"),
-                            hoverLeadingIconBgColor: .clear,
-                            hoverLeadingIconFgColor: Color("SecondaryTextColor"),
-                            onLeadingIconTap: { onLockIconTap?(note) },
                             onTap: { interaction in onNoteTap(note, interaction) },
                             onTogglePin: { shouldPin in
                                 onTogglePinForNotes(contextSelection(for: note), shouldPin)
@@ -4698,14 +4853,6 @@ struct LockedNotesSection: View {
                         note: peekNote,
                         isSelected: selectedNoteIDs.contains(peekNote.id),
                         isActiveNote: peekNote.id == activeNoteID,
-                        leadingIconAssetName: "IconLock",
-                        hoverLeadingIconAssetName: "IconUnlocked",
-                        persistentLeadingIconBg: false,
-                        leadingIconBgColor: .clear,
-                        leadingIconFgColor: Color("SecondaryTextColor"),
-                        hoverLeadingIconBgColor: .clear,
-                        hoverLeadingIconFgColor: Color("SecondaryTextColor"),
-                        onLeadingIconTap: { onLockIconTap?(peekNote) },
                         onTap: { interaction in onNoteTap(peekNote, interaction) },
                         onTogglePin: { shouldPin in
                             onTogglePinForNotes(contextSelection(for: peekNote), shouldPin)
