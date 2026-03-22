@@ -48,7 +48,7 @@ final class NoteTableOverlayView: NSView {
     // MARK: - Layout Constants
 
     private let rowHeight: CGFloat = 36
-    private let outerCornerRadius: CGFloat = 16
+    private let outerCornerRadius: CGFloat = 22
     private let gridLineWidth: CGFloat = 0.5
 
     /// Generates a continuous (squircle) rounded rect path matching Apple's design language.

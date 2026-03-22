@@ -24,8 +24,8 @@ final class TabsContainerOverlayView: NSView {
     private static let tabsContentGap: CGFloat = 0
     private static let handleWidth:   CGFloat = 12
 
-    private let outerRadius:   CGFloat = 16
-    private let innerRadius:   CGFloat = 14    // concentric: 16 − 2
+    private let outerRadius:   CGFloat = 22
+    private let innerRadius:   CGFloat = 20    // concentric: 22 − 2
     private let contentPadH:   CGFloat = 16
     private let contentPadV:   CGFloat = 12
     private let tabChipCorner: CGFloat = 12

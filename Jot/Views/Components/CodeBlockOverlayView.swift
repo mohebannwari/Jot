@@ -26,8 +26,8 @@ final class CodeBlockOverlayView: NSView {
     private static let bodyHeight:   CGFloat = 300
     private static let handleWidth:  CGFloat = 12
 
-    private let outerRadius: CGFloat = 16
-    private let innerRadius: CGFloat = 14   // concentric: 16 − 2
+    private let outerRadius: CGFloat = 22
+    private let innerRadius: CGFloat = 20   // concentric: 22 − 2
     private let hdrPad:      CGFloat = 8
     private let codePad:     CGFloat = 16
     private let iconSz:      CGFloat = 18

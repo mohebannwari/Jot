@@ -30,9 +30,9 @@ final class CalloutOverlayView: NSView {
     var onWidthChanged: ((CGFloat) -> Void)?
 
     // ── Figma Design Tokens ──────────────────────────────────────────────
-    private let outerRadius:   CGFloat = 16  // 2xl
+    private let outerRadius:   CGFloat = 22
     private let outerPadding:  CGFloat = 2   // xxs — gap between shell and inner block
-    private let innerRadius:   CGFloat = 14  // concentric: 16 − 2 = 14
+    private let innerRadius:   CGFloat = 20  // concentric: 22 − 2
     private let innerPadding:  CGFloat = 16  // base
     private let headerPadding: CGFloat = 8   // xs
     private let chipPadding:   CGFloat = 2   // xxs

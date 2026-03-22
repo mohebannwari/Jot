@@ -1563,11 +1563,11 @@ struct NoteDetailView: View {
         }
         .padding(2)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .fill(backlinkContainerBg)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .stroke(backlinkBorderColor, lineWidth: 1)
         )
         .frame(maxWidth: 400, alignment: .leading)

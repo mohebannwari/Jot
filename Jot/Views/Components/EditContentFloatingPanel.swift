@@ -26,7 +26,7 @@ struct EditContentFloatingPanel: View {
             }
         }
         .padding(8)
-        .liquidGlass(in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .liquidGlass(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .onKeyPress(.return) { onReplace(); return .handled }
         .onKeyPress(.escape) { onDismiss(); return .handled }
         .transition(.scale(scale: 0.9, anchor: .bottom).combined(with: .opacity))
