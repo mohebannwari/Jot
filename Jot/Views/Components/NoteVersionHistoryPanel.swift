@@ -104,47 +104,15 @@ struct NoteVersionHistoryPanel: View {
     }
 
     private func versionRow(_ version: NoteVersion) -> some View {
-        let isActive = previewingVersion?.id == version.id
-
-        return Button {
+        VersionRowButton(
+            version: version,
+            isActive: previewingVersion?.id == version.id,
+            colorScheme: colorScheme
+        ) {
             withAnimation(.easeInOut(duration: 0.15)) {
-                previewingVersion = isActive ? nil : version
+                previewingVersion = previewingVersion?.id == version.id ? nil : version
             }
-        } label: {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(version.createdAt, style: .relative)
-                        .font(FontManager.heading(size: 13, weight: isActive ? .semibold : .medium))
-                        .tracking(-0.2)
-                        .foregroundColor(Color("PrimaryTextColor"))
-                    + Text(" ago")
-                        .font(FontManager.heading(size: 13, weight: isActive ? .semibold : .medium))
-                        .tracking(-0.2)
-                        .foregroundColor(Color("PrimaryTextColor"))
-
-                    Text(version.createdAt, format: .dateTime.month(.abbreviated).day().hour().minute())
-                        .font(FontManager.heading(size: 11, weight: .regular))
-                        .foregroundColor(Color("SettingsPlaceholderTextColor"))
-                }
-
-                Spacer()
-
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 9, weight: .medium))
-                    .foregroundColor(Color("SettingsPlaceholderTextColor"))
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .contentShape(Rectangle())
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(isActive
-                        ? (colorScheme == .dark ? Color.white.opacity(0.1) : Color.black.opacity(0.06))
-                        : Color.clear)
-            )
         }
-        .buttonStyle(.plain)
-        .macPointingHandCursor()
     }
 
     // MARK: - Bottom Actions
@@ -208,5 +176,64 @@ struct NoteVersionHistoryPanel: View {
 
     private func loadVersions() {
         versions = NoteVersionManager.shared.versions(for: noteID, in: notesManager.modelContext)
+    }
+}
+
+// MARK: - Version Row
+
+private struct VersionRowButton: View {
+    let version: NoteVersion
+    let isActive: Bool
+    let colorScheme: ColorScheme
+    let action: () -> Void
+
+    @State private var isHovered = false
+
+    private var rowBackground: Color {
+        if isActive {
+            return colorScheme == .dark ? Color.white.opacity(0.1) : Color.black.opacity(0.06)
+        }
+        if isHovered {
+            return Color("HoverBackgroundColor")
+        }
+        return .clear
+    }
+
+    var body: some View {
+        Button(action: action) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(version.createdAt, style: .relative)
+                        .font(FontManager.heading(size: 13, weight: isActive ? .semibold : .medium))
+                        .tracking(-0.2)
+                        .foregroundColor(Color("PrimaryTextColor"))
+                    + Text(" ago")
+                        .font(FontManager.heading(size: 13, weight: isActive ? .semibold : .medium))
+                        .tracking(-0.2)
+                        .foregroundColor(Color("PrimaryTextColor"))
+
+                    Text(version.createdAt, format: .dateTime.month(.abbreviated).day().hour().minute())
+                        .font(FontManager.heading(size: 11, weight: .regular))
+                        .foregroundColor(Color("SettingsPlaceholderTextColor"))
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundColor(Color("SettingsPlaceholderTextColor"))
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .contentShape(Rectangle())
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(rowBackground)
+            )
+            .animation(.easeInOut(duration: 0.15), value: isHovered)
+        }
+        .buttonStyle(.plain)
+        .macPointingHandCursor()
+        .onHover { isHovered = $0 }
     }
 }

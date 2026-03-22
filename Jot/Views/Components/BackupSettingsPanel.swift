@@ -338,11 +338,11 @@ struct BackupSettingsPanel: View {
         .padding(.vertical, 12)
         .padding(.horizontal, 14)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .fill(colorScheme == .light ? Color.white : Color("SettingsOptionCardColor"))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .stroke(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.08), lineWidth: 1)
         )
     }

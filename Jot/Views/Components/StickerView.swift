@@ -27,9 +27,8 @@ struct StickerView: View {
         stickerBody
             .frame(width: displaySize, height: displaySize)
             .offset(dragOffset)
-            .shadow(color: .black.opacity(0.10), radius: 3.5, x: -2, y: 2)
-            .shadow(color: .black.opacity(0.09), radius: 6,   x: -8, y: 9)
-            .shadow(color: .black.opacity(0.05), radius: 8.5,  x: -19, y: 21)
+            .shadow(color: .black.opacity(0.06), radius: 3, x: 0, y: 2)
+            .shadow(color: .black.opacity(0.04), radius: 8, x: 0, y: 4)
             .overlay(alignment: .bottomTrailing) {
                 resizeHandle
             }
@@ -80,6 +79,7 @@ struct StickerView: View {
                 .padding(.horizontal, 4)
                 .padding(.bottom, 4)
         }
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     // MARK: - Text Content

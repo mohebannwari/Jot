@@ -1498,8 +1498,8 @@ struct NoteDetailView: View {
 
     private var backlinkBorderColor: Color {
         colorScheme == .dark
-            ? Color.white.opacity(0.06)
-            : Color.black.opacity(0.08)
+            ? Color.white.opacity(0.12)
+            : Color.black.opacity(0.12)
     }
 
     private var backlinkPillBg: Color {
@@ -1510,66 +1510,41 @@ struct NoteDetailView: View {
 
     @ViewBuilder
     private var backlinksSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Header
-            Text("Referenced by")
-                .font(FontManager.metadata(size: 11, weight: .medium))
-                .foregroundStyle(.primary.opacity(0.7))
-                .textCase(.uppercase)
-                .tracking(-0.2)
-                .padding(.top, 8)
-                .padding(.bottom, 4)
-                .padding(.horizontal, 8)
+        FlowLayout(spacing: 5) {
+            ForEach(backlinks) { backlink in
+                Button {
+                    onNavigateToNote?(backlink.id)
+                } label: {
+                    HStack(spacing: 0) {
+                        Image("IconNoteText")
+                            .resizable()
+                            .renderingMode(.template)
+                            .frame(width: 14, height: 14)
 
-            // Pills — wrapping flow layout
-            FlowLayout(spacing: 5) {
-                ForEach(backlinks) { backlink in
-                    Button {
-                        onNavigateToNote?(backlink.id)
-                    } label: {
-                        HStack(spacing: 0) {
-                            Image("IconNoteText")
-                                .resizable()
-                                .renderingMode(.template)
-                                .frame(width: 14, height: 14)
+                        Text(backlink.title)
+                            .font(.system(size: 12, weight: .medium))
+                            .lineLimit(1)
+                            .padding(.horizontal, 4)
 
-                            Text(backlink.title)
-                                .font(.system(size: 12, weight: .medium))
-                                .lineLimit(1)
-                                .padding(.horizontal, 4)
-
-                            Image("arrow-up-right")
-                                .resizable()
-                                .renderingMode(.template)
-                                .frame(width: 14, height: 14)
-                        }
-                        .foregroundStyle(.primary)
-                        .padding(4)
-                        .background(backlinkPillBg, in: Capsule(style: .continuous))
-                        .overlay(
-                            Capsule(style: .continuous)
-                                .strokeBorder(backlinkBorderColor, lineWidth: 0.5)
-                        )
+                        Image("arrow-up-right")
+                            .resizable()
+                            .renderingMode(.template)
+                            .frame(width: 14, height: 14)
                     }
-                    .buttonStyle(.plain)
-                    .onHover { inside in
-                        if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }
-                    }
+                    .foregroundStyle(.primary)
+                    .padding(4)
+                    .background(backlinkContainerBg, in: Capsule(style: .continuous))
+                    .overlay(
+                        Capsule(style: .continuous)
+                            .strokeBorder(backlinkBorderColor, lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
+                .onHover { inside in
+                    if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }
                 }
             }
-            .padding(.top, 4)
-            .padding(.bottom, 8)
-            .padding(.horizontal, 8)
         }
-        .padding(2)
-        .background(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(backlinkContainerBg)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(backlinkBorderColor, lineWidth: 1)
-        )
         .frame(maxWidth: 400, alignment: .leading)
         .transition(.opacity)
     }

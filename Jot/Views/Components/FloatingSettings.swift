@@ -43,11 +43,11 @@ struct SettingsPage: View {
 
     private let bodyFontCardWidth: CGFloat = 122
     private let bodyFontCardHeight: CGFloat = 91
-    private let bodyFontCardRadius: CGFloat = 16
+    private let bodyFontCardRadius: CGFloat = 22
 
     private let lineSpacingCardWidth: CGFloat = 122
     private let lineSpacingCardHeight: CGFloat = 91
-    private let lineSpacingCardRadius: CGFloat = 16
+    private let lineSpacingCardRadius: CGFloat = 22
 
     private let developerEmail = "mhbanwari@gmail.com"
 
@@ -505,11 +505,11 @@ struct SettingsPage: View {
         .padding(.vertical, 12)
         .padding(.horizontal, 14)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .fill(colorScheme == .light ? Color.white : Color("SettingsOptionCardColor"))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .stroke(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.08), lineWidth: 1)
         )
     }
@@ -635,8 +635,6 @@ struct SettingsPage: View {
                         RoundedRectangle(cornerRadius: bodyFontCardRadius, style: .continuous)
                             .stroke(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.08), lineWidth: 1)
                     )
-                    .shadow(color: .black.opacity(0.06), radius: 3, x: 0, y: 1)
-                    .shadow(color: .black.opacity(0.03), radius: 1, x: 0, y: 0)
 
                 settingsSelectionLabel(label, isSelected: isSelected)
             }
@@ -704,8 +702,6 @@ struct SettingsPage: View {
                     RoundedRectangle(cornerRadius: bodyFontCardRadius, style: .continuous)
                         .stroke(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.08), lineWidth: 1)
                 )
-                .shadow(color: .black.opacity(0.06), radius: 3, x: 0, y: 1)
-                .shadow(color: .black.opacity(0.03), radius: 1, x: 0, y: 0)
 
                 settingsSelectionLabel(title, isSelected: isSelected)
             }
@@ -755,8 +751,6 @@ struct SettingsPage: View {
                     RoundedRectangle(cornerRadius: lineSpacingCardRadius, style: .continuous)
                         .stroke(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.08), lineWidth: 1)
                 )
-                .shadow(color: .black.opacity(0.06), radius: 3, x: 0, y: 1)
-                .shadow(color: .black.opacity(0.03), radius: 1, x: 0, y: 0)
 
                 settingsSelectionLabel(spacing.displayName, isSelected: isSelected)
             }
@@ -847,8 +841,6 @@ struct SettingsPage: View {
                     Capsule()
                         .stroke(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.08), lineWidth: 1)
                 )
-                .shadow(color: .black.opacity(0.06), radius: 3, x: 0, y: 1)
-                .shadow(color: .black.opacity(0.03), radius: 1, x: 0, y: 0)
                 .animation(.jotHover, value: isHovered)
         }
         .buttonStyle(.plain)
@@ -880,8 +872,6 @@ struct SettingsPage: View {
                 Capsule()
                     .stroke(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.08), lineWidth: 1)
             )
-            .shadow(color: .black.opacity(0.06), radius: 3, x: 0, y: 1)
-            .shadow(color: .black.opacity(0.03), radius: 1, x: 0, y: 0)
             .textFieldStyle(.plain)
             .focused($isCustomFontSizeFocused)
             .onSubmit {
@@ -929,11 +919,11 @@ struct SettingsPage: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 48)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .fill(colorScheme == .light ? Color.white : Color("SettingsOptionCardColor"))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .stroke(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.08), lineWidth: 1)
         )
     }
@@ -1129,11 +1119,11 @@ struct SettingsPage: View {
         }
         .padding(12)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .fill(colorScheme == .light ? Color.white : Color("SettingsOptionCardColor"))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .stroke(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.08), lineWidth: 1)
         )
     }
