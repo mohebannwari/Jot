@@ -79,7 +79,7 @@ struct StickerView: View {
                 .padding(.horizontal, 4)
                 .padding(.bottom, 4)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     // MARK: - Text Content

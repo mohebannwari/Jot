@@ -27,36 +27,36 @@ struct CalloutData: Equatable {
             }
         }
 
-        /// Accent color hex used for the left border and icon tint.
+        /// Accent color hex (/500 shade) — used for the floating pill background.
         var accentColorHex: String {
             switch self {
-            case .info:      return "#3B82F6"  // blue
-            case .warning:   return "#F59E0B"  // amber
-            case .tip:       return "#10B981"  // green
-            case .note:      return "#6B7280"  // gray
-            case .important: return "#EF4444"  // red
+            case .info:      return "#3B82F6"  // blue-500
+            case .warning:   return "#EAB308"  // yellow-500
+            case .tip:       return "#22C55E"  // green-500
+            case .note:      return "#78716C"  // stone-500
+            case .important: return "#EF4444"  // red-500
             }
         }
 
-        /// Lighter background fill hex.
+        /// Light mode block background (/50 shade).
         var backgroundColorHex: String {
             switch self {
-            case .info:      return "#EFF6FF"
-            case .warning:   return "#FFFBEB"
-            case .tip:       return "#ECFDF5"
-            case .note:      return "#F3F4F6"
-            case .important: return "#FEF2F2"
+            case .info:      return "#EFF6FF"   // blue-50
+            case .warning:   return "#FEFCE8"   // yellow-50
+            case .tip:       return "#F0FDF4"   // green-50
+            case .note:      return "#FAFAF9"   // stone-50
+            case .important: return "#FEF2F2"   // red-50
             }
         }
 
-        /// Dark mode background fill hex.
+        /// Dark mode block background (/950 shade).
         var backgroundColorDarkHex: String {
             switch self {
-            case .info:      return "#1E293B"
-            case .warning:   return "#292524"
-            case .tip:       return "#1A2E2A"
-            case .note:      return "#1F2937"
-            case .important: return "#2D1B1B"
+            case .info:      return "#172554"   // blue-950
+            case .warning:   return "#422006"   // yellow-950
+            case .tip:       return "#052E16"   // green-950
+            case .note:      return "#0C0A09"   // stone-950
+            case .important: return "#450A0A"   // red-950
             }
         }
     }

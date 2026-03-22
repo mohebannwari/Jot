@@ -20,7 +20,6 @@ struct NoteManagementCommands: Commands {
             Button("Move to Trash") {
                 NotificationCenter.default.post(name: .trashFocusedNote, object: nil)
             }
-            .keyboardShortcut(.delete, modifiers: .command)
         }
 
         SwiftUI.CommandMenu("Navigate") {

@@ -116,7 +116,7 @@ struct NoteToolsBar: View {
                     }
                     // Version history
                     Button {
-                        NotificationCenter.default.post(name: .toggleVersionHistory, object: nil)
+                        NotificationCenter.default.post(name: .toggleVersionHistory, object: editorInstanceID)
                     } label: {
                         Image("IconBranchSimple")
                             .renderingMode(.template)

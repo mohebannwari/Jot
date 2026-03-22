@@ -120,7 +120,7 @@ struct BackupSettingsPanel: View {
 
                     Spacer()
 
-                    HStack(spacing: 6) {
+                    HStack(spacing: 0) {
                         Button {
                             if themeManager.backupMaxCount > 1 {
                                 themeManager.backupMaxCount -= 1
@@ -129,7 +129,8 @@ struct BackupSettingsPanel: View {
                             Image(systemName: "minus")
                                 .font(.system(size: 11, weight: .medium))
                                 .foregroundColor(Color("SettingsPlaceholderTextColor"))
-                                .frame(width: 20, height: 20)
+                                .frame(width: 32, height: 28)
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
 
@@ -147,12 +148,13 @@ struct BackupSettingsPanel: View {
                             Image(systemName: "plus")
                                 .font(.system(size: 11, weight: .medium))
                                 .foregroundColor(Color("SettingsPlaceholderTextColor"))
-                                .frame(width: 20, height: 20)
+                                .frame(width: 32, height: 28)
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                     }
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 4)
+                    .padding(.horizontal, 2)
+                    .padding(.vertical, 1)
                     .background(
                         Capsule()
                             .fill(Color("SettingsInnerPillColor"))

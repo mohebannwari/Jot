@@ -79,6 +79,56 @@ private struct MacCursorModifier: ViewModifier {
     }
 }
 
+/// A cursor modifier whose backing NSView accepts hits, so its cursor rect
+/// takes priority over AppKit views (like NSTextView) layered beneath it.
+private struct MacBlockingCursorModifier: ViewModifier {
+    let cursor: NSCursor
+
+    func body(content: Content) -> some View {
+        content.background(
+            MacBlockingCursorOverlay(cursor: cursor)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityHidden(true)
+        )
+    }
+}
+
+private struct MacBlockingCursorOverlay: NSViewRepresentable {
+    let cursor: NSCursor
+
+    func makeNSView(context: Context) -> BlockingCursorView {
+        BlockingCursorView(cursor: cursor)
+    }
+
+    func updateNSView(_ nsView: BlockingCursorView, context: Context) {
+        nsView.cursor = cursor
+    }
+}
+
+private final class BlockingCursorView: NSView {
+    var cursor: NSCursor {
+        didSet {
+            if oldValue != cursor {
+                if let window { window.invalidateCursorRects(for: self) }
+            }
+        }
+    }
+
+    init(cursor: NSCursor) {
+        self.cursor = cursor
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func resetCursorRects() {
+        discardCursorRects()
+        addCursorRect(bounds, cursor: cursor)
+    }
+}
+
 extension View {
     /// Applies a pointing-hand cursor on macOS while keeping other platforms unchanged.
     func macPointingHandCursor() -> some View {
@@ -94,12 +144,18 @@ extension View {
     func macResizeLeftRightCursor() -> some View {
         modifier(MacCursorModifier(cursor: .resizeLeftRight))
     }
+
+    /// Forces the arrow cursor, overriding AppKit views (like NSTextView) beneath this view.
+    func macBlockingArrowCursor() -> some View {
+        modifier(MacBlockingCursorModifier(cursor: .arrow))
+    }
 }
 #else
 extension View {
     func macPointingHandCursor() -> some View { self }
     func macArrowCursor() -> some View { self }
     func macResizeLeftRightCursor() -> some View { self }
+    func macBlockingArrowCursor() -> some View { self }
 }
 #endif
 
@@ -377,6 +433,45 @@ extension String {
                 in: result, range: NSRange(result.startIndex..., in: result), withTemplate: "")
         }
         return result
+    }
+}
+
+// MARK: - Full Markup Stripping
+
+extension String {
+    /// Strips all rich-text serialization markup, returning plain readable text.
+    /// Removes attachment tags, formatting wrappers (`[[b]]`, `[[/b]]`, etc.),
+    /// checkbox markers, and collapses excessive newlines.
+    var strippingAllMarkup: String {
+        var result = self
+
+        // 1. Remove self-closing attachment tags (binary blobs — vanish entirely)
+        if let attachmentRegex = try? NSRegularExpression(
+            pattern: #"\[\[(image\|\|\||webclip\||file\||filelink\||notelink\||link\|)[^\]]*?\]\]"#
+        ) {
+            result = attachmentRegex.stringByReplacingMatches(
+                in: result, range: NSRange(result.startIndex..., in: result), withTemplate: "")
+        }
+
+        // 2. Strip all remaining [[tag]] and [[/tag]] wrappers
+        if let tagRegex = try? NSRegularExpression(
+            pattern: #"\[\[/?[a-z0-9:]+(?:\|[^\]]*?)?\]\]"#
+        ) {
+            result = tagRegex.stringByReplacingMatches(
+                in: result, range: NSRange(result.startIndex..., in: result), withTemplate: "")
+        }
+
+        // 3. Remove checkbox markers
+        result = result.replacingOccurrences(of: "[x]", with: "")
+        result = result.replacingOccurrences(of: "[ ]", with: "")
+
+        // 4. Collapse 3+ consecutive newlines to 2, trim
+        if let newlineRegex = try? NSRegularExpression(pattern: #"\n{3,}"#) {
+            result = newlineRegex.stringByReplacingMatches(
+                in: result, range: NSRange(result.startIndex..., in: result), withTemplate: "\n\n")
+        }
+
+        return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 

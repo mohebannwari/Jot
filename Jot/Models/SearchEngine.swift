@@ -86,7 +86,7 @@ final class SearchEngine: ObservableObject {
             var matchType: MatchType = .content
             var titleRange: Range<String.Index>?
             var contentRange: Range<String.Index>?
-            
+
             if let r = note.title.range(of: trimmed, options: searchOptions) {
                 score += 100
                 matchType = .title
@@ -104,10 +104,12 @@ final class SearchEngine: ObservableObject {
                 if matchType == .content { matchType = .tag }
             }
 
-            if let r = note.content.range(of: trimmed, options: searchOptions) {
+            let stripped = note.content.strippingAllMarkup
+
+            if let r = stripped.range(of: trimmed, options: searchOptions) {
                 score += 10
                 if matchType == .content { contentRange = r }
-            } else if hasDistinctTagQuery, let r = note.content.range(of: tagQuery, options: searchOptions) {
+            } else if hasDistinctTagQuery, let r = stripped.range(of: tagQuery, options: searchOptions) {
                 score += 10
                 if matchType == .content { contentRange = r }
             }
@@ -118,7 +120,8 @@ final class SearchEngine: ObservableObject {
                 score: score,
                 titleRange: titleRange,
                 contentRange: contentRange,
-                query: lower
+                query: lower,
+                strippedContent: stripped
             )
         }
         
@@ -141,7 +144,8 @@ final class SearchEngine: ObservableObject {
                 score: score,
                 titleRange: titleRange,
                 contentRange: nil,
-                query: lower
+                query: lower,
+                strippedContent: nil
             )
         }
 
@@ -183,6 +187,7 @@ struct SearchHit: Identifiable, Equatable {
     let titleRange: Range<String.Index>?
     let contentRange: Range<String.Index>?
     let query: String
+    let strippedContent: String?
     
     static func == (lhs: SearchHit, rhs: SearchHit) -> Bool {
         lhs.id == rhs.id
@@ -221,15 +226,14 @@ struct SearchHit: Identifiable, Equatable {
     }
     
     var preview: String {
-        guard let note else {
-            return ""
+        guard let stripped = strippedContent else { return "" }
+        guard let r = contentRange else {
+            return String(stripped.prefix(140)) + (stripped.count > 140 ? "..." : "")
         }
-        let content = note.content.strippingColorMarkup
-        guard let r = contentRange else { return String(content.prefix(140)) + (content.count > 140 ? "..." : "") }
-        let start = content.index(r.lowerBound, offsetBy: -min(30, content.distance(from: content.startIndex, to: r.lowerBound)), limitedBy: content.startIndex) ?? content.startIndex
-        let end = content.index(r.upperBound, offsetBy: min(90, content.distance(from: r.upperBound, to: content.endIndex)), limitedBy: content.endIndex) ?? content.endIndex
-        let slice = content[start..<end]
-        return (start > content.startIndex ? "..." : "") + slice + (end < content.endIndex ? "..." : "")
+        let start = stripped.index(r.lowerBound, offsetBy: -min(30, stripped.distance(from: stripped.startIndex, to: r.lowerBound)), limitedBy: stripped.startIndex) ?? stripped.startIndex
+        let end = stripped.index(r.upperBound, offsetBy: min(90, stripped.distance(from: r.upperBound, to: stripped.endIndex)), limitedBy: stripped.endIndex) ?? stripped.endIndex
+        let slice = String(stripped[start..<end]).trimmingCharacters(in: .whitespacesAndNewlines)
+        return (start > stripped.startIndex ? "..." : "") + slice + (end < stripped.endIndex ? "..." : "")
     }
 }
 

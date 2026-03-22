@@ -31,6 +31,7 @@ struct NotePreviewCard: View {
     private let actionRowGap: CGFloat = 8
 
     private let borderColor = Color.white.opacity(0.06)
+    private let cardBackgroundColor = Color(red: 12/255, green: 10/255, blue: 9/255)
 
     private static let dateFormatter: DateFormatter = {
         let f = DateFormatter()
@@ -80,8 +81,8 @@ struct NotePreviewCard: View {
                     .foregroundColor(Color.white.opacity(0.5))
 
                 Text(note.title)
-                    .font(FontManager.heading(size: 32, weight: .medium))
-                    .tracking(-0.5)
+                    .font(FontManager.heading(size: 22, weight: .medium))
+                    .tracking(-0.3)
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .foregroundColor(.white)
@@ -91,9 +92,9 @@ struct NotePreviewCard: View {
             // Body text
             if !plainBody.isEmpty {
                 Text(plainBody)
-                    .font(.system(size: 16, weight: .medium))
-                    .tracking(-0.5)
-                    .lineSpacing(22 - 16) // line-height 22 with 16pt font
+                    .font(FontManager.body(size: 13, weight: .regular))
+                    .tracking(-0.3)
+                    .lineSpacing(18 - 13) // line-height 18 with 13pt font
                     .foregroundColor(Color.white.opacity(0.7))
                     .lineLimit(nil)
                     .fixedSize(horizontal: false, vertical: true)
@@ -103,11 +104,32 @@ struct NotePreviewCard: View {
         .padding(cardPadding)
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .frame(maxHeight: cardMaxHeight, alignment: .top)
-        .clipped()
+        .clipShape(RoundedRectangle(cornerRadius: innerCornerRadius, style: .continuous))
         .background(
             RoundedRectangle(cornerRadius: innerCornerRadius, style: .continuous)
-                .fill(Color(red: 12/255, green: 10/255, blue: 9/255))
+                .fill(cardBackgroundColor)
         )
+        .overlay(alignment: .bottom) {
+            LinearGradient(
+                gradient: Gradient(stops: [
+                    .init(color: cardBackgroundColor.opacity(0), location: 0.0),
+                    .init(color: cardBackgroundColor.opacity(0.5), location: 0.3),
+                    .init(color: cardBackgroundColor.opacity(0.85), location: 0.6),
+                    .init(color: cardBackgroundColor, location: 1.0),
+                ]),
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: 60)
+            .clipShape(
+                UnevenRoundedRectangle(
+                    bottomLeadingRadius: innerCornerRadius,
+                    bottomTrailingRadius: innerCornerRadius,
+                    style: .continuous
+                )
+            )
+            .allowsHitTesting(false)
+        }
         .overlay(
             RoundedRectangle(cornerRadius: innerCornerRadius, style: .continuous)
                 .stroke(borderColor, lineWidth: 1)
@@ -153,6 +175,7 @@ struct NotePreviewCard: View {
             )
         }
         .padding(actionPadding)
+        .macBlockingArrowCursor()
     }
 }
 

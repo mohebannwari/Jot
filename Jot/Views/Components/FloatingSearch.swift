@@ -44,7 +44,7 @@ struct FloatingSearch: View {
     }
 
     private var maxResultsHeight: CGFloat {
-        if showResults { return 200 }
+        if showResults { return 280 }
         if showRecentQueries { return 178 }
         return 0
     }
@@ -251,6 +251,8 @@ struct FloatingSearch: View {
         let isHovered = hoveredResultID == result.id
         let isSelected = selectedResultIndex == index
         let belongsToFolder = result.note?.folderID != nil
+        let hasPreview = result.type == .content
+        let isMultiLine = hasPreview || belongsToFolder
 
         return Button(action: {
             selectResult(result)
@@ -273,7 +275,19 @@ struct FloatingSearch: View {
                 }
                 .padding(.horizontal, 8)
                 .padding(.top, 8)
-                .padding(.bottom, belongsToFolder ? 2 : 8)
+                .padding(.bottom, isMultiLine ? 2 : 8)
+
+                if hasPreview {
+                    Text(highlightedPreview(for: result))
+                        .font(FontManager.heading(size: 11, weight: .regular))
+                        .tracking(-0.1)
+                        .foregroundColor(Color("SecondaryTextColor"))
+                        .lineLimit(2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.leading, 36)
+                        .padding(.trailing, 8)
+                        .padding(.bottom, belongsToFolder ? 2 : 8)
+                }
 
                 if let note = result.note, let folder = folder(for: note.folderID) {
                     HStack(spacing: 4) {
@@ -299,7 +313,7 @@ struct FloatingSearch: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .background {
-                if belongsToFolder {
+                if isMultiLine {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .fill(Color("HoverBackgroundColor"))
                         .opacity(isHovered || isSelected ? 1 : 0)
@@ -309,7 +323,7 @@ struct FloatingSearch: View {
                         .opacity(isHovered || isSelected ? 1 : 0)
                 }
             }
-            .contentShape(belongsToFolder
+            .contentShape(isMultiLine
                 ? AnyShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 : AnyShape(Capsule()))
             .animation(.jotHover, value: isHovered)
@@ -324,6 +338,28 @@ struct FloatingSearch: View {
                 }
             }
         }
+    }
+
+    // MARK: - Preview Highlighting
+
+    private func highlightedPreview(for result: SearchHit) -> AttributedString {
+        let previewText = result.preview
+        var attributed = AttributedString(previewText)
+        attributed.font = FontManager.heading(size: 11, weight: .regular)
+        attributed.foregroundColor = Color("SecondaryTextColor")
+
+        let query = result.query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return attributed }
+
+        if let range = attributed.range(
+            of: query,
+            options: [.caseInsensitive, .diacriticInsensitive]
+        ) {
+            attributed[range].font = FontManager.heading(size: 11, weight: .semibold)
+            attributed[range].foregroundColor = Color("PrimaryTextColor")
+        }
+
+        return attributed
     }
 
     // MARK: - Actions

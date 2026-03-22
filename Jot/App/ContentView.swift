@@ -216,6 +216,7 @@ struct ContentView: View {
     @State private var isAutoCreatingStarterNote = false
     @State private var aiToolsState: AIToolsState = .collapsed
     @State private var isVersionHistoryVisible = false
+    @State private var versionHistoryPane: SplitPickerPane = .primary
     @State private var previewingVersion: NoteVersion?
 
     @State private var isCreateFolderAlertPresented = false
@@ -522,11 +523,16 @@ struct ContentView: View {
             .onReceive(NotificationCenter.default.publisher(for: .openSettings)) { _ in
                 presentSettings()
             }
-            .onReceive(NotificationCenter.default.publisher(for: .toggleVersionHistory)) { _ in
+            .onReceive(NotificationCenter.default.publisher(for: .toggleVersionHistory)) { notification in
                 guard selectedNote != nil else { return }
+                let requestedPane: SplitPickerPane = (notification.object as? UUID) == splitEditorID ? .secondary : .primary
                 withAnimation(.easeInOut(duration: 0.2)) {
-                    isVersionHistoryVisible.toggle()
-                    if !isVersionHistoryVisible {
+                    if isVersionHistoryVisible && versionHistoryPane == requestedPane {
+                        isVersionHistoryVisible = false
+                        previewingVersion = nil
+                    } else {
+                        versionHistoryPane = requestedPane
+                        isVersionHistoryVisible = true
                         previewingVersion = nil
                     }
                 }
@@ -604,6 +610,17 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             guard notesManager.hasLoadedInitialNotes else { return }
             processPendingShares()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSMenu.didBeginTrackingNotification)) { _ in
+            guard isPreviewVisible else { return }
+            previewHoverWorkItem?.cancel()
+            previewDismissWorkItem?.cancel()
+            withAnimation(.easeOut(duration: 0.15)) {
+                isPreviewVisible = false
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                previewNote = nil
+            }
         }
         .onChange(of: notesManager.notes) { _, notes in
             searchEngine.setNotes(notes)
@@ -838,8 +855,15 @@ struct ContentView: View {
         if hovering {
             previewDismissWorkItem?.cancel()
             previewDismissWorkItem = nil
+            // Keep floating sidebar alive while interacting with the preview card
+            floatingSidebarDismissWorkItem?.cancel()
+            floatingSidebarDismissWorkItem = nil
         } else {
             schedulePreviewDismiss()
+            // Mouse left both sidebar trigger and preview card -- schedule sidebar dismiss
+            if !isSidebarVisible {
+                handleFloatingSidebarHover(false)
+            }
         }
     }
 
@@ -955,6 +979,10 @@ struct ContentView: View {
                         }
 
                         singleNotePane(note: note, width: primW, cornerRadius: dragging ? splitRadius : cornerRadius)
+                            .overlay(alignment: .trailing) {
+                                versionHistoryOverlay(for: note)
+                            }
+                            .animation(.easeInOut(duration: 0.2), value: isVersionHistoryVisible)
 
                         if !dragging || dragSplitSide == .right {
                             placeholderRect
@@ -1040,6 +1068,23 @@ struct ContentView: View {
     }
 
     @ViewBuilder
+    private func versionHistoryOverlay(for note: Note, pane: SplitPickerPane = .primary) -> some View {
+        if isVersionHistoryVisible && versionHistoryPane == pane {
+            NoteVersionHistoryPanel(
+                noteID: note.id,
+                isPresented: $isVersionHistoryVisible,
+                previewingVersion: $previewingVersion,
+                onRestore: { version in
+                    restoreNoteVersion(version, for: note)
+                }
+            )
+            .padding(.trailing, 8)
+            .padding(.vertical, 8)
+            .transition(.move(edge: .trailing).combined(with: .opacity))
+        }
+    }
+
+    @ViewBuilder
     private func splitDetailLayout(primaryNote: Note, totalWidth: CGFloat, cornerRadius: CGFloat) -> some View {
         let splitRadius = windowCornerRadius - windowContentPadding
         let position = activeSplit?.position ?? .right
@@ -1072,6 +1117,10 @@ struct ContentView: View {
                         .overlay {
                             splitPickerOverlayView(for: .primary, primaryNote: primaryNote)
                         }
+                        .overlay(alignment: .trailing) {
+                            versionHistoryOverlay(for: primaryNote)
+                        }
+                        .animation(.easeInOut(duration: 0.2), value: isVersionHistoryVisible)
                 } else {
                     splitPickerPane(width: primW, cornerRadius: splitRadius, excludingNote: activeSecondaryNote, isPrimary: true)
                 }
@@ -1082,6 +1131,10 @@ struct ContentView: View {
                         .splitPaneDimming(isInactive: activeSplitPane != .secondary, cornerRadius: splitRadius, colorScheme: colorScheme)
                         .splitPaneShadow(isActive: activeSplitPane == .secondary, cornerRadius: splitRadius, backgroundColor: detailBg, colorScheme: colorScheme)
                         .zIndex(activeSplitPane == .secondary ? 1 : 0)
+                        .overlay(alignment: .trailing) {
+                            versionHistoryOverlay(for: secNote, pane: .secondary)
+                        }
+                        .animation(.easeInOut(duration: 0.2), value: isVersionHistoryVisible)
                 } else {
                     splitPickerPane(width: secW, cornerRadius: splitRadius, excludingNote: activePrimaryNote, isPrimary: false)
                 }
@@ -1094,6 +1147,10 @@ struct ContentView: View {
                         .splitPaneDimming(isInactive: activeSplitPane != .secondary, cornerRadius: splitRadius, colorScheme: colorScheme)
                         .splitPaneShadow(isActive: activeSplitPane == .secondary, cornerRadius: splitRadius, backgroundColor: detailBg, colorScheme: colorScheme)
                         .zIndex(activeSplitPane == .secondary ? 1 : 0)
+                        .overlay(alignment: .trailing) {
+                            versionHistoryOverlay(for: secNote, pane: .secondary)
+                        }
+                        .animation(.easeInOut(duration: 0.2), value: isVersionHistoryVisible)
                 } else {
                     splitPickerPane(width: secW, cornerRadius: splitRadius, excludingNote: activePrimaryNote, isPrimary: false)
                 }
@@ -1113,6 +1170,10 @@ struct ContentView: View {
                         .overlay {
                             splitPickerOverlayView(for: .primary, primaryNote: primaryNote)
                         }
+                        .overlay(alignment: .trailing) {
+                            versionHistoryOverlay(for: primaryNote)
+                        }
+                        .animation(.easeInOut(duration: 0.2), value: isVersionHistoryVisible)
                 } else {
                     splitPickerPane(width: primW, cornerRadius: splitRadius, excludingNote: activeSecondaryNote, isPrimary: true)
                 }
@@ -1176,11 +1237,19 @@ struct ContentView: View {
             )
             .blur(radius: isSplitLocked ? 20 : 0)
             .allowsHitTesting(!isSplitLocked)
+            .opacity(previewingVersion != nil && versionHistoryPane == .secondary ? 0 : 1)
 
             if isSplitLocked {
                 noteLockOverlay(for: note)
             }
+
+            // Version preview overlay
+            if let version = previewingVersion, versionHistoryPane == .secondary {
+                versionPreviewPane(version: version)
+                    .transition(.opacity)
+            }
         }
+        .animation(.easeInOut(duration: 0.15), value: previewingVersion?.id)
         .frame(width: width)
         .frame(maxHeight: .infinity)
         .background(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).fill(detailBg))
@@ -1188,7 +1257,7 @@ struct ContentView: View {
         .onPreferenceChange(BottomOverlayActivePreferenceKey.self) { splitBottomOverlayActive = $0 }
         .onPreferenceChange(BottomInputOverlayActivePreferenceKey.self) { splitBottomInputOverlayActive = $0 }
         .overlay(alignment: .bottomTrailing) {
-            if AppleIntelligenceService.shared.isAvailable {
+            if AppleIntelligenceService.shared.isAvailable && !(isVersionHistoryVisible && versionHistoryPane == .secondary) {
                 AIToolsOverlay(state: $splitAiToolsState, editorInstanceID: splitEditorID).padding(.trailing, 14).padding(.bottom, 14)
             }
         }
@@ -2440,6 +2509,8 @@ struct ContentView: View {
             }
         } else {
             let work = DispatchWorkItem {
+                // Don't dismiss while the preview card is being interacted with
+                guard !isHoveringPreviewCard else { return }
                 withAnimation(.jotSpring) {
                     isFloatingSidebarVisible = false
                 }
@@ -2454,54 +2525,38 @@ struct ContentView: View {
     @ViewBuilder
     private func detailPane(note: Note) -> some View {
         let isNoteLocked = note.isLocked && !authManager.isUnlocked(note.id)
-        ZStack(alignment: .trailing) {
-            ZStack {
-                NoteDetailView(
-                    note: note,
-                    editorInstanceID: primaryEditorID,
-                    focusRequestID: detailFocusRequestID,
-                    contentTopInsetAdjustment: isSidebarVisible ? 0 : detailToggleToContentExtraSpacingWhenSidebarHidden,
-                    stickyHeaderTopPadding: splitControlsTopPadding,
-                    onSave: { updated in saveUpdatedNote(updated) },
-                    availableNotes: notePickerItems(excluding: note.id),
-                    onNavigateToNote: navigateToNote,
-                    backlinks: backlinks(for: note.id)
-                )
-                .blur(radius: isNoteLocked ? 20 : 0)
-                .allowsHitTesting(!isNoteLocked)
-                .opacity(previewingVersion != nil ? 0 : 1)
+        ZStack {
+            NoteDetailView(
+                note: note,
+                editorInstanceID: primaryEditorID,
+                focusRequestID: detailFocusRequestID,
+                contentTopInsetAdjustment: isSidebarVisible ? 0 : detailToggleToContentExtraSpacingWhenSidebarHidden,
+                stickyHeaderTopPadding: splitControlsTopPadding,
+                onSave: { updated in saveUpdatedNote(updated) },
+                availableNotes: notePickerItems(excluding: note.id),
+                onNavigateToNote: navigateToNote,
+                backlinks: backlinks(for: note.id)
+            )
+            .blur(radius: isNoteLocked ? 20 : 0)
+            .allowsHitTesting(!isNoteLocked)
+            .opacity(previewingVersion != nil && versionHistoryPane == .primary ? 0 : 1)
 
-                if isNoteLocked {
-                    noteLockOverlay(for: note)
-                }
-
-                // Version preview overlay
-                if let version = previewingVersion {
-                    versionPreviewPane(version: version)
-                        .transition(.opacity)
-                }
+            if isNoteLocked {
+                noteLockOverlay(for: note)
             }
 
-            if isVersionHistoryVisible {
-                NoteVersionHistoryPanel(
-                    noteID: note.id,
-                    isPresented: $isVersionHistoryVisible,
-                    previewingVersion: $previewingVersion,
-                    onRestore: { version in
-                        restoreNoteVersion(version, for: note)
-                    }
-                )
-                .padding(.trailing, 8)
-                .padding(.vertical, 8)
-                .zIndex(10)
-                .transition(.move(edge: .trailing).combined(with: .opacity))
+            // Version preview overlay
+            if let version = previewingVersion, versionHistoryPane == .primary {
+                versionPreviewPane(version: version)
+                    .transition(.opacity)
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: isVersionHistoryVisible)
         .animation(.easeInOut(duration: 0.15), value: previewingVersion?.id)
         .onChange(of: note.id) { _, _ in
-            isVersionHistoryVisible = false
-            previewingVersion = nil
+            if versionHistoryPane == .primary {
+                isVersionHistoryVisible = false
+                previewingVersion = nil
+            }
         }
     }
 
