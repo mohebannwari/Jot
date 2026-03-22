@@ -22,7 +22,7 @@ struct FloatingSearch: View {
     @Environment(\.colorScheme) private var colorScheme
 
     private let surfaceWidth: CGFloat = 400
-    private let surfaceCornerRadius: CGFloat = 16
+    private let surfaceCornerRadius: CGFloat = 22
     private let resultItemCornerRadius: CGFloat = 12
 
     private enum SearchAnimations {

@@ -46,7 +46,7 @@ struct NotePickerMenu: View {
     @Binding var isRevealed: Bool
     var onSelect: ((NotePickerItem) -> Void)?
 
-    private let glassShape = RoundedRectangle(cornerRadius: 20, style: .continuous)
+    private let glassShape = RoundedRectangle(cornerRadius: 22, style: .continuous)
 
     var body: some View {
         ScrollViewReader { proxy in

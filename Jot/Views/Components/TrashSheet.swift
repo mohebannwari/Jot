@@ -17,7 +17,7 @@ struct TrashSheet: View {
 
     private let sheetWidth: CGFloat = 400
     private let sheetHeight: CGFloat = 400
-    private let cornerRadius: CGFloat = 20
+    private let cornerRadius: CGFloat = 22
 
     var body: some View {
         VStack(spacing: 0) {
