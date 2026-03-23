@@ -55,6 +55,10 @@ extension NoteDetailView {
                 }
             case .editContent:
                 break  // handled by .aiEditSubmit notification
+            case .translate:
+                break  // handled by .aiTranslateSubmit notification
+            case .textGenerate:
+                break  // handled by .aiTextGenSubmit notification
             }
         } catch {
             withAnimation(.jotSpring) {
@@ -70,23 +74,6 @@ extension NoteDetailView {
             ? AppleIntelligenceService.stripMarkupForAI(editedContent)
             : capturedSelectionText
         guard !sourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-
-        // Resolve panel position before showing the panel so it never appears at (0,0)
-        if capturedSelectionWindowRect != .zero {
-            // FloatingToolbarPositioner reads the real window bounds from NSApp.keyWindow on macOS;
-            // the visibleWidth/Height params are only fallbacks for non-macOS paths.
-            let result = FloatingToolbarPositioner.calculatePosition(
-                selectionWindowX: capturedSelectionWindowRect.minX,
-                selectionWindowY: capturedSelectionWindowRect.minY,
-                selectionWidth: capturedSelectionWindowRect.width,
-                selectionHeight: capturedSelectionWindowRect.height,
-                visibleWidth: 0,
-                visibleHeight: 0,
-                toolbarWidth: 320,
-                toolbarHeight: 160
-            )
-            editContentPanelPosition = result.origin
-        }
 
         withAnimation(.jotSpring) {
             aiPanelState = .loading(.editContent)
@@ -180,6 +167,125 @@ extension NoteDetailView {
     func redoEditContent() {
         guard case .editPreview(_, _, _, let instruction) = aiPanelState else { return }
         Task { await handleAIEdit(instruction: instruction) }
+    }
+
+    // MARK: - Translation
+
+    @MainActor
+    func handleAITranslate(language: String) async {
+        let sourceText = capturedSelectionText.isEmpty
+            ? AppleIntelligenceService.stripMarkupForAI(editedContent)
+            : capturedSelectionText
+        guard !sourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+
+        withAnimation(.jotSpring) {
+            aiPanelState = .loading(.translate)
+            showTranslatePanel = true
+            aiIsProcessing = true
+        }
+
+        do {
+            let translated = try await AppleIntelligenceService.shared.translate(
+                text: sourceText, to: language)
+            withAnimation(.jotSpring) {
+                aiPanelState = .translatePreview(
+                    translated: translated,
+                    originalRange: capturedSelectionRange,
+                    originalText: sourceText,
+                    language: language
+                )
+            }
+        } catch {
+            withAnimation(.jotSpring) {
+                aiPanelState = .error(error.localizedDescription)
+                showTranslatePanel = false
+            }
+        }
+        aiIsProcessing = false
+    }
+
+    func applyTranslateReplacement() {
+        guard case .translatePreview(let translated, let range, let originalText, _) = aiPanelState else { return }
+
+        let isFullDocument = range.location == NSNotFound
+
+        NotificationCenter.default.post(
+            name: .aiEditApplyReplacement,
+            object: nil,
+            userInfo: [
+                "original": isFullDocument ? "" : originalText,
+                "replacement": translated,
+                "editorInstanceID": editorInstanceID
+            ]
+        )
+
+        scheduleAutosave()
+        showTranslatePanel = false
+        aiPanelState = .none
+    }
+
+    func copyTranslation() {
+        guard case .translatePreview(let translated, _, _, _) = aiPanelState else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(translated, forType: .string)
+        withAnimation(.jotSpring) {
+            showTranslatePanel = false
+            aiPanelState = .none
+        }
+    }
+
+    func retranslate() {
+        guard case .translatePreview(_, _, _, let language) = aiPanelState else { return }
+        Task { await handleAITranslate(language: language) }
+    }
+
+    // MARK: - Text Generation
+
+    @MainActor
+    func handleAITextGenerate(description: String) async {
+        withAnimation(.jotSpring) {
+            aiPanelState = .loading(.textGenerate)
+            showTextGenPanel = true
+            aiIsProcessing = true
+        }
+
+        do {
+            let generated = try await AppleIntelligenceService.shared.generateText(
+                description: description)
+            withAnimation(.jotSpring) {
+                aiPanelState = .textGenPreview(
+                    generated: generated,
+                    insertionPoint: capturedSelectionRange.location
+                )
+            }
+        } catch {
+            withAnimation(.jotSpring) {
+                aiPanelState = .error(error.localizedDescription)
+            }
+        }
+        aiIsProcessing = false
+    }
+
+    func acceptTextGeneration() {
+        if case .textGenPreview(let generated, _) = aiPanelState {
+            NotificationCenter.default.post(
+                name: .aiTextGenInsert,
+                object: generated,
+                userInfo: ["editorInstanceID": editorInstanceID]
+            )
+        }
+        scheduleAutosave()
+        withAnimation(.jotSpring) {
+            showTextGenPanel = false
+            aiPanelState = .none
+        }
+    }
+
+    func dismissTextGeneration() {
+        withAnimation(.jotSpring) {
+            showTextGenPanel = false
+            aiPanelState = .none
+        }
     }
 
     // MARK: - Voice Recording

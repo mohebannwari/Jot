@@ -17,15 +17,15 @@ struct NotePreviewCard: View {
     let onArchive: () -> Void
     let onDelete: () -> Void
     var onHoverChanged: ((Bool) -> Void)? = nil
+    @Environment(\.colorScheme) private var colorScheme
+
+    @State private var cachedSnapshot: NSImage?
 
     private let cardWidth: CGFloat = 300
     private let cardMaxHeight: CGFloat = 250
     private let innerCornerRadius: CGFloat = 22
     private let outerCornerRadius: CGFloat = 24
     private let glassPadding: CGFloat = 2
-    private let cardPadding: CGFloat = 16
-    private let headerBodyGap: CGFloat = 20
-    private let dateToTitleGap: CGFloat = 12
     private let actionIconSize: CGFloat = 18
     private let actionPadding: CGFloat = 8
     private let actionRowGap: CGFloat = 8
@@ -33,77 +33,44 @@ struct NotePreviewCard: View {
     private let borderColor = Color.white.opacity(0.06)
     private let cardBackgroundColor = Color(red: 12/255, green: 10/255, blue: 9/255)
 
-    private static let dateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "dd.MM.yyyy"
-        return f
-    }()
-
-    private var formattedDate: String {
-        Self.dateFormatter.string(from: note.date)
-    }
-
-    /// Strip serialized markup tags from note content for plain-text preview
-    private var plainBody: String {
-        var text = note.content
-        // Remove all [[tag]]...[[/tag]] wrappers, keep inner text
-        let tagPattern = #"\[\[/?[^\]]*\]\]"#
-        text = text.replacingOccurrences(of: tagPattern, with: "", options: .regularExpression)
-        // Remove checkbox markers
-        text = text.replacingOccurrences(of: "[x]", with: "")
-        text = text.replacingOccurrences(of: "[ ]", with: "")
-        return text.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
     var body: some View {
         VStack(spacing: 0) {
-            // Preview content card
             previewContent
-
-            // Options row
             optionsRow
         }
         .frame(width: cardWidth)
         .padding(glassPadding)
         .thinLiquidGlass(in: RoundedRectangle(cornerRadius: outerCornerRadius, style: .continuous))
         .onHover { hovering in onHoverChanged?(hovering) }
+        .task(id: note.content) {
+            guard !isLocked else { cachedSnapshot = nil; return }
+            cachedSnapshot = NoteSnapshotRenderer.render(
+                content: note.content,
+                width: cardWidth,
+                height: cardMaxHeight
+            )
+        }
     }
 
     // MARK: - Preview Content
 
     private var previewContent: some View {
-        VStack(alignment: .leading, spacing: headerBodyGap) {
-            // Header: date + title
-            VStack(alignment: .leading, spacing: dateToTitleGap) {
-                Text(formattedDate)
-                    .font(FontManager.metadata(size: 11, weight: .medium))
-                    .tracking(-0.2)
-                    .foregroundColor(Color.white.opacity(0.5))
-
-                Text(note.title)
-                    .font(FontManager.heading(size: 22, weight: .medium))
-                    .tracking(-0.3)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .foregroundColor(.white)
-                    .opacity(isLocked ? 0 : 1)
-            }
-
-            // Body text
-            if !plainBody.isEmpty {
-                Text(plainBody)
-                    .font(FontManager.body(size: 13, weight: .regular))
-                    .tracking(-0.3)
-                    .lineSpacing(18 - 13) // line-height 18 with 13pt font
-                    .foregroundColor(Color.white.opacity(0.7))
-                    .lineLimit(nil)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .opacity(isLocked ? 0 : 1)
+        Group {
+            if isLocked {
+                Image("IconLock")
+                    .resizable()
+                    .renderingMode(.template)
+                    .frame(width: 40, height: 40)
+                    .foregroundColor(.white.opacity(0.3))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let snapshot = cachedSnapshot {
+                Image(nsImage: snapshot)
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: cardWidth, height: cardMaxHeight)
             }
         }
-        .padding(cardPadding)
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        .frame(maxHeight: cardMaxHeight, alignment: .top)
+        .frame(width: cardWidth, height: cardMaxHeight)
         .clipShape(RoundedRectangle(cornerRadius: innerCornerRadius, style: .continuous))
         .background(
             RoundedRectangle(cornerRadius: innerCornerRadius, style: .continuous)
@@ -134,15 +101,6 @@ struct NotePreviewCard: View {
             RoundedRectangle(cornerRadius: innerCornerRadius, style: .continuous)
                 .stroke(borderColor, lineWidth: 1)
         )
-        .overlay {
-            if isLocked {
-                Image("IconLock")
-                    .resizable()
-                    .renderingMode(.template)
-                    .frame(width: 40, height: 40)
-                    .foregroundColor(.white.opacity(0.3))
-            }
-        }
     }
 
     // MARK: - Options Row
@@ -176,6 +134,73 @@ struct NotePreviewCard: View {
         }
         .padding(actionPadding)
         .macBlockingArrowCursor()
+    }
+}
+
+// MARK: - Offscreen Snapshot Renderer
+
+/// Renders note content to a bitmap using the same deserialization pipeline
+/// as the main editor, then captures the top portion as an NSImage.
+/// Caseless enum used as namespace -- avoids NSTextView-in-SwiftUI layout issues.
+enum NoteSnapshotRenderer {
+
+    static func render(
+        content: String,
+        width: CGFloat,
+        height: CGFloat
+    ) -> NSImage? {
+        guard !content.isEmpty else { return nil }
+
+        let binding = Binding.constant(content)
+        let rep = TodoEditorRepresentable(
+            text: binding,
+            colorScheme: .dark,
+            bottomInset: 0,
+            focusRequestID: nil,
+            editorInstanceID: nil,
+            readOnly: true
+        )
+        let coordinator = rep.makeCoordinator()
+
+        // Build an offscreen NSTextView matching the editor's configuration
+        let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: width, height: 10000))
+        textView.isEditable = false
+        textView.isSelectable = false
+        textView.drawsBackground = false
+        textView.backgroundColor = .clear
+        textView.isRichText = true
+        textView.textContainerInset = NSSize(width: 16, height: 16)
+        textView.textContainer?.lineFragmentPadding = 0
+        textView.textContainer?.containerSize = NSSize(width: width - 32, height: .greatestFiniteMagnitude)
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.maxSize = NSSize(width: width, height: .greatestFiniteMagnitude)
+
+        // Force dark appearance to match the preview card background
+        textView.appearance = NSAppearance(named: .darkAqua)
+
+        // Deserialize content -- skip overlay creation since the view has no window
+        coordinator.configure(with: textView)
+        coordinator.applyInitialText(content)
+
+        // Ensure layout is complete
+        if let lm = textView.layoutManager, let tc = textView.textContainer {
+            lm.ensureLayout(for: tc)
+        }
+
+        // Clean up overlays that were created for the detached view
+        coordinator.removeAllOverlays()
+
+        // Render only the top `height` pixels to a bitmap
+        let captureRect = NSRect(x: 0, y: 0, width: width, height: height)
+        guard let bitmapRep = textView.bitmapImageRepForCachingDisplay(in: captureRect) else {
+            return nil
+        }
+        textView.cacheDisplay(in: captureRect, to: bitmapRep)
+
+        let image = NSImage(size: captureRect.size)
+        image.addRepresentation(bitmapRep)
+        return image
     }
 }
 

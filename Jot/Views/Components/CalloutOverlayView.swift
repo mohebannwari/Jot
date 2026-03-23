@@ -13,6 +13,12 @@ import AppKit
 final class CalloutOverlayView: NSView {
 
     static let minWidth: CGFloat = 400
+    /// Height of a single line at the callout's body font size (15pt regular).
+    /// Cached to avoid allocating NSFont on every layout pass.
+    private static let singleLineHeight: CGFloat = {
+        let font = NSFont.systemFont(ofSize: 15, weight: .regular)
+        return ceil(font.ascender - font.descender + font.leading)
+    }()
     /// Set by the coordinator so drag-resize respects the actual container.
     var currentContainerWidth: CGFloat = 0
     private static let handleWidth: CGFloat = 12
@@ -67,7 +73,6 @@ final class CalloutOverlayView: NSView {
         iv.imageScaling = .scaleProportionallyUpOrDown
         return iv
     }()
-    private let borderRing  = NSView()
     private let resizeHandle = _CalloutResizeHandle()
     private let textField: NSTextField = {
         let tf = NSTextField()
@@ -115,15 +120,6 @@ final class CalloutOverlayView: NSView {
         blockView.addSubview(textField)
         textField.delegate = self
 
-        // Border ring -- outside stroke, 1px larger than block on each side
-        borderRing.wantsLayer = true
-        borderRing.layer?.cornerRadius = blockRadius + 1
-        borderRing.layer?.cornerCurve = .continuous
-        borderRing.layer?.masksToBounds = false
-        borderRing.layer?.borderWidth = 1.0
-        borderRing.layer?.backgroundColor = CGColor.clear
-        addSubview(borderRing)
-
         // Chip pill -- floats as sibling of blockView, straddles top edge
         chipView.wantsLayer = true
         chipView.onActivate = { [weak self] in self?.showTypePicker() }
@@ -157,19 +153,9 @@ final class CalloutOverlayView: NSView {
 
         // Block background -- /950 dark, /50 light
         blockView.layer?.backgroundColor = isDark ? colors.blockDark.cgColor : colors.blockLight.cgColor
-        // Outside stroke on borderRing -- note uses neutral, others use accent
-        if calloutData.type == .note {
-            borderRing.layer?.borderColor = isDark
-                ? NSColor.white.withAlphaComponent(0.15).cgColor
-                : NSColor.black.withAlphaComponent(0.12).cgColor
-        } else {
-            borderRing.layer?.borderColor = isDark
-                ? colors.pillColor.withAlphaComponent(0.15).cgColor
-                : colors.pillColor.withAlphaComponent(0.12).cgColor
-        }
 
-        // Chip pill -- accent /500 in both modes, white contents
-        chipView.layer?.backgroundColor = colors.pillColor.cgColor
+        // Chip pill -- mode-dependent accent, white contents
+        chipView.layer?.backgroundColor = isDark ? colors.pillDark.cgColor : colors.pillLight.cgColor
 
         chipLabel.attributedStringValue = NSAttributedString(
             string: calloutData.type.rawValue.capitalized,
@@ -201,7 +187,7 @@ final class CalloutOverlayView: NSView {
             attributes: [
                 .font: NSFont.systemFont(ofSize: 15, weight: .regular),
                 .foregroundColor: placeholderColor,
-                .kern: NSNumber(value: -0.5)
+                .kern: NSNumber(value: 0)
             ]
         )
 
@@ -229,22 +215,15 @@ final class CalloutOverlayView: NSView {
         blockView.frame = CGRect(x: 0, y: pO, width: bounds.width, height: blockH)
 
         // Dynamic corner radius: 16 for single-line, 22 for multiline
-        let singleLineH = ceil(NSFont.systemFont(ofSize: 15, weight: .regular).ascender
-            - NSFont.systemFont(ofSize: 15, weight: .regular).descender
-            + NSFont.systemFont(ofSize: 15, weight: .regular).leading)
         let contentH = blockH - blockPaddingTop - blockPaddingBottom
-        let dynamicRadius = contentH > singleLineH + 4 ? 22 : blockRadius
+        let dynamicRadius = contentH > Self.singleLineHeight + 4 ? 22 : blockRadius
         blockView.layer?.cornerRadius = dynamicRadius
-
-        // Border ring -- 1px outside the block on each side
-        borderRing.frame = blockView.frame.insetBy(dx: -1, dy: -1)
-        borderRing.layer?.cornerRadius = dynamicRadius + 1
 
         // Text field inside block
         let tfW = max(bounds.width - blockPaddingH * 2, 40)
         let tfH = max(blockH - blockPaddingTop - blockPaddingBottom, 20)
         // blockView is non-flipped (y=0 at bottom), so y=blockPaddingBottom
-        // gives 12px from bottom, leaving 40px at the top to clear the pill
+        // gives 16px from bottom, leaving 24px at the top to clear the pill
         textField.frame = CGRect(x: blockPaddingH, y: blockPaddingBottom, width: tfW, height: tfH)
 
         // Chip pill -- straddles blockView's top edge
@@ -475,9 +454,25 @@ private final class _ChipButton: NSView {
 // MARK: - Per-Type View Colors
 
 private struct CalloutTypeColors {
-    let blockLight: NSColor  // /50 shade
+    let blockLight: NSColor  // /50 or /100 shade
     let blockDark:  NSColor  // /950 shade
-    let pillColor:  NSColor  // /500 shade (both modes)
+    let pillLight:  NSColor  // pill bg in light mode
+    let pillDark:   NSColor  // pill bg in dark mode
+
+    /// Convenience for types that use the same pill color in both modes.
+    init(blockLight: NSColor, blockDark: NSColor, pillColor: NSColor) {
+        self.blockLight = blockLight
+        self.blockDark  = blockDark
+        self.pillLight  = pillColor
+        self.pillDark   = pillColor
+    }
+
+    init(blockLight: NSColor, blockDark: NSColor, pillLight: NSColor, pillDark: NSColor) {
+        self.blockLight = blockLight
+        self.blockDark  = blockDark
+        self.pillLight  = pillLight
+        self.pillDark   = pillDark
+    }
 }
 
 private extension CalloutData.CalloutType {
@@ -485,33 +480,34 @@ private extension CalloutData.CalloutType {
         switch self {
         case .info:
             return CalloutTypeColors(
-                blockLight: NSColor(hex: "#EFF6FF"),   // blue-50
+                blockLight: NSColor(hex: "#BFDBFE"),   // blue-200
                 blockDark:  NSColor(hex: "#172554"),   // blue-950
-                pillColor:  NSColor(hex: "#3B82F6")    // blue-500
+                pillColor:  NSColor(hex: "#2563EB")    // blue-600
             )
         case .warning:
             return CalloutTypeColors(
-                blockLight: NSColor(hex: "#FEFCE8"),   // yellow-50
+                blockLight: NSColor(hex: "#FEF08A"),   // yellow-200
                 blockDark:  NSColor(hex: "#422006"),   // yellow-950
-                pillColor:  NSColor(hex: "#EAB308")    // yellow-500
+                pillColor:  NSColor(hex: "#CA8A04")    // yellow-600
             )
         case .tip:
             return CalloutTypeColors(
-                blockLight: NSColor(hex: "#F0FDF4"),   // green-50
+                blockLight: NSColor(hex: "#BBF7D0"),   // green-200
                 blockDark:  NSColor(hex: "#052E16"),   // green-950
-                pillColor:  NSColor(hex: "#22C55E")    // green-500
+                pillColor:  NSColor(hex: "#16A34A")    // green-600
             )
         case .note:
             return CalloutTypeColors(
-                blockLight: NSColor(hex: "#FAFAF9"),   // stone-50
-                blockDark:  NSColor(hex: "#0C0A09"),   // stone-950
-                pillColor:  NSColor(hex: "#78716C")    // stone-500
+                blockLight: NSColor(hex: "#E9D5FF"),   // purple-200
+                blockDark:  NSColor(hex: "#3B0764"),   // purple-950
+                pillLight:  NSColor(hex: "#6B21A8"),    // purple-800
+                pillDark:   NSColor(hex: "#7E22CE")     // purple-700
             )
         case .important:
             return CalloutTypeColors(
-                blockLight: NSColor(hex: "#FEF2F2"),   // red-50
+                blockLight: NSColor(hex: "#FECACA"),   // red-200
                 blockDark:  NSColor(hex: "#450A0A"),   // red-950
-                pillColor:  NSColor(hex: "#EF4444")    // red-500
+                pillColor:  NSColor(hex: "#DC2626")    // red-600
             )
         }
     }

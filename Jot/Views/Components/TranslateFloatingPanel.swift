@@ -1,19 +1,19 @@
 //
-//  EditContentFloatingPanel.swift
+//  TranslateFloatingPanel.swift
 //  Jot
 //
-//  Floating panel for Edit Content AI results.
-//  Matches TranslateFloatingPanel / TextGenFloatingPanel design:
-//  solid bg, full-width header, bottom-fixed position, proper button tokens.
+//  Floating panel for AI Translation results.
+//  Matches TextGenFloatingPanel's design: solid bg, header row, bottom-fixed position.
 //
 
 import SwiftUI
 
-struct EditContentFloatingPanel: View {
+struct TranslateFloatingPanel: View {
     let state: AIPanelState
     let onReplace: () -> Void
+    let onCopy: () -> Void
     let onDismiss: () -> Void
-    let onRedo: () -> Void
+    let onRetranslate: () -> Void
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -36,14 +36,14 @@ struct EditContentFloatingPanel: View {
 
     private var headerRow: some View {
         HStack(spacing: 6) {
-            Image(AITool.editContent.aiIconName)
+            Image(AITool.translate.aiIconName)
                 .renderingMode(.template)
                 .resizable()
                 .scaledToFit()
                 .foregroundColor(Color("SecondaryTextColor"))
                 .frame(width: 18, height: 18)
 
-            Text(AITool.editContent.aiDisplayName.uppercased())
+            Text(AITool.translate.aiDisplayName.uppercased())
                 .font(FontManager.metadata(size: 11, weight: .semibold))
                 .foregroundColor(Color("SecondaryTextColor"))
                 .kerning(0.5)
@@ -69,11 +69,11 @@ struct EditContentFloatingPanel: View {
     @ViewBuilder
     private var contentArea: some View {
         switch state {
-        case .loading(.editContent):
+        case .loading(.translate):
             shimmerContent
 
-        case .editPreview(let revised, _, _, _):
-            previewContent(revised: revised)
+        case .translatePreview(let translated, _, _, _):
+            previewContent(translated: translated)
 
         case .error(let message):
             VStack(alignment: .leading, spacing: 8) {
@@ -115,9 +115,9 @@ struct EditContentFloatingPanel: View {
 
     // MARK: - Preview
 
-    private func previewContent(revised: String) -> some View {
+    private func previewContent(translated: String) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(revised)
+            Text(translated)
                 .font(FontManager.body(size: 14))
                 .foregroundColor(Color("PrimaryTextColor"))
                 .lineSpacing(3)
@@ -142,9 +142,17 @@ struct EditContentFloatingPanel: View {
                 .macPointingHandCursor()
                 .subtleHoverScale(1.04)
 
-            dismissButton
+            Button("Copy", action: onCopy)
+                .font(FontManager.heading(size: 12, weight: .semibold))
+                .foregroundColor(Color("PrimaryTextColor"))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
+                .background(Color("ButtonSecondaryBgColor"), in: Capsule())
+                .buttonStyle(.plain)
+                .macPointingHandCursor()
+                .subtleHoverScale(1.04)
 
-            Button("Redo", action: onRedo)
+            Button("Retranslate", action: onRetranslate)
                 .font(FontManager.heading(size: 12, weight: .semibold))
                 .foregroundColor(Color("PrimaryTextColor"))
                 .padding(.horizontal, 14)

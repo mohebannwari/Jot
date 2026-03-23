@@ -14,6 +14,13 @@ import UniformTypeIdentifiers
 // MARK: - Supporting Types & Attachments
 // (Moved from TodoRichTextEditor.swift — used exclusively by the Coordinator)
 
+/// Dynamic color for checked todo text — resolves at draw time so it adapts to light/dark.
+/// NSColor.labelColor.withAlphaComponent() freezes the catalog color at call time; this doesn't.
+private let checkedTodoTextColor = NSColor(name: nil) { appearance in
+    let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+    return (isDark ? NSColor.white : NSColor.black).withAlphaComponent(0.7)
+}
+
 extension NSAttributedString.Key {
     static let webClipTitle = NSAttributedString.Key("WebClipTitle")
     static let webClipDescription = NSAttributedString.Key("WebClipDescription")
@@ -33,6 +40,7 @@ extension NSAttributedString.Key {
     static let fileLinkPath = NSAttributedString.Key("FileLinkPath")
     static let fileLinkDisplayName = NSAttributedString.Key("FileLinkDisplayName")
     static let fileLinkBookmark = NSAttributedString.Key("FileLinkBookmark")
+    static let todoChecked = NSAttributedString.Key("TodoChecked")
 }
 
 enum AttachmentMarkup {
@@ -170,61 +178,151 @@ final class TypingAnimationLayoutManager: NSLayoutManager {
     // MARK: Drawing Override
 
     override func drawGlyphs(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
-        guard !activeAnimations.isEmpty,
-            let context = NSGraphicsContext.current?.cgContext
-        else {
+        if activeAnimations.isEmpty || NSGraphicsContext.current?.cgContext == nil {
             super.drawGlyphs(forGlyphRange: glyphsToShow, at: origin)
-            return
-        }
+        } else {
+            let context = NSGraphicsContext.current!.cgContext
+            let now = CACurrentMediaTime()
+            var currentIndex = glyphsToShow.location
+            let endIndex = NSMaxRange(glyphsToShow)
 
-        let now = CACurrentMediaTime()
-        var currentIndex = glyphsToShow.location
-        let endIndex = NSMaxRange(glyphsToShow)
+            while currentIndex < endIndex {
+                let charIndex = characterIndexForGlyph(at: currentIndex)
 
-        while currentIndex < endIndex {
-            let charIndex = characterIndexForGlyph(at: currentIndex)
+                if let startTime = activeAnimations[charIndex], now >= startTime {
+                    let elapsed = now - startTime
+                    let progress = min(elapsed / animationDuration, 1.0)
 
-            if let startTime = activeAnimations[charIndex], now >= startTime {
-                let elapsed = now - startTime
-                let progress = min(elapsed / animationDuration, 1.0)
+                    if progress < 1.0 {
+                        let easedProgress = easeOut(progress)
+                        let yOffset = initialYOffset * CGFloat(1.0 - easedProgress)
+                        let alpha = CGFloat(easedProgress)
 
-                if progress < 1.0 {
-                    let easedProgress = easeOut(progress)
-                    let yOffset = initialYOffset * CGFloat(1.0 - easedProgress)
-                    let alpha = CGFloat(easedProgress)
-
+                        context.saveGState()
+                        context.translateBy(x: 0, y: yOffset)
+                        context.setAlpha(alpha)
+                        super.drawGlyphs(
+                            forGlyphRange: NSRange(location: currentIndex, length: 1), at: origin)
+                        context.restoreGState()
+                    } else {
+                        activeAnimations.removeValue(forKey: charIndex)
+                        super.drawGlyphs(
+                            forGlyphRange: NSRange(location: currentIndex, length: 1), at: origin)
+                    }
+                    currentIndex += 1
+                } else if activeAnimations[charIndex] != nil {
+                    // Start time is in the future (staggered), draw invisible
                     context.saveGState()
-                    context.translateBy(x: 0, y: yOffset)
-                    context.setAlpha(alpha)
+                    context.setAlpha(0)
                     super.drawGlyphs(
                         forGlyphRange: NSRange(location: currentIndex, length: 1), at: origin)
                     context.restoreGState()
+                    currentIndex += 1
                 } else {
-                    activeAnimations.removeValue(forKey: charIndex)
+                    // Batch consecutive non-animating glyphs for performance
+                    var runEnd = currentIndex + 1
+                    while runEnd < endIndex {
+                        let nextCharIndex = characterIndexForGlyph(at: runEnd)
+                        if activeAnimations[nextCharIndex] != nil { break }
+                        runEnd += 1
+                    }
                     super.drawGlyphs(
-                        forGlyphRange: NSRange(location: currentIndex, length: 1), at: origin)
+                        forGlyphRange: NSRange(location: currentIndex, length: runEnd - currentIndex),
+                        at: origin)
+                    currentIndex = runEnd
                 }
-                currentIndex += 1
-            } else if activeAnimations[charIndex] != nil {
-                // Start time is in the future (staggered), draw invisible
+            }
+        }
+
+        // Draw squiggly strikethrough on top of rendered glyphs
+        drawSquigglyStrikethrough(forGlyphRange: glyphsToShow, at: origin)
+    }
+
+    // MARK: - Squiggly Strikethrough for Checked Todos
+
+    /// Draws a hand-drawn squiggly line through checked todo text.
+    /// Uses a seeded random based on character position so the wobble is stable across redraws.
+    private func drawSquigglyStrikethrough(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
+        guard let textStorage = textStorage,
+              let textContainer = textContainers.first,
+              let context = NSGraphicsContext.current?.cgContext
+        else { return }
+
+        let charRange = characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
+
+        textStorage.enumerateAttribute(.todoChecked, in: charRange, options: []) { value, attrRange, _ in
+            guard value as? Bool == true else { return }
+
+            // Trim trailing newlines/whitespace so the squiggly line only spans visible text
+            let nsString = textStorage.string as NSString
+            var trimmedEnd = NSMaxRange(attrRange)
+            while trimmedEnd > attrRange.location {
+                let ch = nsString.character(at: trimmedEnd - 1)
+                if ch == 0x0A || ch == 0x0D || ch == 0x20 || ch == 0x09 { trimmedEnd -= 1 }
+                else { break }
+            }
+            let trimmedRange = NSRange(location: attrRange.location, length: trimmedEnd - attrRange.location)
+            guard trimmedRange.length > 0 else { return }
+
+            let glyphRange = self.glyphRange(forCharacterRange: trimmedRange, actualCharacterRange: nil)
+            guard glyphRange.length > 0 else { return }
+
+            // Get the line fragment rects for this range (may span multiple visual lines)
+            self.enumerateLineFragments(forGlyphRange: glyphRange) { lineRect, usedRect, container, lineGlyphRange, stop in
+                // Intersect with our checked range to get the exact segment on this line
+                let intersection = NSIntersectionRange(glyphRange, lineGlyphRange)
+                guard intersection.length > 0 else { return }
+
+                let segmentRect = self.boundingRect(forGlyphRange: intersection, in: textContainer)
+                // Inset slightly so the line doesn't bleed outside the text bounds
+                let startX = origin.x + segmentRect.origin.x + 2
+                let endX = origin.x + segmentRect.origin.x + segmentRect.width - 1
+                let midY = origin.y + segmentRect.origin.y + segmentRect.height * 0.45
+
+                guard endX - startX > 4 else { return }
+
+                let path = NSBezierPath()
+                path.lineWidth = 1.6
+                path.lineCapStyle = .round
+                path.lineJoinStyle = .round
+
+                // Generate a squiggly line with deterministic wobble seeded by position
+                let segmentLength = endX - startX
+                let stepSize: CGFloat = 6.0
+                let steps = max(1, Int(ceil(segmentLength / stepSize)))
+
+                // Seed based on content hash for stable wobble (immune to position shifts)
+                let todoText = (textStorage.string as NSString).substring(with: attrRange)
+                var _contentHash: UInt64 = 5381
+                for scalar in todoText.unicodeScalars {
+                    _contentHash = _contentHash &* 33 &+ UInt64(scalar.value)
+                }
+                var rng = _contentHash
+
+                func nextWobble() -> CGFloat {
+                    rng = rng &* 6364136223846793005 &+ 1442695040888963407
+                    let normalized = CGFloat((rng >> 33) & 0x7FFF) / CGFloat(0x7FFF)
+                    return (normalized - 0.5) * 5.0  // wobble amplitude +/- 2.5pt
+                }
+
+                path.move(to: NSPoint(x: startX, y: midY + nextWobble()))
+
+                for i in 1...steps {
+                    let x = min(startX + CGFloat(i) * stepSize, endX)
+                    let wobble = nextWobble()
+
+                    // Use quadratic curves for organic hand-drawn feel
+                    let cpX = startX + (CGFloat(i) - 0.5) * stepSize
+                    let cpY = midY + nextWobble()
+                    path.curve(to: NSPoint(x: x, y: midY + wobble),
+                               controlPoint1: NSPoint(x: min(cpX, endX), y: cpY),
+                               controlPoint2: NSPoint(x: x, y: midY + wobble))
+                }
+
                 context.saveGState()
-                context.setAlpha(0)
-                super.drawGlyphs(
-                    forGlyphRange: NSRange(location: currentIndex, length: 1), at: origin)
+                NSColor.labelColor.setStroke()
+                path.stroke()
                 context.restoreGState()
-                currentIndex += 1
-            } else {
-                // Batch consecutive non-animating glyphs for performance
-                var runEnd = currentIndex + 1
-                while runEnd < endIndex {
-                    let nextCharIndex = characterIndexForGlyph(at: runEnd)
-                    if activeAnimations[nextCharIndex] != nil { break }
-                    runEnd += 1
-                }
-                super.drawGlyphs(
-                    forGlyphRange: NSRange(location: currentIndex, length: runEnd - currentIndex),
-                    at: origin)
-                currentIndex = runEnd
             }
         }
     }
@@ -402,6 +500,9 @@ final class CalloutSizeAttachmentCell: NSTextAttachmentCell {
 final class NoteCodeBlockAttachment: NSTextAttachment {
     var codeBlockData: CodeBlockData
     let codeBlockID = UUID()
+    /// Distinguishes "user dragged to minWidth" from "block created at minWidth because
+    /// container was unknown at deserialization." Prevents the snap-to-full-width bug.
+    var hasBeenUserResized: Bool = false
 
     init(codeBlockData: CodeBlockData) {
         self.codeBlockData = codeBlockData
@@ -492,10 +593,19 @@ final class DividerSizeAttachmentCell: NSTextAttachmentCell {
     }
 
     override func draw(withFrame cellFrame: NSRect, in controlView: NSView?) {
-        let baseY = cellFrame.midY
-        let startX = cellFrame.minX
-        let endX = cellFrame.maxX
-        let totalWidth = endX - startX
+        // Use live container width instead of the frozen cellFrame width,
+        // which may be stale from deserialization before layout completes.
+        let actualWidth: CGFloat
+        if let textView = controlView as? NSTextView,
+           let container = textView.textContainer {
+            actualWidth = container.containerSize.width
+        } else {
+            actualWidth = cellFrame.width
+        }
+        let drawFrame = NSRect(x: cellFrame.minX, y: cellFrame.minY, width: actualWidth, height: cellFrame.height)
+        let baseY = drawFrame.midY
+        let startX = drawFrame.minX
+        let endX = drawFrame.maxX
 
         let path = NSBezierPath()
         path.lineWidth = 0.9
@@ -928,6 +1038,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
     let bottomInset: CGFloat
     let focusRequestID: UUID?
     let editorInstanceID: UUID?
+    var readOnly: Bool = false
     var onNavigateToNote: ((UUID) -> Void)?
     private let unlimitedDimension = CGFloat.greatestFiniteMagnitude
 
@@ -936,11 +1047,11 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         textView.delegate = context.coordinator
         textView.actionDelegate = context.coordinator
         textView.editorInstanceID = editorInstanceID
-        textView.isEditable = true
+        textView.isEditable = !readOnly
         textView.isSelectable = true
         textView.isRichText = true
         textView.importsGraphics = false
-        textView.allowsUndo = true
+        textView.allowsUndo = !readOnly
         textView.backgroundColor = .clear
         textView.drawsBackground = false
         // Use Charter for body text as per design requirements
@@ -1113,7 +1224,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             text: $text,
             colorScheme: colorScheme,
             focusRequestID: focusRequestID,
-            editorInstanceID: editorInstanceID
+            editorInstanceID: editorInstanceID,
+            readOnly: readOnly
         )
     }
 
@@ -1259,7 +1371,12 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     let selectionHeight = selectionRect.height
 
                     // Convert to window coordinates for proper positioning
-                    let selectionRectInWindow = textView.convert(selectionRect, to: nil)
+                    // selectionRect is in text-container space; offset by textContainerOrigin
+                    // to get view-local coordinates before converting to window space.
+                    let selectionRectInView = selectionRect.offsetBy(
+                        dx: textView.textContainerOrigin.x,
+                        dy: textView.textContainerOrigin.y)
+                    let selectionRectInWindow = textView.convert(selectionRectInView, to: nil)
 
                     // Cache selection so Edit Content can use it even after focus shifts
                     lastKnownSelectionRange = selectedRange
@@ -1367,8 +1484,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             ThemeManager.currentBodyFontSize() * 1.5
         }
         private static let todoLineHeight: CGFloat = 24
-        private static let checkboxIconSize: CGFloat = 32
-        private static let checkboxAttachmentWidth: CGFloat = 22
+        private static let checkboxIconSize: CGFloat = 34
+        private static let checkboxAttachmentWidth: CGFloat = 30
         private static let baseBaselineOffset: CGFloat = 0.0
         private static let todoBaselineOffset: CGFloat = {
             return 0.0
@@ -1751,7 +1868,6 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             renderer.isOpaque = false
 
             guard let cgImage = renderer.cgImage else {
-                NSLog("📄 makeFileAttachment: FAILED to render tag image")
                 return fallbackAttributedString()
             }
 
@@ -1844,11 +1960,29 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             return nil
         }
 
-        init(text: Binding<String>, colorScheme: ColorScheme, focusRequestID: UUID?, editorInstanceID: UUID? = nil) {
+        let readOnly: Bool
+
+        init(text: Binding<String>, colorScheme: ColorScheme, focusRequestID: UUID?, editorInstanceID: UUID? = nil, readOnly: Bool = false) {
             self.textBinding = text
             self.currentColorScheme = colorScheme
             self.lastHandledFocusRequestID = focusRequestID
             self.editorInstanceID = editorInstanceID
+            self.readOnly = readOnly
+        }
+
+        /// Remove all overlay subviews immediately. Used by NoteSnapshotRenderer
+        /// to clean up overlays created for an offscreen (windowless) text view.
+        func removeAllOverlays() {
+            imageOverlays.values.forEach { $0.removeFromSuperview() }
+            imageOverlays.removeAll()
+            tableOverlays.values.forEach { $0.removeFromSuperview() }
+            tableOverlays.removeAll()
+            calloutOverlays.values.forEach { $0.removeFromSuperview() }
+            calloutOverlays.removeAll()
+            codeBlockOverlays.values.forEach { $0.removeFromSuperview() }
+            codeBlockOverlays.removeAll()
+            tabsOverlays.values.forEach { $0.removeFromSuperview() }
+            tabsOverlays.removeAll()
         }
 
         deinit {
@@ -2423,6 +2557,18 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 }
             }
 
+            // MARK: Text Generation -- insert generated text at cursor
+            let textGenInsert = NotificationCenter.default.addObserver(
+                forName: .aiTextGenInsert, object: nil, queue: .main
+            ) { [weak self] notification in
+                if let nid = notification.userInfo?["editorInstanceID"] as? UUID,
+                   let myID = self?.editorInstanceID, nid != myID { return }
+                guard let text = notification.object as? String else { return }
+                Task { @MainActor [weak self] in
+                    self?.insertTextAtCursor(text)
+                }
+            }
+
             // Sync menu state from SwiftUI → InlineNSTextView instance vars
             let syncMenuState = NotificationCenter.default.addObserver(
                 forName: .syncEditorMenuState, object: nil, queue: .main
@@ -2491,7 +2637,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 applyNotePickerSelection, navigateNoteLink,
                 performSearch, highlightSearch, clearSearch, replaceMatch, replaceAll,
                 proofreadShow, proofreadClear, proofreadApply, captureSelection,
-                editReplace, proofreadReplaceAll,
+                editReplace, proofreadReplaceAll, textGenInsert,
                 urlPasteMention, urlPasteSelectPlainLink, urlPasteDismiss,
                 codePasteSelectCodeBlock, codePasteSelectPlainText, codePasteDismissObserver,
                 applyColor, removeColor, applyHighlight, removeHighlight, setHighlightRange,
@@ -2778,11 +2924,17 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             guard let textView = self.textView,
                   let storage = textView.textStorage else { return }
 
+            NSAnimationContext.beginGrouping()
+            NSAnimationContext.current.duration = 0
+            isUpdating = true
+
             if original.isEmpty {
                 // Full-document replacement
                 let fullRange = NSRange(location: 0, length: storage.length)
                 if textView.shouldChangeText(in: fullRange, replacementString: replacement) {
+                    storage.beginEditing()
                     storage.replaceCharacters(in: fullRange, with: replacement)
+                    storage.endEditing()
                     textView.didChangeText()
                 }
             } else {
@@ -2792,10 +2944,15 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 guard found.location != NSNotFound else { return }
 
                 if textView.shouldChangeText(in: found, replacementString: replacement) {
+                    storage.beginEditing()
                     storage.replaceCharacters(in: found, with: replacement)
+                    storage.endEditing()
                     textView.didChangeText()
                 }
             }
+
+            isUpdating = false
+            NSAnimationContext.endGrouping()
             syncText()
         }
 
@@ -2840,10 +2997,29 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             if let eid = editorInstanceID { baseInfo["editorInstanceID"] = eid }
 
             guard lastKnownSelectionRange.length > 0 else {
+                // For zero-length selections (cursor), compute the cursor rect so
+                // overlays (e.g. text-gen shimmer) can position at the insertion point.
+                var cursorWindowRect = CGRect.zero
+                if let textView = self.textView,
+                   let layoutManager = textView.layoutManager,
+                   textView.textContainer != nil {
+                    let insertionPoint = textView.selectedRange().location
+                    if insertionPoint != NSNotFound && insertionPoint <= (textView.string as NSString).length {
+                        let glyphIndex = layoutManager.glyphIndexForCharacter(at: min(insertionPoint, max((textView.string as NSString).length - 1, 0)))
+                        let lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
+                        let cursorRect = CGRect(
+                            x: lineRect.origin.x + textView.textContainerOrigin.x,
+                            y: lineRect.origin.y + textView.textContainerOrigin.y,
+                            width: lineRect.width,
+                            height: lineRect.height
+                        )
+                        cursorWindowRect = textView.convert(cursorRect, to: nil)
+                    }
+                }
                 var info = baseInfo
-                info["nsRange"] = NSRange(location: NSNotFound, length: 0)
+                info["nsRange"] = NSRange(location: textView?.selectedRange().location ?? NSNotFound, length: 0)
                 info["selectedText"] = ""
-                info["windowRect"] = CGRect.zero
+                info["windowRect"] = cursorWindowRect
                 NotificationCenter.default.post(
                     name: .aiEditCaptureSelection,
                     object: nil,
@@ -3188,8 +3364,6 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 if let filename = await ImageStorageManager.shared.saveImage(from: url) {
                     insertImage(filename: filename)
                     return
-                } else {
-                    NSLog("📄 ingestDroppedURL: Failed to persist image at %@", url.path)
                 }
             }
 
@@ -3206,7 +3380,6 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 return
             }
 
-            NSLog("📄 ingestDroppedURL: Unhandled file type for %@", url.path)
         }
 
         /// Parse a CSV file into NoteTableData for inline table insertion.
@@ -3326,7 +3499,6 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     ) {
                         let accessed = resolvedURL.startAccessingSecurityScopedResource()
                         guard accessed else {
-                            NSLog("FileLinkOpen: startAccessingSecurityScopedResource failed for %@", path)
                             Self.promptRelink(originalPath: path, textView: textView, charIndex: charIndex)
                             return true
                         }
@@ -3338,17 +3510,13 @@ struct TodoEditorRepresentable: NSViewRepresentable {
 
                         // Use async open so security scope stays active until handoff completes
                         let config = NSWorkspace.OpenConfiguration()
-                        NSWorkspace.shared.open(resolvedURL, configuration: config) { _, error in
+                        NSWorkspace.shared.open(resolvedURL, configuration: config) { _, _ in
                             resolvedURL.stopAccessingSecurityScopedResource()
-                            if let error {
-                                NSLog("FileLinkOpen: NSWorkspace.open failed: %@", error.localizedDescription)
-                            }
                         }
                         return true
                     }
                 }
                 // Bookmark missing or resolution failed — prompt user to re-select the file
-                NSLog("FileLinkOpen: bookmark empty or resolution failed for %@", path)
                 Self.promptRelink(originalPath: path, textView: textView, charIndex: charIndex)
                 return true
             }
@@ -3366,9 +3534,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 )
                 let base64 = freshBookmark.base64EncodedString()
                 storage.addAttribute(.fileLinkBookmark, value: base64, range: NSRange(location: charIndex, length: 1))
-                NSLog("FileLinkOpen: refreshed stale bookmark for %@", url.lastPathComponent)
             } catch {
-                NSLog("FileLinkOpen: failed to refresh bookmark — %@", error.localizedDescription)
+                // Bookmark refresh failed — stale bookmark will trigger re-link prompt on next open
             }
         }
 
@@ -3425,15 +3592,12 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                             )
                             storage.addAttribute(.attachment, value: updated, range: NSRange(location: charIndex, length: 1))
                         }
-                        NSLog("FileLinkOpen: re-linked %@ via user selection", url.lastPathComponent)
+                        // Successfully re-linked file via user selection
                     }
 
                     // Now open the file
                     let config = NSWorkspace.OpenConfiguration()
-                    NSWorkspace.shared.open(url, configuration: config) { _, error in
-                        if let error {
-                            NSLog("FileLinkOpen: re-linked open failed: %@", error.localizedDescription)
-                        }
+                    NSWorkspace.shared.open(url, configuration: config) { _, _ in
                     }
                 }
             }
@@ -3601,6 +3765,50 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             _ textView: NSTextView, shouldChangeTextIn affectedCharRange: NSRange,
             replacementString: String?
         ) -> Bool {
+            // Block-level attachments own their entire paragraph — no text beside them.
+            // When the user tries to type on a line containing a block attachment,
+            // redirect the insertion to a new line after the block.
+            if let replacement = replacementString, !replacement.isEmpty,
+               replacement != "\n",
+               let storage = textView.textStorage, storage.length > 0 {
+                let loc = max(0, min(storage.length - 1, affectedCharRange.location))
+                let paraRange = (storage.string as NSString).paragraphRange(
+                    for: NSRange(location: loc, length: 0))
+                var hasBlockAttachment = false
+                storage.enumerateAttribute(.attachment, in: paraRange, options: []) { value, _, stop in
+                    if value is NoteCalloutAttachment
+                        || value is NoteCodeBlockAttachment
+                        || value is NoteTableAttachment
+                        || value is NoteTabsAttachment {
+                        hasBlockAttachment = true
+                        stop.pointee = true
+                    }
+                }
+                if hasBlockAttachment {
+                    // Insert a newline after the block paragraph, then insert the typed text there
+                    let afterBlock = NSMaxRange(paraRange)
+                    isUpdating = true
+                    storage.beginEditing()
+                    // Ensure there's a newline at the end of the block paragraph to land on
+                    let insertPoint: Int
+                    if afterBlock <= storage.length {
+                        let attrs = Self.baseTypingAttributes(for: currentColorScheme)
+                        storage.insert(NSAttributedString(string: "\n", attributes: attrs), at: afterBlock)
+                        insertPoint = afterBlock + 1
+                    } else {
+                        insertPoint = afterBlock
+                    }
+                    // Insert the replacement text on the new line
+                    let attrs = Self.baseTypingAttributes(for: currentColorScheme)
+                    storage.insert(NSAttributedString(string: replacement, attributes: attrs), at: insertPoint)
+                    storage.endEditing()
+                    textView.setSelectedRange(NSRange(location: insertPoint + replacement.utf16.count, length: 0))
+                    isUpdating = false
+                    syncText()
+                    return false
+                }
+            }
+
             // Check for "@" to trigger note picker
             if replacementString == "@" {
                 showNotePickerAtCursor(
@@ -4360,7 +4568,20 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     attributes: Self.baseTypingAttributes(for: currentColorScheme)))
             syncText()
         }
-        
+
+        private func insertTextAtCursor(_ text: String) {
+            guard let textView = textView else { return }
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return }
+
+            replaceSelection(
+                with: NSAttributedString(
+                    string: trimmed,
+                    attributes: Self.baseTypingAttributes(for: currentColorScheme)))
+
+            syncText()
+        }
+
         private func insertImage(filename: String) {
             guard let textView = textView,
                   let textStorage = textView.textStorage else { return }
@@ -4580,7 +4801,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             var containerWidth = textView?.textContainer?.containerSize.width ?? CodeBlockOverlayView.minWidth
             if containerWidth < 1 { containerWidth = CodeBlockOverlayView.minWidth }
             let blockWidth = containerWidth
-            let size = CGSize(width: blockWidth, height: CodeBlockOverlayView.defaultHeight)
+            let blockHeight = CodeBlockOverlayView.heightForData(codeBlockData, width: blockWidth)
+            let size = CGSize(width: blockWidth, height: blockHeight)
             let attachment = NoteCodeBlockAttachment(codeBlockData: codeBlockData)
             attachment.attachmentCell = CodeBlockSizeAttachmentCell(size: size)
             attachment.bounds = CGRect(origin: .zero, size: size)
@@ -4779,7 +5001,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         }
 
         private func syncText() {
-            guard let textView = textView else { return }
+            guard let textView = textView, !readOnly else { return }
             isUpdating = true
             styleTodoParagraphs()
             lastSerialized = serialize()
@@ -5206,6 +5428,13 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     calloutOverlays[id] = overlay
                 }
 
+                // Disable interaction in read-only mode (version preview)
+                if readOnly {
+                    overlay.onDataChanged = nil
+                    overlay.onDeleteCallout = nil
+                    overlay.onWidthChanged = nil
+                }
+
                 overlay.currentContainerWidth = containerW
                 overlay.frame = overlayRect.integral
             }
@@ -5238,27 +5467,25 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 let id = ObjectIdentifier(attachment)
                 seenIDs.insert(id)
 
-                // Clamp width to valid range; preserve user-resized width if within bounds.
-                // Blocks at minWidth after deserialization (container was unknown) get expanded
-                // to full container width — minWidth is a floor for user resizing, not a default.
+                // Clamp width to valid range; use dynamic height based on content.
+                // Only auto-expand when hasBeenUserResized == false AND width is below minimum.
+                // Once user has resized, their width is respected.
                 let containerW = max(textContainer.containerSize.width, 100)
                 let effectiveMinCode = min(CodeBlockOverlayView.minWidth, containerW)
                 let currentWidth = attachment.bounds.width
-                let expectedHeight = CodeBlockOverlayView.defaultHeight
-                let atMinFromDeserialization = currentWidth <= effectiveMinCode && containerW > effectiveMinCode
-                let needsCorrection = currentWidth < effectiveMinCode
-                    || currentWidth > containerW
-                    || abs(attachment.bounds.height - expectedHeight) > 1
-                    || atMinFromDeserialization
-                if needsCorrection {
+                let expectedHeight = CodeBlockOverlayView.heightForData(attachment.codeBlockData, width: currentWidth)
+                let needsInitialWidth = currentWidth < effectiveMinCode && !attachment.hasBeenUserResized
+                let needsWidthClamp = currentWidth > containerW
+                let needsHeightUpdate = abs(attachment.bounds.height - expectedHeight) > 1
+                if needsInitialWidth || needsWidthClamp || needsHeightUpdate {
                     let correctedWidth: CGFloat
-                    if atMinFromDeserialization {
-                        // Block was created at fallback width — expand to fill container
+                    if needsInitialWidth {
                         correctedWidth = containerW
                     } else {
                         correctedWidth = max(effectiveMinCode, min(containerW, currentWidth))
                     }
-                    let newSize = CGSize(width: correctedWidth, height: expectedHeight)
+                    let correctedHeight = CodeBlockOverlayView.heightForData(attachment.codeBlockData, width: correctedWidth)
+                    let newSize = CGSize(width: correctedWidth, height: correctedHeight)
                     attachment.attachmentCell = CodeBlockSizeAttachmentCell(size: newSize)
                     attachment.bounds = CGRect(origin: .zero, size: newSize)
                     layoutManager.invalidateLayout(forCharacterRange: range, actualCharacterRange: nil)
@@ -5284,14 +5511,20 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     overlay = CodeBlockOverlayView(codeBlockData: attachment.codeBlockData)
                     overlay.parentTextView = textView
 
-                    overlay.onDataChanged = { [weak self, weak textStorage, weak attachment] newData in
-                        guard let self = self, let ts = textStorage, let att = attachment else { return }
+                    overlay.onDataChanged = { [weak self, weak textStorage, weak layoutManager, weak attachment] newData in
+                        guard let self = self, let ts = textStorage, let lm = layoutManager, let att = attachment else { return }
                         att.codeBlockData = newData
+                        // Recalculate height when content changes (lines added/removed)
+                        let newHeight = CodeBlockOverlayView.heightForData(newData, width: att.bounds.width)
+                        if abs(att.bounds.height - newHeight) > 1 {
+                            let newSize = CGSize(width: att.bounds.width, height: newHeight)
+                            att.attachmentCell = CodeBlockSizeAttachmentCell(size: newSize)
+                            att.bounds = CGRect(origin: .zero, size: newSize)
+                        }
                         let fr = NSRange(location: 0, length: ts.length)
                         ts.enumerateAttribute(.attachment, in: fr, options: []) { val, charRange, stop in
                             if val as AnyObject === att {
-                                textView.layoutManager?.invalidateLayout(
-                                    forCharacterRange: charRange, actualCharacterRange: nil)
+                                lm.invalidateLayout(forCharacterRange: charRange, actualCharacterRange: nil)
                                 stop.pointee = true
                             }
                         }
@@ -5332,9 +5565,11 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     overlay.onWidthChanged = { [weak textStorage, weak layoutManager, weak attachment, weak textView] newWidth in
                         guard let ts = textStorage, let lm = layoutManager, let att = attachment,
                               let tc = textView?.textContainer else { return }
+                        att.hasBeenUserResized = true
                         let effMin = min(CodeBlockOverlayView.minWidth, tc.containerSize.width)
                         let clamped = max(effMin, min(newWidth, tc.containerSize.width))
-                        let newSize = CGSize(width: clamped, height: CodeBlockOverlayView.defaultHeight)
+                        let newHeight = CodeBlockOverlayView.heightForData(att.codeBlockData, width: clamped)
+                        let newSize = CGSize(width: clamped, height: newHeight)
                         att.attachmentCell = CodeBlockSizeAttachmentCell(size: newSize)
                         att.bounds = CGRect(origin: .zero, size: newSize)
                         let fr = NSRange(location: 0, length: ts.length)
@@ -5348,6 +5583,13 @@ struct TodoEditorRepresentable: NSViewRepresentable {
 
                     hostView.addSubview(overlay)
                     codeBlockOverlays[id] = overlay
+                }
+
+                // Disable interaction in read-only mode (version preview)
+                if readOnly {
+                    overlay.onDataChanged = nil
+                    overlay.onDeleteCodeBlock = nil
+                    overlay.onWidthChanged = nil
                 }
 
                 overlay.currentContainerWidth = containerW
@@ -5645,10 +5887,11 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     needsFixing = true
                 }
 
-                // Check text color — skip ranges with a user-intentional custom color or block quote
+                // Check text color — skip ranges with a user-intentional custom color, block quote, or checked todo
                 let hasCustomColor = attributes[TextFormattingManager.customTextColorKey] as? Bool == true
                 let isBlockQuote = attributes[.blockQuote] as? Bool == true
-                if !hasCustomColor && !isBlockQuote {
+                let isTodoChecked = attributes[.todoChecked] as? Bool == true
+                if !hasCustomColor && !isBlockQuote && !isTodoChecked {
                     if let currentColor = attributes[.foregroundColor] as? NSColor {
                         if !currentColor.isEqual(expectedColor) {
                             fixedAttributes[.foregroundColor] = expectedColor
@@ -5817,6 +6060,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 }
 
                 if isTodoParagraph {
+                    var checkedCell: TodoCheckboxAttachmentCell?
                     textStorage.enumerateAttribute(.attachment, in: substringRange, options: [])
                     { value, attachmentRange, _ in
                         guard let attachment = value as? NSTextAttachment,
@@ -5829,6 +6073,24 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                             .baselineOffset, value: Self.checkboxBaselineOffset,
                             range: attachmentRange)
                         cell.invalidateAppearance()
+                        checkedCell = cell
+                    }
+
+                    // Enforce checked todo text styling on the text portion
+                    // Todo structure: [attachment][space][space][text...] — skip all 3 prefix chars
+                    if let cell = checkedCell {
+                        let textStart = substringRange.location + 3
+                        let textEnd = NSMaxRange(substringRange)
+                        if textStart < textEnd {
+                            let textRange = NSRange(location: textStart, length: textEnd - textStart)
+                            if cell.isChecked {
+                                textStorage.addAttribute(.todoChecked, value: true, range: textRange)
+                                textStorage.addAttribute(.foregroundColor, value: checkedTodoTextColor, range: textRange)
+                            } else {
+                                textStorage.removeAttribute(.todoChecked, range: textRange)
+                                textStorage.addAttribute(.foregroundColor, value: NSColor.labelColor, range: textRange)
+                            }
+                        }
                     }
                 }
             }
@@ -5836,8 +6098,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         }
 
         private func isInTodoParagraph(range: NSRange) -> Bool {
-            guard let storage = textView?.textStorage else { return false }
-            let location = max(0, min(storage.length, range.location))
+            guard let storage = textView?.textStorage, storage.length > 0 else { return false }
+            let location = max(0, min(storage.length - 1, range.location))
             let paragraphRange = (storage.string as NSString).paragraphRange(
                 for: NSRange(location: location, length: 0))
             var isTodo = false
@@ -5980,7 +6242,6 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                         output.append("[[image|||\(filename)]]")
                     } else {
                         output.append((storage.string as NSString).substring(with: range))
-                        NSLog("⚠️ Serialization CRITICAL: Could not find filename for image attachment. Data may be lost.")
                     }
                 } else {
                     // Ordered list prefix: the "N. " characters carry orderedListNumber
@@ -6704,26 +6965,35 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     flushBuffer()
                     let prefixLen = "[[color|".count
                     let afterPrefix = text.index(index, offsetBy: prefixLen)
-                    if text.distance(from: afterPrefix, to: text.endIndex) >= 8 {
-                        let hexEnd = text.index(afterPrefix, offsetBy: 6)
-                        let hex = String(text[afterPrefix..<hexEnd])
-                        if text[hexEnd...].hasPrefix("]]") {
-                            let contentStart = text.index(hexEnd, offsetBy: 2)
-                            if let closingRange = text[contentStart...].range(of: "[[/color]]") {
-                                let coloredText = String(text[contentStart..<closingRange.lowerBound])
-                                var attrs = Self.formattingAttributes(
-                                    base: currentColorScheme,
-                                    heading: fmtHeading,
-                                    bold: fmtBold, italic: fmtItalic,
-                                    underline: fmtUnderline, strikethrough: fmtStrikethrough,
-                                    alignment: fmtAlignment)
-                                attrs[.foregroundColor] = TextFormattingManager.nsColorFromHex(hex)
-                                attrs[TextFormattingManager.customTextColorKey] = true
-                                result.append(NSAttributedString(string: coloredText, attributes: attrs))
-                                index = closingRange.upperBound
-                                lastWasWebClip = false
-                                continue
-                            }
+                    // Accept both 6-char (RGB) and 8-char (RGBA) hex values
+                    let remaining = text.distance(from: afterPrefix, to: text.endIndex)
+                    var parsedHex: String?
+                    var hexEnd: String.Index?
+                    if remaining >= 10, // 8 hex + ]]
+                       text[text.index(afterPrefix, offsetBy: 8)...].hasPrefix("]]") {
+                        hexEnd = text.index(afterPrefix, offsetBy: 8)
+                        parsedHex = String(text[afterPrefix..<hexEnd!])
+                    } else if remaining >= 8, // 6 hex + ]]
+                              text[text.index(afterPrefix, offsetBy: 6)...].hasPrefix("]]") {
+                        hexEnd = text.index(afterPrefix, offsetBy: 6)
+                        parsedHex = String(text[afterPrefix..<hexEnd!])
+                    }
+                    if let hex = parsedHex, let hEnd = hexEnd {
+                        let contentStart = text.index(hEnd, offsetBy: 2)
+                        if let closingRange = text[contentStart...].range(of: "[[/color]]") {
+                            let coloredText = String(text[contentStart..<closingRange.lowerBound])
+                            var attrs = Self.formattingAttributes(
+                                base: currentColorScheme,
+                                heading: fmtHeading,
+                                bold: fmtBold, italic: fmtItalic,
+                                underline: fmtUnderline, strikethrough: fmtStrikethrough,
+                                alignment: fmtAlignment)
+                            attrs[.foregroundColor] = TextFormattingManager.nsColorFromHex(hex)
+                            attrs[TextFormattingManager.customTextColorKey] = true
+                            result.append(NSAttributedString(string: coloredText, attributes: attrs))
+                            index = closingRange.upperBound
+                            lastWasWebClip = false
+                            continue
                         }
                     }
                     // Malformed -- fall through to single-char handler
@@ -6781,9 +7051,9 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             style.maximumLineHeight = scaledHeight
             style.paragraphSpacing = 10
             style.firstLineHeadIndent = 0
-            // Indent wrapped lines to align with text after checkbox + 2 spaces
-            // checkboxAttachmentWidth (22) + approximate width of 2 spaces (~14pt at body size)
-            style.headIndent = checkboxAttachmentWidth + 14
+            // Indent wrapped lines to align with text after checkbox
+            // checkboxAttachmentWidth (28) + approximate width of 2 spaces (~14pt at body size)
+            style.headIndent = checkboxAttachmentWidth + 8
             return style
         }
 
@@ -6914,7 +7184,10 @@ struct TodoEditorRepresentable: NSViewRepresentable {
 
         @available(macOS 15.0, *)
         func textViewWritingToolsDidEnd(_ textView: NSTextView) {
-            // Writing Tools finished - textDidChange will handle summary detection
+            // Writing Tools may strip custom attributes (todoChecked, foregroundColor)
+            // from todo paragraphs while preserving the attachment cells themselves.
+            // Re-apply checked styling so the visual state matches the cell's isChecked flag.
+            styleTodoParagraphs()
         }
     }
 }
@@ -8049,10 +8322,16 @@ final class InlineNSTextView: NSTextView {
 
 private final class TodoCheckboxAttachmentCell: NSTextAttachmentCell {
     var isChecked: Bool
-    private let size = NSSize(width: 20, height: 32)
-    private let checkSize: CGFloat = 16
-    private let cornerRadius: CGFloat = 8  // checkSize / 2 → fully circular
+    private let size = NSSize(width: 30, height: 34)
+    private let checkSize: CGFloat = 18
+    private let cornerRadius: CGFloat = 9  // checkSize / 2 → fully circular
     private let borderWidth: CGFloat = 1.5
+
+    // Checkmark pen-stroke animation
+    private var checkAnimationStart: CFTimeInterval?
+    private weak var animatingTextView: NSTextView?
+    private var animationTimer: Timer?
+    private let checkAnimationDuration: CFTimeInterval = 0.3
 
     init(isChecked: Bool = false) {
         self.isChecked = isChecked
@@ -8062,6 +8341,10 @@ private final class TodoCheckboxAttachmentCell: NSTextAttachmentCell {
     required init(coder: NSCoder) {
         self.isChecked = false
         super.init(coder: coder)
+    }
+
+    deinit {
+        animationTimer?.invalidate()
     }
 
     override var cellSize: NSSize { size }
@@ -8098,6 +8381,34 @@ private final class TodoCheckboxAttachmentCell: NSTextAttachmentCell {
 
         if textView.shouldChangeText(in: attachmentRange, replacementString: nil) {
             isChecked.toggle()
+
+            // Animate the checkmark being drawn
+            if isChecked {
+                startCheckAnimation(in: textView)
+            } else {
+                stopCheckAnimation()
+            }
+
+            // Apply/remove checked styling on the todo text (everything after checkbox on same paragraph)
+            // Todo structure: [attachment][space][space][text...] — skip all 3 prefix chars
+            let paragraphRange = (storage.string as NSString).paragraphRange(for: attachmentRange)
+            let textStart = charIndex + 3
+            let textEnd = NSMaxRange(paragraphRange)
+            if textStart < textEnd {
+                let textRange = NSRange(location: textStart, length: textEnd - textStart)
+                storage.beginEditing()
+                if isChecked {
+                    // Mark text as checked: dimmed opacity + squiggly strikethrough marker
+                    storage.addAttribute(.todoChecked, value: true, range: textRange)
+                    storage.addAttribute(.foregroundColor, value: checkedTodoTextColor, range: textRange)
+                } else {
+                    // Remove checked styling: restore full opacity + remove strikethrough marker
+                    storage.removeAttribute(.todoChecked, range: textRange)
+                    storage.addAttribute(.foregroundColor, value: NSColor.labelColor, range: textRange)
+                }
+                storage.endEditing()
+            }
+
             // Force re-render of the attachment cell image
             storage.edited(.editedAttributes, range: attachmentRange, changeInLength: 0)
             textView.didChangeText()
@@ -8107,6 +8418,31 @@ private final class TodoCheckboxAttachmentCell: NSTextAttachmentCell {
     }
 
     func invalidateAppearance() {}
+
+    // MARK: - Checkmark Animation
+
+    private func startCheckAnimation(in textView: NSTextView) {
+        checkAnimationStart = CACurrentMediaTime()
+        animatingTextView = textView
+        animationTimer?.invalidate()
+        animationTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 120.0, repeats: true) { [weak self] timer in
+            guard let self = self else { timer.invalidate(); return }
+            self.animatingTextView?.needsDisplay = true
+            if let start = self.checkAnimationStart,
+               CACurrentMediaTime() - start > self.checkAnimationDuration {
+                timer.invalidate()
+                self.animationTimer = nil
+                self.checkAnimationStart = nil
+                self.animatingTextView?.needsDisplay = true
+            }
+        }
+    }
+
+    private func stopCheckAnimation() {
+        animationTimer?.invalidate()
+        animationTimer = nil
+        checkAnimationStart = nil
+    }
 
     // MARK: - Rendering
 
@@ -8134,17 +8470,55 @@ private final class TodoCheckboxAttachmentCell: NSTextAttachmentCell {
                 accentColor.setFill()
                 fillPath.fill()
 
-                // SF Symbol checkmark
-                if let symbolImage = NSImage(systemSymbolName: "checkmark", accessibilityDescription: nil) {
-                    let sizeConfig = NSImage.SymbolConfiguration(pointSize: 9, weight: .bold)
-                    let colorConfig = NSImage.SymbolConfiguration(paletteColors: [NSColor(named: "ButtonPrimaryTextColor") ?? .white])
-                    if let configured = symbolImage.withSymbolConfiguration(sizeConfig.applying(colorConfig)) {
-                        let symSize = configured.size
-                        let symX = xInset + (checkSize - symSize.width) / 2
-                        let symY = yInset + (checkSize - symSize.height) / 2
-                        configured.draw(in: NSRect(x: symX, y: symY, width: symSize.width, height: symSize.height))
-                    }
+                // Animated pen-stroke checkmark
+                // Three points: start (left-mid), valley (bottom of V), end (top-right)
+                // Coordinate system: origin bottom-left, y increases upward
+                let p1 = NSPoint(x: checkRect.minX + checkSize * 0.32,
+                                 y: checkRect.minY + checkSize * 0.54)
+                let p2 = NSPoint(x: checkRect.minX + checkSize * 0.46,
+                                 y: checkRect.minY + checkSize * 0.32)
+                let p3 = NSPoint(x: checkRect.minX + checkSize * 0.70,
+                                 y: checkRect.minY + checkSize * 0.70)
+
+                let seg1Len = hypot(p2.x - p1.x, p2.y - p1.y)
+                let seg2Len = hypot(p3.x - p2.x, p3.y - p2.y)
+                let totalLen = seg1Len + seg2Len
+
+                // Calculate animation progress (1.0 = fully drawn)
+                var progress: CGFloat = 1.0
+                if let start = checkAnimationStart {
+                    let t = min(CGFloat((CACurrentMediaTime() - start) / checkAnimationDuration), 1.0)
+                    // Cubic ease-out: fast start, gentle settle
+                    let inv = 1.0 - t
+                    progress = 1.0 - inv * inv * inv
                 }
+
+                let drawDist = progress * totalLen
+
+                let checkPath = NSBezierPath()
+                checkPath.lineWidth = 1.5
+                checkPath.lineCapStyle = .round
+                checkPath.lineJoinStyle = .round
+                checkPath.move(to: p1)
+
+                if drawDist <= seg1Len {
+                    // Still drawing the down-stroke
+                    let frac = drawDist / seg1Len
+                    checkPath.line(to: NSPoint(
+                        x: p1.x + (p2.x - p1.x) * frac,
+                        y: p1.y + (p2.y - p1.y) * frac))
+                } else {
+                    // Down-stroke complete, drawing the up-stroke
+                    checkPath.line(to: p2)
+                    let frac = (drawDist - seg1Len) / seg2Len
+                    checkPath.line(to: NSPoint(
+                        x: p2.x + (p3.x - p2.x) * frac,
+                        y: p2.y + (p3.y - p2.y) * frac))
+                }
+
+                let checkColor = NSColor(named: "ButtonPrimaryTextColor") ?? .white
+                checkColor.setStroke()
+                checkPath.stroke()
             } else {
                 // Empty circle with border
                 let fillPath = NSBezierPath(roundedRect: checkRect, xRadius: cornerRadius, yRadius: cornerRadius)

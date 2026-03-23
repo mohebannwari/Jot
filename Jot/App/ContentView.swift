@@ -657,6 +657,9 @@ struct ContentView: View {
             }
         }
         .onChange(of: anyPanelOverlayActive) { TodoRichTextEditor.isPanelOverlayActive = $1 }
+        .onChange(of: selectedNote) { _, _ in
+            dismissPreviewInstantly()
+        }
         .onChange(of: themeManager.noteSortOrder) { _, _ in
             notesManager.refreshSorting()
         }
@@ -867,6 +870,18 @@ struct ContentView: View {
         }
     }
 
+    /// Kill the preview card immediately — no delays, no animation.
+    /// Called when the user clicks a note (selectedNote changes).
+    private func dismissPreviewInstantly() {
+        previewHoverWorkItem?.cancel()
+        previewHoverWorkItem = nil
+        previewDismissWorkItem?.cancel()
+        previewDismissWorkItem = nil
+        isHoveringPreviewCard = false
+        isPreviewVisible = false
+        previewNote = nil
+    }
+
     @ViewBuilder
     private func notePreviewOverlay(geometry: GeometryProxy, visibleSidebarWidth: CGFloat) -> some View {
         if let note = previewNote {
@@ -1070,16 +1085,28 @@ struct ContentView: View {
     @ViewBuilder
     private func versionHistoryOverlay(for note: Note, pane: SplitPickerPane = .primary) -> some View {
         if isVersionHistoryVisible && versionHistoryPane == pane {
-            NoteVersionHistoryPanel(
-                noteID: note.id,
-                isPresented: $isVersionHistoryVisible,
-                previewingVersion: $previewingVersion,
-                onRestore: { version in
-                    restoreNoteVersion(version, for: note)
-                }
-            )
-            .padding(.trailing, 8)
-            .padding(.vertical, 8)
+            ZStack(alignment: .trailing) {
+                // Tap-outside scrim to dismiss the panel
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            previewingVersion = nil
+                            isVersionHistoryVisible = false
+                        }
+                    }
+
+                NoteVersionHistoryPanel(
+                    noteID: note.id,
+                    isPresented: $isVersionHistoryVisible,
+                    previewingVersion: $previewingVersion,
+                    onRestore: { version in
+                        restoreNoteVersion(version, for: note)
+                    }
+                )
+                .padding(.trailing, 8)
+                .padding(.vertical, 8)
+            }
             .transition(.move(edge: .trailing).combined(with: .opacity))
         }
     }
@@ -2561,11 +2588,13 @@ struct ContentView: View {
     }
 
     /// Read-only preview of a version's content shown in the detail pane.
+    /// Uses the full rich text editor in read-only mode so formatting,
+    /// callout blocks, code blocks, and other block types render faithfully.
     @ViewBuilder
     private func versionPreviewPane(version: NoteVersion) -> some View {
-        ScrollView(.vertical, showsIndicators: false) {
+        VStack(alignment: .leading, spacing: 0) {
+            // Header: timestamp badge + title
             VStack(alignment: .leading, spacing: 8) {
-                // Version timestamp badge
                 Text(version.createdAt, format: .dateTime.month(.abbreviated).day().year().hour().minute())
                     .font(FontManager.heading(size: 11, weight: .medium))
                     .foregroundColor(Color("SettingsPlaceholderTextColor"))
@@ -2582,30 +2611,21 @@ struct ContentView: View {
                         .tracking(-0.4)
                         .foregroundColor(Color("PrimaryTextColor"))
                 }
-
-                Text(stripMarkup(version.content))
-                    .font(.system(size: ThemeManager.currentBodyFontSize()))
-                    .foregroundColor(Color("PrimaryTextColor"))
-                    .lineSpacing(ThemeManager.currentLineSpacing().multiplier)
-                    .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding(.top, 80)
             .padding(.horizontal, 48)
-            .padding(.bottom, 40)
+
+            // Rich text body rendered through the full editor pipeline
+            TodoEditorRepresentable(
+                text: .constant(version.content),
+                colorScheme: colorScheme,
+                bottomInset: 0,
+                focusRequestID: nil,
+                editorInstanceID: nil,
+                readOnly: true
+            )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private func stripMarkup(_ content: String) -> String {
-        var text = content
-        let patterns = [
-            #"\[\[/?[a-z0-9:]+(?:\|[^\]]*?)?\]\]"#,
-            #"\[[ x]\]"#,
-        ]
-        for pattern in patterns {
-            text = text.replacingOccurrences(of: pattern, with: "", options: .regularExpression)
-        }
-        return text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     // MARK: - Note Lock

@@ -41,7 +41,7 @@ final class TabsContainerOverlayView: NSView {
     // MARK: - Data
 
     var tabsData: TabsContainerData {
-        didSet { rebuildTabsRow(); updateContentText() }
+        didSet { rebuildTabsRow(); updateContentText(); needsLayout = true }
     }
 
     weak var parentTextView: NSTextView?
@@ -262,7 +262,9 @@ final class TabsContainerOverlayView: NSView {
             }
         }
 
-        layoutChipsWithOverflow()
+        // Don't call layoutChipsWithOverflow() here — tabsRowView.bounds may be stale
+        // when tabsData.didSet fires before the overlay receives its new frame.
+        // layout() will call layoutChipsWithOverflow() with the correct width.
     }
 
     /// Reposition existing chips and dividers without recreating them (used during live rename)
@@ -568,47 +570,26 @@ final class TabsContainerOverlayView: NSView {
             : NSColor.white
     }
 
-    /// Match settings tile border: black 8% (light) / white 6% (dark)
-    private static func borderColor(isDark: Bool) -> NSColor {
+    /// bg/block-container: stone-300 (light) / stone-800 (dark) — from Figma variable tokens
+    private static func containerColor(isDark: Bool) -> NSColor {
         isDark
-            ? NSColor(white: 1.0, alpha: 0.06)
-            : NSColor(white: 0.0, alpha: 0.08)
+            ? NSColor(srgbRed: 41/255, green: 37/255, blue: 36/255, alpha: 1)    // #292524
+            : NSColor(srgbRed: 214/255, green: 211/255, blue: 209/255, alpha: 1) // #D6D3D1
     }
 
     private func updateColors() {
         let dark = isDarkMode
 
+        // Outer container bg — bg/block-container
+        layer?.backgroundColor = Self.containerColor(isDark: dark).cgColor
+
         // Content body bg — bg/blocks
         contentBody.layer?.backgroundColor = Self.blocksColor(isDark: dark).cgColor
-
-        // Border — border/default
-        layer?.borderWidth = 1.0
-        layer?.borderColor = Self.borderColor(isDark: dark).cgColor
 
         // Text color
         contentTextView.textColor = NSColor.labelColor
 
         needsDisplay = true
-    }
-
-    // MARK: - Drawing
-
-    override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
-        // Only fill the content body region (below the tabs row) to hide
-        // any underlying NSTextView text. The tabs row area is left transparent
-        // so the canvas background shows through -- matching the Figma spec
-        // of a border-only outer container.
-        let op = Self.outerPad
-        let trh = Self.tabsRowHeight
-        let gap = Self.tabsContentGap
-        let contentRect = NSRect(
-            x: op, y: op + trh + gap,
-            width: bounds.width - 2 * op,
-            height: bounds.height - op - trh - gap - op
-        )
-        Self.blocksColor(isDark: isDarkMode).setFill()
-        NSBezierPath(roundedRect: contentRect, xRadius: innerRadius, yRadius: innerRadius).fill()
     }
 
     // MARK: - Appearance Change

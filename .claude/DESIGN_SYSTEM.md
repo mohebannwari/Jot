@@ -12,12 +12,13 @@ All semantic colors live in `Jot/Ressources/Assets.xcassets/`. Reference by name
 | Token | Light | Dark |
 |-------|-------|------|
 | `AccentColor` | `#2563EB` | `#608DFA` |
-| `MainColor` | `#FDBA74` | `#FDBA74` |
+| `MainColor` | `#1A1A1A` (= ButtonPrimaryBgColor) | `#FFFFFF` (= ButtonPrimaryBgColor) |
 | `BackgroundColor` | `#FFFFFF5C` (36% white) | `#0C0A0908` (3% near-black) |
 | `BlockContainerColor` | `#D6D3D1` (stone-300) | `#292524` (stone-800) |
 | `BorderSubtleColor` | `#1A1A1A17` (9% black) | `#FFFFFF17` (9% white) |
 | `ButtonPrimaryBgColor` | `#1A1A1A` | `#FFFFFF` |
 | `ButtonPrimaryTextColor` | `#FFFFFF` | `#1A1A1A` |
+| `ButtonSecondaryBgColor` | `#D6D3D1` (stone-300) | `#292524` (stone-800) |
 | `CardBackgroundColor` | `#FFFFFFB3` (70% white) | `#1C1918B3` (70% dark) |
 | `FolderBadgeBgColor` | `#FFFFFF5C` (36% white) | `#FFFFFF1F` (12% white) |
 | `HoverBackgroundColor` | `#D1D3D0` | `#444040` |

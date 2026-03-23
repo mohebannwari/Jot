@@ -21,12 +21,8 @@ struct AIResultPanel: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .fill(colorScheme == .dark ? Color(red: 12/255, green: 10/255, blue: 9/255) : Color.white)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.08), lineWidth: 1)
         )
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -155,19 +151,23 @@ struct AIResultPanel: View {
 extension AITool {
     var aiDisplayName: String {
         switch self {
-        case .summary:     return "Summary"
-        case .keyPoints:   return "Key Points"
-        case .proofread:   return "Proofread"
-        case .editContent: return "Edit Content"
+        case .summary:      return "Summary"
+        case .keyPoints:    return "Key Points"
+        case .proofread:    return "Proofread"
+        case .editContent:  return "Edit Content"
+        case .translate:    return "Translate"
+        case .textGenerate: return "Generate Text"
         }
     }
 
     var aiIconName: String {
         switch self {
-        case .summary:     return "IconSummary"
-        case .keyPoints:   return "IconListSparkle"
-        case .proofread:   return "IconBroomSparkle"
-        case .editContent: return "IconArrowsAllSides2"
+        case .summary:      return "IconSummary"
+        case .keyPoints:    return "IconListSparkle"
+        case .proofread:    return "IconBroomSparkle"
+        case .editContent:  return "IconArrowsAllSides2"
+        case .translate:    return "IconAiTranslate"
+        case .textGenerate: return "TextGen"
         }
     }
 }

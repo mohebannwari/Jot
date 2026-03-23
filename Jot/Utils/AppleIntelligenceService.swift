@@ -16,6 +16,8 @@ enum AITool: String, Equatable {
     case keyPoints
     case proofread
     case editContent
+    case translate
+    case textGenerate
 }
 
 // MARK: - Proofread Annotation
@@ -40,6 +42,16 @@ enum AIPanelState: Equatable {
         originalText: String,
         instruction: String
     )
+    case translatePreview(
+        translated: String,
+        originalRange: NSRange,
+        originalText: String,
+        language: String
+    )
+    case textGenPreview(
+        generated: String,
+        insertionPoint: Int
+    )
     case error(String)
 
     static func == (lhs: AIPanelState, rhs: AIPanelState) -> Bool {
@@ -54,6 +66,16 @@ enum AIPanelState: Equatable {
             .editPreview(let r2, let or2, let ot2, let i2)
         ):
             return r1 == r2 && or1 == or2 && ot1 == ot2 && i1 == i2
+        case (
+            .translatePreview(let t1, let or1, let ot1, let l1),
+            .translatePreview(let t2, let or2, let ot2, let l2)
+        ):
+            return t1 == t2 && or1 == or2 && ot1 == ot2 && l1 == l2
+        case (
+            .textGenPreview(let g1, let ip1),
+            .textGenPreview(let g2, let ip2)
+        ):
+            return g1 == g2 && ip1 == ip2
         case (.error(let a), .error(let b)): return a == b
         default: return false
         }
@@ -97,6 +119,20 @@ struct ProofreadAnnotationItem {
 struct EditResult {
     @Guide(description: "Full text after applying the user's editing instruction")
     var revisedText: String
+}
+
+@available(macOS 26.0, *)
+@Generable
+struct TranslationResult {
+    @Guide(description: "The translated text in the requested target language")
+    var translatedText: String
+}
+
+@available(macOS 26.0, *)
+@Generable
+struct TextGenerationResult {
+    @Guide(description: "The generated text based on the user's description")
+    var generatedText: String
 }
 
 // MARK: - Service
@@ -281,6 +317,34 @@ final class AppleIntelligenceService {
             generating: EditResult.self
         )
         return response.content.revisedText
+    }
+
+    func translate(text: String, to language: String) async throws -> String {
+        guard #available(macOS 26.0, *) else {
+            throw AIServiceError.unavailable(unavailabilityReason)
+        }
+        let session = LanguageModelSession(
+            instructions: "You are a precise translator. Translate the user's text into the requested language accurately while preserving tone, meaning, and formatting."
+        )
+        let response = try await session.respond(
+            to: "Translate this text into \(language):\n\n\(text)",
+            generating: TranslationResult.self
+        )
+        return response.content.translatedText
+    }
+
+    func generateText(description: String) async throws -> String {
+        guard #available(macOS 26.0, *) else {
+            throw AIServiceError.unavailable(unavailabilityReason)
+        }
+        let session = LanguageModelSession(
+            instructions: "You are a skilled writing assistant. Generate text based on the user's description. Write naturally and concisely. Return only the generated text with no preamble or explanation."
+        )
+        let response = try await session.respond(
+            to: "Generate text for the following: \(description)",
+            generating: TextGenerationResult.self
+        )
+        return response.content.generatedText
     }
 }
 

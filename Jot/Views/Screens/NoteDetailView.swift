@@ -85,7 +85,12 @@ struct NoteDetailView: View {
 
     // Edit Content floating panel
     @State var showEditContentPanel: Bool = false
-    @State var editContentPanelPosition: CGPoint = .zero
+
+    // Translate floating panel
+    @State var showTranslatePanel: Bool = false
+
+    // Text Generation floating panel
+    @State var showTextGenPanel: Bool = false
 
     // MARK: - Scroll / toolbar state
     @FocusState private var titleFocused: Bool
@@ -114,7 +119,7 @@ struct NoteDetailView: View {
     @State private var toolbarFontSize: CGFloat = 16
     @State private var toolbarFontFamily: String = "default"
     @State private var toolbarTextColorHex: String? = nil
-    @State private var measuredToolbarWidth: CGFloat = 300
+    @State private var measuredToolbarWidth: CGFloat = 540
     @State private var measuredToolbarHeight: CGFloat = 46
     @State private var activeToolbarSubmenu: ToolbarSubmenuType? = nil
     @State private var pillOffsets: [ToolbarSubmenuType: CGFloat] = [:]
@@ -433,11 +438,19 @@ struct NoteDetailView: View {
         }
         .overlay {
             floatingToolbarOverlay
-                .allowsHitTesting(showFloatingToolbar && !showEditContentPanel)
+                .allowsHitTesting(showFloatingToolbar && !anyAIPanelVisible)
         }
         .overlay {
             editContentPanelOverlay
                 .allowsHitTesting(showEditContentPanel)
+        }
+        .overlay {
+            translatePanelOverlay
+                .allowsHitTesting(showTranslatePanel)
+        }
+        .overlay {
+            textGenFloatingOverlay
+                .allowsHitTesting(showTextGenPanel)
         }
         .overlay {
             highlightColorPickerOverlay
@@ -504,6 +517,10 @@ struct NoteDetailView: View {
             // Cache current state (don't cache editPreview — it's contextual to a selection)
             if case .editPreview = aiPanelState {
                 aiStateCache[oldNoteID] = nil
+            } else if case .translatePreview = aiPanelState {
+                aiStateCache[oldNoteID] = nil
+            } else if case .textGenPreview = aiPanelState {
+                aiStateCache[oldNoteID] = nil
             } else {
                 aiStateCache[oldNoteID] = aiPanelState == .none ? nil : aiPanelState
             }
@@ -511,6 +528,8 @@ struct NoteDetailView: View {
             // Tear down transient overlays
             aiIsProcessing = false
             showEditContentPanel = false
+            showTranslatePanel = false
+            showTextGenPanel = false
             currentProofreadIndex = 0
             NotificationCenter.default.post(name: .aiProofreadClearOverlays, object: nil, userInfo: ["editorInstanceID": editorInstanceID])
 
@@ -574,6 +593,16 @@ struct NoteDetailView: View {
             capturedSelectionRange = (userInfo["nsRange"] as? NSRange) ?? NSRange(location: NSNotFound, length: 0)
             capturedSelectionText = (userInfo["selectedText"] as? String) ?? ""
             capturedSelectionWindowRect = (userInfo["windowRect"] as? CGRect) ?? .zero
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .aiTranslateSubmit)) { notification in
+            if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
+            guard let language = notification.object as? String else { return }
+            Task { await handleAITranslate(language: language) }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .aiTextGenSubmit)) { notification in
+            if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
+            guard let description = notification.object as? String else { return }
+            Task { await handleAITextGenerate(description: description) }
         }
         .onReceive(NotificationCenter.default.publisher(for: .aiProofreadApplySuggestion)) { notification in
             if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
@@ -714,40 +743,97 @@ struct NoteDetailView: View {
     private var editContentPanelOverlay: some View {
         GeometryReader { geometry in
             if showEditContentPanel {
-                let parentFrame = geometry.frame(in: .global)
-                let localX = floatingToolbarOffset.x - parentFrame.minX
-                let localY = floatingToolbarOffset.y - parentFrame.minY
-                let estimatedWidth: CGFloat = 280
-                let centerX = min(
-                    max(localX + estimatedWidth / 2, estimatedWidth / 2),
-                    geometry.size.width - estimatedWidth / 2
-                )
-                let centerY = localY - 20
+                let horizontalInset: CGFloat = 16
+                let panelWidth = geometry.size.width - horizontalInset * 2
+                let bottomPadding: CGFloat = 52
 
-                EditContentFloatingPanel(
-                    state: aiPanelState,
-                    onReplace: { applyEditContentReplacement() },
-                    onDismiss: {
-                        withAnimation(.jotSpring) {
-                            showEditContentPanel = false
-                            aiPanelState = .none
-                        }
-                    },
-                    onRedo: { redoEditContent() }
-                )
-                .position(x: centerX, y: centerY)
-                .transition(.scale(scale: 0.9, anchor: .bottom).combined(with: .opacity))
+                VStack {
+                    Spacer()
+                    EditContentFloatingPanel(
+                        state: aiPanelState,
+                        onReplace: { applyEditContentReplacement() },
+                        onDismiss: {
+                            withAnimation(.jotSpring) {
+                                showEditContentPanel = false
+                                aiPanelState = .none
+                            }
+                        },
+                        onRedo: { redoEditContent() }
+                    )
+                    .frame(width: panelWidth)
+                    .padding(.bottom, bottomPadding)
+                }
+                .frame(maxWidth: .infinity)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
                 .zIndex(150)
             }
         }
         .allowsHitTesting(showEditContentPanel)
     }
 
+    @ViewBuilder
+    private var translatePanelOverlay: some View {
+        GeometryReader { geometry in
+            if showTranslatePanel {
+                let horizontalInset: CGFloat = 16
+                let panelWidth = geometry.size.width - horizontalInset * 2
+                let bottomPadding: CGFloat = 52
+
+                VStack {
+                    Spacer()
+                    TranslateFloatingPanel(
+                        state: aiPanelState,
+                        onReplace: { applyTranslateReplacement() },
+                        onCopy: { copyTranslation() },
+                        onDismiss: {
+                            withAnimation(.jotSpring) {
+                                showTranslatePanel = false
+                                aiPanelState = .none
+                            }
+                        },
+                        onRetranslate: { retranslate() }
+                    )
+                    .frame(width: panelWidth)
+                    .padding(.bottom, bottomPadding)
+                }
+                .frame(maxWidth: .infinity)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .zIndex(150)
+            }
+        }
+        .allowsHitTesting(showTranslatePanel)
+    }
+
+    @ViewBuilder
+    private var textGenFloatingOverlay: some View {
+        GeometryReader { geometry in
+            if showTextGenPanel {
+                let horizontalInset: CGFloat = 16
+                let panelWidth = geometry.size.width - horizontalInset * 2
+                let bottomPadding: CGFloat = 52
+
+                VStack {
+                    Spacer()
+                    TextGenFloatingPanel(
+                        state: aiPanelState,
+                        onAccept: { acceptTextGeneration() },
+                        onDismiss: { dismissTextGeneration() }
+                    )
+                    .frame(width: panelWidth)
+                    .padding(.bottom, bottomPadding)
+                }
+                .frame(maxWidth: .infinity)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .zIndex(150)
+            }
+        }
+        .allowsHitTesting(showTextGenPanel)
+    }
 
     @ViewBuilder
     private var floatingToolbarOverlay: some View {
         GeometryReader { geometry in
-            if showFloatingToolbar && !showEditContentPanel {
+            if showFloatingToolbar && !anyAIPanelVisible {
                 let parentFrame = geometry.frame(in: .global)
                 let localX = floatingToolbarOffset.x - parentFrame.minX
                 let localY = floatingToolbarOffset.y - parentFrame.minY
@@ -755,8 +841,13 @@ struct NoteDetailView: View {
                 let toolbarHeight: CGFloat = measuredToolbarHeight
                 let paneWidth: CGFloat = geometry.size.width
                 let edgeInset: CGFloat = 12
-                let centerX: CGFloat = localX + toolbarWidth / 2
-                let clampedCenterX: CGFloat = min(max(centerX, toolbarWidth / 2 + edgeInset), paneWidth - toolbarWidth / 2 - edgeInset)
+                // Clamp by left edge — immune to measuredToolbarWidth being stale
+                // because the left edge position doesn't depend on toolbar width.
+                let clampedLeft: CGFloat = {
+                    let maxLeft = max(edgeInset, paneWidth - toolbarWidth - edgeInset)
+                    return min(max(localX, edgeInset), maxLeft)
+                }()
+                let clampedCenterX: CGFloat = clampedLeft + toolbarWidth / 2
                 let centerY: CGFloat = localY + toolbarHeight / 2
 
                 FloatingEditToolbar(
@@ -768,6 +859,7 @@ struct NoteDetailView: View {
                     currentFontSize: toolbarFontSize,
                     currentFontFamily: toolbarFontFamily,
                     currentTextColorHex: toolbarTextColorHex,
+                    isAIAvailable: AppleIntelligenceService.shared.isAvailable,
                     activeSubmenu: $activeToolbarSubmenu,
                     onToolAction: handleEditToolAction,
                     onFontSizeSelected: { [editorInstanceID] size in
@@ -808,16 +900,36 @@ struct NoteDetailView: View {
                 .onPreferenceChange(PillOffsetKey.self) { offsets in
                     pillOffsets = offsets
                 }
-                .position(x: clampedCenterX, y: centerY)
+                .fixedSize()
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .offset(x: clampedLeft, y: localY)
                 .transition(.scale(scale: 0.9).combined(with: .opacity))
                 .zIndex(101)
 
                 // Submenus — below toolbar if space, above if clipped
                 if let submenu = activeToolbarSubmenu {
                     let submenuGap: CGFloat = 8
-                    let submenuMaxWidth: CGFloat = submenu == .textOptions ? 170 : (submenu == .color ? 186 : (submenu == .fontFamily ? 140 : 120))
+                    let submenuMaxWidth: CGFloat = {
+                        switch submenu {
+                        case .textOptions: return 170
+                        case .color: return 186
+                        case .fontFamily: return 140
+                        case .translate: return 200
+                        case .editContent: return 220
+                        default: return 120
+                        }
+                    }()
                     // Use measured height if available, otherwise estimate for initial layout
-                    let submenuH: CGFloat = measuredSubmenuHeight > 0 ? measuredSubmenuHeight : (submenu == .textOptions ? 340 : (submenu == .fontSize ? 290 : (submenu == .fontFamily ? 95 : 36)))
+                    let submenuH: CGFloat = measuredSubmenuHeight > 0 ? measuredSubmenuHeight : {
+                        switch submenu {
+                        case .textOptions: return 340.0
+                        case .fontSize: return 290.0
+                        case .fontFamily: return 95.0
+                        case .translate: return 100.0
+                        case .editContent: return 100.0
+                        default: return 36.0
+                        }
+                    }()
                     let paneHeight = geometry.size.height
                     let toolbarBottom = centerY + toolbarHeight / 2
                     let toolbarTop = centerY - toolbarHeight / 2
@@ -883,6 +995,28 @@ struct NoteDetailView: View {
                                     withAnimation(.spring(duration: 0.2)) { activeToolbarSubmenu = nil }
                                 }
                             )
+                        case .translate:
+                            TranslateInputSubmenu(
+                                onSubmit: { [editorInstanceID] language in
+                                    NotificationCenter.default.post(
+                                        name: .aiTranslateSubmit, object: language,
+                                        userInfo: ["editorInstanceID": editorInstanceID as Any]
+                                    )
+                                    withAnimation(.spring(duration: 0.2)) { activeToolbarSubmenu = nil }
+                                },
+                                onDismiss: { withAnimation(.spring(duration: 0.2)) { activeToolbarSubmenu = nil } }
+                            )
+                        case .editContent:
+                            EditContentInputSubmenu(
+                                onSubmit: { [editorInstanceID] instruction in
+                                    NotificationCenter.default.post(
+                                        name: .aiEditSubmit, object: instruction,
+                                        userInfo: ["editorInstanceID": editorInstanceID as Any]
+                                    )
+                                    withAnimation(.spring(duration: 0.2)) { activeToolbarSubmenu = nil }
+                                },
+                                onDismiss: { withAnimation(.spring(duration: 0.2)) { activeToolbarSubmenu = nil } }
+                            )
                         }
                     }
                     .fixedSize()
@@ -901,6 +1035,18 @@ struct NoteDetailView: View {
                         measuredSubmenuHeight = 0
                     }
                 }
+            }
+        }
+        .onChange(of: activeToolbarSubmenu) { _, newValue in
+            // Capture selection eagerly when an AI submenu opens,
+            // eliminating the race between request-selection and submit.
+            // Must live on the GeometryReader (always in tree), not inside
+            // the conditional submenu block (which doesn't exist on first transition).
+            if newValue == .translate || newValue == .editContent {
+                NotificationCenter.default.post(
+                    name: .aiEditRequestSelection, object: nil,
+                    userInfo: ["editorInstanceID": editorInstanceID as Any]
+                )
             }
         }
     }
@@ -1052,6 +1198,10 @@ struct NoteDetailView: View {
             return tool == .summary || tool == .keyPoints
         default: return false
         }
+    }
+
+    private var anyAIPanelVisible: Bool {
+        showEditContentPanel || showTranslatePanel || showTextGenPanel
     }
 
     private var isNewNote: Bool {

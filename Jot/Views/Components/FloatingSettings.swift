@@ -492,10 +492,6 @@ struct SettingsPage: View {
             Capsule()
                 .fill(colorScheme == .light ? Color.white : Color("SettingsOptionCardColor"))
         )
-        .overlay(
-            Capsule()
-                .stroke(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.08), lineWidth: 1)
-        )
     }
 
     private func settingsGroupedCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
@@ -507,10 +503,6 @@ struct SettingsPage: View {
         .background(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .fill(colorScheme == .light ? Color.white : Color("SettingsOptionCardColor"))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.08), lineWidth: 1)
         )
     }
 
@@ -631,10 +623,6 @@ struct SettingsPage: View {
                     .frame(height: themeCardHeight)
                     .clipped()
                     .clipShape(RoundedRectangle(cornerRadius: bodyFontCardRadius, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: bodyFontCardRadius, style: .continuous)
-                            .stroke(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.08), lineWidth: 1)
-                    )
 
                 settingsSelectionLabel(label, isSelected: isSelected)
             }
@@ -698,10 +686,6 @@ struct SettingsPage: View {
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: bodyFontCardHeight)
-                .overlay(
-                    RoundedRectangle(cornerRadius: bodyFontCardRadius, style: .continuous)
-                        .stroke(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.08), lineWidth: 1)
-                )
 
                 settingsSelectionLabel(title, isSelected: isSelected)
             }
@@ -747,10 +731,6 @@ struct SettingsPage: View {
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: lineSpacingCardHeight)
-                .overlay(
-                    RoundedRectangle(cornerRadius: lineSpacingCardRadius, style: .continuous)
-                        .stroke(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.08), lineWidth: 1)
-                )
 
                 settingsSelectionLabel(spacing.displayName, isSelected: isSelected)
             }
@@ -837,10 +817,6 @@ struct SettingsPage: View {
                     Capsule()
                         .fill(isSelected ? Color("SettingsSelectionOrange") : (colorScheme == .light ? Color.white : Color("SettingsOptionCardColor")))
                 )
-                .overlay(
-                    Capsule()
-                        .stroke(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.08), lineWidth: 1)
-                )
                 .animation(.jotHover, value: isHovered)
         }
         .buttonStyle(.plain)
@@ -867,10 +843,6 @@ struct SettingsPage: View {
             .background(
                 Capsule()
                     .fill(isCustomSelected ? Color("SettingsSelectionOrange") : (colorScheme == .light ? Color.white : Color("SettingsOptionCardColor")))
-            )
-            .overlay(
-                Capsule()
-                    .stroke(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.08), lineWidth: 1)
             )
             .textFieldStyle(.plain)
             .focused($isCustomFontSizeFocused)
@@ -921,10 +893,6 @@ struct SettingsPage: View {
         .background(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .fill(colorScheme == .light ? Color.white : Color("SettingsOptionCardColor"))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.08), lineWidth: 1)
         )
     }
 
@@ -1015,10 +983,6 @@ struct SettingsPage: View {
             .background(
                 Capsule()
                     .fill(colorScheme == .light ? Color.white : Color("SettingsOptionCardColor"))
-            )
-            .overlay(
-                Capsule()
-                    .stroke(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.08), lineWidth: 1)
             )
         }
     }
@@ -1121,10 +1085,6 @@ struct SettingsPage: View {
         .background(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .fill(colorScheme == .light ? Color.white : Color("SettingsOptionCardColor"))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.08), lineWidth: 1)
         )
     }
 

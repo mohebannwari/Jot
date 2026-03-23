@@ -524,4 +524,11 @@ extension Notification.Name {
     static let aiEditApplyReplacement = Notification.Name("AIEditApplyReplacement")
     // Proofread -- batch apply all remaining suggestions through text storage
     static let aiProofreadReplaceAll = Notification.Name("AIProofreadReplaceAll")
+
+    // Translation -- language submitted from translate field
+    static let aiTranslateSubmit = Notification.Name("AITranslateSubmit")
+    // Text Generation -- description submitted from prompt card
+    static let aiTextGenSubmit = Notification.Name("AITextGenSubmit")
+    // Text Generation -- insert generated text at cursor
+    static let aiTextGenInsert = Notification.Name("AITextGenInsert")
 }

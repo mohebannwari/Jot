@@ -184,10 +184,7 @@ struct BackupSettingsPanel: View {
                             .foregroundColor(Color("PrimaryTextColor"))
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 11)
-                            .background(
-                                Capsule()
-                                    .stroke(colorScheme == .dark ? Color.white.opacity(0.15) : Color.black.opacity(0.15), lineWidth: 1)
-                            )
+                            .background(Color("ButtonSecondaryBgColor"), in: Capsule())
                     }
                     .menuStyle(.button)
                     .buttonStyle(.plain)
@@ -342,10 +339,6 @@ struct BackupSettingsPanel: View {
         .background(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .fill(colorScheme == .light ? Color.white : Color("SettingsOptionCardColor"))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.08), lineWidth: 1)
         )
     }
 }

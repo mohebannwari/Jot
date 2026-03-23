@@ -389,8 +389,8 @@ struct TodoRichTextEditor: View {
                 $0.title.localizedCaseInsensitiveContains(filter)
             }
             if !filter.isEmpty && matches.isEmpty {
-                dismissNotePicker()
-                // Notify NoteDetailView to re-enable scroll (.scrollDisabled)
+                // Post hideNotePicker — the .hideNotePicker receiver handles dismissNotePicker()
+                // and NoteDetailView observes this to re-enable scroll (.scrollDisabled)
                 NotificationCenter.default.post(
                     name: .hideNotePicker,
                     object: nil,

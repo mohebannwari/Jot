@@ -15,12 +15,14 @@ enum ToolbarSubmenuType: Equatable {
     case fontSize
     case fontFamily
     case color
+    case translate
+    case editContent
 }
 
 // MARK: - Preference Keys
 
 struct ToolbarWidthKey: PreferenceKey {
-    static var defaultValue: CGFloat = 300
+    static var defaultValue: CGFloat = 540
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()
     }
@@ -54,6 +56,9 @@ struct FloatingEditToolbar: View {
     var currentFontSize: CGFloat = 16
     var currentFontFamily: String = "default"
     var currentTextColorHex: String? = nil
+
+    // AI availability
+    var isAIAvailable: Bool = false
 
     // Submenu state (binding so parent can dismiss)
     @Binding var activeSubmenu: ToolbarSubmenuType?
@@ -112,9 +117,21 @@ struct FloatingEditToolbar: View {
             .opacity(toolsVisible ? 1 : 0)
             .scaleEffect(toolsVisible ? 1 : 0.85)
 
+            if isAIAvailable {
+                dotDivider
+
+                // Section 3: AI tools (translate, edit content)
+                HStack(spacing: 8) {
+                    submenuIconButton("IconAiTranslate", submenu: .translate)
+                    submenuIconButton("IconArrowsAllSides2", submenu: .editContent)
+                }
+                .opacity(toolsVisible ? 1 : 0)
+                .scaleEffect(toolsVisible ? 1 : 0.85)
+            }
+
             dotDivider
 
-            // Section 3: Color picker trigger
+            // Section 4: Color picker trigger
             colorTriggerPill
                 .opacity(toolsVisible ? 1 : 0)
                 .scaleEffect(toolsVisible ? 1 : 0.85)
@@ -309,6 +326,27 @@ struct FloatingEditToolbar: View {
     }
 
     // MARK: - Icon Button Helper
+
+    private func submenuIconButton(_ assetName: String, submenu: ToolbarSubmenuType) -> some View {
+        Button {
+            withAnimation(.spring(duration: 0.2)) {
+                activeSubmenu = activeSubmenu == submenu ? nil : submenu
+            }
+        } label: {
+            Image(assetName)
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 18, height: 18)
+                .foregroundColor(activeSubmenu == submenu ? Color("AccentColor") : Color("IconSecondaryColor"))
+        }
+        .buttonStyle(.plain)
+        .frame(width: 28, height: 28)
+        .contentShape(Rectangle())
+        .background(GeometryReader { geo in
+            Color.clear.preference(key: PillOffsetKey.self, value: [submenu: geo.frame(in: .named("toolbar")).midX])
+        })
+    }
 
     private func toolIconButton(_ assetName: String, tool: EditTool, isActive: Bool = false) -> some View {
         Button {

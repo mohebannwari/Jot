@@ -1,19 +1,18 @@
 //
-//  EditContentFloatingPanel.swift
+//  TextGenFloatingPanel.swift
 //  Jot
 //
-//  Floating panel for Edit Content AI results.
-//  Matches TranslateFloatingPanel / TextGenFloatingPanel design:
-//  solid bg, full-width header, bottom-fixed position, proper button tokens.
+//  Floating panel for AI text generation results.
+//  Mirrors AIResultPanel's visual style with integrated Accept/Dismiss buttons.
+//  Replaces the old TextGenAcceptPanel + shimmer overlay machinery.
 //
 
 import SwiftUI
 
-struct EditContentFloatingPanel: View {
+struct TextGenFloatingPanel: View {
     let state: AIPanelState
-    let onReplace: () -> Void
+    let onAccept: () -> Void
     let onDismiss: () -> Void
-    let onRedo: () -> Void
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
@@ -28,7 +27,7 @@ struct EditContentFloatingPanel: View {
                 .fill(colorScheme == .dark ? Color(red: 12/255, green: 10/255, blue: 9/255) : Color.white)
         )
         .frame(maxWidth: .infinity, alignment: .leading)
-        .onKeyPress(.return) { onReplace(); return .handled }
+        .onKeyPress(.return) { onAccept(); return .handled }
         .onKeyPress(.escape) { onDismiss(); return .handled }
     }
 
@@ -36,14 +35,14 @@ struct EditContentFloatingPanel: View {
 
     private var headerRow: some View {
         HStack(spacing: 6) {
-            Image(AITool.editContent.aiIconName)
+            Image(AITool.textGenerate.aiIconName)
                 .renderingMode(.template)
                 .resizable()
                 .scaledToFit()
                 .foregroundColor(Color("SecondaryTextColor"))
                 .frame(width: 18, height: 18)
 
-            Text(AITool.editContent.aiDisplayName.uppercased())
+            Text(AITool.textGenerate.aiDisplayName.uppercased())
                 .font(FontManager.metadata(size: 11, weight: .semibold))
                 .foregroundColor(Color("SecondaryTextColor"))
                 .kerning(0.5)
@@ -69,11 +68,11 @@ struct EditContentFloatingPanel: View {
     @ViewBuilder
     private var contentArea: some View {
         switch state {
-        case .loading(.editContent):
+        case .loading(.textGenerate):
             shimmerContent
 
-        case .editPreview(let revised, _, _, _):
-            previewContent(revised: revised)
+        case .textGenPreview(let generated, _):
+            previewContent(generated: generated)
 
         case .error(let message):
             VStack(alignment: .leading, spacing: 8) {
@@ -115,9 +114,9 @@ struct EditContentFloatingPanel: View {
 
     // MARK: - Preview
 
-    private func previewContent(revised: String) -> some View {
+    private func previewContent(generated: String) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(revised)
+            Text(generated)
                 .font(FontManager.body(size: 14))
                 .foregroundColor(Color("PrimaryTextColor"))
                 .lineSpacing(3)
@@ -132,7 +131,7 @@ struct EditContentFloatingPanel: View {
 
     private var buttonRow: some View {
         HStack(spacing: 6) {
-            Button("Replace", action: onReplace)
+            Button("Accept", action: onAccept)
                 .font(FontManager.heading(size: 12, weight: .semibold))
                 .foregroundColor(Color("ButtonPrimaryTextColor"))
                 .padding(.horizontal, 14)
@@ -143,16 +142,6 @@ struct EditContentFloatingPanel: View {
                 .subtleHoverScale(1.04)
 
             dismissButton
-
-            Button("Redo", action: onRedo)
-                .font(FontManager.heading(size: 12, weight: .semibold))
-                .foregroundColor(Color("PrimaryTextColor"))
-                .padding(.horizontal, 14)
-                .padding(.vertical, 7)
-                .background(Color("ButtonSecondaryBgColor"), in: Capsule())
-                .buttonStyle(.plain)
-                .macPointingHandCursor()
-                .subtleHoverScale(1.04)
         }
     }
 
