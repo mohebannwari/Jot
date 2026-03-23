@@ -277,7 +277,17 @@ final class TypingAnimationLayoutManager: NSLayoutManager {
                 // Inset slightly so the line doesn't bleed outside the text bounds
                 let startX = origin.x + segmentRect.origin.x + 2
                 let endX = origin.x + segmentRect.origin.x + segmentRect.width - 1
-                let midY = origin.y + segmentRect.origin.y + segmentRect.height * 0.45
+                // Ask NSLayoutManager where it actually placed the baseline,
+                // rather than guessing from rect geometry. The todo paragraph style
+                // inflates line height to 34pt for the checkbox, so the text position
+                // within the line fragment varies between line 1 and wrapped lines.
+                let glyphLoc = self.location(forGlyphAt: intersection.location)
+                let charIdx = self.characterIndexForGlyph(at: intersection.location)
+                let font = textStorage.attribute(.font, at: charIdx, effectiveRange: nil) as? NSFont
+                    ?? NSFont.systemFont(ofSize: 14)
+                // glyphLoc.y is the baseline offset from lineRect.origin (in flipped coords)
+                let baseline = lineRect.origin.y + glyphLoc.y
+                let midY = origin.y + baseline - font.xHeight * 0.5
 
                 guard endX - startX > 4 else { return }
 
