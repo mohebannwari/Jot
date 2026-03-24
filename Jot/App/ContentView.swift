@@ -144,12 +144,8 @@ struct WindowTransparencyView: NSViewRepresentable {
         let view = NSView()
         DispatchQueue.main.async {
             guard let window = view.window else { return }
-            if #available(macOS 26.0, *) {
-                window.isOpaque = false
-                window.backgroundColor = .clear
-            } else {
-                window.isOpaque = true
-            }
+            window.isOpaque = false
+            window.backgroundColor = .clear
         }
         return view
     }
@@ -587,10 +583,19 @@ struct ContentView: View {
             mainLayout(geometry: geometry)
         }
         .background {
-            Color.clear
-                .padding(-40)
+            if #available(macOS 26.0, iOS 26.0, *) {
+                Color.clear
+                    .padding(-40)
+                    .ignoresSafeArea()
+                    .liquidGlass(in: Rectangle())
+            } else {
+                ZStack {
+                    BackdropBlurView(material: .hudWindow, blendingMode: .behindWindow)
+                    Color(colorScheme == .dark ? .black : .white)
+                        .opacity(0.10)
+                }
                 .ignoresSafeArea()
-                .liquidGlass(in: Rectangle())
+            }
         }
         .background(WindowTransparencyView())
         .background(
@@ -1477,9 +1482,6 @@ struct ContentView: View {
                 .padding(.top, -6)
                 .padding(.bottom, 4)
 
-                // DEV: Quick light/dark toggle
-                HStack { devThemeToggle; Spacer() }
-
                 // Trash -- only visible when there are deleted notes
                 if !notesManager.deletedNotes.isEmpty {
                     sidebarMenuItem(assetName: "delete", label: "Trash") {
@@ -1488,7 +1490,9 @@ struct ContentView: View {
                     }
                 }
 
-                // Settings moved to sidebarMenuContainer (under Archive)
+                sidebarMenuItem(assetName: "IconSettingsGear1", label: "Settings", isActive: isSettingsPresented) {
+                    presentSettings()
+                }
             }
             .padding(.top, sidebarMenuTop)
             .frame(width: sidebarDesignColumnWidth, alignment: .leading)
@@ -1869,6 +1873,20 @@ struct ContentView: View {
                 }
             }
             splitMenuIconButton()
+            Button {
+                themeManager.setTheme(themeManager.currentTheme == .light ? .dark : .light)
+            } label: {
+                Image(systemName: themeManager.currentTheme == .light ? "moon.fill" : "sun.max.fill")
+                    .resizable()
+                    .scaledToFit()
+                    .foregroundColor(Color("SecondaryTextColor"))
+                    .frame(width: 15, height: 15)
+                    .padding(4)
+                    .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .macPointingHandCursor()
+            .hoverContainer(cornerRadius: 8)
         }
         .padding(.leading, iconLeading - windowContentPadding)
         .frame(width: sidebarDesignColumnWidth, height: sidebarTopBarButtonSize, alignment: .leading)
@@ -1892,9 +1910,6 @@ struct ContentView: View {
                 withAnimation(.jotSpring) {
                     isShowingArchive.toggle()
                 }
-            }
-            sidebarMenuItem(assetName: "IconSettingsGear1", label: "Settings", isActive: isSettingsPresented) {
-                presentSettings()
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -2467,6 +2482,10 @@ struct ContentView: View {
                     notesManager.loadDeletedNotes()
                     isTrashPresented = true
                 }
+            }
+
+            sidebarMenuItem(assetName: "IconSettingsGear1", label: "Settings", isActive: isSettingsPresented) {
+                presentSettings()
             }
         }
         .padding(.horizontal, 8)
@@ -3080,7 +3099,7 @@ struct ContentView: View {
     // MARK: - Split Picker Overlay
 
     @ViewBuilder
-    private func splitPickerOverlayView(for pane: SplitPickerPane, primaryNote: Note) -> some View {
+    private func splitPickerOverlayView(for pane: SplitPickerPane, primaryNote: Note, cornerRadius: CGFloat = 16) -> some View {
         if splitPickerOverlayPane == pane {
             ZStack {
                 Color.black.opacity(0.05)
@@ -3106,6 +3125,7 @@ struct ContentView: View {
                     }
                 )
             }
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         }
     }
 

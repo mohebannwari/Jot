@@ -532,10 +532,10 @@ final class TabsContainerOverlayView: NSView {
     func cursorForPoint(_ windowPoint: CGPoint) -> NSCursor? {
         let local = convert(windowPoint, from: nil)
         if resizeHandleRight.frame.contains(local) {
-            return NSCursor.frameResize(position: .right, directions: .all)
+            return NSCursor.compatFrameResize(position: "right")
         }
         if resizeHandleBottom.frame.contains(local) {
-            return NSCursor.frameResize(position: .bottom, directions: .all)
+            return NSCursor.compatFrameResize(position: "bottom")
         }
         return nil
     }
@@ -947,8 +947,8 @@ private final class _TabsResizeHandle: NSView {
 
     override func resetCursorRects() {
         let cursor: NSCursor = direction == .right
-            ? NSCursor.frameResize(position: .right, directions: .all)
-            : NSCursor.frameResize(position: .bottom, directions: .all)
+            ? NSCursor.compatFrameResize(position: "right")
+            : NSCursor.compatFrameResize(position: "bottom")
         addCursorRect(bounds, cursor: cursor)
     }
 

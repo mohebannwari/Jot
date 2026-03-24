@@ -101,13 +101,14 @@ struct FloatingSearch: View {
                 .padding(.horizontal, 4)
                 .padding(.vertical, 3)
                 .background(
-                    .ultraThinMaterial,
+                    Color("SecondaryBackgroundColor"),
                     in: RoundedRectangle(cornerRadius: surfaceCornerRadius, style: .continuous)
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: surfaceCornerRadius, style: .continuous)
-                        .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
+                        .stroke(Color.primary.opacity(0.12), lineWidth: 0.5)
                 )
+                .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
                 .frame(width: surfaceWidth)
                 .contentShape(RoundedRectangle(cornerRadius: surfaceCornerRadius, style: .continuous))
                 #if os(macOS)

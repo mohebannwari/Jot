@@ -76,14 +76,7 @@ struct CommandMenu: View {
                     }
                 }
                 .frame(height: visibleContentHeight)
-                .onScrollGeometryChange(for: Bool.self, of: { geo in
-                    let maxOffset = geo.contentSize.height - geo.containerSize.height
-                    return maxOffset <= 0 || geo.contentOffset.y >= maxOffset - 2
-                }, action: { _, atBottom in
-                    withAnimation(.easeInOut(duration: 0.25)) {
-                        isAtBottom = atBottom
-                    }
-                })
+                .modifier(ScrollBottomDetector(isAtBottom: $isAtBottom))
                 .onChange(of: selectedIndex) { _, newIndex in
                     withAnimation(.easeInOut(duration: 0.25)) {
                         proxy.scrollTo(newIndex, anchor: .center)
@@ -134,8 +127,9 @@ struct CommandMenu: View {
         } else {
             chevron
                 .padding(2)
-                .background(.ultraThinMaterial, in: Circle())
+                .background(Color("SecondaryBackgroundColor"), in: Circle())
                 .overlay(Circle().stroke(Color.primary.opacity(strokeOpacity), lineWidth: 0.5))
+                .shadow(color: .black.opacity(0.06), radius: 4, y: 1)
         }
     }
 }
@@ -154,8 +148,9 @@ private extension View {
             self
                 .padding(.horizontal, 4)
                 .padding(.vertical, 3)
-                .background(.ultraThinMaterial, in: shape)
-                .overlay(shape.stroke(Color.primary.opacity(0.06), lineWidth: 0.5))
+                .background(Color("SecondaryBackgroundColor"), in: shape)
+                .overlay(shape.stroke(Color.primary.opacity(0.12), lineWidth: 0.5))
+                .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
         }
     }
 }

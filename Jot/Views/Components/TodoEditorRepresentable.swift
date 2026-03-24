@@ -21,6 +21,12 @@ private let checkedTodoTextColor = NSColor(name: nil) { appearance in
     return (isDark ? NSColor.white : NSColor.black).withAlphaComponent(0.7)
 }
 
+/// Dynamic color for block quote text — resolves at draw time so it adapts to light/dark.
+private let blockQuoteTextColor = NSColor(name: nil) { appearance in
+    let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+    return (isDark ? NSColor.white : NSColor.black).withAlphaComponent(0.7)
+}
+
 extension NSAttributedString.Key {
     static let webClipTitle = NSAttributedString.Key("WebClipTitle")
     static let webClipDescription = NSAttributedString.Key("WebClipDescription")
@@ -181,12 +187,18 @@ final class TypingAnimationLayoutManager: NSLayoutManager {
         if activeAnimations.isEmpty || NSGraphicsContext.current?.cgContext == nil {
             super.drawGlyphs(forGlyphRange: glyphsToShow, at: origin)
         } else {
+            let totalGlyphs = numberOfGlyphs
+            guard glyphsToShow.location < totalGlyphs else {
+                super.drawGlyphs(forGlyphRange: glyphsToShow, at: origin)
+                return
+            }
             let context = NSGraphicsContext.current!.cgContext
             let now = CACurrentMediaTime()
             var currentIndex = glyphsToShow.location
-            let endIndex = NSMaxRange(glyphsToShow)
+            let endIndex = min(NSMaxRange(glyphsToShow), totalGlyphs)
 
             while currentIndex < endIndex {
+                guard currentIndex < totalGlyphs else { break }
                 let charIndex = characterIndexForGlyph(at: currentIndex)
 
                 if let startTime = activeAnimations[charIndex], now >= startTime {
@@ -221,7 +233,7 @@ final class TypingAnimationLayoutManager: NSLayoutManager {
                 } else {
                     // Batch consecutive non-animating glyphs for performance
                     var runEnd = currentIndex + 1
-                    while runEnd < endIndex {
+                    while runEnd < endIndex, runEnd < totalGlyphs {
                         let nextCharIndex = characterIndexForGlyph(at: runEnd)
                         if activeAnimations[nextCharIndex] != nil { break }
                         runEnd += 1
@@ -247,10 +259,15 @@ final class TypingAnimationLayoutManager: NSLayoutManager {
               let textContainer = textContainers.first,
               let context = NSGraphicsContext.current?.cgContext
         else { return }
+        // Bail if glyph range exceeds current glyph count (stale range during mid-edit)
+        guard NSMaxRange(glyphsToShow) <= numberOfGlyphs else { return }
+        guard textStorage.length > 0 else { return }
 
         let charRange = characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
+        let safeCharRange = NSIntersectionRange(charRange, NSRange(location: 0, length: textStorage.length))
+        guard safeCharRange.length > 0 else { return }
 
-        textStorage.enumerateAttribute(.todoChecked, in: charRange, options: []) { value, attrRange, _ in
+        textStorage.enumerateAttribute(.todoChecked, in: safeCharRange, options: []) { value, attrRange, _ in
             guard value as? Bool == true else { return }
 
             // Trim trailing newlines/whitespace so the squiggly line only spans visible text
@@ -344,25 +361,39 @@ final class TypingAnimationLayoutManager: NSLayoutManager {
 
         // Block quote left bar (drawn after super, on top)
         guard let textStorage = textStorage, let textContainer = textContainers.first else { return }
+        let storageLength = textStorage.length
+        guard storageLength > 0 else { return }
+        // Bail if glyph range exceeds current glyph count (stale range during mid-edit)
+        guard NSMaxRange(glyphsToShow) <= numberOfGlyphs else { return }
+
         let charRange = characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
+        // Clamp to storage bounds -- during mid-edit the glyph-to-char mapping can exceed storage
+        let safeCharRange = NSIntersectionRange(charRange, NSRange(location: 0, length: storageLength))
+        guard safeCharRange.length > 0 else { return }
 
         // Expand each .blockQuote attribute run to its full paragraph range(s),
         // then coalesce adjacent quote paragraphs into one continuous bar.
         var coveredRanges: [NSRange] = []
-        textStorage.enumerateAttribute(.blockQuote, in: charRange, options: []) { value, attrRange, _ in
+        textStorage.enumerateAttribute(.blockQuote, in: safeCharRange, options: []) { value, attrRange, _ in
             guard value as? Bool == true else { return }
             let expandedRange = (textStorage.string as NSString).paragraphRange(for: attrRange)
-            if let last = coveredRanges.last, NSMaxRange(last) >= expandedRange.location {
-                coveredRanges[coveredRanges.count - 1] = NSUnionRange(last, expandedRange)
+            // Clamp expanded range to storage bounds
+            let clampedRange = NSIntersectionRange(expandedRange, NSRange(location: 0, length: storageLength))
+            guard clampedRange.length > 0 else { return }
+            if let last = coveredRanges.last, NSMaxRange(last) >= clampedRange.location {
+                coveredRanges[coveredRanges.count - 1] = NSUnionRange(last, clampedRange)
             } else {
-                coveredRanges.append(expandedRange)
+                coveredRanges.append(clampedRange)
             }
         }
 
         let barWidth: CGFloat = 3.0
+        let totalGlyphs = numberOfGlyphs
         for range in coveredRanges {
             let quoteGlyphRange = glyphRange(forCharacterRange: range, actualCharacterRange: nil)
-            guard quoteGlyphRange.length > 0 else { continue }
+            guard quoteGlyphRange.length > 0,
+                  quoteGlyphRange.location != NSNotFound,
+                  NSMaxRange(quoteGlyphRange) <= totalGlyphs else { continue }
             let rect = boundingRect(forGlyphRange: quoteGlyphRange, in: textContainer)
             let barRect = CGRect(
                 x: origin.x + 6,
@@ -882,17 +913,17 @@ final class InlineImageOverlayView: NSView {
         // Corner (bottom-right) — extends outward by `outset` on both axes
         let cornerRect = CGRect(x: bounds.maxX - zone + outset, y: bounds.maxY - zone + outset,
                                 width: zone, height: zone)
-        addCursorRect(cornerRect, cursor: NSCursor.frameResize(position: .bottomRight, directions: .all))
+        addCursorRect(cornerRect, cursor: NSCursor.compatFrameResize(position: "bottomRight"))
 
         // Right edge (excluding corner) — extends outward by `outset`
         let rightRect = CGRect(x: bounds.maxX - zone + outset, y: bounds.minY,
                                width: zone, height: bounds.height - zone + outset)
-        addCursorRect(rightRect, cursor: NSCursor.frameResize(position: .right, directions: .all))
+        addCursorRect(rightRect, cursor: NSCursor.compatFrameResize(position: "right"))
 
         // Bottom edge (excluding corner) — extends outward by `outset`
         let bottomRect = CGRect(x: bounds.minX, y: bounds.maxY - zone + outset,
                                 width: bounds.width - zone + outset, height: zone)
-        addCursorRect(bottomRect, cursor: NSCursor.frameResize(position: .bottom, directions: .all))
+        addCursorRect(bottomRect, cursor: NSCursor.compatFrameResize(position: "bottom"))
     }
 
     override func setFrameSize(_ newSize: NSSize) {
@@ -909,9 +940,9 @@ final class InlineImageOverlayView: NSView {
         let local = convert(windowPoint, from: nil)
         guard let edge = resizeEdge(at: local) else { return nil }
         return switch edge {
-        case .right:  NSCursor.frameResize(position: .right, directions: .all)
-        case .bottom: NSCursor.frameResize(position: .bottom, directions: .all)
-        case .corner: NSCursor.frameResize(position: .bottomRight, directions: .all)
+        case .right:  NSCursor.compatFrameResize(position: "right")
+        case .bottom: NSCursor.compatFrameResize(position: "bottom")
+        case .corner: NSCursor.compatFrameResize(position: "bottomRight")
         }
     }
 
@@ -949,9 +980,9 @@ final class InlineImageOverlayView: NSView {
             dragStartHeight = bounds.height
             // Lock cursor during drag so it persists even outside view bounds
             let resizeCursor: NSCursor = switch edge {
-            case .right:  NSCursor.frameResize(position: .right, directions: .all)
-            case .bottom: NSCursor.frameResize(position: .bottom, directions: .all)
-            case .corner: NSCursor.frameResize(position: .bottomRight, directions: .all)
+            case .right:  NSCursor.compatFrameResize(position: "right")
+            case .bottom: NSCursor.compatFrameResize(position: "bottom")
+            case .corner: NSCursor.compatFrameResize(position: "bottomRight")
             }
             resizeCursor.push()
         } else {
@@ -1136,6 +1167,9 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             textView.window?.makeFirstResponder(textView)
             // Position cursor at start so empty notes show a blinking caret immediately
             textView.setSelectedRange(NSRange(location: 0, length: 0))
+            // Force redraw so block quote bars render (needsDisplay in makeNSView fires
+            // before the view is in the window hierarchy, so AppKit skips the draw)
+            textView.needsDisplay = true
         }
 
         return textView
@@ -1158,8 +1192,6 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     .underlineColor: NSColor.clear,
                 ]
                 context.coordinator.updateColorScheme(resolvedScheme)
-
-                // NSColor.labelColor is dynamic — setting the appearance is sufficient.
                 textView.needsDisplay = true
             }
         }
@@ -3753,7 +3785,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     if attrs[TextFormattingManager.customTextColorKey] as? Bool != true {
                         // Block quote text uses muted color — preserve it
                         if attrs[.blockQuote] as? Bool == true {
-                            attrs[.foregroundColor] = NSColor.labelColor.withAlphaComponent(0.7)
+                            attrs[.foregroundColor] = blockQuoteTextColor
                         } else {
                             attrs[.foregroundColor] = NSColor.labelColor
                         }
@@ -4014,13 +4046,20 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 if contentText.isEmpty {
                     // Empty block quote line — exit quote mode
                     isUpdating = true
+                    // Prepare the reset style BEFORE beginEditing — if this guard fails,
+                    // we must not leave the storage in a permanently locked editing session.
+                    guard let resetStyle = Self.baseParagraphStyle().mutableCopy() as? NSMutableParagraphStyle else {
+                        isUpdating = false
+                        return false
+                    }
                     storage.beginEditing()
                     storage.removeAttribute(.blockQuote, range: paraRange)
-                    guard let resetStyle = Self.baseParagraphStyle().mutableCopy() as? NSMutableParagraphStyle else { return false }
                     storage.addAttribute(.paragraphStyle, value: resetStyle, range: paraRange)
                     storage.addAttribute(.foregroundColor, value: NSColor.labelColor, range: paraRange)
                     storage.endEditing()
                     textView.setSelectedRange(NSRange(location: paraRange.location, length: 0))
+                    // Reset typing attributes so next typed character does NOT inherit .blockQuote
+                    textView.typingAttributes = Self.baseTypingAttributes(for: currentColorScheme)
                     isUpdating = false
                     syncText()
                     return false
@@ -4033,18 +4072,21 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 storage.replaceCharacters(
                     in: NSRange(location: insertionPoint, length: 0), with: "\n")
                 let newParaStart = insertionPoint + 1
-                let safeLen = min(1, storage.length - newParaStart)
-                if safeLen > 0 {
-                    let newRange = NSRange(location: newParaStart, length: safeLen)
-                    storage.addAttribute(.blockQuote, value: true, range: newRange)
+                // Use the full new paragraph range so .blockQuote covers the entire
+                // paragraph including any trailing newline -- prevents attribute gaps
+                // that cause isInBlockQuoteParagraph to miss the next Enter check.
+                let newParaRange = (storage.string as NSString).paragraphRange(
+                    for: NSRange(location: newParaStart, length: 0))
+                if newParaRange.length > 0 {
+                    storage.addAttribute(.blockQuote, value: true, range: newParaRange)
                     storage.addAttribute(
                         .paragraphStyle,
                         value: Self.blockQuoteParagraphStyle(),
-                        range: newRange)
+                        range: newParaRange)
                     storage.addAttribute(
                         .foregroundColor,
-                        value: NSColor.labelColor.withAlphaComponent(0.7),
-                        range: newRange)
+                        value: blockQuoteTextColor,
+                        range: newParaRange)
                 }
                 storage.endEditing()
                 textView.setSelectedRange(NSRange(location: newParaStart, length: 0))
@@ -4052,7 +4094,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 var typingAttrs = Self.baseTypingAttributes(for: currentColorScheme)
                 typingAttrs[.blockQuote] = true
                 typingAttrs[.paragraphStyle] = Self.blockQuoteParagraphStyle()
-                typingAttrs[.foregroundColor] = NSColor.labelColor.withAlphaComponent(0.7)
+                typingAttrs[.foregroundColor] = blockQuoteTextColor
                 textView.typingAttributes = typingAttrs
                 isUpdating = false
                 syncText()
@@ -6139,8 +6181,11 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         /// Returns true if the cursor is inside a block quote paragraph
         private func isInBlockQuoteParagraph(range: NSRange) -> Bool {
             guard let storage = textView?.textStorage else { return false }
-            let location = max(0, min(storage.length, range.location))
-            guard location < storage.length else { return false }
+            guard storage.length > 0 else { return false }
+            var location = max(0, min(storage.length, range.location))
+            // When cursor is at the very end of storage (no trailing newline),
+            // check the attribute on the last character instead of bailing out
+            if location >= storage.length { location = storage.length - 1 }
             return storage.attribute(.blockQuote, at: location, effectiveRange: nil) as? Bool == true
         }
 
@@ -6391,7 +6436,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 if fmtBlockQuote {
                     attrs[.blockQuote] = true
                     attrs[.paragraphStyle] = Self.blockQuoteParagraphStyle()
-                    attrs[.foregroundColor] = NSColor.labelColor.withAlphaComponent(0.7)
+                    attrs[.foregroundColor] = blockQuoteTextColor
                 }
                 if let hlHex = fmtHighlightHex {
                     attrs[.highlightColor] = hlHex
@@ -8117,7 +8162,7 @@ final class InlineNSTextView: NSTextView {
                         textStorage.addAttribute(.paragraphStyle, value: quoteStyle, range: newParaRange)
                         textStorage.addAttribute(
                             .foregroundColor,
-                            value: NSColor.labelColor.withAlphaComponent(0.7),
+                            value: blockQuoteTextColor,
                             range: newParaRange)
                         textStorage.endEditing()
                         setSelectedRange(NSRange(location: newCursorPos, length: 0))
@@ -8126,7 +8171,7 @@ final class InlineNSTextView: NSTextView {
                             for: actionDelegate?.currentColorScheme)
                         quoteTyping[.blockQuote] = true
                         quoteTyping[.paragraphStyle] = quoteStyle
-                        quoteTyping[.foregroundColor] = NSColor.labelColor.withAlphaComponent(0.7)
+                        quoteTyping[.foregroundColor] = blockQuoteTextColor
                         typingAttributes = quoteTyping
                     default:
                         break

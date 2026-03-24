@@ -106,7 +106,7 @@ struct JotApp: App {
         }
         #if os(macOS)
         .windowStyle(.hiddenTitleBar)
-        .windowBackgroundDragBehavior(.disabled)
+        .windowBackgroundDragDisabledIfAvailable()
         .commands {
             NoteSelectionCommands()
             NoteManagementCommands()

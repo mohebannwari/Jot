@@ -369,6 +369,8 @@ class TextFormattingManager: ObservableObject {
                 textStorage.replaceCharacters(in: paragraphRange, with: newText)
                 let prefixRange = NSRange(location: paragraphRange.location, length: prefix.count)
                 textStorage.addAttribute(.orderedListNumber, value: 1, range: prefixRange)
+                textStorage.addAttribute(.font, value: FontManager.bodyNS(), range: prefixRange)
+                textStorage.addAttribute(.foregroundColor, value: NSColor.labelColor, range: prefixRange)
             }
             textStorage.endEditing()
         }

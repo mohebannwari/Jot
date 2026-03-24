@@ -102,8 +102,9 @@ private extension View {
             self
                 .padding(.horizontal, 4)
                 .padding(.vertical, 3)
-                .background(.ultraThinMaterial, in: shape)
-                .overlay(shape.stroke(Color.primary.opacity(0.06), lineWidth: 0.5))
+                .background(Color("SecondaryBackgroundColor"), in: shape)
+                .overlay(shape.stroke(Color.primary.opacity(0.12), lineWidth: 0.5))
+                .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
         }
     }
 }

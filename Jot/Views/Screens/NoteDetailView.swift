@@ -361,7 +361,7 @@ struct NoteDetailView: View {
                 .scrollDisabled(popupMenuActive)
                 .scrollClipDisabled()
                 .coordinateSpace(name: "scroll")
-                .contentMargins(.bottom, 100, for: .scrollContent)
+                .modifier(BottomContentMargin(bottom: 100))
                 .background(
                     GeometryReader { geo in
                         Color.clear.onAppear { scrollViewHeight = geo.size.height }

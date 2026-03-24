@@ -20,8 +20,9 @@ extension View {
             self
                 .padding(.horizontal, 4)
                 .padding(.vertical, 3)
-                .background(.ultraThinMaterial, in: shape)
-                .overlay(shape.stroke(Color.primary.opacity(0.06), lineWidth: 0.5))
+                .background(Color("SecondaryBackgroundColor"), in: shape)
+                .overlay(shape.stroke(Color.primary.opacity(0.12), lineWidth: 0.5))
+                .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
         }
     }
 
@@ -42,9 +43,10 @@ extension View {
             self
                 .padding(.horizontal, 4)
                 .padding(.vertical, 3)
-                .background(.ultraThinMaterial, in: shape)
                 .background(shape.fill(tint.opacity(tintOpacity)))
-                .overlay(shape.stroke(Color.primary.opacity(strokeOpacity), lineWidth: 0.5))
+                .background(Color("SecondaryBackgroundColor"), in: shape)
+                .overlay(shape.stroke(Color.primary.opacity(max(strokeOpacity, 0.12)), lineWidth: 0.5))
+                .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
         }
     }
     
@@ -59,7 +61,9 @@ extension View {
             self
                 .padding(.horizontal, 3)
                 .padding(.vertical, 2)
-                .background(.ultraThinMaterial, in: shape)
+                .background(Color("SecondaryBackgroundColor"), in: shape)
+                .overlay(shape.stroke(Color.primary.opacity(0.10), lineWidth: 0.5))
+                .shadow(color: .black.opacity(0.06), radius: 6, y: 2)
         }
     }
     
@@ -109,7 +113,7 @@ extension View {
                 .blur(radius: 1.2, opaque: false)
         } else {
             self
-                .background(.ultraThinMaterial.opacity(0.7))
+                .background(Color("SecondaryBackgroundColor").opacity(0.85))
                 .blur(radius: 2.0, opaque: false)
         }
     }
@@ -131,10 +135,11 @@ extension View {
         } else {
             self
                 .background {
-                    Rectangle()
-                        .fill(.ultraThinMaterial.opacity(0.6))
-                        .blur(radius: 12.0, opaque: false)
-                        .ignoresSafeArea(.all)
+                    ZStack {
+                        BackdropBlurView(material: .hudWindow, blendingMode: .behindWindow)
+                        Color(.black).opacity(0.10)
+                    }
+                    .ignoresSafeArea(.all)
                 }
         }
     }

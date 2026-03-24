@@ -272,7 +272,7 @@ final class CalloutOverlayView: NSView {
     func cursorForPoint(_ windowPoint: CGPoint) -> NSCursor? {
         let local = convert(windowPoint, from: nil)
         guard resizeHandle.frame.contains(local) else { return nil }
-        return NSCursor.frameResize(position: .right, directions: .all)
+        return NSCursor.compatFrameResize(position: "right")
     }
 
     // MARK: - Height Calculation
@@ -411,7 +411,7 @@ private final class _CalloutResizeHandle: NSView {
     override var isOpaque: Bool { false }
 
     override func resetCursorRects() {
-        addCursorRect(bounds, cursor: NSCursor.frameResize(position: .right, directions: .all))
+        addCursorRect(bounds, cursor: NSCursor.compatFrameResize(position: "right"))
     }
 
     override func mouseDown(with event: NSEvent) {

@@ -144,7 +144,7 @@ struct StickerView: View {
                     }
             )
             .onHover { hovering in
-                if hovering { NSCursor.frameResize(position: .bottomRight, directions: .all).push() }
+                if hovering { NSCursor.compatFrameResize(position: "bottomRight").push() }
                 else { NSCursor.pop() }
             }
     }

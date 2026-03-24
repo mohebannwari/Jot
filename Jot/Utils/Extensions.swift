@@ -532,3 +532,83 @@ extension Notification.Name {
     // Text Generation -- insert generated text at cursor
     static let aiTextGenInsert = Notification.Name("AITextGenInsert")
 }
+
+// MARK: - macOS 14 Compatibility Modifiers
+
+/// Wraps `.contentMargins(.bottom, _, for: .scrollContent)` with a macOS 15 availability check.
+/// On macOS 14, falls back to adding a transparent spacer via safeAreaInset.
+struct BottomContentMargin: ViewModifier {
+    let bottom: CGFloat
+
+    func body(content: Content) -> some View {
+        if #available(macOS 15.0, *) {
+            content.contentMargins(.bottom, bottom, for: .scrollContent)
+        } else {
+            content.safeAreaInset(edge: .bottom, spacing: 0) {
+                Color.clear.frame(height: bottom)
+            }
+        }
+    }
+}
+
+// MARK: - windowBackgroundDragBehavior Compatibility (macOS 15+)
+
+extension Scene {
+    /// Applies `.windowBackgroundDragBehavior(.disabled)` on macOS 15+; no-op on macOS 14.
+    func windowBackgroundDragDisabledIfAvailable() -> some Scene {
+        if #available(macOS 15.0, *) {
+            return self.windowBackgroundDragBehavior(.disabled)
+        } else {
+            return self
+        }
+    }
+}
+
+// MARK: - NSCursor.frameResize Compatibility (macOS 15+)
+
+extension NSCursor {
+    /// Compatibility wrapper for `NSCursor.frameResize(position:directions:)` (macOS 15+).
+    /// On macOS 14, falls back to the closest classic resize cursor.
+    @MainActor
+    static func compatFrameResize(position: String, directions: String = "all") -> NSCursor {
+        if #available(macOS 15.0, *) {
+            let pos: NSCursor.FrameResizePosition
+            switch position {
+            case "right":       pos = .right
+            case "bottom":      pos = .bottom
+            case "bottomRight": pos = .bottomRight
+            default:            pos = .right
+            }
+            return NSCursor.frameResize(position: pos, directions: .all)
+        } else {
+            // Fallback cursors that convey the same resize intent
+            switch position {
+            case "right":       return NSCursor.resizeLeftRight
+            case "bottom":      return NSCursor.resizeUpDown
+            case "bottomRight": return NSCursor.crosshair
+            default:            return NSCursor.resizeLeftRight
+            }
+        }
+    }
+}
+
+/// Wraps `.onScrollGeometryChange` with a macOS 15 availability check.
+/// On macOS 14, `isAtBottom` stays true (indicator hidden).
+struct ScrollBottomDetector: ViewModifier {
+    @Binding var isAtBottom: Bool
+
+    func body(content: Content) -> some View {
+        if #available(macOS 15.0, *) {
+            content.onScrollGeometryChange(for: Bool.self, of: { geo in
+                let maxOffset = geo.contentSize.height - geo.containerSize.height
+                return maxOffset <= 0 || geo.contentOffset.y >= maxOffset - 2
+            }, action: { _, atBottom in
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    isAtBottom = atBottom
+                }
+            })
+        } else {
+            content.onAppear { isAtBottom = true }
+        }
+    }
+}
