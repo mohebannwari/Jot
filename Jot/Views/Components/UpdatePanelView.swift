@@ -4,7 +4,6 @@ import SwiftUI
 
 enum UpdatePanelVariant: Equatable {
     case relaunch(version: String)
-    case success
 }
 
 // MARK: - UpdatePanelView
@@ -14,8 +13,6 @@ struct UpdatePanelView: View {
     var imageYOffset: CGFloat = -80
     var onRelaunch: () -> Void = {}
     var onRemindLater: () -> Void = {}
-    var onViewChangelog: () -> Void = {}
-    var onDismiss: () -> Void = {}
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -26,10 +23,7 @@ struct UpdatePanelView: View {
     var body: some View {
         VStack(spacing: 0) {
             cardContent
-
-            if case .relaunch = variant {
-                buttonSection
-            }
+            buttonSection
         }
         .padding(2)
         .thinLiquidGlass(in: RoundedRectangle(cornerRadius: outerRadius, style: .continuous))
@@ -46,10 +40,6 @@ struct UpdatePanelView: View {
                 headerSection
             }
             .padding(16)
-
-            if case .success = variant {
-                closeButton
-            }
         }
         .frame(height: cardHeight)
         .clipShape(RoundedRectangle(cornerRadius: innerRadius, style: .continuous))
@@ -103,16 +93,8 @@ struct UpdatePanelView: View {
 
     // MARK: - Icon
 
-    @ViewBuilder
     private var iconView: some View {
-        let iconImage: String = {
-            switch variant {
-            case .relaunch: return "IconUpdateDownload"
-            case .success: return "IconUpdateSuccess"
-            }
-        }()
-
-        Image(iconImage)
+        Image("IconUpdateDownload")
             .renderingMode(.template)
             .resizable()
             .scaledToFit()
@@ -124,9 +106,8 @@ struct UpdatePanelView: View {
 
     @ViewBuilder
     private var headerSection: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            switch variant {
-            case .relaunch(let version):
+        if case .relaunch(let version) = variant {
+            VStack(alignment: .leading, spacing: 4) {
                 Text("Update to version \(version)")
                     .font(.system(size: 15, weight: .medium))
                     .tracking(-0.5)
@@ -137,79 +118,8 @@ struct UpdatePanelView: View {
                     .font(.system(size: 12, weight: .medium))
                     .tracking(-0.3)
                     .foregroundStyle(Color("SecondaryTextColor"))
-
-            case .success:
-                Text("Update successful!")
-                    .font(.system(size: 15, weight: .medium))
-                    .tracking(-0.5)
-                    .lineLimit(1)
-                    .foregroundStyle(Color("PrimaryTextColor"))
-
-                changelogLink
             }
         }
-    }
-
-    // MARK: - Changelog Link (looping shimmer)
-
-    private var changelogLink: some View {
-        Button(action: onViewChangelog) {
-            HStack(spacing: 4) {
-                ShimmerText(
-                    text: "View changelog",
-                    font: .system(size: 12, weight: .medium),
-                    tracking: -0.3,
-                    baseColor: Color("SecondaryTextColor"),
-                    isLooping: true
-                )
-
-                Image("arrow-up-right")
-                    .renderingMode(.template)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 12, height: 12)
-                    .foregroundStyle(Color("SecondaryTextColor"))
-            }
-        }
-        .buttonStyle(.plain)
-    }
-
-    // MARK: - Close Button (glass circle)
-
-    private var closeButton: some View {
-        VStack {
-            HStack {
-                Spacer()
-                Button(action: onDismiss) {
-                    Image("IconCrossMedium")
-                        .renderingMode(.template)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 10, height: 10)
-                        .foregroundStyle(Color("PrimaryTextColor").opacity(0.7))
-                        .padding(6)
-                        .background(.ultraThinMaterial, in: Circle())
-                }
-                .buttonStyle(.plain)
-                .contentShape(Circle())
-            }
-        }
-        .padding(10)
-    }
-
-    // MARK: - Border Gradient
-
-    private var borderGradient: LinearGradient {
-        LinearGradient(
-            stops: [
-                .init(color: Color(red: 0.639, green: 0.573, blue: 0.259), location: 0),      // #A39242
-                .init(color: Color(red: 0.353, green: 0.353, blue: 0.173), location: 0.14),    // #5A5A2C
-                .init(color: Color(red: 0.208, green: 0.192, blue: 0.110), location: 0.56),    // #35311C
-                .init(color: Color("BorderSubtleColor"), location: 1.0),
-            ],
-            startPoint: UnitPoint(x: 0.45, y: 0),
-            endPoint: UnitPoint(x: 0.55, y: 1)
-        )
     }
 
     // MARK: - Button Section
@@ -329,60 +239,5 @@ private struct ShimmerButton: View {
             .blendMode(colorScheme == .dark ? .screen : .multiply)
         }
         .allowsHitTesting(false)
-    }
-}
-
-// MARK: - Shimmer Text (gradient sweep on text, supports looping)
-
-private struct ShimmerText: View {
-    let text: String
-    let font: Font
-    let tracking: CGFloat
-    let baseColor: Color
-    var isLooping: Bool = false
-
-    @State private var shimmerPhase: CGFloat = 0
-    @State private var shimmerTask: Task<Void, Never>?
-
-    var body: some View {
-        ZStack {
-            Text(text)
-                .font(font)
-                .tracking(tracking)
-                .foregroundStyle(baseColor)
-
-            Text(text)
-                .font(font)
-                .tracking(tracking)
-                .foregroundStyle(.clear)
-                .overlay {
-                    GeometryReader { geo in
-                        LinearGradient(
-                            stops: shimmerStops,
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                        .frame(width: geo.size.width * 3)
-                        .offset(x: shimmerOffset(phase: shimmerPhase, width: geo.size.width))
-                    }
-                    .clipped()
-                    .allowsHitTesting(false)
-                }
-                .mask {
-                    Text(text)
-                        .font(font)
-                        .tracking(tracking)
-                }
-        }
-        .onAppear {
-            startShimmerLoop(
-                phase: $shimmerPhase,
-                task: $shimmerTask,
-                initialDelay: 0.3,
-                sweepDuration: 0.85,
-                pauseDuration: isLooping ? 3.0 : .infinity
-            )
-        }
-        .onDisappear { shimmerTask?.cancel() }
     }
 }

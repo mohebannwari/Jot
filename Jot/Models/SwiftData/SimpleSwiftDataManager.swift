@@ -132,6 +132,26 @@ final class SimpleSwiftDataManager: ObservableObject {
         }
     }
 
+    /// Lightweight check that populates archivedNotes/archivedFolders only if
+    /// the database has archived items but the arrays haven't been loaded yet.
+    func checkForArchivedItems() {
+        do {
+            let notePredicate = #Predicate<NoteEntity> { $0.isArchived == true && $0.isDeleted == false }
+            let noteDescriptor = FetchDescriptor<NoteEntity>(predicate: notePredicate)
+            let folderPredicate = #Predicate<FolderEntity> { $0.isArchived == true }
+            let folderDescriptor = FetchDescriptor<FolderEntity>(predicate: folderPredicate)
+
+            if archivedNotes.isEmpty, (try modelContext.fetchCount(noteDescriptor)) > 0 {
+                loadArchivedNotes()
+            }
+            if archivedFolders.isEmpty, (try modelContext.fetchCount(folderDescriptor)) > 0 {
+                loadArchivedFolders()
+            }
+        } catch {
+            logger.error("Failed to check for archived items: \(error)")
+        }
+    }
+
     func loadArchivedNotes() {
         do {
             let predicate = #Predicate<NoteEntity> { $0.isArchived == true && $0.isDeleted == false }

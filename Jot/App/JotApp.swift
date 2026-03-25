@@ -14,6 +14,10 @@ struct JotApp: App {
     @StateObject private var themeManager = ThemeManager()
     @StateObject private var authManager = NoteAuthenticationManager()
     @StateObject private var undoToastManager = UndoToastManager()
+    @StateObject private var updateManager = UpdateManager()
+    #if DEBUG
+    @StateObject private var buildWatcher = BuildWatcherManager()
+    #endif
 
     @MainActor
     init() {
@@ -101,6 +105,10 @@ struct JotApp: App {
                 .environmentObject(themeManager)
                 .environmentObject(authManager)
                 .environmentObject(undoToastManager)
+                .environmentObject(updateManager)
+                #if DEBUG
+                .environmentObject(buildWatcher)
+                #endif
                 .preferredColorScheme(themeManager.resolvedColorScheme)
                 .containerShape(.rect(cornerRadius: 16))
         }
@@ -119,6 +127,12 @@ struct JotApp: App {
                     NotificationCenter.default.post(name: .openSettings, object: nil)
                 }
                 .keyboardShortcut(",", modifiers: .command)
+
+                Divider()
+
+                Button("Check for Updates...") {
+                    NotificationCenter.default.post(name: .checkForUpdates, object: nil)
+                }
             }
         }
         #endif

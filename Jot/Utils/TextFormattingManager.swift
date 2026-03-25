@@ -351,9 +351,11 @@ class TextFormattingManager: ObservableObject {
 
             if hasStrikethrough {
                 textStorage.removeAttribute(.strikethroughStyle, range: range)
+                textStorage.addAttribute(.foregroundColor, value: NSColor.labelColor, range: range)
                 isStrikethrough = false
             } else {
                 textStorage.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: range)
+                textStorage.addAttribute(.foregroundColor, value: checkedTodoTextColor, range: range)
                 isStrikethrough = true
             }
 

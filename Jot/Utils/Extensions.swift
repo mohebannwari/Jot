@@ -498,6 +498,7 @@ extension Notification.Name {
     static let openNoteFromSpotlight = Notification.Name("openNoteFromSpotlight")
     static let printCurrentNote = Notification.Name("printCurrentNote")
     static let toggleVersionHistory = Notification.Name("toggleVersionHistory")
+    static let checkForUpdates = Notification.Name("checkForUpdates")
 }
 
 // MARK: - AI Notification Names

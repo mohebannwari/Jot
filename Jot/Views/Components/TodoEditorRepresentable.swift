@@ -14,9 +14,9 @@ import UniformTypeIdentifiers
 // MARK: - Supporting Types & Attachments
 // (Moved from TodoRichTextEditor.swift — used exclusively by the Coordinator)
 
-/// Dynamic color for checked todo text — resolves at draw time so it adapts to light/dark.
+/// Dynamic color for checked/struck-through text — resolves at draw time so it adapts to light/dark.
 /// NSColor.labelColor.withAlphaComponent() freezes the catalog color at call time; this doesn't.
-private let checkedTodoTextColor = NSColor(name: nil) { appearance in
+let checkedTodoTextColor = NSColor(name: nil) { appearance in
     let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
     return (isDark ? NSColor.white : NSColor.black).withAlphaComponent(0.7)
 }
@@ -250,16 +250,15 @@ final class TypingAnimationLayoutManager: NSLayoutManager {
         drawSquigglyStrikethrough(forGlyphRange: glyphsToShow, at: origin)
     }
 
-    // MARK: - Squiggly Strikethrough for Checked Todos
+    // MARK: - Squiggly Strikethrough
 
-    /// Draws a hand-drawn squiggly line through checked todo text.
-    /// Uses a seeded random based on character position so the wobble is stable across redraws.
+    /// Draws a hand-drawn squiggly line through checked todo text AND body text with strikethrough.
+    /// Uses a seeded random based on character content so the wobble is stable across redraws.
     private func drawSquigglyStrikethrough(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
         guard let textStorage = textStorage,
               let textContainer = textContainers.first,
               let context = NSGraphicsContext.current?.cgContext
         else { return }
-        // Bail if glyph range exceeds current glyph count (stale range during mid-edit)
         guard NSMaxRange(glyphsToShow) <= numberOfGlyphs else { return }
         guard textStorage.length > 0 else { return }
 
@@ -267,91 +266,100 @@ final class TypingAnimationLayoutManager: NSLayoutManager {
         let safeCharRange = NSIntersectionRange(charRange, NSRange(location: 0, length: textStorage.length))
         guard safeCharRange.length > 0 else { return }
 
+        // Pass 1: Checked todo items (marked with .todoChecked)
         textStorage.enumerateAttribute(.todoChecked, in: safeCharRange, options: []) { value, attrRange, _ in
             guard value as? Bool == true else { return }
-
-            // Trim trailing newlines/whitespace so the squiggly line only spans visible text
-            let nsString = textStorage.string as NSString
-            var trimmedEnd = NSMaxRange(attrRange)
-            while trimmedEnd > attrRange.location {
-                let ch = nsString.character(at: trimmedEnd - 1)
-                if ch == 0x0A || ch == 0x0D || ch == 0x20 || ch == 0x09 { trimmedEnd -= 1 }
-                else { break }
-            }
-            let trimmedRange = NSRange(location: attrRange.location, length: trimmedEnd - attrRange.location)
-            guard trimmedRange.length > 0 else { return }
-
-            let glyphRange = self.glyphRange(forCharacterRange: trimmedRange, actualCharacterRange: nil)
-            guard glyphRange.length > 0 else { return }
-
-            // Get the line fragment rects for this range (may span multiple visual lines)
-            self.enumerateLineFragments(forGlyphRange: glyphRange) { lineRect, usedRect, container, lineGlyphRange, stop in
-                // Intersect with our checked range to get the exact segment on this line
-                let intersection = NSIntersectionRange(glyphRange, lineGlyphRange)
-                guard intersection.length > 0 else { return }
-
-                let segmentRect = self.boundingRect(forGlyphRange: intersection, in: textContainer)
-                // Inset slightly so the line doesn't bleed outside the text bounds
-                let startX = origin.x + segmentRect.origin.x + 2
-                let endX = origin.x + segmentRect.origin.x + segmentRect.width - 1
-                // Ask NSLayoutManager where it actually placed the baseline,
-                // rather than guessing from rect geometry. The todo paragraph style
-                // inflates line height to 34pt for the checkbox, so the text position
-                // within the line fragment varies between line 1 and wrapped lines.
-                let glyphLoc = self.location(forGlyphAt: intersection.location)
-                let charIdx = self.characterIndexForGlyph(at: intersection.location)
-                let font = textStorage.attribute(.font, at: charIdx, effectiveRange: nil) as? NSFont
-                    ?? NSFont.systemFont(ofSize: 14)
-                // glyphLoc.y is the baseline offset from lineRect.origin (in flipped coords)
-                let baseline = lineRect.origin.y + glyphLoc.y
-                let midY = origin.y + baseline - font.xHeight * 0.5
-
-                guard endX - startX > 4 else { return }
-
-                let path = NSBezierPath()
-                path.lineWidth = 1.6
-                path.lineCapStyle = .round
-                path.lineJoinStyle = .round
-
-                // Generate a squiggly line with deterministic wobble seeded by position
-                let segmentLength = endX - startX
-                let stepSize: CGFloat = 6.0
-                let steps = max(1, Int(ceil(segmentLength / stepSize)))
-
-                // Seed based on content hash for stable wobble (immune to position shifts)
-                let todoText = (textStorage.string as NSString).substring(with: attrRange)
-                var _contentHash: UInt64 = 5381
-                for scalar in todoText.unicodeScalars {
-                    _contentHash = _contentHash &* 33 &+ UInt64(scalar.value)
-                }
-                var rng = _contentHash
-
-                func nextWobble() -> CGFloat {
-                    rng = rng &* 6364136223846793005 &+ 1442695040888963407
-                    let normalized = CGFloat((rng >> 33) & 0x7FFF) / CGFloat(0x7FFF)
-                    return (normalized - 0.5) * 5.0  // wobble amplitude +/- 2.5pt
-                }
-
-                path.move(to: NSPoint(x: startX, y: midY + nextWobble()))
-
-                for i in 1...steps {
-                    let x = min(startX + CGFloat(i) * stepSize, endX)
-                    let wobble = nextWobble()
-
-                    // Use quadratic curves for organic hand-drawn feel
-                    let cpX = startX + (CGFloat(i) - 0.5) * stepSize
-                    let cpY = midY + nextWobble()
-                    path.curve(to: NSPoint(x: x, y: midY + wobble),
-                               controlPoint1: NSPoint(x: min(cpX, endX), y: cpY),
-                               controlPoint2: NSPoint(x: x, y: midY + wobble))
-                }
-
-                context.saveGState()
-                NSColor.labelColor.setStroke()
-                path.stroke()
-                context.restoreGState()
-            }
+            drawSquigglyLine(forAttrRange: attrRange, textStorage: textStorage, textContainer: textContainer, origin: origin, context: context)
         }
+
+        // Pass 2: Body text with .strikethroughStyle (skip ranges already handled by .todoChecked)
+        textStorage.enumerateAttribute(.strikethroughStyle, in: safeCharRange, options: []) { value, attrRange, _ in
+            guard let style = value as? Int, style != 0 else { return }
+            // Don't double-draw on checked todos
+            let hasTodoChecked = textStorage.attribute(.todoChecked, at: attrRange.location, effectiveRange: nil) as? Bool ?? false
+            guard !hasTodoChecked else { return }
+            drawSquigglyLine(forAttrRange: attrRange, textStorage: textStorage, textContainer: textContainer, origin: origin, context: context)
+        }
+    }
+
+    /// Shared squiggly line drawing for a given attributed range.
+    private func drawSquigglyLine(forAttrRange attrRange: NSRange, textStorage: NSTextStorage, textContainer: NSTextContainer, origin: NSPoint, context: CGContext) {
+        // Trim trailing newlines/whitespace so the squiggly line only spans visible text
+        let nsString = textStorage.string as NSString
+        var trimmedEnd = NSMaxRange(attrRange)
+        while trimmedEnd > attrRange.location {
+            let ch = nsString.character(at: trimmedEnd - 1)
+            if ch == 0x0A || ch == 0x0D || ch == 0x20 || ch == 0x09 { trimmedEnd -= 1 }
+            else { break }
+        }
+        let trimmedRange = NSRange(location: attrRange.location, length: trimmedEnd - attrRange.location)
+        guard trimmedRange.length > 0 else { return }
+
+        let glyphRange = self.glyphRange(forCharacterRange: trimmedRange, actualCharacterRange: nil)
+        guard glyphRange.length > 0 else { return }
+
+        self.enumerateLineFragments(forGlyphRange: glyphRange) { lineRect, usedRect, container, lineGlyphRange, stop in
+            let intersection = NSIntersectionRange(glyphRange, lineGlyphRange)
+            guard intersection.length > 0 else { return }
+
+            let segmentRect = self.boundingRect(forGlyphRange: intersection, in: textContainer)
+            let startX = origin.x + segmentRect.origin.x + 2
+            let endX = origin.x + segmentRect.origin.x + segmentRect.width - 1
+            let glyphLoc = self.location(forGlyphAt: intersection.location)
+            let charIdx = self.characterIndexForGlyph(at: intersection.location)
+            let font = textStorage.attribute(.font, at: charIdx, effectiveRange: nil) as? NSFont
+                ?? NSFont.systemFont(ofSize: 14)
+            let baseline = lineRect.origin.y + glyphLoc.y
+            let midY = origin.y + baseline - font.xHeight * 0.5
+
+            guard endX - startX > 4 else { return }
+
+            let path = NSBezierPath()
+            path.lineWidth = 1.6
+            path.lineCapStyle = .round
+            path.lineJoinStyle = .round
+
+            let segmentLength = endX - startX
+            let stepSize: CGFloat = 6.0
+            let steps = max(1, Int(ceil(segmentLength / stepSize)))
+
+            // Seed based on content hash for stable wobble (immune to position shifts)
+            let text = nsString.substring(with: attrRange)
+            var contentHash: UInt64 = 5381
+            for scalar in text.unicodeScalars {
+                contentHash = contentHash &* 33 &+ UInt64(scalar.value)
+            }
+            var rng = contentHash
+
+            func nextWobble() -> CGFloat {
+                rng = rng &* 6364136223846793005 &+ 1442695040888963407
+                let normalized = CGFloat((rng >> 33) & 0x7FFF) / CGFloat(0x7FFF)
+                return (normalized - 0.5) * 5.0  // wobble amplitude +/- 2.5pt
+            }
+
+            path.move(to: NSPoint(x: startX, y: midY + nextWobble()))
+
+            for i in 1...steps {
+                let x = min(startX + CGFloat(i) * stepSize, endX)
+                let wobble = nextWobble()
+                let cpX = startX + (CGFloat(i) - 0.5) * stepSize
+                let cpY = midY + nextWobble()
+                path.curve(to: NSPoint(x: x, y: midY + wobble),
+                           controlPoint1: NSPoint(x: min(cpX, endX), y: cpY),
+                           controlPoint2: NSPoint(x: x, y: midY + wobble))
+            }
+
+            context.saveGState()
+            NSColor.labelColor.setStroke()
+            path.stroke()
+            context.restoreGState()
+        }
+    }
+
+    // MARK: - Suppress Native Strikethrough
+
+    override func drawStrikethrough(forGlyphRange glyphRange: NSRange, strikethroughType strikethroughVal: NSUnderlineStyle, baselineOffset: CGFloat, lineFragmentRect lineRect: NSRect, lineFragmentGlyphRange lineGlyphRange: NSRange, containerOrigin: NSPoint) {
+        // Intentionally empty — squiggly strikethrough drawn in drawGlyphs() instead
     }
 
     // MARK: Custom Background Drawing
@@ -7222,6 +7230,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             attrs[.underlineStyle] = underline ? NSUnderlineStyle.single.rawValue : 0
             if strikethrough {
                 attrs[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
+                attrs[.foregroundColor] = checkedTodoTextColor
             } else {
                 attrs[.strikethroughStyle] = 0
             }
@@ -8289,6 +8298,7 @@ final class InlineNSTextView: NSTextView {
                             let replaceRange = NSRange(location: absStart, length: fullLen)
                             var attrs = markdownBaseAttributes
                             attrs[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
+                            attrs[.foregroundColor] = checkedTodoTextColor
                             textStorage.replaceCharacters(in: replaceRange, with: NSAttributedString(string: content, attributes: attrs))
                             setSelectedRange(NSRange(location: absStart + content.count, length: 0))
                             return

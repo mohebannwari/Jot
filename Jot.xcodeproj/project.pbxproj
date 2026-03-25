@@ -90,6 +90,7 @@
 		32921E052E424DC0006A7C11 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
+				AA000001SPARKLE00000001 /* Sparkle in Frameworks */,
 			);
 		};
 		32D8AB862F6DCFDF0058DEF5 /* Frameworks */ = {
@@ -103,6 +104,13 @@
 			);
 		};
 /* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXBuildFile section */
+		AA000001SPARKLE00000001 /* Sparkle in Frameworks */ = {
+			isa = PBXBuildFile;
+			productRef = AA000002SPARKLE00000002 /* Sparkle */;
+		};
+/* End PBXBuildFile section */
 
 /* Begin PBXGroup section */
 		32921DFF2E424DC0006A7C11 = {
@@ -146,6 +154,9 @@
 				32921E0A2E424DC0006A7C11 /* Jot */,
 			);
 			name = Jot;
+			packageProductDependencies = (
+				AA000002SPARKLE00000002 /* Sparkle */,
+			);
 			productName = Jot;
 			productReference = 32921E082E424DC0006A7C11 /* Jot.app */;
 			productType = "com.apple.product-type.application";
@@ -216,6 +227,9 @@
 			);
 			mainGroup = 32921DFF2E424DC0006A7C11;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				AA000003SPARKLE00000003 /* XCRemoteSwiftPackageReference "Sparkle" */,
+			);
 			preferredProjectObjectVersion = 90;
 			productRefGroup = 32921E092E424DC0006A7C11 /* Products */;
 			projectDirPath = "";
@@ -624,6 +638,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		AA000003SPARKLE00000003 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		AA000002SPARKLE00000002 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA000003SPARKLE00000003 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 32921E002E424DC0006A7C11 /* Project object */;
 }

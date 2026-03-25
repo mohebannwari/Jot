@@ -23,6 +23,7 @@ struct NoteDetailView: View {
     var availableNotes: [NotePickerItem] = []
     var onNavigateToNote: ((UUID) -> Void)?
     var backlinks: [BacklinkItem] = []
+    var isSidebarAnimating: Bool = false
 
     // MARK: - Environment
     @Environment(\.colorScheme) private var colorScheme
@@ -154,7 +155,8 @@ struct NoteDetailView: View {
         onSave: @escaping (Note) -> Void,
         availableNotes: [NotePickerItem] = [],
         onNavigateToNote: ((UUID) -> Void)? = nil,
-        backlinks: [BacklinkItem] = []
+        backlinks: [BacklinkItem] = [],
+        isSidebarAnimating: Bool = false
     ) {
         self.note = note
         self.editorInstanceID = editorInstanceID
@@ -165,6 +167,7 @@ struct NoteDetailView: View {
         self.availableNotes = availableNotes
         self.onNavigateToNote = onNavigateToNote
         self.backlinks = backlinks
+        self.isSidebarAnimating = isSidebarAnimating
         self._editedTitle = State(initialValue: note.title)
         // Strip AI block from persisted content so the editor never sees AI tags.
         // AI results are restored into their own @State vars.
@@ -263,6 +266,7 @@ struct NoteDetailView: View {
                         Color.clear
                             .onChange(of: geo.frame(in: .named("scroll")).minY) {
                                 oldValue, newValue in
+                                guard !isSidebarAnimating else { return }
                                 titleOffset = newValue
                                 let shouldShow = newValue < 0
                                 if shouldShow != showStickyHeader {
@@ -288,6 +292,7 @@ struct NoteDetailView: View {
                         scheduleAutosave()
                     }
                 )
+                .appleIntelligenceGlow(cornerRadius: 22, mode: .oneShot)
                 .transition(.opacity.combined(with: .offset(y: -8)))
             }
             if let keyPointsItems = aiKeyPointsItems {
@@ -298,6 +303,7 @@ struct NoteDetailView: View {
                         scheduleAutosave()
                     }
                 )
+                .appleIntelligenceGlow(cornerRadius: 22, mode: .oneShot)
                 .transition(.opacity.combined(with: .offset(y: -8)))
             }
             if shouldShowTopPanel {
@@ -328,7 +334,7 @@ struct NoteDetailView: View {
                     .id("menuSpacer")
             }
         }
-        .padding(.top, 48 + contentTopInsetAdjustment)
+        .padding(.top, 48)
         .padding(.horizontal, 60)
         .frame(maxWidth: .infinity, minHeight: scrollViewHeight, alignment: .topLeading)
         .overlay(alignment: .topLeading) {
@@ -359,6 +365,7 @@ struct NoteDetailView: View {
                 ScrollView(showsIndicators: false) {
                     editorScrollContent
                 }
+                .padding(.top, contentTopInsetAdjustment)
                 .scrollDisabled(popupMenuActive)
                 .scrollClipDisabled()
                 .coordinateSpace(name: "scroll")
@@ -366,7 +373,10 @@ struct NoteDetailView: View {
                 .background(
                     GeometryReader { geo in
                         Color.clear.onAppear { scrollViewHeight = geo.size.height }
-                            .onChange(of: geo.size.height) { _, h in scrollViewHeight = h }
+                            .onChange(of: geo.size.height) { _, h in
+                                guard !isSidebarAnimating else { return }
+                                scrollViewHeight = h
+                            }
                     }
                 )
                 .onChange(of: commandMenuNeedsSpace) { _, needsSpace in

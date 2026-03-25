@@ -10,6 +10,16 @@
     <string>Jot needs access to the microphone so you can record voice notes.</string>
     <key>NSSpeechRecognitionUsageDescription</key>
     <string>Jot uses speech recognition to transcribe your voice notes into text.</string>
+    <key>SUFeedURL</key>
+    <string>https://your-host.com/appcast.xml</string>
+    <key>SUPublicEDKey</key>
+    <string>TPSuG24vxk1Pe1s43tEhhtYfDKVThsNqNfpIFG1xbRI=</string>
+    <key>SUEnableAutomaticChecks</key>
+    <true/>
+    <key>SUAllowsAutomaticUpdates</key>
+    <false/>
+    <key>SUScheduledCheckInterval</key>
+    <integer>14400</integer>
     <key>UTExportedTypeDeclarations</key>
     <array>
         <dict>

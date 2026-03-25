@@ -27,6 +27,7 @@ struct EditContentFloatingPanel: View {
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .fill(colorScheme == .dark ? Color(red: 12/255, green: 10/255, blue: 9/255) : Color.white)
         )
+        .appleIntelligenceGlow(cornerRadius: 22, mode: .continuous)
         .frame(maxWidth: .infinity, alignment: .leading)
         .onKeyPress(.return) { onReplace(); return .handled }
         .onKeyPress(.escape) { onDismiss(); return .handled }

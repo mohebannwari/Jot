@@ -72,7 +72,7 @@ Opus (escalation only — not parallel, not fire-and-forget):
 → **Always reference `.claude/DESIGN_SYSTEM.md`** for all color, spacing, typography, radius, and effect tokens.
 → Figma source: https://www.figma.com/design/BhVLOWG63LckTVCuO3q0Tv/Jot
 → Extract tokens for **both light and dark** themes. No exceptions.
-→ Use `figma-mcp` (`get_variable_defs`, `get_design_context`) before any UI work.
+→ **Always use Figma Console MCP (`figma-console`) as the primary Figma tool.** Only fall back to the official Figma MCP when Figma Console is limited or fails. Use `figma_get_variables`, `figma_execute`, `figma_take_screenshot` etc. before any UI work.
 
 ---
 
@@ -101,8 +101,9 @@ Before any feature implementation:
 
 **MCP priority:**
 1. Context7 — SDK/API docs (always first)
-2. Figma Dev Mode MCP — design tokens and component specs
-3. Brave Search — last resort
+2. Figma Console MCP (`figma-console`) — design tokens, component specs, screenshots, code execution (primary Figma tool)
+3. Official Figma MCP (`claude.ai Figma`) — fallback only when Figma Console is limited or fails
+4. Brave Search — last resort
 
 **Always parallelize** independent file reads, searches, and tool calls.
 
@@ -116,14 +117,7 @@ xcodebuild -project Jot.xcodeproj -scheme Jot clean
 ```
 Check for compile errors before finalizing any implementation.
 
-**After every build, kill the running instance and launch the new binary:**
-```bash
-pkill -x Jot 2>/dev/null
-touch ~/Library/Developer/Xcode/DerivedData/Jot-cphhgkbodyxgypfrmhzapcjwyeot/Build/Products/Debug/Jot.app
-killall iconservicesagent 2>/dev/null || true
-sleep 1 && open ~/Library/Developer/Xcode/DerivedData/Jot-cphhgkbodyxgypfrmhzapcjwyeot/Build/Products/Debug/Jot.app
-```
-This is mandatory after every code change — never leave a stale build running. The `touch` + `killall iconservicesagent` forces macOS to flush the icon cache so the correct icon renders immediately.
+**Do not relaunch the app after building.** The user handles relaunching via the in-app updates panel.
 
 ---
 

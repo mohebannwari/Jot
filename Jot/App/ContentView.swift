@@ -30,10 +30,10 @@ struct NotePreviewAnchorKey: PreferenceKey {
     }
 }
 
-enum SplitPosition { case left, right }
+enum SplitPosition: String, Codable { case left, right }
 enum SplitPickerPane { case primary, secondary }
 
-struct SplitSession: Identifiable, Equatable {
+struct SplitSession: Identifiable, Equatable, Codable {
     let id: UUID
     var primaryNoteID: UUID?
     var secondaryNoteID: UUID?
@@ -188,15 +188,19 @@ struct ContentView: View {
     @EnvironmentObject private var themeManager: ThemeManager
     @EnvironmentObject private var authManager: NoteAuthenticationManager
     @EnvironmentObject private var undoToastManager: UndoToastManager
+    @EnvironmentObject private var updateManager: UpdateManager
+    #if DEBUG
+    @EnvironmentObject private var buildWatcher: BuildWatcherManager
+    #endif
     @State private var lockPasswordInput: String = ""
     @State private var lockAuthFailed: Bool = false
     @State private var selectedNote: Note?
     @State private var selectedNoteIDs: Set<UUID> = []
     @State private var selectionAnchorID: UUID?
     @State private var isSidebarVisible = true
+    @State private var isSidebarAnimating = false
     @State private var isSearchPresented = false
     @State private var isSettingsPresented = false
-    @State private var updatePanelVariant: UpdatePanelVariant = .relaunch(version: "1.01")
     @State private var expandedFolderIDs: Set<UUID> = []
     @State private var expandedArchivedFolderIDs: Set<UUID> = []
     @State private var hoveredArchivedFolderID: UUID?
@@ -286,6 +290,76 @@ struct ContentView: View {
         dampingFraction: 0.86,
         blendDuration: 0.15
     )
+
+    // MARK: - Split Session Persistence
+
+    private static let splitSessionsKey = "SplitSessionsData"
+    private static let activeSplitIDKey = "ActiveSplitID"
+    private static let splitViewVisibleKey = "IsSplitViewVisible"
+
+    private func saveSplitSessions() {
+        if let data = try? JSONEncoder().encode(splitSessions) {
+            UserDefaults.standard.set(data, forKey: Self.splitSessionsKey)
+        }
+        if let id = activeSplitID {
+            UserDefaults.standard.set(id.uuidString, forKey: Self.activeSplitIDKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: Self.activeSplitIDKey)
+        }
+        UserDefaults.standard.set(isSplitViewVisible, forKey: Self.splitViewVisibleKey)
+    }
+
+    private func restoreSplitSessions() {
+        // Don't restore (or destroy saved data) until notes are actually loaded
+        guard notesManager.hasLoadedInitialNotes else { return }
+
+        guard let data = UserDefaults.standard.data(forKey: Self.splitSessionsKey),
+              let sessions = try? JSONDecoder().decode([SplitSession].self, from: data)
+        else { return }
+
+        // Validate: only keep sessions whose notes still exist
+        let noteIDs = Set(notesManager.notes.map(\.id))
+        let valid = sessions.filter { session in
+            let primaryOK = session.primaryNoteID.map { noteIDs.contains($0) } ?? true
+            let secondaryOK = session.secondaryNoteID.map { noteIDs.contains($0) } ?? true
+            return primaryOK && secondaryOK && session.isComplete
+        }
+
+        guard !valid.isEmpty else {
+            UserDefaults.standard.removeObject(forKey: Self.splitSessionsKey)
+            return
+        }
+
+        splitSessions = valid
+        isSplitViewVisible = UserDefaults.standard.bool(forKey: Self.splitViewVisibleKey)
+
+        if let idString = UserDefaults.standard.string(forKey: Self.activeSplitIDKey),
+           let id = UUID(uuidString: idString),
+           valid.contains(where: { $0.id == id }) {
+            activeSplitID = id
+        } else {
+            activeSplitID = valid.last?.id
+        }
+
+        // Set selectedNote to the primary note of the active split so the split pane renders
+        if let activeSession = valid.first(where: { $0.id == activeSplitID }),
+           let primaryID = activeSession.primaryNoteID,
+           let note = notesManager.notes.first(where: { $0.id == primaryID }) {
+            selectedNote = note
+            selectedNoteIDs = [note.id]
+        }
+    }
+
+    private func toggleSidebar(to visible: Bool? = nil) {
+        isSidebarAnimating = true
+        withAnimation(sidebarVisibilityAnimation) {
+            if let visible { isSidebarVisible = visible }
+            else { isSidebarVisible.toggle() }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            isSidebarAnimating = false
+        }
+    }
     private let detailToggleToContentExtraSpacingWhenSidebarHidden: CGFloat = 16
     private let sidebarIconSize: CGFloat = 18
     private let sidebarTopIconSpacingCollapsed: CGFloat = 2
@@ -505,6 +579,19 @@ struct ContentView: View {
             } message: {
                 Text("Enter a folder name. If it does not exist, it will be created.")
             }
+            .alert("You're up to date", isPresented: $updateManager.showUpToDateAlert) {
+                Button("OK", role: .cancel) {}
+                    .tint(Color("ButtonPrimaryBgColor"))
+            } message: {
+                let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+                Text("Jot \(version) is currently the latest version.")
+            }
+            .alert("Unable to check for updates", isPresented: $updateManager.showUpdateErrorAlert) {
+                Button("OK", role: .cancel) {}
+                    .tint(Color("ButtonPrimaryBgColor"))
+            } message: {
+                Text("Please check your internet connection and try again.")
+            }
             .ignoresSafeArea(.container, edges: .top)
     }
 
@@ -612,10 +699,18 @@ struct ContentView: View {
             notesManager.loadDeletedNotes()
             reconcileSelectionWithCurrentNotes()
             SpotlightIndexer.shared.reindexAll(notesManager.notes)
+            #if DEBUG
+            buildWatcher.startWatching()
+            #endif
+            // Deferred: check for archived items after critical launch work
+            Task { @MainActor in
+                notesManager.checkForArchivedItems()
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             guard notesManager.hasLoadedInitialNotes else { return }
             processPendingShares()
+            notesManager.checkForArchivedItems()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSMenu.didBeginTrackingNotification)) { _ in
             guard isPreviewVisible else { return }
@@ -637,7 +732,10 @@ struct ContentView: View {
         }
         .onChange(of: notesManager.hasLoadedInitialNotes) { _, loaded in
             reconcileSelectionWithCurrentNotes()
-            if loaded { processPendingShares() }
+            if loaded {
+                processPendingShares()
+                restoreSplitSessions()
+            }
         }
         .onChange(of: notesManager.hasCompletedMigrationCheck) { _, _ in
             reconcileSelectionWithCurrentNotes()
@@ -1054,6 +1152,7 @@ struct ContentView: View {
             isSplitViewVisible = true
             activeSplitPane = .primary
         }
+        saveSplitSessions()
     }
 
     private func focusSplitPane(_ pane: SplitPickerPane) {
@@ -1232,6 +1331,7 @@ struct ContentView: View {
                     if splitSessions[idx].isComplete {
                         pendingSplitID = nil
                     }
+                    saveSplitSessions()
                 }
             },
             onClose: { cancelPendingSplit() },
@@ -1266,7 +1366,8 @@ struct ContentView: View {
                 onSave: { saveSplitNote($0) },
                 availableNotes: notePickerItems(excluding: note.id),
                 onNavigateToNote: navigateToNote,
-                backlinks: backlinks(for: note.id)
+                backlinks: backlinks(for: note.id),
+                isSidebarAnimating: isSidebarAnimating
             )
             .blur(radius: isSplitLocked ? 20 : 0)
             .allowsHitTesting(!isSplitLocked)
@@ -1349,6 +1450,7 @@ struct ContentView: View {
                     let finalSecW = max(splitMinPaneWidth, min(maxW, baseSecW + delta))
                     if let idx = activeSplitIndex {
                         splitSessions[idx].ratio = finalSecW / availableForSplit
+                        saveSplitSessions()
                     }
                     splitDragDelta = 0
                     isSplitHandleDragging = false
@@ -1483,24 +1585,29 @@ struct ContentView: View {
                 .padding(.top, -6)
                 .padding(.bottom, 4)
 
-                // Update panel
-                UpdatePanelView(
-                    variant: updatePanelVariant,
-                    onRelaunch: {
-                        withAnimation(.jotSpring) {
-                            updatePanelVariant = .success
-                        }
-                    },
-                    onRemindLater: {},
-                    onViewChangelog: {},
-                    onDismiss: {
-                        withAnimation(.jotSpring) {
-                            updatePanelVariant = .relaunch(version: "1.01")
-                        }
-                    }
-                )
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-                .padding(.bottom, 8)
+                // Update panel (production — Sparkle)
+                if updateManager.isUpdateAvailable {
+                    UpdatePanelView(
+                        variant: .relaunch(version: updateManager.updateVersion),
+                        onRelaunch: { updateManager.relaunch() },
+                        onRemindLater: { updateManager.remindLater() }
+                    )
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .padding(.bottom, 8)
+                }
+
+                // Update panel (dev builds only)
+                #if DEBUG
+                if buildWatcher.isUpdateAvailable {
+                    UpdatePanelView(
+                        variant: .relaunch(version: buildWatcher.buildVersion),
+                        onRelaunch: { buildWatcher.relaunch() },
+                        onRemindLater: { buildWatcher.remindLater() }
+                    )
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .padding(.bottom, 8)
+                }
+                #endif
 
                 // Trash -- only visible when there are deleted notes
                 if !notesManager.deletedNotes.isEmpty {
@@ -1510,7 +1617,7 @@ struct ContentView: View {
                     }
                 }
 
-                sidebarMenuItem(assetName: "IconSettingsGear1", label: "Settings", isActive: isSettingsPresented) {
+                sidebarMenuItem(assetName: "IconSettingsGear1", label: "Settings", shortcut: "\u{2318},", isActive: isSettingsPresented) {
                     presentSettings()
                 }
             }
@@ -1888,9 +1995,7 @@ struct ContentView: View {
     private var sidebarTitleBarRow: some View {
         HStack(spacing: sidebarTopIconSpacingCollapsed) {
             sidebarTopBarIcon(assetName: "IconLayoutAlignLeft") {
-                withAnimation(sidebarVisibilityAnimation) {
-                    isSidebarVisible = false
-                }
+                toggleSidebar(to: false)
             }
             splitMenuIconButton()
             sidebarTopBarIcon(assetName: themeManager.currentTheme == .light ? "IconMoon" : "IconSun") {
@@ -1905,19 +2010,21 @@ struct ContentView: View {
 
     private var sidebarMenuContainer: some View {
         VStack(spacing: 0) {
-            sidebarMenuItem(assetName: "IconNoteText", label: "New Note") {
+            sidebarMenuItem(assetName: "IconNoteText", label: "New Note", shortcut: "\u{2318}N") {
                 createAndOpenNewNote()
             }
-            sidebarMenuItem(assetName: "IconMagnifyingGlass", label: "Search") {
+            sidebarMenuItem(assetName: "IconMagnifyingGlass", label: "Search", shortcut: "\u{2318}K") {
                 presentSearch()
             }
-            sidebarMenuItem(
-                assetName: isShowingArchive ? "IconChevronRightMedium" : "IconArchive1",
-                label: isShowingArchive ? "Go back" : "Archive",
-                flipIcon: isShowingArchive
-            ) {
-                withAnimation(.jotSpring) {
-                    isShowingArchive.toggle()
+            if isShowingArchive || !notesManager.archivedNotes.isEmpty || !notesManager.archivedFolders.isEmpty {
+                sidebarMenuItem(
+                    assetName: isShowingArchive ? "IconChevronRightMedium" : "IconArchive1",
+                    label: isShowingArchive ? "Go back" : "Archive",
+                    flipIcon: isShowingArchive
+                ) {
+                    withAnimation(.jotSpring) {
+                        isShowingArchive.toggle()
+                    }
                 }
             }
         }
@@ -1927,6 +2034,7 @@ struct ContentView: View {
     private func sidebarMenuItem(
         assetName: String,
         label: String,
+        shortcut: String? = nil,
         flipIcon: Bool = false,
         isActive: Bool = false,
         action: @escaping () -> Void
@@ -1950,6 +2058,14 @@ struct ContentView: View {
                     .lineLimit(1)
 
                 Spacer(minLength: 0)
+
+                if let shortcut = shortcut {
+                    Text(shortcut)
+                        .font(FontManager.heading(size: 12, weight: .regular))
+                        .foregroundColor(Color("SecondaryTextColor"))
+                        .opacity(hoveredSidebarMenuLabel == label ? 1 : 0)
+                        .animation(.easeInOut(duration: 0.15), value: hoveredSidebarMenuLabel == label)
+                }
             }
             .padding(.leading, sidebarItemLeadingPadding)
             .padding(.trailing, sidebarItemTrailingPadding)
@@ -2392,9 +2508,7 @@ struct ContentView: View {
 
             // Cmd+. -> toggle sidebar
             Button {
-                withAnimation(sidebarVisibilityAnimation) {
-                    isSidebarVisible.toggle()
-                }
+                toggleSidebar()
             } label: {
                 Color.clear.frame(width: 1, height: 1)
             }
@@ -2430,9 +2544,7 @@ struct ContentView: View {
     private var collapsedTopBarRow: some View {
         HStack(spacing: 2) {
             sidebarTopBarIcon(assetName: "IconLayoutAlignLeft") {
-                withAnimation(sidebarVisibilityAnimation) {
-                    isSidebarVisible = true
-                }
+                toggleSidebar(to: true)
             }
 
             sidebarTopBarIcon(assetName: "IconNoteText") {
@@ -2485,28 +2597,37 @@ struct ContentView: View {
             .padding(.top, -6)
             .padding(.bottom, 4)
 
-            // Update panel
-            UpdatePanelView(
-                variant: updatePanelVariant,
-                imageYOffset: -65,
-                onRelaunch: {
-                    withAnimation(.jotSpring) {
-                        updatePanelVariant = .success
-                    }
-                },
-                onRemindLater: {},
-                onViewChangelog: {},
-                onDismiss: {
-                    withAnimation(.jotSpring) {
-                        updatePanelVariant = .relaunch(version: "1.01")
-                    }
-                }
-            )
-            .shadow(color: .black.opacity(0.12), radius: 10, x: 0, y: 6)
-            .shadow(color: .black.opacity(0.08), radius: 24, x: 0, y: 16)
-            .shadow(color: .black.opacity(0.04), radius: 40, x: 0, y: 32)
-            .transition(.move(edge: .bottom).combined(with: .opacity))
-            .padding(.bottom, 8)
+            // Update panel (production — Sparkle)
+            if updateManager.isUpdateAvailable {
+                UpdatePanelView(
+                    variant: .relaunch(version: updateManager.updateVersion),
+                    imageYOffset: -65,
+                    onRelaunch: { updateManager.relaunch() },
+                    onRemindLater: { updateManager.remindLater() }
+                )
+                .shadow(color: .black.opacity(0.12), radius: 10, x: 0, y: 6)
+                .shadow(color: .black.opacity(0.08), radius: 24, x: 0, y: 16)
+                .shadow(color: .black.opacity(0.04), radius: 40, x: 0, y: 32)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .padding(.bottom, 8)
+            }
+
+            // Update panel (dev builds only)
+            #if DEBUG
+            if buildWatcher.isUpdateAvailable {
+                UpdatePanelView(
+                    variant: .relaunch(version: buildWatcher.buildVersion),
+                    imageYOffset: -65,
+                    onRelaunch: { buildWatcher.relaunch() },
+                    onRemindLater: { buildWatcher.remindLater() }
+                )
+                .shadow(color: .black.opacity(0.12), radius: 10, x: 0, y: 6)
+                .shadow(color: .black.opacity(0.08), radius: 24, x: 0, y: 16)
+                .shadow(color: .black.opacity(0.04), radius: 40, x: 0, y: 32)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .padding(.bottom, 8)
+            }
+            #endif
 
             // Trash -- only visible when there are deleted notes
             if !notesManager.deletedNotes.isEmpty {
@@ -2516,7 +2637,7 @@ struct ContentView: View {
                 }
             }
 
-            sidebarMenuItem(assetName: "IconSettingsGear1", label: "Settings", isActive: isSettingsPresented) {
+            sidebarMenuItem(assetName: "IconSettingsGear1", label: "Settings", shortcut: "\u{2318},", isActive: isSettingsPresented) {
                 presentSettings()
             }
         }
@@ -2613,7 +2734,8 @@ struct ContentView: View {
                 onSave: { updated in saveUpdatedNote(updated) },
                 availableNotes: notePickerItems(excluding: note.id),
                 onNavigateToNote: navigateToNote,
-                backlinks: backlinks(for: note.id)
+                backlinks: backlinks(for: note.id),
+                isSidebarAnimating: isSidebarAnimating
             )
             .blur(radius: isNoteLocked ? 20 : 0)
             .allowsHitTesting(!isNoteLocked)
@@ -2995,6 +3117,7 @@ struct ContentView: View {
                         }
                     }
                     if session.id == pendingSplitID { pendingSplitID = nil }
+                    saveSplitSessions()
                 }
             }
         }
@@ -3134,7 +3257,7 @@ struct ContentView: View {
     private func splitPickerOverlayView(for pane: SplitPickerPane, primaryNote: Note, cornerRadius: CGFloat = 16) -> some View {
         if splitPickerOverlayPane == pane {
             ZStack {
-                Color.black.opacity(0.05)
+                Color.clear
                     .contentShape(Rectangle())
                     .onTapGesture {
                         withAnimation(.jotSpring) { splitPickerOverlayPane = nil }
@@ -3172,6 +3295,7 @@ struct ContentView: View {
         pendingSplitID = session.id
         isSplitViewVisible = true
         withAnimation(.jotSpring) { isSplitMenuVisible = false }
+        saveSplitSessions()
     }
 
     private func addNewSplit() {
@@ -3180,6 +3304,7 @@ struct ContentView: View {
         activeSplitID = session.id
         pendingSplitID = session.id
         isSplitViewVisible = true
+        saveSplitSessions()
     }
 
     private func cancelPendingSplit() {
@@ -3194,6 +3319,7 @@ struct ContentView: View {
                 isSplitViewVisible = false
             }
         }
+        saveSplitSessions()
     }
 
     private func closeSplit() {
@@ -3211,6 +3337,7 @@ struct ContentView: View {
                 isSplitViewVisible = false
             }
         }
+        saveSplitSessions()
     }
 
     private func closeRightSplit() {
@@ -3252,6 +3379,7 @@ struct ContentView: View {
             selectedNote = note
             selectedNoteIDs = [note.id]
         }
+        saveSplitSessions()
     }
 
     // MARK: - Actions
