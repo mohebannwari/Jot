@@ -232,6 +232,7 @@ extension EditTool {
     /// Custom asset icon name, nil means fall back to SF Symbol
     var iconAssetName: String? {
         switch self {
+        case .body: return "IconTitleCase"
         case .titleCase: return nil
         case .h1: return "IconH1"
         case .h2: return "IconH2"
@@ -271,6 +272,7 @@ extension EditTool {
     /// SF Symbol name for each tool (fallback)
     var iconName: String {
         switch self {
+        case .body: return "textformat"
         case .titleCase: return "pencil.tip.crop.circle"
         case .h1: return "1.square"
         case .h2: return "2.square"

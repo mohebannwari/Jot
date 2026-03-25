@@ -51,6 +51,7 @@ struct FloatingEditToolbar: View {
     var isUnderlineActive: Bool = false
     var isStrikethroughActive: Bool = false
     var isHighlightActive: Bool = false
+    var currentHeadingLevel: Int = 0
 
     // Font state
     var currentFontSize: CGFloat = 16
@@ -186,11 +187,12 @@ struct FloatingEditToolbar: View {
             }
         } label: {
             HStack(spacing: 0) {
-                Text(currentTextStyleLabel)
-                    .font(.system(size: 13, weight: .medium))
-                    .tracking(-0.4)
-                    .lineLimit(1)
-                    .foregroundColor(pillTextColor)
+                Image(currentTextStyleIcon)
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 18, height: 18)
+                    .foregroundColor(pillTextColor.opacity(0.6))
                 Image("IconChevronDownSmall")
                     .renderingMode(.template)
                     .resizable()
@@ -213,8 +215,15 @@ struct FloatingEditToolbar: View {
         })
     }
 
-    private var currentTextStyleLabel: String {
-        "Text"
+    private var currentTextStyleIcon: String {
+        if currentHeadingLevel == 1 { return "IconNumber1Circle" }
+        if currentHeadingLevel == 2 { return "IconNumber2Circle" }
+        if currentHeadingLevel == 3 { return "IconNumber3Circle" }
+        if isStrikethroughActive { return "IconStrikeThrough" }
+        if isUnderlineActive { return "IconUnderline" }
+        if isItalicActive { return "IconItalic" }
+        if isBoldActive { return "IconBold" }
+        return "IconTitleCase"
     }
 
     // MARK: - Font Size Pill
@@ -263,11 +272,11 @@ struct FloatingEditToolbar: View {
             }
         } label: {
             HStack(spacing: 0) {
-                Image("IconLetterACircle")
+                Image("IconFontStyle")
                     .renderingMode(.template)
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 18, height: 18)
+                    .frame(width: 15.5, height: 15.5)
                     .foregroundColor(pillTextColor.opacity(0.6))
                 Image("IconChevronDownSmall")
                     .renderingMode(.template)
@@ -369,6 +378,7 @@ struct FloatingEditToolbar: View {
 // MARK: - EditTool Enum
 
 enum EditTool: String, CaseIterable {
+    case body
     case titleCase
     case h1, h2, h3
     case bold, italic, underline, strikethrough
@@ -402,6 +412,7 @@ enum EditTool: String, CaseIterable {
 
     var name: String {
         switch self {
+        case .body: return "Body"
         case .titleCase: return "Title Case"
         case .h1: return "Heading 1"
         case .h2: return "Heading 2"

@@ -112,6 +112,7 @@ struct NoteDetailView: View {
     @State private var toolbarIsUnderline = false
     @State private var toolbarIsStrikethrough = false
     @State private var toolbarIsHighlight = false
+    @State private var toolbarHeadingLevel: Int = 0
     @State private var showHighlightColorPicker = false
     @State private var highlightPickerOffset = CGPoint.zero
     @State private var lastSelectionBottomY: CGFloat = 0
@@ -856,6 +857,7 @@ struct NoteDetailView: View {
                     isUnderlineActive: toolbarIsUnderline,
                     isStrikethroughActive: toolbarIsStrikethrough,
                     isHighlightActive: toolbarIsHighlight,
+                    currentHeadingLevel: toolbarHeadingLevel,
                     currentFontSize: toolbarFontSize,
                     currentFontFamily: toolbarFontFamily,
                     currentTextColorHex: toolbarTextColorHex,
@@ -1150,6 +1152,16 @@ struct NoteDetailView: View {
                 self.toolbarIsUnderline = userInfo["isUnderline"] as? Bool ?? false
                 self.toolbarIsStrikethrough = userInfo["isStrikethrough"] as? Bool ?? false
                 self.toolbarIsHighlight = userInfo["isHighlight"] as? Bool ?? false
+                if let hl = userInfo["headingLevel"] as? TextFormattingManager.HeadingLevel {
+                    switch hl {
+                    case .none: self.toolbarHeadingLevel = 0
+                    case .h1: self.toolbarHeadingLevel = 1
+                    case .h2: self.toolbarHeadingLevel = 2
+                    case .h3: self.toolbarHeadingLevel = 3
+                    }
+                } else {
+                    self.toolbarHeadingLevel = 0
+                }
                 self.toolbarFontSize = userInfo["fontSize"] as? CGFloat ?? 16
                 self.toolbarFontFamily = userInfo["fontFamily"] as? String ?? "default"
                 self.toolbarTextColorHex = userInfo["textColorHex"] as? String

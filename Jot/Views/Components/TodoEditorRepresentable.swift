@@ -1473,6 +1473,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                         "isUnderline": formatter.isUnderline,
                         "isStrikethrough": formatter.isStrikethrough,
                         "isHighlight": formatter.isHighlight,
+                        "headingLevel": formatter.currentHeadingLevel,
                         "windowHeight": textView.window?.contentView?.bounds.height ?? 800,
                         "fontSize": selFontSize,
                         "fontFamily": selFontFamily
@@ -2153,7 +2154,9 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 guard let tool = EditTool(rawValue: raw) else { return }
                 Task { @MainActor [weak self] in
                     guard let self = self, let textView = self.textView else { return }
-                    // Disable animations so list/heading changes apply instantly
+                    // Suppress typing animation and disable CA/NS animations
+                    // so toolbar-initiated formatting applies instantly.
+                    self.isUpdating = true
                     NSAnimationContext.beginGrouping()
                     NSAnimationContext.current.duration = 0
                     CATransaction.begin()
@@ -2169,10 +2172,13 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     } else {
                         self.formatter.applyFormatting(to: textView, tool: tool)
                         self.styleTodoParagraphs()
-                        self.syncText()
                     }
                     CATransaction.commit()
                     NSAnimationContext.endGrouping()
+                    self.isUpdating = false
+                    self.syncText()
+                    // Re-broadcast formatting state so the floating toolbar updates
+                    self.textViewDidChangeSelection(Notification(name: NSTextView.didChangeSelectionNotification, object: textView))
                 }
             }
 
@@ -4223,9 +4229,10 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             }
 
             // Record pending animation for newly inserted text.
-            // Skip animation entirely for paste operations — instant insertion feels right.
+            // Skip animation entirely for paste and undo/redo operations — instant insertion feels right.
             let isPasting = (textView as? InlineNSTextView)?.isPasting ?? false
-            if !isUpdating, !isPasting, let replacement = replacementString, !replacement.isEmpty {
+            let isUndoingOrRedoing = textView.undoManager?.isUndoing == true || textView.undoManager?.isRedoing == true
+            if !isUpdating, !isPasting, !isUndoingOrRedoing, let replacement = replacementString, !replacement.isEmpty {
                 pendingAnimationLocation = affectedCharRange.location
                 pendingAnimationLength = replacement.count
             } else {

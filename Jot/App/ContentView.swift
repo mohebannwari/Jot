@@ -196,6 +196,7 @@ struct ContentView: View {
     @State private var isSidebarVisible = true
     @State private var isSearchPresented = false
     @State private var isSettingsPresented = false
+    @State private var updatePanelVariant: UpdatePanelVariant = .relaunch(version: "1.01")
     @State private var expandedFolderIDs: Set<UUID> = []
     @State private var expandedArchivedFolderIDs: Set<UUID> = []
     @State private var hoveredArchivedFolderID: UUID?
@@ -1408,10 +1409,10 @@ struct ContentView: View {
     private var devThemeToggle: some View {
         let isLight = themeManager.currentTheme == .light
         return HStack(spacing: 2) {
-            DevThemeButton(symbol: "sun.max.fill", active: isLight) {
+            DevThemeButton(assetName: "IconSun", active: isLight) {
                 themeManager.setTheme(.light)
             }
-            DevThemeButton(symbol: "moon.fill", active: !isLight) {
+            DevThemeButton(assetName: "IconMoon", active: !isLight) {
                 themeManager.setTheme(.dark)
             }
         }
@@ -1481,6 +1482,25 @@ struct ContentView: View {
                 .scrollIndicators(.never)
                 .padding(.top, -6)
                 .padding(.bottom, 4)
+
+                // Update panel
+                UpdatePanelView(
+                    variant: updatePanelVariant,
+                    onRelaunch: {
+                        withAnimation(.jotSpring) {
+                            updatePanelVariant = .success
+                        }
+                    },
+                    onRemindLater: {},
+                    onViewChangelog: {},
+                    onDismiss: {
+                        withAnimation(.jotSpring) {
+                            updatePanelVariant = .relaunch(version: "1.01")
+                        }
+                    }
+                )
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .padding(.bottom, 8)
 
                 // Trash -- only visible when there are deleted notes
                 if !notesManager.deletedNotes.isEmpty {
@@ -1873,20 +1893,9 @@ struct ContentView: View {
                 }
             }
             splitMenuIconButton()
-            Button {
+            sidebarTopBarIcon(assetName: themeManager.currentTheme == .light ? "IconMoon" : "IconSun") {
                 themeManager.setTheme(themeManager.currentTheme == .light ? .dark : .light)
-            } label: {
-                Image(systemName: themeManager.currentTheme == .light ? "moon.fill" : "sun.max.fill")
-                    .resizable()
-                    .scaledToFit()
-                    .foregroundColor(Color("SecondaryTextColor"))
-                    .frame(width: 15, height: 15)
-                    .padding(4)
-                    .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
-            .buttonStyle(.plain)
-            .macPointingHandCursor()
-            .hoverContainer(cornerRadius: 8)
         }
         .padding(.leading, iconLeading - windowContentPadding)
         .frame(width: sidebarDesignColumnWidth, height: sidebarTopBarButtonSize, alignment: .leading)
@@ -2475,6 +2484,29 @@ struct ContentView: View {
             .scrollIndicators(.never)
             .padding(.top, -6)
             .padding(.bottom, 4)
+
+            // Update panel
+            UpdatePanelView(
+                variant: updatePanelVariant,
+                imageYOffset: -65,
+                onRelaunch: {
+                    withAnimation(.jotSpring) {
+                        updatePanelVariant = .success
+                    }
+                },
+                onRemindLater: {},
+                onViewChangelog: {},
+                onDismiss: {
+                    withAnimation(.jotSpring) {
+                        updatePanelVariant = .relaunch(version: "1.01")
+                    }
+                }
+            )
+            .shadow(color: .black.opacity(0.12), radius: 10, x: 0, y: 6)
+            .shadow(color: .black.opacity(0.08), radius: 24, x: 0, y: 16)
+            .shadow(color: .black.opacity(0.04), radius: 40, x: 0, y: 32)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .padding(.bottom, 8)
 
             // Trash -- only visible when there are deleted notes
             if !notesManager.deletedNotes.isEmpty {
@@ -5256,15 +5288,18 @@ private extension View {
 // MARK: - DEV Theme Toggle Button (temporary)
 
 private struct DevThemeButton: View {
-    let symbol: String
+    let assetName: String
     let active: Bool
     let action: () -> Void
 
     @State private var isPressed = false
 
     var body: some View {
-        Image(systemName: symbol)
-            .font(.system(size: 10, weight: .semibold))
+        Image(assetName)
+            .renderingMode(.template)
+            .resizable()
+            .scaledToFit()
+            .frame(width: 12, height: 12)
             .foregroundStyle(active ? Color.primary : Color.primary.opacity(0.15))
             .frame(width: 34, height: 28)
             .contentShape(Capsule())

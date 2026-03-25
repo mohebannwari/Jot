@@ -80,7 +80,7 @@ class TextFormattingManager: ObservableObject {
             // Some tools don't require text selection
             let toolsNotRequiringSelection: [EditTool] = [
                 .textSelect, .divider, .lineBreak, .todo, .imageUpload, .voiceRecord,
-                .bulletList, .numberedList, .dashedList, .h1, .h2, .h3, .blockQuote,
+                .bulletList, .numberedList, .dashedList, .h1, .h2, .h3, .body, .blockQuote,
             ]
 
             if selectedRange.length == 0 && !toolsNotRequiringSelection.contains(tool) {
@@ -90,6 +90,8 @@ class TextFormattingManager: ObservableObject {
             switch tool {
             case .imageUpload, .voiceRecord:
                 return
+            case .body:
+                applyBodyStyle(to: textView, in: selectedRange)
             case .titleCase:
                 applyTitleCase(to: textView, in: selectedRange)
             case .h1:
@@ -156,6 +158,43 @@ class TextFormattingManager: ObservableObject {
                 textView.replaceCharacters(in: range, with: titleCased)
                 textView.didChangeText()
             }
+        }
+
+        // MARK: - Body Style (Reset All Formatting)
+
+        private func applyBodyStyle(to textView: NSTextView, in range: NSRange) {
+            guard let textStorage = textView.textStorage else { return }
+
+            // Expand to full paragraph range (body reset is paragraph-scoped, like headings)
+            let paragraphRange = (textStorage.string as NSString).paragraphRange(for: range)
+            let snapshot = captureSnapshot(textStorage, range: paragraphRange)
+
+            textStorage.beginEditing()
+
+            // Reset font: body size, regular weight, respects font style pref (Charter/System/Mono)
+            let bodyFont = FontManager.headingNS(size: HeadingLevel.none.fontSize, weight: .regular)
+            textStorage.addAttribute(.font, value: bodyFont, range: paragraphRange)
+
+            // Strip inline decorations
+            textStorage.removeAttribute(.underlineStyle, range: paragraphRange)
+            textStorage.removeAttribute(.strikethroughStyle, range: paragraphRange)
+
+            // Reset paragraph spacing to body defaults
+            let paragraphStyle = NSMutableParagraphStyle()
+            paragraphStyle.paragraphSpacingBefore = 0
+            paragraphStyle.paragraphSpacing = 4
+            textStorage.addAttribute(.paragraphStyle, value: paragraphStyle, range: paragraphRange)
+
+            textStorage.endEditing()
+
+            // Sync published state
+            isBold = false
+            isItalic = false
+            isUnderline = false
+            isStrikethrough = false
+            currentHeadingLevel = .none
+
+            registerUndo(textView: textView, snapshot: snapshot, actionName: "Body")
         }
 
         // MARK: - Headings

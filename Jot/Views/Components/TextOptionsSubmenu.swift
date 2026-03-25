@@ -23,7 +23,7 @@ struct TextOptionsSubmenu: View {
             ("IconNumber1Circle", "Heading 1", .h1, false),
             ("IconNumber2Circle", "Heading 2", .h2, false),
             ("IconNumber3Circle", "Heading 3", .h3, false),
-            ("IconTitleCase", "Body", .titleCase, false),
+            ("IconTitleCase", "Body", .body, false),
             ("IconBold", "Bold", .bold, isBoldActive),
             ("IconItalic", "Italic", .italic, isItalicActive),
             ("IconUnderline", "Underline", .underline, isUnderlineActive),
