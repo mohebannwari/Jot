@@ -399,6 +399,7 @@ enum EditTool: String, CaseIterable {
     case fileLink
     case sticker
     case tabs
+    case cards
 
     var isToggleable: Bool {
         switch self {
@@ -446,6 +447,7 @@ enum EditTool: String, CaseIterable {
         case .fileLink: return "Attach File"
         case .sticker: return "Post-it"
         case .tabs: return "Tabs"
+        case .cards: return "Cards"
         }
     }
 

@@ -10,6 +10,7 @@ final class NoteVersionManager {
 
     private let logger = Logger(subsystem: "com.jot.app", category: "NoteVersionManager")
     private let snapshotDebounceInterval: TimeInterval = 30
+    private let maxVersionsPerNote = 50
 
     /// Pending debounced snapshot work items keyed by noteID
     private var pendingSnapshots: [UUID: DispatchWorkItem] = [:]
@@ -143,6 +144,31 @@ final class NoteVersionManager {
             logger.info("Created version snapshot for note \(noteID)")
         } catch {
             logger.error("Failed to save version snapshot: \(error)")
+            return
+        }
+
+        enforceVersionCap(for: noteID, limit: maxVersionsPerNote, in: context)
+    }
+
+    private func enforceVersionCap(for noteID: UUID, limit: Int, in context: ModelContext) {
+        let id = noteID
+        let predicate = #Predicate<NoteVersionEntity> { $0.noteID == id }
+        let descriptor = FetchDescriptor<NoteVersionEntity>(
+            predicate: predicate,
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+        )
+
+        do {
+            let all = try context.fetch(descriptor)
+            guard all.count > limit else { return }
+            let excess = all.dropFirst(limit)
+            for entity in excess {
+                context.delete(entity)
+            }
+            try context.save()
+            logger.info("Enforced version cap: deleted \(excess.count) oldest snapshots for note \(noteID)")
+        } catch {
+            logger.error("Failed to enforce version cap for note \(noteID): \(error)")
         }
     }
 

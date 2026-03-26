@@ -286,8 +286,8 @@ final class BackupManager: ObservableObject {
 
             // Restore images and files
             let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-            restoreDirectory(named: "JotImages", from: backupURL, to: documentsDir)
-            restoreDirectory(named: "JotFiles", from: backupURL, to: documentsDir)
+            try restoreDirectory(named: "JotImages", from: backupURL, to: documentsDir)
+            try restoreDirectory(named: "JotFiles", from: backupURL, to: documentsDir)
 
             logger.info("Restore complete: \(notes.count) notes, \(folders.count) folders")
         } catch {
@@ -311,7 +311,8 @@ final class BackupManager: ObservableObject {
 
         guard Date().timeIntervalSince(lastBackup) >= interval else { return }
 
-        Task {
+        Task { [weak self] in
+            guard let self else { return }
             _ = await performBackup(notesManager: notesManager)
         }
     }
@@ -362,7 +363,7 @@ final class BackupManager: ObservableObject {
         }
     }
 
-    private static func restoreDirectory(named name: String, from backupURL: URL, to documentsDir: URL) {
+    private static func restoreDirectory(named name: String, from backupURL: URL, to documentsDir: URL) throws {
         let fm = FileManager.default
         let sourceDir = backupURL.appendingPathComponent(name, isDirectory: true)
         let destDir = documentsDir.appendingPathComponent(name, isDirectory: true)
@@ -370,8 +371,10 @@ final class BackupManager: ObservableObject {
         guard fm.fileExists(atPath: sourceDir.path) else { return }
 
         // Remove existing and replace
-        try? fm.removeItem(at: destDir)
-        try? fm.copyItem(at: sourceDir, to: destDir)
+        if fm.fileExists(atPath: destDir.path) {
+            try fm.removeItem(at: destDir)
+        }
+        try fm.copyItem(at: sourceDir, to: destDir)
     }
 
     /// Prunes old backups in the given directory (which must already have security-scoped access).

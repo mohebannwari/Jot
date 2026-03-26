@@ -5,6 +5,7 @@
 //  Created by Moheb Anwari on 05.08.25.
 //
 
+import os
 import SwiftUI
 
 @main
@@ -57,6 +58,7 @@ struct JotApp: App {
 
     /// Clean up temporary files that may have accumulated from previous sessions
     private static func cleanupTemporaryFiles() {
+        let logger = Logger(subsystem: "com.jot", category: "JotApp")
         let fileManager = FileManager.default
         let tmpDirectory = fileManager.temporaryDirectory
 
@@ -68,9 +70,8 @@ struct JotApp: App {
                 for file in files {
                     try? fileManager.removeItem(at: file)
                 }
-                NSLog("🧹 JotApp: Cleaned up %d temporary voice recording(s)", files.count)
             } catch {
-                NSLog("🧹 JotApp: Failed to cleanup voice recordings: %@", error.localizedDescription)
+                logger.error("cleanupTemporaryFiles: Failed to cleanup voice recordings: \(error.localizedDescription)")
             }
         }
 
@@ -89,11 +90,8 @@ struct JotApp: App {
                     cleanedCount += 1
                 }
             }
-            if cleanedCount > 0 {
-                NSLog("🧹 JotApp: Cleaned up %d temporary image(s)", cleanedCount)
-            }
         } catch {
-            NSLog("🧹 JotApp: Failed to cleanup temp directory: %@", error.localizedDescription)
+            logger.error("cleanupTemporaryFiles: Failed to cleanup temp directory: \(error.localizedDescription)")
         }
     }
 

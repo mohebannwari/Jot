@@ -1,8 +1,11 @@
 import SwiftUI
 import Combine
+import os
 #if os(macOS)
 import AppKit
 #endif
+
+private let micLogger = Logger(subsystem: "com.jot", category: "MicCaptureControl")
 
 public struct MicCaptureControl: View {
     public struct Result {
@@ -357,10 +360,10 @@ final class MicCaptureViewModel: ObservableObject {
             state = recorder.state
             levels = recorder.levels
         } catch let error as AudioRecorder.RecorderError {
-            NSLog("MicCaptureViewModel.startRecording failed with recorder error: %@", String(describing: error))
+            micLogger.error("MicCaptureViewModel.startRecording failed with recorder error: \(String(describing: error))")
             permissionMessage = error.errorDescription
         } catch {
-            NSLog("MicCaptureViewModel.startRecording failed with unexpected error: %@", String(describing: error))
+            micLogger.error("MicCaptureViewModel.startRecording failed with unexpected error: \(String(describing: error))")
             permissionMessage = AudioRecorder.RecorderError.engineUnavailable.errorDescription
         }
     }
@@ -387,19 +390,15 @@ final class MicCaptureViewModel: ObservableObject {
     }
 
     func sendRecording() async {
-        NSLog("🎙️ MicCaptureViewModel.sendRecording: START")
         guard !isProcessingSend else {
-            NSLog("🎙️ MicCaptureViewModel.sendRecording: Already processing, returning")
             return
         }
 
         withAnimation(.bouncy(duration: 0.35)) {
             isProcessingSend = true
         }
-        NSLog("🎙️ MicCaptureViewModel.sendRecording: Set isProcessingSend = true")
 
         guard let url = await recorder.stop() else {
-            NSLog("🎙️ MicCaptureViewModel.sendRecording: recorder.stop() returned nil")
             withAnimation(.bouncy(duration: 0.35)) {
                 isProcessingSend = false
                 state = recorder.state
@@ -407,11 +406,9 @@ final class MicCaptureViewModel: ObservableObject {
             }
             return
         }
-        NSLog("🎙️ MicCaptureViewModel.sendRecording: Got URL: %@", url.path)
 
         // Verify file exists before attempting transcription
         guard FileManager.default.fileExists(atPath: url.path) else {
-            NSLog("🎙️ MicCaptureViewModel.sendRecording: Audio file does not exist at path: %@", url.path)
             withAnimation(.bouncy(duration: 0.35)) {
                 isProcessingSend = false
                 state = recorder.state
@@ -419,12 +416,10 @@ final class MicCaptureViewModel: ObservableObject {
             }
             return
         }
-        NSLog("🎙️ MicCaptureViewModel.sendRecording: File exists, starting transcription")
 
         // Transcribe the audio file
         var transcript: String? = nil
         transcript = await transcriber.transcribe(url: url)
-        NSLog("🎙️ MicCaptureViewModel.sendRecording: Transcription complete, result: %@", transcript ?? "nil")
 
         if transcript?.isEmpty == true {
             transcript = nil
@@ -435,15 +430,11 @@ final class MicCaptureViewModel: ObservableObject {
             state = recorder.state
             levels = recorder.levels
         }
-        NSLog("🎙️ MicCaptureViewModel.sendRecording: Updated state, calling onSend callback")
 
         // Ensure callback is on main thread
         await MainActor.run {
-            NSLog("🎙️ MicCaptureViewModel.sendRecording: Calling onSend on MainActor")
             onSend(.init(audioURL: url, transcript: transcript))
-            NSLog("🎙️ MicCaptureViewModel.sendRecording: onSend completed")
         }
-        NSLog("🎙️ MicCaptureViewModel.sendRecording: END")
     }
 
     func cancelCapture() async {

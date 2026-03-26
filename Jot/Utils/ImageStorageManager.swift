@@ -8,6 +8,7 @@
 
 import Foundation
 import AppKit
+import os
 
 /// Manages local storage and retrieval of images for note attachments
 @MainActor
@@ -15,7 +16,9 @@ public final class ImageStorageManager {
     
     // Singleton instance for app-wide access
     public static let shared = ImageStorageManager()
-    
+
+    private let logger = Logger(subsystem: "com.jot", category: "ImageStorageManager")
+
     // Directory name within Documents folder
     private let storageDirectoryName = "JotImages"
     
@@ -27,8 +30,8 @@ public final class ImageStorageManager {
     
     private init() {
         // Ensure storage directory exists on initialization
-        Task {
-            await ensureStorageDirectoryExists()
+        Task { [weak self] in
+            await self?.ensureStorageDirectoryExists()
         }
     }
     
@@ -38,38 +41,35 @@ public final class ImageStorageManager {
     /// - Parameter url: Source URL of the image file
     /// - Returns: Filename of the saved image, or nil if save failed
     public func saveImage(from url: URL) async -> String? {
-        NSLog("ImageStorageManager: Attempting to save image from URL: %@", url.path)
-        
         // Ensure storage directory exists
         guard let storageURL = await getStorageDirectory() else {
-            NSLog("ImageStorageManager: Failed to get storage directory")
+            logger.error("Failed to get storage directory")
             return nil
         }
-        
+
         // Load image from URL
         guard let image = NSImage(contentsOf: url) else {
-            NSLog("ImageStorageManager: Failed to load NSImage from URL")
+            logger.error("Failed to load NSImage from URL")
             return nil
         }
-        
+
         // Resize if needed and compress
         let processedImage = await processImage(image)
         guard let imageData = processedImage else {
-            NSLog("ImageStorageManager: Failed to process image")
+            logger.error("Failed to process image")
             return nil
         }
-        
+
         // Generate unique filename
         let filename = UUID().uuidString + ".jpg"
         let destinationURL = storageURL.appendingPathComponent(filename)
-        
+
         // Write to disk
         do {
             try imageData.write(to: destinationURL)
-            NSLog("ImageStorageManager: Successfully saved image as %@", filename)
             return filename
         } catch {
-            NSLog("ImageStorageManager: Failed to write image data: %@", error.localizedDescription)
+            logger.error("Failed to write image data: \(error.localizedDescription)")
             return nil
         }
     }
@@ -85,7 +85,7 @@ public final class ImageStorageManager {
         
         // Verify file exists
         guard FileManager.default.fileExists(atPath: imageURL.path) else {
-            NSLog("ImageStorageManager: Image file not found: %@", filename)
+            logger.error("Image file not found: \(filename)")
             return nil
         }
         
@@ -101,19 +101,16 @@ public final class ImageStorageManager {
         
         do {
             try FileManager.default.removeItem(at: imageURL)
-            NSLog("ImageStorageManager: Deleted image: %@", filename)
         } catch {
-            NSLog("ImageStorageManager: Failed to delete image %@: %@", filename, error.localizedDescription)
+            logger.error("Failed to delete image \(filename): \(error.localizedDescription)")
         }
     }
     
     /// Clean up images that are not referenced in any notes
     /// - Parameter notes: Array of all notes to check for references
     func cleanupUnusedImages(referencedInNotes notes: [Note]) {
-        NSLog("ImageStorageManager: Starting cleanup of unused images")
-        
         guard let storageURL = try? getStorageDirectorySync() else {
-            NSLog("ImageStorageManager: Cannot access storage directory for cleanup")
+            logger.error("Cannot access storage directory for cleanup")
             return
         }
         
@@ -138,8 +135,6 @@ public final class ImageStorageManager {
             }
         }
         
-        NSLog("ImageStorageManager: Found %d referenced images", referencedImages.count)
-        
         // Get all files in storage directory
         do {
             let fileURLs = try FileManager.default.contentsOfDirectory(
@@ -158,13 +153,10 @@ public final class ImageStorageManager {
                 if !referencedImages.contains(filename) {
                     try? FileManager.default.removeItem(at: fileURL)
                     deletedCount += 1
-                    NSLog("ImageStorageManager: Cleaned up unreferenced image: %@", filename)
                 }
             }
-            
-            NSLog("ImageStorageManager: Cleanup complete. Deleted %d orphaned images", deletedCount)
         } catch {
-            NSLog("ImageStorageManager: Failed to list storage directory: %@", error.localizedDescription)
+            logger.error("Failed to list storage directory: \(error.localizedDescription)")
         }
     }
     
@@ -184,9 +176,8 @@ public final class ImageStorageManager {
                     withIntermediateDirectories: true,
                     attributes: nil
                 )
-                NSLog("ImageStorageManager: Created storage directory at %@", storageURL.path)
             } catch {
-                NSLog("ImageStorageManager: Failed to create storage directory: %@", error.localizedDescription)
+                logger.error("Failed to create storage directory: \(error.localizedDescription)")
             }
         }
     }

@@ -17,68 +17,27 @@ struct ImportProgress: Equatable {
 
 /// Fullscreen overlay shown during file drag-over
 struct FileDropOverlay: View {
-    @Environment(\.colorScheme) private var colorScheme
-
-    private var cardGradientColors: [Color] {
-        colorScheme == .dark
-            ? [Color(hex: "#e7e5e4"), Color(hex: "#9c9a99")]
-            : [Color(hex: "#0c0a09"), Color(hex: "#1c1c1c")]
-    }
-
-    private var cardBorderColor: Color {
-        colorScheme == .dark
-            ? Color(hex: "#b2b2b2")
-            : Color(hex: "#2d2d2d")
-    }
-
-    private var iconTint: Color {
-        colorScheme == .dark ? .black : .white
-    }
-
     var body: some View {
         ZStack {
             Rectangle()
                 .fill(.thinMaterial)
                 .ignoresSafeArea()
 
-            VStack(spacing: 16) {
-                HStack(spacing: -8) {
-                    fileCard(icon: "IconFilePdf", rotation: -15)
-                    fileCard(icon: "IconMarkdown", rotation: 0)
-                        .zIndex(1)
-                    fileCard(icon: "IconWebsite", rotation: 15)
-                }
+            VStack(spacing: 8) {
+                Image("IconDropImport")
+                    .resizable()
+                    .renderingMode(.template)
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 42, height: 49.5)
+                    .foregroundStyle(Color("DropImportIconColor"))
 
                 Text("Drop files here to import")
                     .font(.system(size: 11, weight: .medium))
+                    .tracking(-0.2)
                     .foregroundStyle(.secondary)
             }
         }
         .allowsHitTesting(false)
-    }
-
-    private func fileCard(icon: String, rotation: Double) -> some View {
-        RoundedRectangle(cornerRadius: 12)
-            .fill(
-                LinearGradient(
-                    colors: cardGradientColors,
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .strokeBorder(cardBorderColor, lineWidth: 2)
-            )
-            .overlay(
-                Image(icon)
-                    .resizable()
-                    .renderingMode(.template)
-                    .frame(width: 24, height: 24)
-                    .foregroundStyle(iconTint)
-            )
-            .frame(width: 48, height: 48)
-            .rotationEffect(.degrees(rotation))
     }
 }
 

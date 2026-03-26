@@ -602,6 +602,23 @@ final class CodeBlockSizeAttachmentCell: NSTextAttachmentCell {
                        characterIndex charIndex: Int, layoutManager: NSLayoutManager) {}
 }
 
+// MARK: - Card Section Attachment
+
+final class NoteCardSectionAttachment: NSTextAttachment {
+    var cardSectionData: CardSectionData
+    let cardSectionID = UUID()
+
+    init(cardSectionData: CardSectionData) {
+        self.cardSectionData = cardSectionData
+        super.init(data: nil, ofType: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("NoteCardSectionAttachment does not support init(coder:)")
+    }
+}
+
 // MARK: - Divider Attachment
 
 final class NoteDividerAttachment: NSTextAttachment {
@@ -1336,6 +1353,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         private var calloutOverlays: [ObjectIdentifier: CalloutOverlayView] = [:]
         private var codeBlockOverlays: [ObjectIdentifier: CodeBlockOverlayView] = [:]
         private var tabsOverlays: [ObjectIdentifier: TabsContainerOverlayView] = [:]
+        private var cardSectionOverlays: [ObjectIdentifier: CardSectionOverlayView] = [:]
 
         private weak var overlayHostView: NSView?
         /// True when applyInitialText ran but the view was not in the hierarchy
@@ -1371,6 +1389,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 self.updateCalloutOverlays(in: tv)
                 self.updateCodeBlockOverlays(in: tv)
                 self.updateTabsOverlays(in: tv)
+                self.updateCardSectionOverlays(in: tv)
 
             }
             pendingOverlayUpdate = work
@@ -2008,6 +2027,11 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     return cursor
                 }
             }
+            for (_, overlay) in cardSectionOverlays {
+                if let cursor = overlay.cursorForPoint(windowPoint) {
+                    return cursor
+                }
+            }
             return nil
         }
 
@@ -2162,6 +2186,12 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 guard let tool = EditTool(rawValue: raw) else { return }
                 Task { @MainActor [weak self] in
                     guard let self = self, let textView = self.textView else { return }
+                    // Skip if a card text view (or other non-main text view) is the first responder.
+                    // The card overlay handles its own formatting.
+                    if let firstResp = textView.window?.firstResponder as? NSTextView,
+                       firstResp !== textView {
+                        return
+                    }
                     // Suppress typing animation and disable CA/NS animations
                     // so toolbar-initiated formatting applies instantly.
                     self.isUpdating = true
@@ -2177,6 +2207,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                         self.insertCodeBlock()
                     } else if tool == .tabs {
                         self.insertTabs()
+                    } else if tool == .cards {
+                        self.insertCardSection()
                     } else {
                         self.formatter.applyFormatting(to: textView, tool: tool)
                         self.styleTodoParagraphs()
@@ -2231,6 +2263,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                         self.insertCodeBlock()
                     } else if tool == .tabs {
                         self.insertTabs()
+                    } else if tool == .cards {
+                        self.insertCardSection()
                     } else {
                         self.formatter.applyFormatting(to: textView, tool: tool)
                     }
@@ -2427,8 +2461,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 // let a note-switch fire persistIfNeeded() before editedContent is updated.
                 MainActor.assumeIsolated { [weak self] in
                     guard let self = self, let textView = self.textView else { return }
-                    // Use lastKnownSelectionRange — it survives focus changes (e.g. clicking the color picker).
-                    // textView.selectedRange() would be empty after the picker button steals focus.
+                    if let fr = textView.window?.firstResponder as? NSTextView, fr !== textView { return }
                     let range = self.lastKnownSelectionRange
                     self.formatter.applyTextColor(hex: hex, range: range, to: textView)
                     self.syncText()
@@ -2443,6 +2476,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                    notifID != expectedID { return }
                 MainActor.assumeIsolated { [weak self] in
                     guard let self = self, let textView = self.textView else { return }
+                    if let fr = textView.window?.firstResponder as? NSTextView, fr !== textView { return }
                     let range = self.lastKnownSelectionRange
                     guard range.length > 0 else { return }
                     self.formatter.removeTextColor(range: range, from: textView)
@@ -2459,6 +2493,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                    notifID != expectedID { return }
                 MainActor.assumeIsolated { [weak self] in
                     guard let self = self, let textView = self.textView else { return }
+                    if let fr = textView.window?.firstResponder as? NSTextView, fr !== textView { return }
                     let range = self.highlightEditRange.length > 0
                         ? self.highlightEditRange
                         : self.lastKnownSelectionRange
@@ -2518,6 +2553,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                    notifID != expectedID { return }
                 MainActor.assumeIsolated { [weak self] in
                     guard let self = self, let textView = self.textView else { return }
+                    if let fr = textView.window?.firstResponder as? NSTextView, fr !== textView { return }
                     var range = self.highlightEditRange.length > 0
                         ? self.highlightEditRange
                         : self.lastKnownSelectionRange
@@ -2653,6 +2689,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                    notifID != expectedID { return }
                 MainActor.assumeIsolated { [weak self] in
                     guard let self = self, let textView = self.textView else { return }
+                    if let fr = textView.window?.firstResponder as? NSTextView, fr !== textView { return }
                     let range = self.lastKnownSelectionRange
                     guard range.length > 0 else { return }
                     self.formatter.applyFontSize(size, to: textView, range: range)
@@ -2670,6 +2707,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                    notifID != expectedID { return }
                 MainActor.assumeIsolated { [weak self] in
                     guard let self = self, let textView = self.textView else { return }
+                    if let fr = textView.window?.firstResponder as? NSTextView, fr !== textView { return }
                     let range = self.lastKnownSelectionRange
                     guard range.length > 0 else { return }
                     self.formatter.applyFontFamily(style, to: textView, range: range)
@@ -2710,7 +2748,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                   // printing simultaneously in split view)
                   window.firstResponder === textView else { return }
 
-            let printInfo = NSPrintInfo.shared.copy() as! NSPrintInfo
+            guard let printInfo = NSPrintInfo.shared.copy() as? NSPrintInfo else { return }
             printInfo.leftMargin = 72
             printInfo.rightMargin = 72
             printInfo.topMargin = 72
@@ -2881,6 +2919,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 updateCalloutOverlays(in: textView)
                 updateCodeBlockOverlays(in: textView)
                 updateTabsOverlays(in: textView)
+                updateCardSectionOverlays(in: textView)
 
             }
         }
@@ -3703,6 +3742,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             updateCalloutOverlays(in: textView)
             updateCodeBlockOverlays(in: textView)
             updateTabsOverlays(in: textView)
+            updateCardSectionOverlays(in: textView)
 
             needsDeferredOverlaySetup = true
         }
@@ -3740,6 +3780,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             updateCalloutOverlays(in: textView)
             updateCodeBlockOverlays(in: textView)
             updateTabsOverlays(in: textView)
+            updateCardSectionOverlays(in: textView)
 
         }
 
@@ -3835,7 +3876,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     if value is NoteCalloutAttachment
                         || value is NoteCodeBlockAttachment
                         || value is NoteTableAttachment
-                        || value is NoteTabsAttachment {
+                        || value is NoteTabsAttachment
+                        || value is NoteCardSectionAttachment {
                         hasBlockAttachment = true
                         stop.pointee = true
                     }
@@ -4858,6 +4900,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             updateCalloutOverlays(in: textView)
             updateCodeBlockOverlays(in: textView)
             updateTabsOverlays(in: textView)
+            updateCardSectionOverlays(in: textView)
 
             syncText()
         }
@@ -4919,6 +4962,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
 
             updateCodeBlockOverlays(in: textView)
             updateTabsOverlays(in: textView)
+            updateCardSectionOverlays(in: textView)
             syncText()
         }
 
@@ -4978,6 +5022,65 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             }
 
             updateTabsOverlays(in: textView)
+            syncText()
+        }
+
+        // MARK: - Card Section Insertion
+
+        private func makeCardSectionAttachment(cardSectionData: CardSectionData) -> NSMutableAttributedString {
+            var containerWidth = textView?.textContainer?.containerSize.width ?? CardSectionOverlayView.minWidth
+            if containerWidth < 1 { containerWidth = CardSectionOverlayView.minWidth }
+            let height = CardSectionOverlayView.totalHeight(for: cardSectionData)
+            let size = CGSize(width: containerWidth, height: height)
+
+            let attachment = NoteCardSectionAttachment(cardSectionData: cardSectionData)
+            attachment.attachmentCell = CodeBlockSizeAttachmentCell(size: size)
+            attachment.bounds = CGRect(origin: .zero, size: size)
+
+            let attributed = NSMutableAttributedString(attachment: attachment)
+            let range = NSRange(location: 0, length: attributed.length)
+            let blockStyle = NSMutableParagraphStyle()
+            blockStyle.alignment = .left
+            blockStyle.paragraphSpacing = 8
+            blockStyle.paragraphSpacingBefore = 8
+            attributed.addAttribute(.paragraphStyle, value: blockStyle, range: range)
+            return attributed
+        }
+
+        private func insertCardSection() {
+            let data = CardSectionData.empty()
+            guard let textView = textView,
+                  let textStorage = textView.textStorage else { return }
+
+            let baseAttrs = Self.baseTypingAttributes(for: currentColorScheme)
+            let composed = NSMutableAttributedString()
+
+            let insertAt = min(textView.selectedRange().location, textStorage.length)
+            let nsString = textStorage.string as NSString
+
+            if insertAt > 0 {
+                let prevChar = nsString.character(at: insertAt - 1)
+                if let scalar = Unicode.Scalar(prevChar),
+                   !CharacterSet.newlines.contains(scalar) {
+                    composed.append(NSAttributedString(string: "\n", attributes: baseAttrs))
+                }
+            }
+
+            composed.append(makeCardSectionAttachment(cardSectionData: data))
+            composed.append(NSAttributedString(string: "\n", attributes: baseAttrs))
+
+            let replaceRange = NSRange(location: insertAt, length: 0)
+            if textView.shouldChangeText(in: replaceRange, replacementString: composed.string) {
+                isUpdating = true
+                textStorage.beginEditing()
+                textStorage.replaceCharacters(in: replaceRange, with: composed)
+                textStorage.endEditing()
+                textView.setSelectedRange(NSRange(location: insertAt + composed.length, length: 0))
+                textView.didChangeText()
+                isUpdating = false
+            }
+
+            updateCardSectionOverlays(in: textView)
             syncText()
         }
 
@@ -5079,6 +5182,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             updateCalloutOverlays(in: textView)
             updateCodeBlockOverlays(in: textView)
             updateTabsOverlays(in: textView)
+            updateCardSectionOverlays(in: textView)
 
         }
 
@@ -5840,6 +5944,176 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             }
         }
 
+        // MARK: - Card Section Overlay Management
+
+        func updateCardSectionOverlays(in textView: NSTextView) {
+            guard let textStorage = textView.textStorage,
+                  let layoutManager = textView.layoutManager,
+                  let textContainer = textView.textContainer else { return }
+
+            let hostView: NSView = textView
+            var seenIDs = Set<ObjectIdentifier>()
+            let fullRange = NSRange(location: 0, length: textStorage.length)
+            guard fullRange.length > 0 else {
+                cardSectionOverlays.values.forEach { $0.removeFromSuperview() }
+                cardSectionOverlays.removeAll()
+                return
+            }
+
+            textStorage.enumerateAttribute(.attachment, in: fullRange, options: []) { val, range, _ in
+                guard let attachment = val as? NoteCardSectionAttachment else { return }
+                let id = ObjectIdentifier(attachment)
+                seenIDs.insert(id)
+
+                // ── WIDTH / HEIGHT CORRECTION ──
+                let containerW = max(textContainer.containerSize.width, 100)
+                let effectiveMin = min(CardSectionOverlayView.minWidth, containerW)
+                let currentWidth = attachment.bounds.width
+                let expectedHeight = CardSectionOverlayView.totalHeight(for: attachment.cardSectionData)
+                let atMinFromDeserialization = currentWidth <= effectiveMin && containerW > effectiveMin
+                let needsCorrection = currentWidth < effectiveMin
+                    || currentWidth > containerW
+                    || abs(attachment.bounds.height - expectedHeight) > 1
+                    || atMinFromDeserialization
+                if needsCorrection {
+                    let correctedWidth: CGFloat
+                    if atMinFromDeserialization {
+                        correctedWidth = containerW
+                    } else {
+                        correctedWidth = max(effectiveMin, min(containerW, currentWidth))
+                    }
+                    let newSize = CGSize(width: correctedWidth, height: expectedHeight)
+                    attachment.attachmentCell = CodeBlockSizeAttachmentCell(size: newSize)
+                    attachment.bounds = CGRect(origin: .zero, size: newSize)
+                    layoutManager.invalidateLayout(forCharacterRange: range, actualCharacterRange: nil)
+                }
+
+                // ── LAYOUT & POSITIONING ──
+                let glyphRange = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+                if glyphRange.length > 0 { layoutManager.ensureLayout(forGlyphRange: glyphRange) }
+                guard glyphRange.length > 0 else { return }
+                let glyphRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+
+                let overlayRect = CGRect(
+                    x: glyphRect.origin.x + textView.textContainerOrigin.x,
+                    y: glyphRect.origin.y + textView.textContainerOrigin.y,
+                    width: attachment.bounds.width,
+                    height: attachment.bounds.height
+                )
+
+                // ── OVERLAY CREATION OR UPDATE ──
+                let overlay: CardSectionOverlayView
+                if let existing = cardSectionOverlays[id] {
+                    overlay = existing
+                    overlay.cardSectionData = attachment.cardSectionData
+                } else {
+                    overlay = CardSectionOverlayView(cardSectionData: attachment.cardSectionData)
+                    overlay.parentTextView = textView
+                    overlay.editorInstanceID = editorInstanceID
+
+                    // ── onDataChanged ──
+                    overlay.onDataChanged = { [weak self, weak textStorage, weak textView, weak attachment] newData in
+                        guard let self = self, let ts = textStorage, let tv = textView, let att = attachment else { return }
+                        att.cardSectionData = newData
+                        let newHeight = CardSectionOverlayView.totalHeight(for: newData)
+                        let newSize = CGSize(width: att.bounds.width, height: newHeight)
+                        att.attachmentCell = CodeBlockSizeAttachmentCell(size: newSize)
+                        att.bounds = CGRect(origin: .zero, size: newSize)
+                        let fr = NSRange(location: 0, length: ts.length)
+                        ts.enumerateAttribute(.attachment, in: fr, options: []) { val, charRange, stop in
+                            if val as AnyObject === att {
+                                tv.layoutManager?.invalidateLayout(
+                                    forCharacterRange: charRange, actualCharacterRange: nil)
+                                stop.pointee = true
+                            }
+                        }
+                        self.syncText()
+                    }
+
+                    // ── onDeleteCardSection ──
+                    overlay.onDeleteCardSection = { [weak self, weak textStorage, weak textView, weak attachment] in
+                        guard let self = self, let ts = textStorage,
+                              let tv = textView, let att = attachment else { return }
+                        let fr = NSRange(location: 0, length: ts.length)
+                        ts.enumerateAttribute(.attachment, in: fr, options: []) { val, charRange, stop in
+                            if val as AnyObject === att {
+                                var deleteStart = charRange.location
+                                var deleteEnd = charRange.location + charRange.length
+                                let nsString = ts.string as NSString
+                                if deleteStart > 0 {
+                                    let prev = nsString.character(at: deleteStart - 1)
+                                    if let scalar = Unicode.Scalar(prev),
+                                       CharacterSet.newlines.contains(scalar) { deleteStart -= 1 }
+                                }
+                                if deleteEnd < nsString.length {
+                                    let next = nsString.character(at: deleteEnd)
+                                    if let scalar = Unicode.Scalar(next),
+                                       CharacterSet.newlines.contains(scalar) { deleteEnd += 1 }
+                                }
+                                let deleteRange = NSRange(location: deleteStart,
+                                                         length: deleteEnd - deleteStart)
+                                if tv.shouldChangeText(in: deleteRange, replacementString: "") {
+                                    ts.replaceCharacters(in: deleteRange, with: "")
+                                    tv.didChangeText()
+                                }
+                                stop.pointee = true
+                            }
+                        }
+                        self.syncText()
+                    }
+
+                    // ── onWidthChanged ──
+                    overlay.onWidthChanged = { [weak self, weak textStorage, weak layoutManager, weak attachment, weak textView] newWidth in
+                        guard let self = self, let ts = textStorage, let lm = layoutManager, let att = attachment,
+                              let tc = textView?.textContainer else { return }
+                        let effMin = min(CardSectionOverlayView.minWidth, tc.containerSize.width)
+                        let clamped = max(effMin, min(newWidth, tc.containerSize.width))
+                        let newSize = CGSize(width: clamped, height: att.bounds.height)
+                        att.attachmentCell = CodeBlockSizeAttachmentCell(size: newSize)
+                        att.bounds = CGRect(origin: .zero, size: newSize)
+                        let fr = NSRange(location: 0, length: ts.length)
+                        ts.enumerateAttribute(.attachment, in: fr, options: []) { val, charRange, stop in
+                            if val as AnyObject === att {
+                                lm.invalidateLayout(forCharacterRange: charRange, actualCharacterRange: nil)
+                                stop.pointee = true
+                            }
+                        }
+                        self.syncText()
+                    }
+
+                    // ── onHeightChanged ──
+                    overlay.onHeightChanged = { [weak self, weak textStorage, weak layoutManager, weak attachment] _ in
+                        guard let self = self, let ts = textStorage, let lm = layoutManager, let att = attachment else { return }
+                        let totalH = CardSectionOverlayView.totalHeight(for: att.cardSectionData)
+                        let newSize = CGSize(width: att.bounds.width, height: totalH)
+                        att.attachmentCell = CodeBlockSizeAttachmentCell(size: newSize)
+                        att.bounds = CGRect(origin: .zero, size: newSize)
+                        let fr = NSRange(location: 0, length: ts.length)
+                        ts.enumerateAttribute(.attachment, in: fr, options: []) { val, charRange, stop in
+                            if val as AnyObject === att {
+                                lm.invalidateLayout(forCharacterRange: charRange, actualCharacterRange: nil)
+                                stop.pointee = true
+                            }
+                        }
+                        self.syncText()
+                    }
+
+                    hostView.addSubview(overlay)
+                    cardSectionOverlays[id] = overlay
+                }
+
+                overlay.currentContainerWidth = containerW
+                overlay.frame = overlayRect.integral
+            }
+
+            // ── CLEANUP ──
+            let cardSectionToRemove = cardSectionOverlays.keys.filter { !seenIDs.contains($0) }
+            for key in cardSectionToRemove {
+                cardSectionOverlays[key]?.removeFromSuperview()
+                cardSectionOverlays.removeValue(forKey: key)
+            }
+        }
+
         private func updateImageRatio(
             _ newRatio: CGFloat,
             attachment: NoteImageAttachment,
@@ -6037,7 +6311,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                         else if attachment is NoteImageAttachment
                                 || attachment is NoteCalloutAttachment
                                 || attachment is NoteCodeBlockAttachment
-                                || attachment is NoteTabsAttachment {
+                                || attachment is NoteTabsAttachment
+                                || attachment is NoteCardSectionAttachment {
                             isImageParagraph = true
                             stop.pointee = true
                         }
@@ -6268,6 +6543,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     output.append(codeBlockAttachment.codeBlockData.serialize())
                 } else if let tabsAttachment = attributes[.attachment] as? NoteTabsAttachment {
                     output.append(tabsAttachment.tabsData.serialize())
+                } else if let cardSectionAttachment = attributes[.attachment] as? NoteCardSectionAttachment {
+                    output.append(cardSectionAttachment.cardSectionData.serialize())
                 } else if attributes[.attachment] is NoteDividerAttachment {
                     output.append("[[divider]]")
                 } else if let notelinkAttachment = attributes[.attachment] as? NotelinkAttachment {
@@ -6782,6 +7059,33 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                                 result.append(NSAttributedString(string: "\n", attributes: baseAttributes))
                             }
                             let attachment = makeTabsAttachment(tabsData: tabsData)
+                            result.append(attachment)
+                            let afterClosing = closingRange.upperBound
+                            if afterClosing < text.endIndex {
+                                if !text[afterClosing].isNewline {
+                                    result.append(NSAttributedString(string: "\n", attributes: baseAttributes))
+                                }
+                            } else {
+                                result.append(NSAttributedString(string: "\n", attributes: baseAttributes))
+                            }
+                            index = closingRange.upperBound
+                            lastWasWebClip = false
+                            continue
+                        }
+                    }
+                } else if text[index...].hasPrefix("[[cards|") {
+                    flushBuffer()
+                    let remaining = text[index...]
+                    if let closingRange = remaining.range(of: "[[/cards]]") {
+                        let cardsText = String(remaining[remaining.startIndex..<closingRange.upperBound])
+                        if let cardSectionData = CardSectionData.deserialize(from: cardsText) {
+                            let baseAttributes = Self.baseTypingAttributes(for: currentColorScheme)
+                            if result.length > 0,
+                               let lastScalar = result.string.unicodeScalars.last,
+                               !CharacterSet.newlines.contains(lastScalar) {
+                                result.append(NSAttributedString(string: "\n", attributes: baseAttributes))
+                            }
+                            let attachment = makeCardSectionAttachment(cardSectionData: cardSectionData)
                             result.append(attachment)
                             let afterClosing = closingRange.upperBound
                             if afterClosing < text.endIndex {

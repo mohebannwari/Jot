@@ -375,7 +375,8 @@ struct ContentView: View {
     private let splitMinPaneWidth: CGFloat = 360
     private let previewCardWidth: CGFloat = 300
     private let previewCardMaxHeight: CGFloat = 250
-    private let previewCardTotalHeight: CGFloat = 304 // content (250) + options row (50) + glass padding (4)
+    private let previewCardFullHeight: CGFloat = 304 // content (250) + options row (50) + glass padding (4)
+    private let previewCardOptionsOnlyHeight: CGFloat = 54 // options row (50) + glass padding (4)
     private let previewCardSidebarGap: CGFloat = 24
     private let previewHoverDelay: TimeInterval = 0.1
     private let previewDismissDelay: TimeInterval = 0.3
@@ -1001,10 +1002,13 @@ struct ContentView: View {
 
             let containerHeight = geometry.size.height
             let anchorMidY = previewAnchorFrame.midY
+            // Use compact height when the note has no preview content (empty and unlocked)
+            let hasPreviewContent = note.isLocked || !note.content.isEmpty
+            let cardHeight = hasPreviewContent ? previewCardFullHeight : previewCardOptionsOnlyHeight
             // Clamp so the card stays within bounds (16pt margin from edges)
             let margin: CGFloat = 16
-            let idealY = anchorMidY - previewCardTotalHeight / 2
-            let clampedY = min(max(idealY, margin), containerHeight - previewCardTotalHeight - margin)
+            let idealY = anchorMidY - cardHeight / 2
+            let clampedY = min(max(idealY, margin), containerHeight - cardHeight - margin)
 
             NotePreviewCard(
                 note: note,
@@ -2871,7 +2875,7 @@ struct ContentView: View {
             let response = alert.runModal()
             if response == .alertFirstButtonReturn {
                 let input = passwordField.stringValue
-                if let stored = KeychainManager.loadPassword(), stored == input {
+                if let stored = KeychainManager.loadPassword(), KeychainManager.verifyPassword(input, against: stored) {
                     notesManager.toggleLock(id: note.id)
                 }
             }

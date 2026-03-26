@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Speech
 
 @MainActor
@@ -10,29 +11,29 @@ public protocol Transcribing: AnyObject {
 public final class Transcriber: Transcribing {
     public static let shared = Transcriber()
 
+    private let logger = Logger(subsystem: "com.jot", category: "Transcriber")
+
     private var authorizationStatus: SFSpeechRecognizerAuthorizationStatus?
 
     public init() {}
 
     public func transcribe(url: URL) async -> String? {
         guard FileManager.default.fileExists(atPath: url.path) else {
-            NSLog("Transcriber.transcribe: File does not exist at path: %@", url.path)
+            logger.error("transcribe: File does not exist at path: \(url.path)")
             return nil
         }
 
         // Ensure authorization before attempting transcription
         guard await ensureAuthorization() else {
-            NSLog("Transcriber.transcribe: Speech recognition not authorized")
+            logger.error("transcribe: Speech recognition not authorized")
             return nil
         }
 
         // Check if speech recognizer is available
         guard let recognizer = SFSpeechRecognizer(), recognizer.isAvailable else {
-            NSLog("Transcriber.transcribe: Speech recognizer unavailable")
+            logger.error("transcribe: Speech recognizer unavailable")
             return nil
         }
-
-        NSLog("Transcriber.transcribe: Starting transcription for file: %@", url.path)
 
         let request = SFSpeechURLRecognitionRequest(url: url)
         request.shouldReportPartialResults = false
@@ -57,7 +58,6 @@ public final class Transcriber: Transcribing {
 
                     func tryResume(with result: String?, continuation: CheckedContinuation<String?, Never>) {
                         guard !hasResumed else {
-                            NSLog("Transcriber: Ignoring duplicate resume attempt")
                             return
                         }
                         hasResumed = true
@@ -71,13 +71,12 @@ public final class Transcriber: Transcribing {
                 let recognitionTask = recognizer.recognitionTask(with: request) { result, error in
                     Task {
                         if let error = error {
-                            NSLog("Transcriber.transcribe: Recognition error: %@", error.localizedDescription)
+                            Logger(subsystem: "com.jot", category: "Transcriber").error("transcribe: Recognition error: \(error.localizedDescription)")
                             await state.tryResume(with: nil, continuation: continuation)
                             return
                         }
 
                         if let result = result, result.isFinal {
-                            NSLog("Transcriber.transcribe: Transcription complete: %@", result.bestTranscription.formattedString)
                             await state.tryResume(with: result.bestTranscription.formattedString, continuation: continuation)
                         }
                     }
@@ -91,13 +90,12 @@ public final class Transcriber: Transcribing {
                 // Timeout handler
                 Task {
                     try? await Task.sleep(for: .seconds(30))
-                    NSLog("Transcriber.transcribe: Timeout after 30 seconds")
+                    Logger(subsystem: "com.jot", category: "Transcriber").error("transcribe: Timeout after 30 seconds")
                     await state.cancelTask()
                     await state.tryResume(with: nil, continuation: continuation)
                 }
             }
         } onCancel: {
-            NSLog("Transcriber.transcribe: Task was cancelled")
         }
     }
 }
@@ -108,9 +106,7 @@ private extension Transcriber {
             Bundle.main.object(forInfoDictionaryKey: "NSSpeechRecognitionUsageDescription") as? String,
             usageDescription.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
         else {
-            NSLog(
-                "Transcriber.ensureAuthorization: Missing NSSpeechRecognitionUsageDescription in Info.plist"
-            )
+            logger.error("ensureAuthorization: Missing NSSpeechRecognitionUsageDescription in Info.plist")
             authorizationStatus = .denied
             return false
         }

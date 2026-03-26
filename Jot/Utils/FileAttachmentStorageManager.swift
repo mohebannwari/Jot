@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import os
 
 #if canImport(UniformTypeIdentifiers)
 import UniformTypeIdentifiers
@@ -21,6 +22,7 @@ public final class FileAttachmentStorageManager {
 
     public static let shared = FileAttachmentStorageManager()
 
+    private let logger = Logger(subsystem: "com.jot", category: "FileAttachmentStorageManager")
     private let storageDirectoryName = "JotFiles"
 
     private init() {
@@ -31,7 +33,7 @@ public final class FileAttachmentStorageManager {
 
     public func saveFile(from url: URL) async -> StoredFile? {
         guard let storageURL = await storageDirectoryURL() else {
-            NSLog("FileAttachmentStorageManager: Failed to access storage directory")
+            logger.error("saveFile: Failed to access storage directory")
             return nil
         }
 
@@ -50,23 +52,13 @@ public final class FileAttachmentStorageManager {
                 try fileManager.removeItem(at: destinationURL)
             }
             try fileManager.copyItem(at: url, to: destinationURL)
-            NSLog(
-                "FileAttachmentStorageManager: Stored file %@ as %@",
-                originalFilename,
-                storedFilename
-            )
             return StoredFile(
                 storedFilename: storedFilename,
                 originalFilename: originalFilename,
                 typeIdentifier: typeIdentifier
             )
         } catch {
-            NSLog(
-                "FileAttachmentStorageManager: Failed to copy %@ -> %@ (%@)",
-                url.path,
-                destinationURL.path,
-                error.localizedDescription
-            )
+            logger.error("saveFile: Failed to copy \(url.path) -> \(destinationURL.path): \(error.localizedDescription)")
             return nil
         }
     }
@@ -77,7 +69,7 @@ public final class FileAttachmentStorageManager {
         }
         let fileURL = storageURL.appendingPathComponent(storedFilename, isDirectory: false)
         guard FileManager.default.fileExists(atPath: fileURL.path) else {
-            NSLog("FileAttachmentStorageManager: Missing stored file %@", storedFilename)
+            logger.error("fileURL: Missing stored file \(storedFilename)")
             return nil
         }
         return fileURL
@@ -87,13 +79,8 @@ public final class FileAttachmentStorageManager {
         guard let url = fileURL(for: storedFilename) else { return }
         do {
             try FileManager.default.removeItem(at: url)
-            NSLog("FileAttachmentStorageManager: Deleted file %@", storedFilename)
         } catch {
-            NSLog(
-                "FileAttachmentStorageManager: Failed to delete %@ (%@)",
-                storedFilename,
-                error.localizedDescription
-            )
+            logger.error("deleteFile: Failed to delete \(storedFilename): \(error.localizedDescription)")
         }
     }
 
@@ -123,12 +110,8 @@ public final class FileAttachmentStorageManager {
         if !manager.fileExists(atPath: url.path) {
             do {
                 try manager.createDirectory(at: url, withIntermediateDirectories: true)
-                NSLog("FileAttachmentStorageManager: Created storage directory at %@", url.path)
             } catch {
-                NSLog(
-                    "FileAttachmentStorageManager: Failed to create directory (%@)",
-                    error.localizedDescription
-                )
+                logger.error("ensureStorageDirectoryExists: Failed to create directory: \(error.localizedDescription)")
             }
         }
     }

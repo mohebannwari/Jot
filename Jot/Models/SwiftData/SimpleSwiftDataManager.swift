@@ -129,6 +129,24 @@ final class SimpleSwiftDataManager: ObservableObject {
                 logger.error("Failed to load notes: \(error)")
                 self.notes = []
             }
+
+            if isInitialLoad {
+                // Fire-and-forget: clean up orphaned images after initial load.
+                // Fetches all notes (active + archived + deleted) so no referenced
+                // image is incorrectly removed.
+                Task { @MainActor in
+                    let allNotes: [Note]
+                    do {
+                        allNotes = try self.modelContext.fetch(FetchDescriptor<NoteEntity>()).map { $0.toNote() }
+                    } catch {
+                        self.logger.error("cleanupUnusedImages: failed to fetch all notes — \(error)")
+                        return
+                    }
+                    ImageStorageManager.shared.cleanupUnusedImages(referencedInNotes: allNotes)
+                    let contents = allNotes.map { $0.content }
+                    ThumbnailCache.shared.cleanupOrphanedThumbnails(activeNoteContents: contents)
+                }
+            }
         }
     }
 
@@ -191,42 +209,69 @@ final class SimpleSwiftDataManager: ObservableObject {
         let currentMonth = calendar.component(.month, from: now)
         let currentYear = calendar.component(.year, from: now)
 
-        notesByFolderID = {
-            var dict: [UUID: [Note]] = [:]
-            for note in notes {
-                guard let fid = note.folderID else { continue }
-                dict[fid, default: []].append(note)
+        // Sort once, then partition in a single forward pass.
+        // Previous implementation sorted each sub-collection independently (9 O(n log n) passes).
+        let sorted = notes.sorted(by: sortComparator)
+
+        var folderDict: [UUID: [Note]] = [:]
+        var unfiled: [Note] = []
+        var pinned: [Note] = []
+        var locked: [Note] = []
+        var allUnpinned: [Note] = []
+        var today: [Note] = []
+        var month: [Note] = []
+        var year: [Note] = []
+        var older: [Note] = []
+
+        for note in sorted {
+            if let fid = note.folderID {
+                folderDict[fid, default: []].append(note)
+                continue
             }
-            return dict.mapValues { $0.sorted(by: sortComparator) }
-        }()
 
-        let unfiled = notes.filter { $0.folderID == nil }
+            unfiled.append(note)
+
+            if note.isPinned {
+                pinned.append(note)
+                continue
+            }
+            if note.isLocked {
+                locked.append(note)
+                continue
+            }
+
+            allUnpinned.append(note)
+
+            let d = groupDate(note)
+            if calendar.isDate(d, inSameDayAs: now) {
+                today.append(note)
+            } else {
+                let noteYear = calendar.component(.year, from: d)
+                if noteYear < currentYear {
+                    older.append(note)
+                } else {
+                    let noteMonth = calendar.component(.month, from: d)
+                    if noteMonth < currentMonth {
+                        year.append(note)
+                    } else {
+                        let noteDay = calendar.startOfDay(for: d)
+                        if noteDay < todayStart {
+                            month.append(note)
+                        }
+                    }
+                }
+            }
+        }
+
+        notesByFolderID = folderDict
         unfiledNotes = unfiled
-        pinnedNotes = unfiled.filter { $0.isPinned }.sorted(by: sortComparator)
-
-        let unpinned = unfiled.filter { !$0.isPinned }
-        lockedNotes = unpinned.filter { $0.isLocked }.sorted(by: sortComparator)
-
-        let unlocked = unpinned.filter { !$0.isLocked }
-        allUnpinnedNotes = unlocked.sorted(by: sortComparator)
-
-        todayNotes = unlocked.filter { calendar.isDate(groupDate($0), inSameDayAs: now) }.sorted(by: sortComparator)
-        thisMonthNotes = unlocked.filter { note in
-            let d = groupDate(note)
-            let noteDay = calendar.startOfDay(for: d)
-            let noteMonth = calendar.component(.month, from: d)
-            let noteYear = calendar.component(.year, from: d)
-            return noteMonth == currentMonth && noteYear == currentYear && noteDay < todayStart
-        }.sorted(by: sortComparator)
-        thisYearNotes = unlocked.filter { note in
-            let d = groupDate(note)
-            let noteMonth = calendar.component(.month, from: d)
-            let noteYear = calendar.component(.year, from: d)
-            return noteYear == currentYear && noteMonth < currentMonth
-        }.sorted(by: sortComparator)
-        olderNotes = unlocked.filter { note in
-            calendar.component(.year, from: groupDate(note)) < currentYear
-        }.sorted(by: sortComparator)
+        pinnedNotes = pinned
+        lockedNotes = locked
+        allUnpinnedNotes = allUnpinned
+        todayNotes = today
+        thisMonthNotes = month
+        thisYearNotes = year
+        olderNotes = older
     }
 
     /// Updates a single note in-place across all derived sidebar collections
