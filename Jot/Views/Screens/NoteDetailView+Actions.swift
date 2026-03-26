@@ -108,16 +108,19 @@ extension NoteDetailView {
 
         let isFullDocument = range.location == NSNotFound
 
+        var info: [String: Any] = [
+            "original": isFullDocument ? "" : originalText,
+            "replacement": revised,
+            "editorInstanceID": editorInstanceID
+        ]
+        if aiCaptureIsCardOrigin { info["cardOrigin"] = true }
         NotificationCenter.default.post(
             name: .aiEditApplyReplacement,
             object: nil,
-            userInfo: [
-                "original": isFullDocument ? "" : originalText,
-                "replacement": revised,
-                "editorInstanceID": editorInstanceID
-            ]
+            userInfo: info
         )
 
+        aiCaptureIsCardOrigin = false
         scheduleAutosave()
         withAnimation(.jotSpring) {
             showEditContentPanel = false
@@ -209,16 +212,19 @@ extension NoteDetailView {
 
         let isFullDocument = range.location == NSNotFound
 
+        var info: [String: Any] = [
+            "original": isFullDocument ? "" : originalText,
+            "replacement": translated,
+            "editorInstanceID": editorInstanceID
+        ]
+        if aiCaptureIsCardOrigin { info["cardOrigin"] = true }
         NotificationCenter.default.post(
             name: .aiEditApplyReplacement,
             object: nil,
-            userInfo: [
-                "original": isFullDocument ? "" : originalText,
-                "replacement": translated,
-                "editorInstanceID": editorInstanceID
-            ]
+            userInfo: info
         )
 
+        aiCaptureIsCardOrigin = false
         scheduleAutosave()
         showTranslatePanel = false
         aiPanelState = .none
@@ -268,12 +274,15 @@ extension NoteDetailView {
 
     func acceptTextGeneration() {
         if case .textGenPreview(let generated, _) = aiPanelState {
+            var info: [String: Any] = ["editorInstanceID": editorInstanceID]
+            if aiCaptureIsCardOrigin { info["cardOrigin"] = true }
             NotificationCenter.default.post(
                 name: .aiTextGenInsert,
                 object: generated,
-                userInfo: ["editorInstanceID": editorInstanceID]
+                userInfo: info
             )
         }
+        aiCaptureIsCardOrigin = false
         scheduleAutosave()
         withAnimation(.jotSpring) {
             showTextGenPanel = false

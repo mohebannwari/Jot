@@ -41,7 +41,10 @@ final class TabsContainerOverlayView: NSView {
     // MARK: - Data
 
     var tabsData: TabsContainerData {
-        didSet { rebuildTabsRow(); updateContentText(); needsLayout = true }
+        didSet {
+            guard !isSyncingContent else { needsLayout = true; return }
+            rebuildTabsRow(); updateContentText(); needsLayout = true
+        }
     }
 
     weak var parentTextView: NSTextView?
@@ -49,6 +52,11 @@ final class TabsContainerOverlayView: NSView {
     var onDeleteTabs:   (() -> Void)?
     var onWidthChanged: ((CGFloat) -> Void)?
     var onHeightChanged: ((CGFloat) -> Void)?
+    var editorInstanceID: UUID?
+    private let formatter = TextFormattingManager()
+    private var formattingObservers: [NSObjectProtocol] = []
+    private var isSyncingContent = false
+    private weak var aiTargetTabTV: _TabsTextView?
 
     // MARK: - Subviews
 
@@ -57,27 +65,7 @@ final class TabsContainerOverlayView: NSView {
     private var overflowButton: _TabsOverflowButton!
 
     private let contentBody  = _FlippedContainerView()
-    private let contentTextView: NSTextView = {
-        let tv = NSTextView()
-        tv.isEditable          = true
-        tv.isSelectable        = true
-        tv.allowsUndo          = true
-        tv.drawsBackground     = false
-        tv.backgroundColor     = .clear
-        tv.isRichText          = false
-        tv.isAutomaticQuoteSubstitutionEnabled  = false
-        tv.isAutomaticDashSubstitutionEnabled   = false
-        tv.isAutomaticTextReplacementEnabled    = false
-        tv.isAutomaticSpellingCorrectionEnabled = false
-        tv.textContainerInset  = NSSize(width: 0, height: 0)
-        tv.textContainer?.lineFragmentPadding = 0
-        tv.textContainer?.widthTracksTextView = true
-        tv.isHorizontallyResizable = false
-        tv.isVerticallyResizable   = true
-        tv.maxSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
-        tv.focusRingType = .none
-        return tv
-    }()
+    private var contentTextView: _TabsTextView!
 
     private let resizeHandleRight  = _TabsResizeHandle(direction: .right)
     private let resizeHandleBottom = _TabsResizeHandle(direction: .bottom)
@@ -95,9 +83,47 @@ final class TabsContainerOverlayView: NSView {
         super.init(frame: CGRect(origin: .zero,
                                  size: CGSize(width: Self.minWidth,
                                               height: Self.totalHeight(for: tabsData))))
+        contentTextView = buildContentTextView()
         setupViews()
         rebuildTabsRow()
         updateContentText()
+        setupFormattingObserver()
+    }
+
+    deinit {
+        for obs in formattingObservers {
+            NotificationCenter.default.removeObserver(obs)
+        }
+    }
+
+    private func buildContentTextView() -> _TabsTextView {
+        let storage = NSTextStorage()
+        let layoutManager = _TabsLayoutManager()
+        storage.addLayoutManager(layoutManager)
+        let container = NSTextContainer(containerSize: NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
+        container.widthTracksTextView = true
+        container.lineFragmentPadding = 0
+        layoutManager.addTextContainer(container)
+
+        let tv = _TabsTextView(frame: .zero, textContainer: container)
+        tv.isEditable          = true
+        tv.isSelectable        = true
+        tv.allowsUndo          = true
+        tv.drawsBackground     = false
+        tv.backgroundColor     = .clear
+        tv.isRichText          = true
+        tv.isAutomaticQuoteSubstitutionEnabled  = false
+        tv.isAutomaticDashSubstitutionEnabled   = false
+        tv.isAutomaticTextReplacementEnabled    = false
+        tv.isAutomaticSpellingCorrectionEnabled = false
+        tv.textContainerInset  = NSSize(width: 0, height: 0)
+        tv.isHorizontallyResizable = false
+        tv.isVerticallyResizable   = true
+        tv.maxSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
+        tv.focusRingType = .none
+        tv.font = FontManager.bodyNS(size: ThemeManager.currentBodyFontSize(), weight: .regular)
+        tv.textColor = NSColor(named: "PrimaryTextColor") ?? .labelColor
+        return tv
     }
 
     @available(*, unavailable)
@@ -404,15 +430,15 @@ final class TabsContainerOverlayView: NSView {
         guard index != tabsData.activeIndex,
               tabsData.panes.indices.contains(index),
               tabsData.panes.indices.contains(tabsData.activeIndex) else { return }
-        // Save current content
-        tabsData.panes[tabsData.activeIndex].content = contentTextView.string
+        // Serialize current rich text before switching
+        tabsData.panes[tabsData.activeIndex].content = RichTextSerializer.serializeAttributedString(contentTextView.attributedString())
         tabsData.activeIndex = index
         onDataChanged?(tabsData)
     }
 
     private func addNewTab() {
         guard tabsData.panes.indices.contains(tabsData.activeIndex) else { return }
-        tabsData.panes[tabsData.activeIndex].content = contentTextView.string
+        tabsData.panes[tabsData.activeIndex].content = RichTextSerializer.serializeAttributedString(contentTextView.attributedString())
         tabsData.addTab()
         onDataChanged?(tabsData)
     }
@@ -509,7 +535,7 @@ final class TabsContainerOverlayView: NSView {
     @objc private func contextMenuDeleteTab(_ sender: NSMenuItem) {
         guard let index = sender.representedObject as? Int,
               tabsData.panes.indices.contains(tabsData.activeIndex) else { return }
-        tabsData.panes[tabsData.activeIndex].content = contentTextView.string
+        tabsData.panes[tabsData.activeIndex].content = RichTextSerializer.serializeAttributedString(contentTextView.attributedString())
         tabsData.removeTab(at: index)
         onDataChanged?(tabsData)
     }
@@ -523,8 +549,179 @@ final class TabsContainerOverlayView: NSView {
     private func updateContentText() {
         let idx = tabsData.activeIndex
         guard tabsData.panes.indices.contains(idx) else { return }
-        contentTextView.string = tabsData.panes[idx].content
-        contentTextView.font = NSFont.systemFont(ofSize: 16, weight: .medium)
+        let currentSerialized = RichTextSerializer.serializeAttributedString(contentTextView.attributedString())
+        if currentSerialized != tabsData.panes[idx].content {
+            let attrString = RichTextSerializer.deserializeToAttributedString(tabsData.panes[idx].content)
+            contentTextView.textStorage?.setAttributedString(attrString)
+        }
+        contentTextView.typingAttributes = RichTextSerializer.baseTypingAttributes()
+    }
+
+    // MARK: - Formatting
+
+    private func setupFormattingObserver() {
+        let nc = NotificationCenter.default
+
+        func focusedTabTV() -> _TabsTextView? {
+            contentTextView.window?.firstResponder === contentTextView ? contentTextView : nil
+        }
+
+        let excludedTools: Set<EditTool> = [
+            .divider, .imageUpload, .voiceRecord, .table, .callout,
+            .codeBlock, .fileLink, .sticker, .tabs, .cards, .lineBreak, .link, .searchOnPage
+        ]
+
+        // 1. EditTool
+        formattingObservers.append(nc.addObserver(forName: .applyEditTool, object: nil, queue: .main) { [weak self] n in
+            guard let self = self, let tv = focusedTabTV() else { return }
+            guard let raw = n.userInfo?["tool"] as? String, let tool = EditTool(rawValue: raw) else { return }
+            guard !excludedTools.contains(tool) else { return }
+            self.formatter.applyFormatting(to: tv, tool: tool)
+            self.styleTabParagraphs(tv)
+            self.syncTabContent(tv)
+        })
+
+        // 2. Font size
+        formattingObservers.append(nc.addObserver(forName: .applyFontSize, object: nil, queue: .main) { [weak self] n in
+            guard let self = self, let tv = focusedTabTV() else { return }
+            guard let size = n.userInfo?["size"] as? CGFloat else { return }
+            self.formatter.applyFontSize(size, to: tv, range: tv.selectedRange())
+            self.syncTabContent(tv)
+        })
+
+        // 3. Font family
+        formattingObservers.append(nc.addObserver(forName: .applyFontFamily, object: nil, queue: .main) { [weak self] n in
+            guard let self = self, let tv = focusedTabTV() else { return }
+            guard let styleRaw = n.userInfo?["style"] as? String,
+                  let style = BodyFontStyle(rawValue: styleRaw) else { return }
+            self.formatter.applyFontFamily(style, to: tv, range: tv.selectedRange())
+            self.syncTabContent(tv)
+        })
+
+        // 4. Text color
+        formattingObservers.append(nc.addObserver(forName: .applyTextColor, object: nil, queue: .main) { [weak self] n in
+            guard let self = self, let tv = focusedTabTV() else { return }
+            guard let hex = n.userInfo?["hex"] as? String else { return }
+            self.formatter.applyTextColor(hex: hex, range: tv.selectedRange(), to: tv)
+            self.syncTabContent(tv)
+        })
+
+        // 5. Remove text color
+        formattingObservers.append(nc.addObserver(forName: .removeTextColor, object: nil, queue: .main) { [weak self] n in
+            guard let self = self, let tv = focusedTabTV() else { return }
+            self.formatter.removeTextColor(range: tv.selectedRange(), from: tv)
+            self.syncTabContent(tv)
+        })
+
+        // 6. Highlight color
+        formattingObservers.append(nc.addObserver(forName: .applyHighlightColor, object: nil, queue: .main) { [weak self] n in
+            guard let self = self, let tv = focusedTabTV() else { return }
+            guard let hex = n.userInfo?["hex"] as? String else { return }
+            self.formatter.applyHighlight(hex: hex, range: tv.selectedRange(), to: tv)
+            self.syncTabContent(tv)
+        })
+
+        // 7. Remove highlight
+        formattingObservers.append(nc.addObserver(forName: .removeHighlightColor, object: nil, queue: .main) { [weak self] n in
+            guard let self = self, let tv = focusedTabTV() else { return }
+            self.formatter.removeHighlight(range: tv.selectedRange(), from: tv)
+            self.syncTabContent(tv)
+        })
+
+        // 8. Todo toolbar action
+        formattingObservers.append(nc.addObserver(forName: .todoToolbarAction, object: nil, queue: .main) { [weak self] n in
+            guard let self = self, let tv = focusedTabTV() else { return }
+            self.formatter.applyFormatting(to: tv, tool: .todo)
+        })
+
+        // 9. AI: capture selection
+        formattingObservers.append(nc.addObserver(forName: .aiEditRequestSelection, object: nil, queue: .main) { [weak self] n in
+            guard let self = self, let tv = focusedTabTV() else { return }
+            self.aiTargetTabTV = tv
+            let range = tv.selectedRange()
+            let text = (tv.string as NSString).substring(with: range)
+            var windowRect = CGRect.zero
+            if let lm = tv.layoutManager, let tc = tv.textContainer, range.length > 0 {
+                let glyphRange = lm.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+                let rect = lm.boundingRect(forGlyphRange: glyphRange, in: tc)
+                windowRect = tv.convert(rect.offsetBy(dx: tv.textContainerOrigin.x, dy: tv.textContainerOrigin.y), to: nil)
+            }
+            NotificationCenter.default.post(name: .aiEditCaptureSelection, object: nil, userInfo: [
+                "nsRange": range,
+                "selectedText": text,
+                "windowRect": windowRect,
+                "cardOrigin": true
+            ])
+        })
+
+        // 10. AI: apply replacement
+        formattingObservers.append(nc.addObserver(forName: .aiEditApplyReplacement, object: nil, queue: .main) { [weak self] n in
+            guard let self = self, let tv = self.aiTargetTabTV else { return }
+            guard let replacement = n.userInfo?["replacement"] as? String else { return }
+            let original = n.userInfo?["original"] as? String ?? ""
+            if original.isEmpty {
+                tv.selectAll(nil)
+                tv.insertText(replacement, replacementRange: tv.selectedRange())
+            } else {
+                let searchRange = NSRange(location: 0, length: (tv.string as NSString).length)
+                let foundRange = (tv.string as NSString).range(of: original, range: searchRange)
+                if foundRange.location != NSNotFound {
+                    tv.insertText(replacement, replacementRange: foundRange)
+                }
+            }
+            self.syncTabContent(tv)
+            self.aiTargetTabTV = nil
+        })
+
+        // 11. AI: insert generated text
+        formattingObservers.append(nc.addObserver(forName: .aiTextGenInsert, object: nil, queue: .main) { [weak self] n in
+            guard let self = self, let tv = self.aiTargetTabTV else { return }
+            guard let text = n.object as? String else { return }
+            tv.insertText(text, replacementRange: tv.selectedRange())
+            self.syncTabContent(tv)
+            self.aiTargetTabTV = nil
+        })
+    }
+
+    private func syncTabContent(_ tv: _TabsTextView) {
+        let idx = tabsData.activeIndex
+        guard tabsData.panes.indices.contains(idx) else { return }
+        isSyncingContent = true
+        tabsData.panes[idx].content = RichTextSerializer.serializeAttributedString(tv.attributedString())
+        onDataChanged?(tabsData)
+        isSyncingContent = false
+    }
+
+    private func styleTabParagraphs(_ tv: _TabsTextView) {
+        guard let storage = tv.textStorage, storage.length > 0 else { return }
+        let fullRange = NSRange(location: 0, length: storage.length)
+        storage.beginEditing()
+        (storage.string as NSString).enumerateSubstrings(in: fullRange, options: .byParagraphs) { _, paraRange, _, _ in
+            let isBlockQuote = storage.attribute(.blockQuote, at: paraRange.location, effectiveRange: nil) as? Bool == true
+            let isOrderedList = storage.attribute(.orderedListNumber, at: paraRange.location, effectiveRange: nil) != nil
+
+            if isBlockQuote {
+                storage.addAttribute(.paragraphStyle, value: RichTextSerializer.blockQuoteParagraphStyle(), range: paraRange)
+            } else if isOrderedList {
+                storage.addAttribute(.paragraphStyle, value: RichTextSerializer.orderedListParagraphStyle(), range: paraRange)
+            } else {
+                if let font = storage.attribute(.font, at: paraRange.location, effectiveRange: nil) as? NSFont,
+                   RichTextSerializer.headingLevel(for: font) != nil {
+                    // Heading style already set by TextFormattingManager
+                } else {
+                    let existingPS = storage.attribute(.paragraphStyle, at: paraRange.location, effectiveRange: nil) as? NSParagraphStyle
+                    let alignment = existingPS?.alignment ?? .left
+                    if alignment != .left {
+                        let ps = RichTextSerializer.baseParagraphStyle().mutableCopy() as! NSMutableParagraphStyle
+                        ps.alignment = alignment
+                        storage.addAttribute(.paragraphStyle, value: ps, range: paraRange)
+                    } else {
+                        storage.addAttribute(.paragraphStyle, value: RichTextSerializer.baseParagraphStyle(), range: paraRange)
+                    }
+                }
+            }
+        }
+        storage.endEditing()
     }
 
     // MARK: - Resize
@@ -587,7 +784,7 @@ final class TabsContainerOverlayView: NSView {
         contentBody.layer?.backgroundColor = Self.blocksColor(isDark: dark).cgColor
 
         // Text color
-        contentTextView.textColor = NSColor.labelColor
+        contentTextView.textColor = NSColor(named: "PrimaryTextColor") ?? .labelColor
 
         needsDisplay = true
     }
@@ -604,14 +801,217 @@ final class TabsContainerOverlayView: NSView {
 // MARK: - NSTextViewDelegate
 
 extension TabsContainerOverlayView: NSTextViewDelegate {
+
     func textDidChange(_ notification: Notification) {
+        guard notification.object as? _TabsTextView === contentTextView else { return }
         let idx = tabsData.activeIndex
         guard tabsData.panes.indices.contains(idx) else { return }
-        tabsData.panes[idx].content = contentTextView.string
+        styleTabParagraphs(contentTextView)
+        isSyncingContent = true
+        tabsData.panes[idx].content = RichTextSerializer.serializeAttributedString(contentTextView.attributedString())
         onDataChanged?(tabsData)
+        isSyncingContent = false
+    }
+
+    func textViewDidChangeSelection(_ notification: Notification) {
+        guard let tv = notification.object as? _TabsTextView else { return }
+        let selectedRange = tv.selectedRange()
+
+        if selectedRange.length > 0,
+           let layoutManager = tv.layoutManager,
+           let textContainer = tv.textContainer {
+            let glyphRange = layoutManager.glyphRange(forCharacterRange: selectedRange, actualCharacterRange: nil)
+            let selectionRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+            let selectionRectInView = selectionRect.offsetBy(dx: tv.textContainerOrigin.x,
+                                                              dy: tv.textContainerOrigin.y)
+            let selectionRectInWindow = tv.convert(selectionRectInView, to: nil)
+
+            var isBold = false, isItalic = false, isUnderline = false, isStrikethrough = false
+            var isHighlight = false
+            var headingLevel = 0
+            var fontSize = ThemeManager.currentBodyFontSize()
+            var fontFamily = "default"
+            var textColorHex: String? = nil
+
+            if let storage = tv.textStorage, selectedRange.location < storage.length {
+                if let font = storage.attribute(.font, at: selectedRange.location, effectiveRange: nil) as? NSFont {
+                    let traits = font.fontDescriptor.symbolicTraits
+                    isBold = traits.contains(.bold)
+                    isItalic = traits.contains(.italic)
+                    fontSize = font.pointSize
+                    if let hl = RichTextSerializer.headingLevel(for: font) {
+                        switch hl {
+                        case .h1: headingLevel = 1
+                        case .h2: headingLevel = 2
+                        case .h3: headingLevel = 3
+                        case .none: break
+                        }
+                    }
+                    if let customFamily = storage.attribute(TextFormattingManager.customFontFamilyKey, at: selectedRange.location, effectiveRange: nil) as? String {
+                        fontFamily = customFamily
+                    } else if font.fontDescriptor.object(forKey: .family) as? String == NSFont.systemFont(ofSize: 12).familyName {
+                        fontFamily = "system"
+                    } else if font.isFixedPitch {
+                        fontFamily = "mono"
+                    }
+                }
+                if let ul = storage.attribute(.underlineStyle, at: selectedRange.location, effectiveRange: nil) as? Int {
+                    isUnderline = ul != 0
+                }
+                if let st = storage.attribute(.strikethroughStyle, at: selectedRange.location, effectiveRange: nil) as? Int {
+                    isStrikethrough = st != 0
+                }
+                isHighlight = storage.attribute(.highlightColor, at: selectedRange.location, effectiveRange: nil) != nil
+                if storage.attribute(TextFormattingManager.customTextColorKey, at: selectedRange.location, effectiveRange: nil) as? Bool == true,
+                   let nsColor = storage.attribute(.foregroundColor, at: selectedRange.location, effectiveRange: nil) as? NSColor {
+                    textColorHex = RichTextSerializer.nsColorToHex(nsColor)
+                }
+            }
+
+            let visibleRect = tv.visibleRect
+            var info: [String: Any] = [
+                "hasSelection": true,
+                "selectionX": selectionRect.origin.x + tv.textContainerOrigin.x,
+                "selectionY": selectionRect.origin.y + tv.textContainerOrigin.y - visibleRect.origin.y,
+                "selectionWidth": selectionRect.width,
+                "selectionHeight": selectionRect.height,
+                "selectionWindowY": selectionRectInWindow.origin.y,
+                "selectionWindowX": selectionRectInWindow.origin.x,
+                "visibleWidth": visibleRect.width,
+                "visibleHeight": visibleRect.height,
+                "isBold": isBold,
+                "isItalic": isItalic,
+                "isUnderline": isUnderline,
+                "isStrikethrough": isStrikethrough,
+                "isHighlight": isHighlight,
+                "headingLevel": headingLevel,
+                "windowHeight": tv.window?.contentView?.bounds.height ?? 800,
+                "fontSize": fontSize,
+                "fontFamily": fontFamily
+            ]
+            if let hex = textColorHex { info["textColorHex"] = hex }
+            if let eid = editorInstanceID { info["editorInstanceID"] = eid }
+            NotificationCenter.default.post(name: .textSelectionChanged, object: nil, userInfo: info)
+        } else {
+            var info: [String: Any] = ["hasSelection": false]
+            if let eid = editorInstanceID { info["editorInstanceID"] = eid }
+            NotificationCenter.default.post(name: .textSelectionChanged, object: nil, userInfo: info)
+        }
     }
 }
 
+
+// MARK: - Tabs Text View
+
+final class _TabsTextView: NSTextView {
+    override func menu(for event: NSEvent) -> NSMenu? {
+        // Use default context menu for tabs content
+        super.menu(for: event)
+    }
+}
+
+// MARK: - Tabs Layout Manager (squiggly strikethrough only, no typing animation)
+
+final class _TabsLayoutManager: NSLayoutManager {
+
+    override func drawGlyphs(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
+        super.drawGlyphs(forGlyphRange: glyphsToShow, at: origin)
+        drawSquigglyStrikethrough(forGlyphRange: glyphsToShow, at: origin)
+    }
+
+    override func drawStrikethrough(forGlyphRange glyphRange: NSRange, strikethroughType strikethroughVal: NSUnderlineStyle, baselineOffset: CGFloat, lineFragmentRect lineRect: NSRect, lineFragmentGlyphRange lineGlyphRange: NSRange, containerOrigin: NSPoint) {
+        // Intentionally empty — squiggly replaces native strikethrough
+    }
+
+    private func drawSquigglyStrikethrough(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
+        guard let textStorage = textStorage,
+              let textContainer = textContainers.first,
+              let context = NSGraphicsContext.current?.cgContext
+        else { return }
+        guard NSMaxRange(glyphsToShow) <= numberOfGlyphs else { return }
+        guard textStorage.length > 0 else { return }
+
+        let charRange = characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
+        let safeCharRange = NSIntersectionRange(charRange, NSRange(location: 0, length: textStorage.length))
+        guard safeCharRange.length > 0 else { return }
+
+        textStorage.enumerateAttribute(.strikethroughStyle, in: safeCharRange, options: []) { value, attrRange, _ in
+            guard let style = value as? Int, style != 0 else { return }
+            drawSquigglyLine(forAttrRange: attrRange, textStorage: textStorage, textContainer: textContainer, origin: origin, context: context)
+        }
+    }
+
+    private func drawSquigglyLine(forAttrRange attrRange: NSRange, textStorage: NSTextStorage, textContainer: NSTextContainer, origin: NSPoint, context: CGContext) {
+        let nsString = textStorage.string as NSString
+        var trimmedEnd = NSMaxRange(attrRange)
+        while trimmedEnd > attrRange.location {
+            let ch = nsString.character(at: trimmedEnd - 1)
+            if ch == 0x0A || ch == 0x0D || ch == 0x20 || ch == 0x09 { trimmedEnd -= 1 }
+            else { break }
+        }
+        let trimmedRange = NSRange(location: attrRange.location, length: trimmedEnd - attrRange.location)
+        guard trimmedRange.length > 0 else { return }
+
+        let glyphRange = self.glyphRange(forCharacterRange: trimmedRange, actualCharacterRange: nil)
+        guard glyphRange.length > 0 else { return }
+
+        self.enumerateLineFragments(forGlyphRange: glyphRange) { lineRect, usedRect, container, lineGlyphRange, stop in
+            let intersection = NSIntersectionRange(glyphRange, lineGlyphRange)
+            guard intersection.length > 0 else { return }
+
+            let segmentRect = self.boundingRect(forGlyphRange: intersection, in: textContainer)
+            let startX = origin.x + segmentRect.origin.x + 2
+            let endX = origin.x + segmentRect.origin.x + segmentRect.width - 1
+            let glyphLoc = self.location(forGlyphAt: intersection.location)
+            let charIdx = self.characterIndexForGlyph(at: intersection.location)
+            let font = textStorage.attribute(.font, at: charIdx, effectiveRange: nil) as? NSFont
+                ?? NSFont.systemFont(ofSize: 14)
+            let baseline = lineRect.origin.y + glyphLoc.y
+            let midY = origin.y + baseline - font.xHeight * 0.5
+
+            guard endX - startX > 4 else { return }
+
+            let path = NSBezierPath()
+            path.lineWidth = 1.6
+            path.lineCapStyle = .round
+            path.lineJoinStyle = .round
+
+            let segmentLength = endX - startX
+            let stepSize: CGFloat = 6.0
+            let steps = max(1, Int(ceil(segmentLength / stepSize)))
+
+            let text = nsString.substring(with: attrRange)
+            var contentHash: UInt64 = 5381
+            for scalar in text.unicodeScalars {
+                contentHash = contentHash &* 33 &+ UInt64(scalar.value)
+            }
+            var rng = contentHash
+
+            func nextWobble() -> CGFloat {
+                rng = rng &* 6364136223846793005 &+ 1442695040888963407
+                let normalized = CGFloat((rng >> 33) & 0x7FFF) / CGFloat(0x7FFF)
+                return (normalized - 0.5) * 5.0
+            }
+
+            path.move(to: NSPoint(x: startX, y: midY + nextWobble()))
+
+            for i in 1...steps {
+                let x = min(startX + CGFloat(i) * stepSize, endX)
+                let wobble = nextWobble()
+                let cpX = startX + (CGFloat(i) - 0.5) * stepSize
+                let cpY = midY + nextWobble()
+                path.curve(to: NSPoint(x: x, y: midY + wobble),
+                           controlPoint1: NSPoint(x: min(cpX, endX), y: cpY),
+                           controlPoint2: NSPoint(x: x, y: midY + wobble))
+            }
+
+            context.saveGState()
+            NSColor.labelColor.setStroke()
+            path.stroke()
+            context.restoreGState()
+        }
+    }
+}
 
 // MARK: - NSColor Hex Helper
 

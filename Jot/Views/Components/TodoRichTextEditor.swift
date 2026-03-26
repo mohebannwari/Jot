@@ -82,7 +82,7 @@ struct TodoRichTextEditor: View {
     @State private var codePasteRange: NSRange = NSRange(location: 0, length: 0)
     @State private var codePasteLanguage: String = "plaintext"
 
-    static let commandMenuActions: [EditTool] = [.imageUpload, .fileLink, .voiceRecord, .link, .todo, .bulletList, .numberedList, .blockQuote, .codeBlock, .callout, .tabs, .divider, .table, .sticker]
+    static let commandMenuActions: [EditTool] = [.imageUpload, .fileLink, .voiceRecord, .link, .todo, .bulletList, .numberedList, .blockQuote, .codeBlock, .callout, .tabs, .cards, .divider, .table, .sticker]
     static let commandMenuOuterPadding: CGFloat = CommandMenuLayout.outerPadding
     static let commandMenuHorizontalPadding = commandMenuOuterPadding * 2
     static let commandMenuVerticalPadding = commandMenuOuterPadding * 2
@@ -264,6 +264,11 @@ struct TodoRichTextEditor: View {
             NotificationCenter.default.publisher(for: .todoToolbarAction)
         ) { notification in
             if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
+            // Skip if an overlay text view (card or tab) is first responder —
+            // those overlays handle their own todo insertion.
+            if let window = NSApp.keyWindow,
+               let firstResp = window.firstResponder as? NSTextView,
+               !(firstResp is InlineNSTextView) { return }
             NotificationCenter.default.post(name: .insertTodoInEditor, object: nil, userInfo: editorInstanceID.map { ["editorInstanceID": $0] })
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("InsertWebLink"))) {

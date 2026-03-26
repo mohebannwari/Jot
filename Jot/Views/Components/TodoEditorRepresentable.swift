@@ -2123,7 +2123,11 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 if let nid = notification.userInfo?["editorInstanceID"] as? UUID,
                    let myID = self?.editorInstanceID, nid != myID { return }
                 Task { @MainActor [weak self] in
-                    self?.insertTodo()
+                    guard let self = self, let textView = self.textView else { return }
+                    // Skip if a card text view is first responder — the card overlay handles its own todo insertion.
+                    if let firstResp = textView.window?.firstResponder as? NSTextView,
+                       firstResp !== textView { return }
+                    self.insertTodo()
                 }
             }
 
@@ -2378,7 +2382,11 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 if let nid = notification.userInfo?["editorInstanceID"] as? UUID,
                    let myID = self?.editorInstanceID, nid != myID { return }
                 Task { @MainActor [weak self] in
-                    self?.captureSelectionForEditContent()
+                    guard let self = self, let textView = self.textView else { return }
+                    // Skip if a card text view is first responder — the card overlay captures its own selection.
+                    if let firstResp = textView.window?.firstResponder as? NSTextView,
+                       firstResp !== textView { return }
+                    self.captureSelectionForEditContent()
                 }
             }
 
@@ -2629,6 +2637,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             ) { [weak self] notification in
                 if let nid = notification.userInfo?["editorInstanceID"] as? UUID,
                    let myID = self?.editorInstanceID, nid != myID { return }
+                // Skip if a card overlay originated this AI session (card stores its own target).
+                if notification.userInfo?["cardOrigin"] as? Bool == true { return }
                 guard let userInfo = notification.userInfo,
                       let original = userInfo["original"] as? String,
                       let replacement = userInfo["replacement"] as? String else { return }
@@ -2655,6 +2665,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             ) { [weak self] notification in
                 if let nid = notification.userInfo?["editorInstanceID"] as? UUID,
                    let myID = self?.editorInstanceID, nid != myID { return }
+                // Skip if a card overlay originated this AI session.
+                if notification.userInfo?["cardOrigin"] as? Bool == true { return }
                 guard let text = notification.object as? String else { return }
                 Task { @MainActor [weak self] in
                     self?.insertTextAtCursor(text)
@@ -5839,6 +5851,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 } else {
                     overlay = TabsContainerOverlayView(tabsData: attachment.tabsData)
                     overlay.parentTextView = textView
+                    overlay.editorInstanceID = editorInstanceID
 
                     // ── onDataChanged ──
                     overlay.onDataChanged = { [weak self, weak textStorage, weak textView, weak attachment] newData in

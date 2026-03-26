@@ -83,6 +83,7 @@ struct NoteDetailView: View {
     @State var capturedSelectionRange: NSRange = NSRange(location: NSNotFound, length: 0)
     @State var capturedSelectionText: String = ""
     @State var capturedSelectionWindowRect: CGRect = .zero
+    @State var aiCaptureIsCardOrigin: Bool = false
 
     // Edit Content floating panel
     @State var showEditContentPanel: Bool = false
@@ -604,6 +605,7 @@ struct NoteDetailView: View {
             capturedSelectionRange = (userInfo["nsRange"] as? NSRange) ?? NSRange(location: NSNotFound, length: 0)
             capturedSelectionText = (userInfo["selectedText"] as? String) ?? ""
             capturedSelectionWindowRect = (userInfo["windowRect"] as? CGRect) ?? .zero
+            aiCaptureIsCardOrigin = (userInfo["cardOrigin"] as? Bool) ?? false
         }
         .onReceive(NotificationCenter.default.publisher(for: .aiTranslateSubmit)) { notification in
             if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }

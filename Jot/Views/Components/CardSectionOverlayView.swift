@@ -33,8 +33,18 @@ final class CardSectionOverlayView: NSView {
 
     // MARK: - Data
 
+    /// Guards against re-entrant syncTextViews calls during textDidChange processing.
+    /// textDidChange mutates the struct which triggers didSet -> syncTextViews.
+    /// Without this guard, syncTextViews can overwrite in-flight edits.
+    private var isSyncingContent = false
+
     var cardSectionData: CardSectionData {
         didSet {
+            guard !isSyncingContent else {
+                needsLayout = true
+                needsDisplay = true
+                return
+            }
             syncTextViews()
             needsLayout = true
             needsDisplay = true
@@ -43,6 +53,7 @@ final class CardSectionOverlayView: NSView {
 
     weak var parentTextView: NSTextView?
     var editorInstanceID: UUID?
+    private let formatter = TextFormattingManager()
     var onDataChanged:       ((CardSectionData) -> Void)?
     var onDeleteCardSection: (() -> Void)?
     var onWidthChanged:      ((CGFloat) -> Void)?
@@ -107,6 +118,13 @@ final class CardSectionOverlayView: NSView {
         l.isHidden = true
         return l
     }()
+
+    // MARK: - AI target state
+
+    /// Stores the card text view that originated an AI request (selection capture).
+    /// Used by replacement/insert handlers since focus has shifted away by the time
+    /// the user clicks Replace/Accept.
+    private weak var aiTargetCardTV: _CardTextView?
 
     // MARK: - Hover state
 
@@ -177,51 +195,127 @@ final class CardSectionOverlayView: NSView {
             cardTextViews.first { $0.window?.firstResponder == $0 }
         }
 
-        // 1. EditTool (bold, italic, underline, strikethrough, headings, etc.)
+        // Tools cards don't support (block-level, attachments, etc.)
+        let excludedTools: Set<EditTool> = [
+            .divider, .imageUpload, .voiceRecord, .table, .callout,
+            .codeBlock, .fileLink, .sticker, .tabs, .cards, .lineBreak, .link, .searchOnPage
+        ]
+
+        // 1. EditTool -- delegate to TextFormattingManager
         formattingObservers.append(nc.addObserver(forName: .applyEditTool, object: nil, queue: .main) { [weak self] n in
             guard let self = self, let tv = focusedCardTV() else { return }
             guard let raw = n.userInfo?["tool"] as? String, let tool = EditTool(rawValue: raw) else { return }
-            self.applyCardFormatting(tool: tool, to: tv)
+            guard !excludedTools.contains(tool) else { return }
+            self.formatter.applyFormatting(to: tv, tool: tool)
+            self.styleCardParagraphs(tv)
+            self.syncCardContent(tv)
         })
 
         // 2. Font size
         formattingObservers.append(nc.addObserver(forName: .applyFontSize, object: nil, queue: .main) { [weak self] n in
             guard let self = self, let tv = focusedCardTV() else { return }
             guard let size = n.userInfo?["size"] as? CGFloat else { return }
-            self.applyCardFontSize(size, to: tv)
+            self.formatter.applyFontSize(size, to: tv, range: tv.selectedRange())
+            self.syncCardContent(tv)
         })
 
         // 3. Font family
         formattingObservers.append(nc.addObserver(forName: .applyFontFamily, object: nil, queue: .main) { [weak self] n in
             guard let self = self, let tv = focusedCardTV() else { return }
-            guard let styleRaw = n.userInfo?["style"] as? String else { return }
-            self.applyCardFontFamily(styleRaw, to: tv)
+            guard let styleRaw = n.userInfo?["style"] as? String,
+                  let style = BodyFontStyle(rawValue: styleRaw) else { return }
+            self.formatter.applyFontFamily(style, to: tv, range: tv.selectedRange())
+            self.syncCardContent(tv)
         })
 
         // 4. Text color
         formattingObservers.append(nc.addObserver(forName: .applyTextColor, object: nil, queue: .main) { [weak self] n in
             guard let self = self, let tv = focusedCardTV() else { return }
             guard let hex = n.userInfo?["hex"] as? String else { return }
-            self.applyCardTextColor(hex: hex, to: tv)
+            self.formatter.applyTextColor(hex: hex, range: tv.selectedRange(), to: tv)
+            self.syncCardContent(tv)
         })
 
         // 5. Remove text color
         formattingObservers.append(nc.addObserver(forName: .removeTextColor, object: nil, queue: .main) { [weak self] n in
             guard let self = self, let tv = focusedCardTV() else { return }
-            self.removeCardTextColor(from: tv)
+            self.formatter.removeTextColor(range: tv.selectedRange(), from: tv)
+            self.syncCardContent(tv)
         })
 
         // 6. Highlight color
         formattingObservers.append(nc.addObserver(forName: .applyHighlightColor, object: nil, queue: .main) { [weak self] n in
             guard let self = self, let tv = focusedCardTV() else { return }
             guard let hex = n.userInfo?["hex"] as? String else { return }
-            self.applyCardHighlight(hex: hex, to: tv)
+            self.formatter.applyHighlight(hex: hex, range: tv.selectedRange(), to: tv)
+            self.syncCardContent(tv)
         })
 
         // 7. Remove highlight
         formattingObservers.append(nc.addObserver(forName: .removeHighlightColor, object: nil, queue: .main) { [weak self] n in
             guard let self = self, let tv = focusedCardTV() else { return }
-            self.removeCardHighlight(from: tv)
+            self.formatter.removeHighlight(range: tv.selectedRange(), from: tv)
+            self.syncCardContent(tv)
+        })
+
+        // 8. Todo toolbar action (dispatched separately from .applyEditTool).
+        // No syncCardContent needed -- textDidChange fires synchronously inside
+        // insertTodo's didChangeText() and handles serialization.
+        formattingObservers.append(nc.addObserver(forName: .todoToolbarAction, object: nil, queue: .main) { [weak self] n in
+            guard let self = self, let tv = focusedCardTV() else { return }
+            self.formatter.applyFormatting(to: tv, tool: .todo)
+        })
+
+        // 9. AI: capture card selection for edit/translate.
+        // Stores the originating card text view so replacement/insert can target it
+        // even after focus shifts to the AI panel buttons.
+        formattingObservers.append(nc.addObserver(forName: .aiEditRequestSelection, object: nil, queue: .main) { [weak self] n in
+            guard let self = self, let tv = focusedCardTV() else { return }
+            self.aiTargetCardTV = tv
+            let range = tv.selectedRange()
+            let text = (tv.string as NSString).substring(with: range)
+            var windowRect = CGRect.zero
+            if let lm = tv.layoutManager, let tc = tv.textContainer, range.length > 0 {
+                let glyphRange = lm.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+                let rect = lm.boundingRect(forGlyphRange: glyphRange, in: tc)
+                windowRect = tv.convert(rect.offsetBy(dx: tv.textContainerOrigin.x, dy: tv.textContainerOrigin.y), to: nil)
+            }
+            NotificationCenter.default.post(name: .aiEditCaptureSelection, object: nil, userInfo: [
+                "nsRange": range,
+                "selectedText": text,
+                "windowRect": windowRect,
+                "cardOrigin": true
+            ])
+        })
+
+        // 10. AI: apply replacement (translate / edit content).
+        // Uses aiTargetCardTV instead of focusedCardTV() because focus has shifted
+        // to the panel by the time the user clicks Replace.
+        formattingObservers.append(nc.addObserver(forName: .aiEditApplyReplacement, object: nil, queue: .main) { [weak self] n in
+            guard let self = self, let tv = self.aiTargetCardTV else { return }
+            guard let replacement = n.userInfo?["replacement"] as? String else { return }
+            let original = n.userInfo?["original"] as? String ?? ""
+            if original.isEmpty {
+                tv.selectAll(nil)
+                tv.insertText(replacement, replacementRange: tv.selectedRange())
+            } else {
+                let searchRange = NSRange(location: 0, length: (tv.string as NSString).length)
+                let foundRange = (tv.string as NSString).range(of: original, range: searchRange)
+                if foundRange.location != NSNotFound {
+                    tv.insertText(replacement, replacementRange: foundRange)
+                }
+            }
+            self.syncCardContent(tv)
+            self.aiTargetCardTV = nil
+        })
+
+        // 11. AI: insert generated text at cursor.
+        formattingObservers.append(nc.addObserver(forName: .aiTextGenInsert, object: nil, queue: .main) { [weak self] n in
+            guard let self = self, let tv = self.aiTargetCardTV else { return }
+            guard let text = n.object as? String else { return }
+            tv.insertText(text, replacementRange: tv.selectedRange())
+            self.syncCardContent(tv)
+            self.aiTargetCardTV = nil
         })
     }
 
@@ -234,139 +328,47 @@ final class CardSectionOverlayView: NSView {
 
     // MARK: - Card formatting
 
-    /// Sync card text view content back to data model after formatting.
+    /// Sync card text view rich text content back to data model via tag serialization.
     private func syncCardContent(_ tv: _CardTextView) {
         let idx = tv.cardIndex
         guard idx < cardSectionData.flatCardCount, let pos = cardSectionData.position(forFlatIndex: idx) else { return }
-        cardSectionData.columns[pos.column][pos.row].content = tv.string
+        cardSectionData.columns[pos.column][pos.row].content = RichTextSerializer.serializeAttributedString(tv.attributedString())
         onDataChanged?(cardSectionData)
     }
 
-    private func applyCardFormatting(tool: EditTool, to tv: _CardTextView) {
-        let range = tv.selectedRange()
-        guard range.length > 0, let storage = tv.textStorage else { return }
-        let fm = NSFontManager.shared
-
-        switch tool {
-        case .bold:
-            storage.beginEditing()
-            storage.enumerateAttribute(.font, in: range, options: []) { value, attrRange, _ in
-                guard let font = value as? NSFont else { return }
-                let isBold = font.fontDescriptor.symbolicTraits.contains(.bold)
-                let newFont = isBold ? fm.convert(font, toNotHaveTrait: .boldFontMask)
-                                     : fm.convert(font, toHaveTrait: .boldFontMask)
-                storage.addAttribute(.font, value: newFont, range: attrRange)
-            }
-            storage.endEditing()
-
-        case .italic:
-            storage.beginEditing()
-            storage.enumerateAttribute(.font, in: range, options: []) { value, attrRange, _ in
-                guard let font = value as? NSFont else { return }
-                let isItalic = font.fontDescriptor.symbolicTraits.contains(.italic)
-                let newFont = isItalic ? fm.convert(font, toNotHaveTrait: .italicFontMask)
-                                       : fm.convert(font, toHaveTrait: .italicFontMask)
-                storage.addAttribute(.font, value: newFont, range: attrRange)
-            }
-            storage.endEditing()
-
-        case .underline:
-            storage.beginEditing()
-            let existing = storage.attribute(.underlineStyle, at: range.location, effectiveRange: nil) as? Int ?? 0
-            storage.addAttribute(.underlineStyle, value: existing == 0 ? NSUnderlineStyle.single.rawValue : 0, range: range)
-            storage.endEditing()
-
-        case .strikethrough:
-            storage.beginEditing()
-            let existing = storage.attribute(.strikethroughStyle, at: range.location, effectiveRange: nil) as? Int ?? 0
-            storage.addAttribute(.strikethroughStyle, value: existing == 0 ? NSUnderlineStyle.single.rawValue : 0, range: range)
-            storage.endEditing()
-
-        default:
-            return  // Headings, lists, etc. not applicable in cards
-        }
-        syncCardContent(tv)
-    }
-
-    private func applyCardFontSize(_ size: CGFloat, to tv: _CardTextView) {
-        let range = tv.selectedRange()
-        guard range.length > 0, let storage = tv.textStorage else { return }
+    /// Lightweight paragraph style enforcement for cards.
+    private func styleCardParagraphs(_ tv: _CardTextView) {
+        guard let storage = tv.textStorage, storage.length > 0 else { return }
+        let fullRange = NSRange(location: 0, length: storage.length)
         storage.beginEditing()
-        storage.enumerateAttribute(.font, in: range, options: []) { value, attrRange, _ in
-            guard let font = value as? NSFont else { return }
-            let descriptor = font.fontDescriptor
-            let newFont = NSFont(descriptor: descriptor, size: size) ?? NSFont.systemFont(ofSize: size)
-            storage.addAttribute(.font, value: newFont, range: attrRange)
+        (storage.string as NSString).enumerateSubstrings(in: fullRange, options: .byParagraphs) { _, paraRange, _, _ in
+            let isBlockQuote = storage.attribute(.blockQuote, at: paraRange.location, effectiveRange: nil) as? Bool == true
+            let isOrderedList = storage.attribute(.orderedListNumber, at: paraRange.location, effectiveRange: nil) != nil
+
+            if isBlockQuote {
+                storage.addAttribute(.paragraphStyle, value: RichTextSerializer.blockQuoteParagraphStyle(), range: paraRange)
+            } else if isOrderedList {
+                storage.addAttribute(.paragraphStyle, value: RichTextSerializer.orderedListParagraphStyle(), range: paraRange)
+            } else {
+                // Check if heading -- preserve heading paragraph style
+                if let font = storage.attribute(.font, at: paraRange.location, effectiveRange: nil) as? NSFont,
+                   RichTextSerializer.headingLevel(for: font) != nil {
+                    // Heading style already set by TextFormattingManager
+                } else {
+                    // Preserve existing alignment
+                    let existingPS = storage.attribute(.paragraphStyle, at: paraRange.location, effectiveRange: nil) as? NSParagraphStyle
+                    let alignment = existingPS?.alignment ?? .left
+                    if alignment != .left {
+                        let ps = RichTextSerializer.baseParagraphStyle().mutableCopy() as! NSMutableParagraphStyle
+                        ps.alignment = alignment
+                        storage.addAttribute(.paragraphStyle, value: ps, range: paraRange)
+                    } else {
+                        storage.addAttribute(.paragraphStyle, value: RichTextSerializer.baseParagraphStyle(), range: paraRange)
+                    }
+                }
+            }
         }
         storage.endEditing()
-        syncCardContent(tv)
-    }
-
-    private func applyCardFontFamily(_ styleRaw: String, to tv: _CardTextView) {
-        let range = tv.selectedRange()
-        guard range.length > 0, let storage = tv.textStorage else { return }
-        storage.beginEditing()
-        storage.enumerateAttribute(.font, in: range, options: []) { value, attrRange, _ in
-            guard let font = value as? NSFont else { return }
-            let size = font.pointSize
-            let traits = font.fontDescriptor.symbolicTraits
-            var weight: FontManager.Weight = .regular
-            if traits.contains(.bold) { weight = .bold }
-            let baseFont: NSFont
-            switch styleRaw {
-            case "system":
-                baseFont = NSFont.systemFont(ofSize: size, weight: weight == .bold ? .bold : .regular)
-            case "mono":
-                baseFont = NSFont.monospacedSystemFont(ofSize: size, weight: weight == .bold ? .bold : .regular)
-            default:
-                baseFont = FontManager.bodyNS(size: size, weight: weight)
-            }
-            var newFont = baseFont
-            if traits.contains(.italic) {
-                newFont = NSFontManager.shared.convert(newFont, toHaveTrait: .italicFontMask)
-            }
-            storage.addAttribute(.font, value: newFont, range: attrRange)
-        }
-        storage.endEditing()
-        syncCardContent(tv)
-    }
-
-    private func applyCardTextColor(hex: String, to tv: _CardTextView) {
-        let range = tv.selectedRange()
-        guard range.length > 0, let storage = tv.textStorage else { return }
-        guard let color = NSColor(hex: hex) else { return }
-        storage.beginEditing()
-        storage.addAttribute(.foregroundColor, value: color, range: range)
-        storage.endEditing()
-        syncCardContent(tv)
-    }
-
-    private func removeCardTextColor(from tv: _CardTextView) {
-        let range = tv.selectedRange()
-        guard range.length > 0, let storage = tv.textStorage else { return }
-        storage.beginEditing()
-        storage.removeAttribute(.foregroundColor, range: range)
-        storage.endEditing()
-        syncCardContent(tv)
-    }
-
-    private func applyCardHighlight(hex: String, to tv: _CardTextView) {
-        let range = tv.selectedRange()
-        guard range.length > 0, let storage = tv.textStorage else { return }
-        guard let color = NSColor(hex: hex) else { return }
-        storage.beginEditing()
-        storage.addAttribute(.backgroundColor, value: color, range: range)
-        storage.endEditing()
-        syncCardContent(tv)
-    }
-
-    private func removeCardHighlight(from tv: _CardTextView) {
-        let range = tv.selectedRange()
-        guard range.length > 0, let storage = tv.textStorage else { return }
-        storage.beginEditing()
-        storage.removeAttribute(.backgroundColor, range: range)
-        storage.endEditing()
-        syncCardContent(tv)
     }
 
     // MARK: - Cursor for coordinator integration
@@ -599,13 +601,8 @@ final class CardSectionOverlayView: NSView {
     private func isInDragHandle(at point: CGPoint, cardIndex: Int) -> Bool {
         let rect = cardRect(at: cardIndex).offsetBy(dx: -scrollOffset, dy: 0)
         guard rect.contains(point) else { return false }
-        // Top handle strip
-        if point.y < rect.minY + dragHandleHeight { return true }
-        // Left/right padding
-        if point.x < rect.minX + cardPad || point.x > rect.maxX - cardPad { return true }
-        // Bottom padding
-        if point.y > rect.maxY - cardPad { return true }
-        return false
+        // Only the top handle strip initiates drag
+        return point.y < rect.minY + dragHandleHeight
     }
 
     // MARK: - Text view, layer, and resize handle management
@@ -637,7 +634,16 @@ final class CardSectionOverlayView: NSView {
             cardTextViews.removeLast()
         }
         while cardScrollViews.count < count {
-            let tv = _CardTextView()
+            // Build text system with custom layout manager for squiggly strikethrough
+            let storage = NSTextStorage()
+            let layoutManager = _CardLayoutManager()
+            storage.addLayoutManager(layoutManager)
+            let container = NSTextContainer(containerSize: NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
+            container.widthTracksTextView = true
+            container.lineFragmentPadding = 0
+            layoutManager.addTextContainer(container)
+
+            let tv = _CardTextView(frame: .zero, textContainer: container)
             tv.overlayView = self
             tv.isEditable = true
             tv.isSelectable = true
@@ -650,8 +656,6 @@ final class CardSectionOverlayView: NSView {
             tv.isAutomaticTextReplacementEnabled = false
             tv.isAutomaticSpellingCorrectionEnabled = false
             tv.textContainerInset = NSSize(width: 0, height: 0)
-            tv.textContainer?.lineFragmentPadding = 0
-            tv.textContainer?.widthTracksTextView = true
             tv.isHorizontallyResizable = false
             tv.isVerticallyResizable = true
             tv.maxSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
@@ -669,6 +673,8 @@ final class CardSectionOverlayView: NSView {
             sv.drawsBackground = false
             sv.backgroundColor = .clear
             sv.scrollerStyle = .overlay
+            sv.verticalScroller?.controlSize = .mini
+            sv.scrollerKnobStyle = .default
             sv.contentView.drawsBackground = false
 
             addSubview(sv)
@@ -688,11 +694,14 @@ final class CardSectionOverlayView: NSView {
             // Text view
             let tv = cardTextViews[i]
             tv.cardIndex = i
-            if tv.string != card.content {
-                tv.string = card.content
+            // Deserialize rich text from tag format
+            let currentSerialized = RichTextSerializer.serializeAttributedString(tv.attributedString())
+            if currentSerialized != card.content {
+                let attrString = RichTextSerializer.deserializeToAttributedString(card.content)
+                tv.textStorage?.setAttributedString(attrString)
             }
-            tv.textColor = NSColor(named: "PrimaryTextColor") ?? .labelColor
-            tv.font = FontManager.bodyNS(size: ThemeManager.currentBodyFontSize(), weight: .regular)
+            // Set typing attributes for new text (don't override existing rich text)
+            tv.typingAttributes = RichTextSerializer.baseTypingAttributes()
         }
 
         syncResizeHandles()
@@ -1015,8 +1024,15 @@ final class CardSectionOverlayView: NSView {
             return
         }
 
-        // Inside a card but not on a handle — do nothing (don't propagate to parent)
-        // The scroll view / text view subviews handle text editing via hitTest
+        // Inside a card but not on a handle — focus the card's text view.
+        // Clicks on padding areas miss the scroll view hit test, so we
+        // explicitly make the text view first responder and place the cursor
+        // at the end of the text.
+        if idx < cardTextViews.count {
+            let tv = cardTextViews[idx]
+            window?.makeFirstResponder(tv)
+            tv.setSelectedRange(NSRange(location: (tv.string as NSString).length, length: 0))
+        }
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -1130,8 +1146,11 @@ final class CardSectionOverlayView: NSView {
             }
         }
 
-        // syncTextViews() already rebuilt all layers/views via cardSectionData didSet,
-        // so no manual visibility restoration is needed.
+        // Restore full opacity on all card layers — syncTextViews() reuses layers
+        // and does not reset opacity, so the 0.15 drag ghost persists otherwise.
+        for i in 0..<cardBorderLayers.count { cardBorderLayers[i].opacity = 1.0 }
+        for i in 0..<cardFillLayers.count { cardFillLayers[i].opacity = 1.0 }
+        for i in 0..<cardScrollViews.count { cardScrollViews[i].isHidden = false }
 
         if dragSourceIndex != nil { NSCursor.pop() }
         isDragging = false
@@ -1238,8 +1257,15 @@ extension CardSectionOverlayView: NSTextViewDelegate {
     func textDidChange(_ notification: Notification) {
         guard let tv = notification.object as? _CardTextView,
               (0..<cardSectionData.flatCardCount).contains(tv.cardIndex) else { return }
-        cardSectionData.updateCardContent(at: tv.cardIndex, content: tv.string)
+        styleCardParagraphs(tv)
+        // Prevent struct mutations (both local and from the Coordinator write-back
+        // via onDataChanged -> syncText -> updateCardSectionOverlays) from triggering
+        // didSet -> syncTextViews(), which would overwrite the text view's live content
+        // with a deserialized version.
+        isSyncingContent = true
+        cardSectionData.updateCardContent(at: tv.cardIndex, content: RichTextSerializer.serializeAttributedString(tv.attributedString()))
         onDataChanged?(cardSectionData)
+        isSyncingContent = false
     }
 
     func textViewDidChangeSelection(_ notification: Notification) {
@@ -1255,19 +1281,48 @@ extension CardSectionOverlayView: NSTextViewDelegate {
                                                               dy: tv.textContainerOrigin.y)
             let selectionRectInWindow = tv.convert(selectionRectInView, to: nil)
 
-            // Read formatting state from selection
+            // Read real formatting state from selection
             var isBold = false, isItalic = false, isUnderline = false, isStrikethrough = false
+            var isHighlight = false
+            var headingLevel = 0
+            var fontSize = ThemeManager.currentBodyFontSize()
+            var fontFamily = "default"
+            var textColorHex: String? = nil
+
             if let storage = tv.textStorage, selectedRange.location < storage.length {
                 if let font = storage.attribute(.font, at: selectedRange.location, effectiveRange: nil) as? NSFont {
                     let traits = font.fontDescriptor.symbolicTraits
                     isBold = traits.contains(.bold)
                     isItalic = traits.contains(.italic)
+                    fontSize = font.pointSize
+                    // Heading detection
+                    if let hl = RichTextSerializer.headingLevel(for: font) {
+                        switch hl {
+                        case .h1: headingLevel = 1
+                        case .h2: headingLevel = 2
+                        case .h3: headingLevel = 3
+                        case .none: break
+                        }
+                    }
+                    // Font family detection
+                    if let customFamily = storage.attribute(TextFormattingManager.customFontFamilyKey, at: selectedRange.location, effectiveRange: nil) as? String {
+                        fontFamily = customFamily
+                    } else if font.fontDescriptor.object(forKey: .family) as? String == NSFont.systemFont(ofSize: 12).familyName {
+                        fontFamily = "system"
+                    } else if font.isFixedPitch {
+                        fontFamily = "mono"
+                    }
                 }
                 if let ul = storage.attribute(.underlineStyle, at: selectedRange.location, effectiveRange: nil) as? Int {
                     isUnderline = ul != 0
                 }
                 if let st = storage.attribute(.strikethroughStyle, at: selectedRange.location, effectiveRange: nil) as? Int {
                     isStrikethrough = st != 0
+                }
+                isHighlight = storage.attribute(.highlightColor, at: selectedRange.location, effectiveRange: nil) != nil
+                if storage.attribute(TextFormattingManager.customTextColorKey, at: selectedRange.location, effectiveRange: nil) as? Bool == true,
+                   let nsColor = storage.attribute(.foregroundColor, at: selectedRange.location, effectiveRange: nil) as? NSColor {
+                    textColorHex = RichTextSerializer.nsColorToHex(nsColor)
                 }
             }
 
@@ -1286,12 +1341,13 @@ extension CardSectionOverlayView: NSTextViewDelegate {
                 "isItalic": isItalic,
                 "isUnderline": isUnderline,
                 "isStrikethrough": isStrikethrough,
-                "isHighlight": false,
-                "headingLevel": 0,
+                "isHighlight": isHighlight,
+                "headingLevel": headingLevel,
                 "windowHeight": tv.window?.contentView?.bounds.height ?? 800,
-                "fontSize": ThemeManager.currentBodyFontSize(),
-                "fontFamily": "default"
+                "fontSize": fontSize,
+                "fontFamily": fontFamily
             ]
+            if let hex = textColorHex { info["textColorHex"] = hex }
             if let eid = editorInstanceID { info["editorInstanceID"] = eid }
             NotificationCenter.default.post(name: .textSelectionChanged, object: nil, userInfo: info)
         } else {
@@ -1430,8 +1486,12 @@ private final class _CardResizeHandle: NSView {
 private final class _CardScrollView: NSScrollView {
     weak var overlayView: CardSectionOverlayView?
 
+    override var scrollerStyle: NSScroller.Style {
+        get { .overlay }
+        set { super.scrollerStyle = .overlay }  // force overlay regardless of system prefs
+    }
+
     override func scrollWheel(with event: NSEvent) {
-        // Forward horizontal-dominant scroll events to the overlay for card section scrolling
         if abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY),
            let overlay = overlayView, overlay.needsHorizontalScroll {
             overlay.scrollWheel(with: event)
@@ -1449,6 +1509,114 @@ final class _CardTextView: NSTextView {
 
     override func menu(for event: NSEvent) -> NSMenu? {
         overlayView?.cardContextMenu(for: cardIndex)
+    }
+}
+
+// MARK: - Card Layout Manager (squiggly strikethrough only, no typing animation)
+
+/// Lightweight NSLayoutManager that draws the squiggly strikethrough line
+/// matching the main editor's `TypingAnimationLayoutManager`, but without
+/// the typing animation overhead.
+final class _CardLayoutManager: NSLayoutManager {
+
+    override func drawGlyphs(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
+        super.drawGlyphs(forGlyphRange: glyphsToShow, at: origin)
+        drawSquigglyStrikethrough(forGlyphRange: glyphsToShow, at: origin)
+    }
+
+    // Suppress native straight-line strikethrough — the squiggly replaces it.
+    override func drawStrikethrough(forGlyphRange glyphRange: NSRange, strikethroughType strikethroughVal: NSUnderlineStyle, baselineOffset: CGFloat, lineFragmentRect lineRect: NSRect, lineFragmentGlyphRange lineGlyphRange: NSRange, containerOrigin: NSPoint) {
+        // Intentionally empty
+    }
+
+    private func drawSquigglyStrikethrough(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
+        guard let textStorage = textStorage,
+              let textContainer = textContainers.first,
+              let context = NSGraphicsContext.current?.cgContext
+        else { return }
+        guard NSMaxRange(glyphsToShow) <= numberOfGlyphs else { return }
+        guard textStorage.length > 0 else { return }
+
+        let charRange = characterRange(forGlyphRange: glyphsToShow, actualGlyphRange: nil)
+        let safeCharRange = NSIntersectionRange(charRange, NSRange(location: 0, length: textStorage.length))
+        guard safeCharRange.length > 0 else { return }
+
+        // Draw squiggly line for strikethrough ranges
+        textStorage.enumerateAttribute(.strikethroughStyle, in: safeCharRange, options: []) { value, attrRange, _ in
+            guard let style = value as? Int, style != 0 else { return }
+            drawSquigglyLine(forAttrRange: attrRange, textStorage: textStorage, textContainer: textContainer, origin: origin, context: context)
+        }
+    }
+
+    private func drawSquigglyLine(forAttrRange attrRange: NSRange, textStorage: NSTextStorage, textContainer: NSTextContainer, origin: NSPoint, context: CGContext) {
+        let nsString = textStorage.string as NSString
+        var trimmedEnd = NSMaxRange(attrRange)
+        while trimmedEnd > attrRange.location {
+            let ch = nsString.character(at: trimmedEnd - 1)
+            if ch == 0x0A || ch == 0x0D || ch == 0x20 || ch == 0x09 { trimmedEnd -= 1 }
+            else { break }
+        }
+        let trimmedRange = NSRange(location: attrRange.location, length: trimmedEnd - attrRange.location)
+        guard trimmedRange.length > 0 else { return }
+
+        let glyphRange = self.glyphRange(forCharacterRange: trimmedRange, actualCharacterRange: nil)
+        guard glyphRange.length > 0 else { return }
+
+        self.enumerateLineFragments(forGlyphRange: glyphRange) { lineRect, usedRect, container, lineGlyphRange, stop in
+            let intersection = NSIntersectionRange(glyphRange, lineGlyphRange)
+            guard intersection.length > 0 else { return }
+
+            let segmentRect = self.boundingRect(forGlyphRange: intersection, in: textContainer)
+            let startX = origin.x + segmentRect.origin.x + 2
+            let endX = origin.x + segmentRect.origin.x + segmentRect.width - 1
+            let glyphLoc = self.location(forGlyphAt: intersection.location)
+            let charIdx = self.characterIndexForGlyph(at: intersection.location)
+            let font = textStorage.attribute(.font, at: charIdx, effectiveRange: nil) as? NSFont
+                ?? NSFont.systemFont(ofSize: 14)
+            let baseline = lineRect.origin.y + glyphLoc.y
+            let midY = origin.y + baseline - font.xHeight * 0.5
+
+            guard endX - startX > 4 else { return }
+
+            let path = NSBezierPath()
+            path.lineWidth = 1.6
+            path.lineCapStyle = .round
+            path.lineJoinStyle = .round
+
+            let segmentLength = endX - startX
+            let stepSize: CGFloat = 6.0
+            let steps = max(1, Int(ceil(segmentLength / stepSize)))
+
+            let text = nsString.substring(with: attrRange)
+            var contentHash: UInt64 = 5381
+            for scalar in text.unicodeScalars {
+                contentHash = contentHash &* 33 &+ UInt64(scalar.value)
+            }
+            var rng = contentHash
+
+            func nextWobble() -> CGFloat {
+                rng = rng &* 6364136223846793005 &+ 1442695040888963407
+                let normalized = CGFloat((rng >> 33) & 0x7FFF) / CGFloat(0x7FFF)
+                return (normalized - 0.5) * 5.0
+            }
+
+            path.move(to: NSPoint(x: startX, y: midY + nextWobble()))
+
+            for i in 1...steps {
+                let x = min(startX + CGFloat(i) * stepSize, endX)
+                let wobble = nextWobble()
+                let cpX = startX + (CGFloat(i) - 0.5) * stepSize
+                let cpY = midY + nextWobble()
+                path.curve(to: NSPoint(x: x, y: midY + wobble),
+                           controlPoint1: NSPoint(x: min(cpX, endX), y: cpY),
+                           controlPoint2: NSPoint(x: x, y: midY + wobble))
+            }
+
+            context.saveGState()
+            NSColor.labelColor.setStroke()
+            path.stroke()
+            context.restoreGState()
+        }
     }
 }
 
