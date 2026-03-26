@@ -1153,7 +1153,8 @@ struct SettingsPage: View {
             "_subject": feedbackType.mailSubject
         ]
 
-        var request = URLRequest(url: URL(string: "https://formspree.io/f/xaqpyade")!)
+        guard let feedbackURL = URL(string: "https://formspree.io/f/xaqpyade") else { return }
+        var request = URLRequest(url: feedbackURL)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try? JSONSerialization.data(withJSONObject: payload)

@@ -316,7 +316,7 @@ struct StickerTextEditor: NSViewRepresentable {
             scroller.controlSize = .mini
         }
 
-        let textView = scrollView.documentView as! NSTextView
+        guard let textView = scrollView.documentView as? NSTextView else { return scrollView }
         textView.delegate = context.coordinator
         textView.isRichText = false
         textView.allowsUndo = true

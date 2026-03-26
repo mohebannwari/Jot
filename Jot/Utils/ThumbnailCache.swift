@@ -26,7 +26,7 @@ class ThumbnailCache: ObservableObject {
     private init() {}
 
     /// Returns a fixed-length SHA256 hex filename for the given URL string.
-    private static func thumbnailFilename(for url: String) -> String {
+    nonisolated private static func thumbnailFilename(for url: String) -> String {
         let digest = SHA256.hash(data: Data(url.utf8))
         return digest.map { String(format: "%02x", $0) }.joined() + ".jpg"
     }
@@ -92,6 +92,52 @@ class ThumbnailCache: ObservableObject {
                 try? FileManager.default.createDirectory(at: thumbnailsDir, withIntermediateDirectories: true)
                 let filePath = thumbnailsDir.appendingPathComponent(filename)
                 try? jpegData.write(to: filePath)
+            }
+        }
+    }
+
+    /// Delete thumbnail files from disk that are not referenced by any current note content.
+    /// Pass the `content` string of every live note; orphaned files are removed on a background thread.
+    func cleanupOrphanedThumbnails(activeNoteContents: [String]) {
+        // Pre-compute active filenames on the main actor where Self access is allowed
+        var activeFilenames: Set<String> = []
+        let pattern = #"\[\[webclip\|[^|]*\|[^|]*\|([^\]]+)\]\]"#
+        if let regex = try? NSRegularExpression(pattern: pattern) {
+            for content in activeNoteContents {
+                let nsContent = content as NSString
+                let matches = regex.matches(
+                    in: content,
+                    range: NSRange(location: 0, length: nsContent.length)
+                )
+                for match in matches {
+                    if match.numberOfRanges >= 2 {
+                        let urlRange = match.range(at: 1)
+                        if urlRange.location != NSNotFound {
+                            let url = nsContent.substring(with: urlRange)
+                            activeFilenames.insert(Self.thumbnailFilename(for: url))
+                        }
+                    }
+                }
+            }
+        }
+
+        // File I/O on background thread
+        Task.detached(priority: .background) {
+            let fm = FileManager.default
+            guard let cachesDir = fm.urls(for: .cachesDirectory, in: .userDomainMask).first else { return }
+            let thumbnailsDir = cachesDir.appendingPathComponent("WebClipThumbnails", isDirectory: true)
+
+            guard let existingFiles = try? fm.contentsOfDirectory(
+                at: thumbnailsDir,
+                includingPropertiesForKeys: nil,
+                options: .skipsHiddenFiles
+            ) else { return }
+
+            for fileURL in existingFiles {
+                guard fileURL.pathExtension == "jpg" else { continue }
+                if !activeFilenames.contains(fileURL.lastPathComponent) {
+                    try? fm.removeItem(at: fileURL)
+                }
             }
         }
     }

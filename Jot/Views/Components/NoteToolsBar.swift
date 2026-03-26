@@ -101,6 +101,9 @@ struct NoteToolsBar: View {
                     toolButton(icon: "IconDossier", tooltip: "Tabs") {
                         postToolAction(.tabs)
                     }
+                    toolButton(icon: "IconCarussel", tooltip: "Cards") {
+                        postToolAction(.cards)
+                    }
                     // Insertable Objects
                     toolButton(icon: "IconTable", tooltip: "Table") {
                         postToolAction(.table)

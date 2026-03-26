@@ -38,13 +38,6 @@ final class NoteEntity {
         return truncated + "..."
     }
 
-    @Transient
-    var wordCount: Int {
-        content.components(separatedBy: .whitespacesAndNewlines)
-            .filter { !$0.isEmpty }
-            .count
-    }
-
     // MARK: - Sticker Storage
     var stickersData: Data?
 

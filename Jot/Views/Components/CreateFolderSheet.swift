@@ -86,10 +86,8 @@ struct CreateFolderSheet: View {
             }
         }
         .padding(12)
-        .background(Color("SurfaceElevatedColor"))
+        .background(Color("DetailPaneColor"))
         .clipShape(Capsule())
-        .shadow(color: Color.black.opacity(0.06), radius: 3, x: 0, y: 1)
-        .shadow(color: Color.black.opacity(0.03), radius: 1, x: 0, y: 0)
     }
 
     // MARK: - Color Section

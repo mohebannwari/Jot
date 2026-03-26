@@ -265,6 +265,7 @@ extension EditTool {
         case .fileLink: return "IconFileLink"
         case .sticker: return "IconSticker"
         case .tabs: return "IconDossier"
+        case .cards: return "IconCarussel"
         case .dashedList: return "IconDashList"
         }
     }
@@ -305,6 +306,7 @@ extension EditTool {
         case .fileLink: return "paperclip"
         case .sticker: return "note.text"
         case .tabs: return "rectangle.split.3x1"
+        case .cards: return "rectangle.3.group"
         case .dashedList: return "list.dash"
         }
     }
@@ -327,9 +329,7 @@ struct CommandMenu_Previews: PreviewProvider {
                 tools: [.imageUpload, .voiceRecord, .link],
                 selectedIndex: .constant(0),
                 isRevealed: .constant(true),
-                onSelect: { tool in
-                    print("Selected: \(tool.name)")
-                }
+                onSelect: { _ in }
             )
             .padding(40)
         }

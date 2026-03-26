@@ -7,6 +7,7 @@
 //
 
 import Foundation
+import os
 import PDFKit
 import UniformTypeIdentifiers
 import AppKit
@@ -53,14 +54,14 @@ enum NoteExportFormat: String, CaseIterable, Identifiable {
 final class NoteExportService {
     static let shared = NoteExportService()
 
+    private let logger = Logger(subsystem: "com.jot", category: "NoteExportService")
+
     private init() {}
 
     // MARK: - Public Export Methods
 
     /// Export a single note to the specified format
     func exportNote(_ note: Note, format: NoteExportFormat) async -> Bool {
-        NSLog("NoteExportService: Exporting note '%@' to %@", note.title, format.rawValue)
-
         switch format {
         case .pdf:
             return await exportToPDF(notes: [note], filename: sanitizeFilename(note.title))
@@ -75,8 +76,6 @@ final class NoteExportService {
 
     /// Export multiple notes to the specified format
     func exportNotes(_ notes: [Note], format: NoteExportFormat, filename: String = "Notes Export") async -> Bool {
-        NSLog("NoteExportService: Batch exporting %d notes to %@", notes.count, format.rawValue)
-
         switch format {
         case .pdf:
             return await exportToPDF(notes: notes, filename: filename)
@@ -107,7 +106,7 @@ final class NoteExportService {
 
         guard let pdfConsumer = CGDataConsumer(data: pdfData),
               let pdfContext = CGContext(consumer: pdfConsumer, mediaBox: nil, nil) else {
-            NSLog("NoteExportService: Failed to create PDF context")
+            logger.error("buildPDFData: Failed to create PDF context")
             return nil
         }
 
@@ -267,7 +266,7 @@ final class NoteExportService {
     private func exportToMarkdown(notes: [Note], filename: String) async -> Bool {
         let markdown = buildMarkdownString(notes: notes)
         guard let data = markdown.data(using: .utf8) else {
-            NSLog("NoteExportService: Failed to convert markdown to data")
+            logger.error("exportToMarkdown: Failed to convert markdown to data")
             return false
         }
         return saveFile(data: data, filename: filename, fileExtension: "md")
@@ -304,7 +303,7 @@ final class NoteExportService {
     private func exportToHTML(notes: [Note], filename: String) async -> Bool {
         let html = buildHTMLString(notes: notes, title: filename)
         guard let data = html.data(using: .utf8) else {
-            NSLog("NoteExportService: Failed to convert HTML to data")
+            logger.error("exportToHTML: Failed to convert HTML to data")
             return false
         }
         return saveFile(data: data, filename: filename, fileExtension: "html")
@@ -734,8 +733,6 @@ final class NoteExportService {
     /// Save file using NSSavePanel — always called on main thread
     @MainActor
     private func saveFile(data: Data, filename: String, fileExtension: String) -> Bool {
-        NSLog("NoteExportService: Starting save file dialog for %@.%@", filename, fileExtension)
-
         let savePanel = NSSavePanel()
         savePanel.title = "Export Note"
         savePanel.message = "Choose where to save the exported file"
@@ -748,22 +745,17 @@ final class NoteExportService {
         savePanel.canCreateDirectories = true
         savePanel.isExtensionHidden = false
 
-        NSLog("NoteExportService: Presenting save panel")
-
         let response = savePanel.runModal()
-        NSLog("NoteExportService: Save panel response: %@", response == .OK ? "OK" : "Cancel")
 
         guard response == .OK, let url = savePanel.url else {
-            NSLog("NoteExportService: User cancelled save or no URL provided")
             return false
         }
 
         do {
             try data.write(to: url)
-            NSLog("NoteExportService: Successfully saved file to %@", url.path)
             return true
         } catch {
-            NSLog("NoteExportService: Failed to write file: %@", error.localizedDescription)
+            logger.error("saveFile: Failed to write file: \(error.localizedDescription)")
             return false
         }
     }

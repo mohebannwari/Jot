@@ -247,15 +247,15 @@ class WebMetadataFetcher: ObservableObject {
     }
     
     // MARK: - Static Regex (compiled once)
-    private static let titleRegex = try! NSRegularExpression(
+    private static let titleRegex = try? NSRegularExpression(
         pattern: "<title[^>]*>([^<]+)</title>", options: .caseInsensitive)
-    private static let descRegex = try! NSRegularExpression(
+    private static let descRegex = try? NSRegularExpression(
         pattern: "<meta[^>]*name=[\"']description[\"'][^>]*content=[\"']([^\"']+)[\"']", options: .caseInsensitive)
-    private static let ogDescRegex = try! NSRegularExpression(
+    private static let ogDescRegex = try? NSRegularExpression(
         pattern: "<meta[^>]*property=[\"']og:description[\"'][^>]*content=[\"']([^\"']+)[\"']", options: .caseInsensitive)
 
     private func extractTitle(from html: String) -> String {
-        let titleRegex = Self.titleRegex
+        guard let titleRegex = Self.titleRegex else { return "" }
         let range = NSRange(html.startIndex..<html.endIndex, in: html)
 
         if let match = titleRegex.firstMatch(in: html, options: [], range: range),
@@ -269,10 +269,10 @@ class WebMetadataFetcher: ObservableObject {
     }
     
     private func extractDescription(from html: String) -> String {
-        let descRegex = Self.descRegex
         let range = NSRange(html.startIndex..<html.endIndex, in: html)
 
-        if let match = descRegex.firstMatch(in: html, options: [], range: range),
+        if let descRegex = Self.descRegex,
+           let match = descRegex.firstMatch(in: html, options: [], range: range),
            let descRange = Range(match.range(at: 1), in: html) {
             let description = String(html[descRange]).trimmingCharacters(in: .whitespacesAndNewlines)
             // Limit description length to prevent overflow issues
@@ -280,9 +280,8 @@ class WebMetadataFetcher: ObservableObject {
         }
 
         // Try og:description
-        let ogDescRegex = Self.ogDescRegex
-
-        if let match = ogDescRegex.firstMatch(in: html, options: [], range: range),
+        if let ogDescRegex = Self.ogDescRegex,
+           let match = ogDescRegex.firstMatch(in: html, options: [], range: range),
            let descRange = Range(match.range(at: 1), in: html) {
             let description = String(html[descRange]).trimmingCharacters(in: .whitespacesAndNewlines)
             // Limit description length to prevent overflow issues
