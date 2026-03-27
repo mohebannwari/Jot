@@ -31,7 +31,7 @@ struct NotePreviewCard: View {
     private let actionRowGap: CGFloat = 8
 
     private let borderColor = Color.white.opacity(0.06)
-    private let cardBackgroundColor = Color(red: 12/255, green: 10/255, blue: 9/255)
+    private let cardBackgroundColor = Color("DetailPaneColor")
 
     /// Whether the preview area has visual content (snapshot or locked icon).
     private var hasPreviewContent: Bool {

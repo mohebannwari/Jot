@@ -254,11 +254,21 @@ extension View {
 /// Liquid glass tooltip pill that appears instantly above the hovered view.
 private struct GlassTooltipModifier: ViewModifier {
     let label: String
+    let edge: HorizontalAlignment
+
     @State private var isHovered = false
+
+    private var overlayAlignment: Alignment {
+        switch edge {
+        case .leading: return .topLeading
+        case .trailing: return .topTrailing
+        default: return .top
+        }
+    }
 
     func body(content: Content) -> some View {
         content
-            .overlay(alignment: .top) {
+            .overlay(alignment: overlayAlignment) {
                 if isHovered {
                     Text(label)
                         .font(FontManager.heading(size: 11, weight: .medium))
@@ -266,8 +276,8 @@ private struct GlassTooltipModifier: ViewModifier {
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
                         .fixedSize()
-                        .liquidGlass(in: Capsule())
-                        .offset(y: -28)
+                        .tooltipGlass()
+                        .offset(y: -34)
                         .allowsHitTesting(false)
                         .transition(.scale(scale: 0.9, anchor: .bottom).combined(with: .opacity))
                         .zIndex(10000)
@@ -280,8 +290,8 @@ private struct GlassTooltipModifier: ViewModifier {
 
 extension View {
     /// Adds a liquid glass tooltip pill that appears instantly on hover.
-    func glassTooltip(_ label: String) -> some View {
-        modifier(GlassTooltipModifier(label: label))
+    func glassTooltip(_ label: String, edge: HorizontalAlignment = .center) -> some View {
+        modifier(GlassTooltipModifier(label: label, edge: edge))
     }
 }
 

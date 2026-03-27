@@ -78,8 +78,8 @@ struct FloatingEditToolbar: View {
 
     private var pillBg: Color {
         colorScheme == .dark
-            ? Color(hex: "#292524")
-            : Color.white
+            ? Color("SecondaryBackgroundColor")
+            : .white
     }
 
     private var pillTextColor: Color {
@@ -173,7 +173,7 @@ struct FloatingEditToolbar: View {
 
     private var dotDivider: some View {
         Circle()
-            .fill(colorScheme == .dark ? Color.white.opacity(0.4) : Color(hex: "#44403c"))
+            .fill(Color.primary.opacity(0.35))
             .frame(width: 2, height: 2)
             .opacity(toolsVisible ? 1 : 0)
     }

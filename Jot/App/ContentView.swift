@@ -262,6 +262,8 @@ struct ContentView: View {
     @State private var splitBottomOverlayActive = false
     @State private var primaryBottomInputOverlayActive = false
     @State private var splitBottomInputOverlayActive = false
+    @State private var primaryToolbarExpanded = false
+    @State private var splitToolbarExpanded = false
 
     // Note preview on hover
     @State private var previewNote: Note? = nil
@@ -890,12 +892,14 @@ struct ContentView: View {
             appWindowTrashOverlay().zIndex(5)
         }
         .coordinateSpace(name: "contentArea")
-        .onPreferenceChange(NotePreviewAnchorKey.self) { newValue in
-            handlePreviewHover(newValue, geometry: geometry)
-        }
-        .overlay(alignment: .topLeading) {
-            notePreviewOverlay(geometry: geometry, visibleSidebarWidth: visibleSidebarWidth)
-        }
+        // NOTE: Hover preview card disabled for now -- may revisit in the future.
+        // Do not treat as dead code.
+        // .onPreferenceChange(NotePreviewAnchorKey.self) { newValue in
+        //     handlePreviewHover(newValue, geometry: geometry)
+        // }
+        // .overlay(alignment: .topLeading) {
+        //     notePreviewOverlay(geometry: geometry, visibleSidebarWidth: visibleSidebarWidth)
+        // }
         .overlay(alignment: .topLeading) {
             if isSplitMenuVisible {
                 SplitOptionMenu(
@@ -1131,9 +1135,7 @@ struct ContentView: View {
     }
 
     private var detailBg: Color {
-        colorScheme == .dark
-            ? Color(red: 0.110, green: 0.098, blue: 0.090)
-            : Color(red: 0.906, green: 0.898, blue: 0.894)
+        Color("DetailPaneSurfaceColor")
     }
 
 
@@ -1178,6 +1180,7 @@ struct ContentView: View {
             .splitPaneShadow(isActive: !shouldShowSplitLayout, cornerRadius: cornerRadius, backgroundColor: detailBg, colorScheme: .light)
             .onPreferenceChange(BottomOverlayActivePreferenceKey.self) { primaryBottomOverlayActive = $0 }
             .onPreferenceChange(BottomInputOverlayActivePreferenceKey.self) { primaryBottomInputOverlayActive = $0 }
+            .onPreferenceChange(ToolbarExpandedPreferenceKey.self) { primaryToolbarExpanded = $0 }
             .overlay(alignment: .bottomTrailing) {
                 if AppleIntelligenceService.shared.isAvailable && !isVersionHistoryVisible {
                     AIToolsOverlay(state: $aiToolsState, editorInstanceID: primaryEditorID).padding(.trailing, 14).padding(.bottom, 14)
@@ -1185,7 +1188,8 @@ struct ContentView: View {
             }
             .overlay(alignment: .bottomLeading) {
                 if !(primaryBottomOverlayActive || (primaryBottomInputOverlayActive && width < 620)) {
-                    NoteToolsBar(note: note, editorInstanceID: primaryEditorID).padding(.leading, 14).padding(.bottom, 14)
+                    NoteToolsBar(note: note, editorInstanceID: primaryEditorID, paneWidth: width, aiToolsExpanded: aiToolsState == .expanded)
+                        .padding(.leading, 14).padding(.bottom, 14)
                         .transition(.opacity)
                 }
             }
@@ -1394,6 +1398,7 @@ struct ContentView: View {
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .onPreferenceChange(BottomOverlayActivePreferenceKey.self) { splitBottomOverlayActive = $0 }
         .onPreferenceChange(BottomInputOverlayActivePreferenceKey.self) { splitBottomInputOverlayActive = $0 }
+        .onPreferenceChange(ToolbarExpandedPreferenceKey.self) { splitToolbarExpanded = $0 }
         .overlay(alignment: .bottomTrailing) {
             if AppleIntelligenceService.shared.isAvailable && !(isVersionHistoryVisible && versionHistoryPane == .secondary) {
                 AIToolsOverlay(state: $splitAiToolsState, editorInstanceID: splitEditorID).padding(.trailing, 14).padding(.bottom, 14)
@@ -1401,7 +1406,8 @@ struct ContentView: View {
         }
         .overlay(alignment: .bottomLeading) {
             if !(splitBottomOverlayActive || (splitBottomInputOverlayActive && width < 620)) {
-                NoteToolsBar(note: note, editorInstanceID: splitEditorID).padding(.leading, 14).padding(.bottom, 14)
+                NoteToolsBar(note: note, editorInstanceID: splitEditorID, paneWidth: width, aiToolsExpanded: splitAiToolsState == .expanded)
+                    .padding(.leading, 14).padding(.bottom, 14)
                     .transition(.opacity)
             }
         }

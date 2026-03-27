@@ -7,7 +7,9 @@
 //
 
 import SwiftUI
+#if canImport(FoundationModels)
 import FoundationModels
+#endif
 
 // MARK: - AI Tool Enum
 
@@ -84,6 +86,7 @@ enum AIPanelState: Equatable {
 
 // MARK: - Structured Output Types
 
+#if canImport(FoundationModels)
 @available(macOS 26.0, *)
 @Generable
 struct SummaryResult {
@@ -134,6 +137,7 @@ struct TextGenerationResult {
     @Guide(description: "The generated text based on the user's description")
     var generatedText: String
 }
+#endif
 
 // MARK: - Service
 
@@ -144,12 +148,17 @@ final class AppleIntelligenceService {
     private init() {}
 
     var isAvailable: Bool {
+        #if canImport(FoundationModels)
         guard #available(macOS 26.0, *) else { return false }
         if case .available = SystemLanguageModel.default.availability { return true }
         return false
+        #else
+        return false
+        #endif
     }
 
     var unavailabilityReason: String {
+        #if canImport(FoundationModels)
         guard #available(macOS 26.0, *) else {
             return "Apple Intelligence requires macOS 26 or later."
         }
@@ -170,6 +179,9 @@ final class AppleIntelligenceService {
         @unknown default:
             return "Apple Intelligence availability is unknown."
         }
+        #else
+        return "Apple Intelligence requires macOS 26 or later."
+        #endif
     }
 
     // MARK: - Markup Stripping
@@ -261,6 +273,7 @@ final class AppleIntelligenceService {
         return s.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    #if canImport(FoundationModels)
     func summarize(text: String) async throws -> String {
         guard #available(macOS 26.0, *) else {
             throw AIServiceError.unavailable(unavailabilityReason)
@@ -346,6 +359,31 @@ final class AppleIntelligenceService {
         )
         return response.content.generatedText
     }
+    #else
+    func summarize(text: String) async throws -> String {
+        throw AIServiceError.unavailable(unavailabilityReason)
+    }
+
+    func keyPoints(text: String) async throws -> [String] {
+        throw AIServiceError.unavailable(unavailabilityReason)
+    }
+
+    func proofread(text: String) async throws -> [ProofreadAnnotation] {
+        throw AIServiceError.unavailable(unavailabilityReason)
+    }
+
+    func editContent(text: String, instruction: String) async throws -> String {
+        throw AIServiceError.unavailable(unavailabilityReason)
+    }
+
+    func translate(text: String, to language: String) async throws -> String {
+        throw AIServiceError.unavailable(unavailabilityReason)
+    }
+
+    func generateText(description: String) async throws -> String {
+        throw AIServiceError.unavailable(unavailabilityReason)
+    }
+    #endif
 }
 
 // MARK: - Error

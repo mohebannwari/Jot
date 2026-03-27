@@ -153,9 +153,9 @@ final class NoteTableOverlayView: NSView {
 
     /// Matches the note detail pane background for gradient fade edges.
     private var paneBackgroundColor: NSColor {
-        isDarkMode
+        NSColor(named: "DetailPaneSurfaceColor") ?? (isDarkMode
             ? NSColor(red: 0.110, green: 0.098, blue: 0.090, alpha: 1)
-            : NSColor(red: 0.906, green: 0.898, blue: 0.894, alpha: 1)
+            : NSColor(red: 0.906, green: 0.898, blue: 0.894, alpha: 1))
     }
 
     private var iconSecondaryColor: NSColor {

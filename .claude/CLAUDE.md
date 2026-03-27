@@ -31,8 +31,8 @@ Read and follow `workflow.md` at the project root before every task. It defines 
 | Model | Role | When to use |
 |-------|------|-------------|
 | **Opus** | Lead agent (user-selected) | The hardest problems — deep architecture decisions, ambiguous cross-cutting requirements, designs that need genuine reasoning. User selects Opus manually. |
-| **Sonnet** | Default lead agent | Implementation, planning, multi-file edits, most features. **Sonnet must escalate to Opus without hesitation when the problem demands it — that's not weakness, it's judgement.** |
-| **Haiku** | Fire-and-forget worker | Single-purpose lookups that have no business in the main context. Spin it and move on. |
+| **Opus** | Default lead agent | Implementation, planning, multi-file edits, most features.|
+| **Sonnet** | Fire-and-forget worker | Single-purpose lookups that have no business in the main context. Spin it and move on. |
 
 ### Fire & Forget — Delegation Rules
 
@@ -72,7 +72,7 @@ Opus (escalation only — not parallel, not fire-and-forget):
 → **Always reference `.claude/DESIGN_SYSTEM.md`** for all color, spacing, typography, radius, and effect tokens.
 → Figma source: https://www.figma.com/design/BhVLOWG63LckTVCuO3q0Tv/Jot
 → Extract tokens for **both light and dark** themes. No exceptions.
-→ **Always use Figma Console MCP (`figma-console`) as the primary Figma tool.** Only fall back to the official Figma MCP when Figma Console is limited or fails. Use `figma_get_variables`, `figma_execute`, `figma_take_screenshot` etc. before any UI work.
+→ **Always use the official Figma MCP plugin (`claude.ai Figma`) as the primary Figma tool.** Use `get_design_context`, `get_screenshot`, `get_metadata`, `get_variable_defs`, `search_design_system` for design tokens, component specs, and screenshots.
 
 ---
 
@@ -99,10 +99,10 @@ Before any feature implementation:
 | Completion | `superpowers:verification-before-completion` → `superpowers:requesting-code-review` |
 | Multi-task | `superpowers:dispatching-parallel-agents` |
 
-**MCP priority:**
+**MCP / Plugin priority:**
 1. Context7 — SDK/API docs (always first)
-2. Figma Console MCP (`figma-console`) — design tokens, component specs, screenshots, code execution (primary Figma tool)
-3. Official Figma MCP (`claude.ai Figma`) — fallback only when Figma Console is limited or fails
+2. Swift LSP plugin — type lookups, jump-to-definition, symbol search, diagnostics, code intelligence. Use proactively for any Swift/SwiftUI code to verify types, protocols, and API signatures instead of guessing.
+3. Official Figma MCP plugin (`claude.ai Figma`) — design tokens, component specs, screenshots, variable definitions
 4. Brave Search — last resort
 
 **Always parallelize** independent file reads, searches, and tool calls.

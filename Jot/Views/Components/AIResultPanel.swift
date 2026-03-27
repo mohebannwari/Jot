@@ -22,7 +22,7 @@ struct AIResultPanel: View {
         .padding(.vertical, 12)
         .background(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(colorScheme == .dark ? Color(red: 12/255, green: 10/255, blue: 9/255) : Color.white)
+                .fill(colorScheme == .dark ? Color("DetailPaneColor") : .white)
         )
         .frame(maxWidth: .infinity, alignment: .leading)
     }

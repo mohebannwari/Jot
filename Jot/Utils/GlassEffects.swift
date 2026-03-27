@@ -20,7 +20,8 @@ extension View {
             self
                 .padding(.horizontal, 4)
                 .padding(.vertical, 3)
-                .background(Color("SecondaryBackgroundColor"), in: shape)
+                .background(.ultraThinMaterial, in: shape)
+                .background(Color("SecondaryBackgroundColor").opacity(0.5), in: shape)
                 .overlay(shape.stroke(Color.primary.opacity(0.12), lineWidth: 0.5))
                 .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
         }
@@ -44,7 +45,8 @@ extension View {
                 .padding(.horizontal, 4)
                 .padding(.vertical, 3)
                 .background(shape.fill(tint.opacity(tintOpacity)))
-                .background(Color("SecondaryBackgroundColor"), in: shape)
+                .background(.ultraThinMaterial, in: shape)
+                .background(Color("SecondaryBackgroundColor").opacity(0.5), in: shape)
                 .overlay(shape.stroke(Color.primary.opacity(max(strokeOpacity, 0.12)), lineWidth: 0.5))
                 .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
         }
@@ -61,12 +63,31 @@ extension View {
             self
                 .padding(.horizontal, 3)
                 .padding(.vertical, 2)
-                .background(Color("SecondaryBackgroundColor"), in: shape)
+                .background(.ultraThinMaterial, in: shape)
+                .background(Color("SecondaryBackgroundColor").opacity(0.5), in: shape)
                 .overlay(shape.stroke(Color.primary.opacity(0.10), lineWidth: 0.5))
                 .shadow(color: .black.opacity(0.06), radius: 6, y: 2)
         }
     }
     
+    /// Applies a glass tooltip style without drop shadow.
+    /// - On modern OS: standard glass capsule, no shadow.
+    /// - On pre-26: white (light) / gray (dark) capsule with stroke, no shadow.
+    @ViewBuilder
+    func tooltipGlass() -> some View {
+        let shape = Capsule()
+        self
+            .padding(.horizontal, 4)
+            .padding(.vertical, 3)
+            .background(tooltipBackgroundColor, in: shape)
+            .overlay(shape.stroke(Color.primary.opacity(0.12), lineWidth: 0.5))
+    }
+
+    /// Tooltip background: white in light mode, contrasting gray in dark mode.
+    private var tooltipBackgroundColor: Color {
+        Color("TooltipBackgroundColor")
+    }
+
     /// Applies a prominent glass effect for important UI elements.
     /// - On modern OS versions uses `.buttonStyle(.glassProminent)` for buttons.
     /// - On older OS versions falls back to `.borderedProminent` style.

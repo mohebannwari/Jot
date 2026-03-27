@@ -71,9 +71,7 @@ struct UpdatePanelView: View {
                     ? Color.black.opacity(0.85)
                     : Color.white.opacity(0.85)
             } else {
-                return colorScheme == .dark
-                    ? Color(red: 0.07, green: 0.06, blue: 0.05)
-                    : Color(red: 0.906, green: 0.898, blue: 0.894)
+                return Color("DetailPaneSurfaceColor")
             }
         }()
 

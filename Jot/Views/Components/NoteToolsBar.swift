@@ -15,16 +15,19 @@ import AppKit
 struct NoteToolsBar: View {
     let note: Note
     var editorInstanceID: UUID? = nil
+    var paneWidth: CGFloat = .infinity
+    var aiToolsExpanded: Bool = false
 
     @State private var isExpanded = false
 
     private let iconSize: CGFloat = 18
 
     var body: some View {
-        HStack(spacing: 2) {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 2) {
             // MARK: - Primary actions (always visible)
 
-            toolButton(icon: "gallery", tooltip: "Image Upload") {
+            toolButton(icon: "gallery", tooltip: "Image Upload", tooltipEdge: .leading) {
                 postToolAction(.imageUpload)
             }
             toolButton(icon: "IconFileLink", tooltip: "Attach File") {
@@ -69,7 +72,7 @@ struct NoteToolsBar: View {
                 }
                 .buttonStyle(.plain)
                 .macPointingHandCursor()
-                .glassTooltip("More actions")
+                .glassTooltip("More actions", edge: .trailing)
                 .hoverContainer(cornerRadius: 8)
                 .transition(.scale.combined(with: .opacity))
             }
@@ -150,18 +153,43 @@ struct NoteToolsBar: View {
                     }
                     .buttonStyle(.plain)
                     .macPointingHandCursor()
-                    .glassTooltip("Collapse")
+                    .glassTooltip("Collapse", edge: .trailing)
                     .hoverContainer(cornerRadius: 8)
                 }
                 .transition(.scale(scale: 0.8, anchor: .leading).combined(with: .opacity))
             }
         }
+        .padding(.top, 40)
+        }
+        .scrollClipDisabled(true)
+        .scrollDisabled(!isExpanded)
+        .frame(maxWidth: isExpanded ? max(paneWidth - (aiToolsExpanded ? 260 : 80), 200) : .infinity)
+        .fixedSize(horizontal: !isExpanded, vertical: true)
+        .padding(.horizontal, isExpanded ? 10 : 0)
+        .mask(
+            Group {
+                if isExpanded {
+                    HStack(spacing: 0) {
+                        LinearGradient(colors: [.clear, .white], startPoint: .leading, endPoint: .trailing)
+                            .frame(width: 10)
+                        Rectangle().fill(.white)
+                        LinearGradient(colors: [.white, .clear], startPoint: .leading, endPoint: .trailing)
+                            .frame(width: 10)
+                    }
+                } else {
+                    Rectangle().fill(.white)
+                }
+            }
+        )
+        .padding(.horizontal, isExpanded ? -10 : 0)
+        .padding(.top, -40)
+        .preference(key: ToolbarExpandedPreferenceKey.self, value: isExpanded)
         .animation(.jotSpring, value: isExpanded)
     }
 
     // MARK: - Helpers
 
-    private func toolButton(icon: String, tooltip: String, action: @escaping () -> Void) -> some View {
+    private func toolButton(icon: String, tooltip: String, tooltipEdge: HorizontalAlignment = .center, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(icon)
                 .renderingMode(.template)
@@ -174,7 +202,7 @@ struct NoteToolsBar: View {
         }
         .buttonStyle(.plain)
         .macPointingHandCursor()
-        .glassTooltip(tooltip)
+        .glassTooltip(tooltip, edge: tooltipEdge)
         .hoverContainer(cornerRadius: 8)
     }
 
@@ -186,6 +214,24 @@ struct NoteToolsBar: View {
             object: tool.rawValue,
             userInfo: userInfo.isEmpty ? nil : userInfo
         )
+    }
+}
+
+// MARK: - Preference Key
+
+struct ToolbarExpandedPreferenceKey: PreferenceKey {
+    static var defaultValue: Bool = false
+    static func reduce(value: inout Bool, nextValue: () -> Bool) {
+        value = value || nextValue()
+    }
+}
+
+// MARK: - Side-Only Clip
+
+/// Clips left and right edges but allows vertical overflow (tooltips above, shadows below).
+private struct SideClipShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        Path(CGRect(x: rect.minX, y: rect.minY - 200, width: rect.width, height: rect.height + 400))
     }
 }
 

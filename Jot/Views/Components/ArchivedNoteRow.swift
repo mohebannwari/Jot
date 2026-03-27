@@ -150,7 +150,7 @@ struct ArchivedNoteRow: View {
 
     private var backgroundFill: Color {
         if isActive {
-            return colorScheme == .light ? Color.white : Color(red: 0.047, green: 0.039, blue: 0.035)
+            return colorScheme == .light ? .white : Color("DetailPaneColor")
         } else if isSelected {
             return Color("SurfaceTranslucentColor")
         } else if isHovered {

@@ -1262,15 +1262,7 @@ struct NoteDetailView: View {
 
     @ViewBuilder
     private var headerMaterialBase: some View {
-        if reduceTransparency || colorScheme == .dark {
-            Rectangle().fill(detailPaneDarkBackground)
-        } else {
-            Rectangle().fill(Color(red: 0.906, green: 0.898, blue: 0.894))
-        }
-    }
-
-    private var detailPaneDarkBackground: Color {
-        Color(red: 0.110, green: 0.098, blue: 0.090)
+        Rectangle().fill(Color("DetailPaneSurfaceColor"))
     }
 
     private var headerMaskGradient: LinearGradient {
@@ -1666,20 +1658,16 @@ struct NoteDetailView: View {
 
     private var backlinkContainerBg: Color {
         colorScheme == .dark
-            ? Color(red: 0.047, green: 0.039, blue: 0.035)  // #0c0a09
+            ? Color("DetailPaneColor")
             : .white
     }
 
     private var backlinkBorderColor: Color {
-        colorScheme == .dark
-            ? Color.white.opacity(0.12)
-            : Color.black.opacity(0.12)
+        Color("BorderSubtleColor")
     }
 
     private var backlinkPillBg: Color {
-        colorScheme == .dark
-            ? Color(red: 0.110, green: 0.098, blue: 0.090)  // #1c1917
-            : Color(red: 0.906, green: 0.898, blue: 0.894)  // #e7e5e4
+        Color("DetailPaneSurfaceColor")
     }
 
     @ViewBuilder

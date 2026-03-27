@@ -101,7 +101,11 @@ struct FloatingSearch: View {
                 .padding(.horizontal, 4)
                 .padding(.vertical, 3)
                 .background(
-                    Color("SecondaryBackgroundColor"),
+                    .ultraThinMaterial,
+                    in: RoundedRectangle(cornerRadius: surfaceCornerRadius, style: .continuous)
+                )
+                .background(
+                    Color("SecondaryBackgroundColor").opacity(0.5),
                     in: RoundedRectangle(cornerRadius: surfaceCornerRadius, style: .continuous)
                 )
                 .overlay(
