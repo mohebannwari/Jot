@@ -43,12 +43,14 @@ final class MeetingTranscriptionService: ObservableObject {
     }
 
     /// Feed an audio buffer from AudioRecorder's tap.
-    /// Called from the audio processing thread.
-    func feedBuffer(_ buffer: AVAudioPCMBuffer) {
-        if let continuation = bufferContinuation {
-            continuation.yield(buffer)
+    /// Called from the audio processing thread -- dispatches to MainActor
+    /// since bufferContinuation and recognitionRequest are actor-isolated.
+    nonisolated func feedBuffer(_ buffer: AVAudioPCMBuffer) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.bufferContinuation?.yield(buffer)
+            self.recognitionRequest?.append(buffer)
         }
-        recognitionRequest?.append(buffer)
     }
 
     /// Stop transcription and finalize all segments.

@@ -103,7 +103,7 @@ struct NoteDetailView: View {
     @State var isMeetingSummaryLoading: Bool = false
     @StateObject var meetingTranscriptionService = MeetingTranscriptionService()
     @StateObject var meetingAudioRecorder = AudioRecorder(barCount: 28)
-    let meetingSummaryGenerator = MeetingSummaryGenerator()
+    @State var meetingSummaryGenerator = MeetingSummaryGenerator()
 
     // MARK: - Scroll / toolbar state
     @FocusState private var titleFocused: Bool

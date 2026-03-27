@@ -513,8 +513,9 @@ extension NoteDetailView {
 
         // Configure audio recorder for meeting mode
         meetingAudioRecorder.setMeetingMode(true)
-        meetingAudioRecorder.onBufferAvailable = { [weak meetingTranscriptionService] buffer in
-            meetingTranscriptionService?.feedBuffer(buffer)
+        let transcriptionService = meetingTranscriptionService
+        meetingAudioRecorder.onBufferAvailable = { buffer in
+            transcriptionService.feedBuffer(buffer)
         }
 
         Task {
