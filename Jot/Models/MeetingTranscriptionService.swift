@@ -12,10 +12,6 @@ import Combine
 import Foundation
 import Speech
 
-#if canImport(SpeechAnalyzer)
-import SpeechAnalyzer
-#endif
-
 @MainActor
 final class MeetingTranscriptionService: ObservableObject {
     @Published private(set) var segments: [TranscriptSegment] = []
@@ -40,11 +36,7 @@ final class MeetingTranscriptionService: ObservableObject {
         isTranscribing = true
 
         if #available(macOS 26.0, *) {
-            #if canImport(SpeechAnalyzer)
             startSpeechAnalyzerTranscription()
-            #else
-            startSFSpeechRecognizerTranscription()
-            #endif
         } else {
             startSFSpeechRecognizerTranscription()
         }
@@ -92,67 +84,94 @@ final class MeetingTranscriptionService: ObservableObject {
 }
 
 // MARK: - SpeechAnalyzer (macOS 26+)
+//
+// SpeechAnalyzer is part of the Speech framework (not a separate module).
+// It uses AnalyzerInput wrappers around AVAudioPCMBuffer, results come
+// from the transcriber's .results AsyncSequence, and the analyzer runs
+// analysis in parallel via analyzeSequence().
 
-#if canImport(SpeechAnalyzer)
 @available(macOS 26.0, *)
 extension MeetingTranscriptionService {
-    private func startSpeechAnalyzerTranscription() {
-        let (stream, continuation) = AsyncStream.makeStream(of: AVAudioPCMBuffer.self)
-        self.bufferContinuation = continuation
+    fileprivate func startSpeechAnalyzerTranscription() {
+        let currentLocale = Locale.current
+        detectedLanguage = currentLocale.language.languageCode?.identifier ?? "en"
 
-        transcriptionTask = Task { [weak self] in
-            guard let self else { return }
+        let transcriber = SpeechTranscriber(
+            locale: currentLocale,
+            preset: .progressiveTranscription
+        )
 
-            let transcriber = SpeechTranscriber(
-                locale: Locale.current,
-                preset: .progressiveLiveTranscription
-            )
-            let analyzer = SpeechAnalyzer(modules: [transcriber])
+        // Create the AnalyzerInput stream (wraps AVAudioPCMBuffer)
+        let (inputStream, inputContinuation) = AsyncStream.makeStream(of: AnalyzerInput.self)
 
+        // Store a buffer continuation that wraps buffers into AnalyzerInput
+        let (bufferStream, bufContinuation) = AsyncStream.makeStream(of: AVAudioPCMBuffer.self)
+        self.bufferContinuation = bufContinuation
+
+        let analyzer = SpeechAnalyzer(modules: [transcriber])
+
+        // Task 1: Forward AVAudioPCMBuffers -> AnalyzerInput stream
+        let forwardTask = Task {
+            for await buffer in bufferStream {
+                guard !Task.isCancelled else { break }
+                inputContinuation.yield(AnalyzerInput(buffer: buffer))
+            }
+            inputContinuation.finish()
+        }
+
+        // Task 2: Consume transcription results
+        let resultsTask = Task { [weak self] in
             do {
-                let analysisSequence = try await analyzer.analyzeSequence(stream)
-
-                for try await analysis in analysisSequence {
+                for try await result in transcriber.results {
                     guard !Task.isCancelled else { break }
+                    let text = String(result.text.characters)
+                    guard !text.isEmpty else { continue }
 
-                    if let transcription = analysis.first(where: { $0 is SpeechTranscriber.Result }) as? SpeechTranscriber.Result {
-                        await MainActor.run {
-                            self.processSpeechAnalyzerResult(transcription)
+                    await MainActor.run { [weak self] in
+                        guard let self else { return }
+                        let timestamp = self.recordingStartDate.map { Date().timeIntervalSince($0) } ?? 0
+
+                        // Update last non-final segment in place, or append new
+                        if let lastIndex = self.segments.indices.last, !self.segments[lastIndex].isFinal {
+                            self.segments[lastIndex].text = text
+                            // Mark as final after a pause (SpeechTranscriber delivers
+                            // progressive results; treat each new result as replacing
+                            // the previous partial)
+                        } else {
+                            self.segments.append(TranscriptSegment(
+                                text: text,
+                                timestamp: timestamp,
+                                isFinal: false
+                            ))
                         }
                     }
                 }
             } catch {
                 if !Task.isCancelled {
-                    await MainActor.run {
-                        self.isTranscribing = false
+                    await MainActor.run { [weak self] in
+                        self?.isTranscribing = false
                     }
                 }
             }
         }
-    }
 
-    private func processSpeechAnalyzerResult(_ result: SpeechTranscriber.Result) {
-        let timestamp = recordingStartDate.map { Date().timeIntervalSince($0) } ?? 0
-        let text = result.transcription.formattedString
-
-        guard !text.isEmpty else { return }
-
-        // If the last segment is not final, update it in place
-        if let lastIndex = segments.indices.last, !segments[lastIndex].isFinal {
-            segments[lastIndex].text = text
-            segments[lastIndex].isFinal = result.transcription.isFinal
-        } else {
-            // New segment
-            let segment = TranscriptSegment(
-                text: text,
-                timestamp: timestamp,
-                isFinal: result.transcription.isFinal
-            )
-            segments.append(segment)
+        // Task 3: Run the analyzer (blocks until input finishes)
+        transcriptionTask = Task {
+            do {
+                let _ = try await analyzer.analyzeSequence(inputStream)
+                try await analyzer.finalizeAndFinishThroughEndOfInput()
+            } catch {
+                if !Task.isCancelled {
+                    await MainActor.run { [weak self] in
+                        self?.isTranscribing = false
+                    }
+                }
+            }
+            forwardTask.cancel()
+            resultsTask.cancel()
         }
     }
 }
-#endif
 
 // MARK: - SFSpeechRecognizer Fallback
 
