@@ -128,7 +128,7 @@ struct MeetingNoteDetailPanel: View {
 
     @ViewBuilder
     private var tabContent: some View {
-        ScrollView(.vertical) {
+        ThinScrollView(maxHeight: maxContentHeight) {
             Group {
                 switch selectedTab {
                 case .summary:
@@ -143,9 +143,6 @@ struct MeetingNoteDetailPanel: View {
             .padding(.horizontal, 14)
             .padding(.bottom, 12)
         }
-        .scrollIndicators(.automatic)
-        .background(OverlayScrollerForcer())
-        .frame(maxHeight: maxContentHeight)
         .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
     }
 
@@ -311,33 +308,96 @@ struct MeetingNoteDetailPanel: View {
     }
 }
 
-// MARK: - Overlay Scroller Forcer
+// MARK: - Thin Scroll View
 
-/// Forces the enclosing NSScrollView to use a thin overlay scroller
-/// with no track background, regardless of system preferences.
-private struct OverlayScrollerForcer: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        DispatchQueue.main.async {
-            Self.configureScroller(for: view)
+/// ScrollView with native indicators hidden and a custom thin capsule
+/// indicator that only appears while scrolling, then fades out.
+private struct ThinScrollView<Content: View>: View {
+    let maxHeight: CGFloat
+    @ViewBuilder let content: Content
+
+    @State private var contentHeight: CGFloat = 0
+    @State private var scrollOffset: CGFloat = 0
+    @State private var viewportHeight: CGFloat = 0
+    @State private var isScrolling = false
+    @State private var fadeTask: Task<Void, Never>?
+
+    private let indicatorWidth: CGFloat = 3
+    private let indicatorInset: CGFloat = 2
+    private let minThumbHeight: CGFloat = 24
+
+    var body: some View {
+        ScrollView(.vertical) {
+            content
+                .background(
+                    GeometryReader { geo in
+                        Color.clear
+                            .preference(key: ContentHeightKey.self, value: geo.size.height)
+                            .preference(key: ScrollOffsetKey.self, value: -geo.frame(in: .named("thinScroll")).origin.y)
+                    }
+                )
         }
-        return view
+        .scrollIndicators(.never)
+        .coordinateSpace(name: "thinScroll")
+        .frame(maxHeight: maxHeight)
+        .background(
+            GeometryReader { geo in
+                Color.clear.preference(key: ViewportHeightKey.self, value: geo.size.height)
+            }
+        )
+        .onPreferenceChange(ContentHeightKey.self) { contentHeight = $0 }
+        .onPreferenceChange(ScrollOffsetKey.self) { newOffset in
+            scrollOffset = newOffset
+            showIndicator()
+        }
+        .onPreferenceChange(ViewportHeightKey.self) { viewportHeight = $0 }
+        .overlay(alignment: .trailing) {
+            if contentHeight > viewportHeight {
+                indicator
+            }
+        }
     }
 
-    func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async {
-            Self.configureScroller(for: nsView)
-        }
+    private var indicator: some View {
+        let ratio = viewportHeight / max(contentHeight, 1)
+        let thumbHeight = max(viewportHeight * ratio, minThumbHeight)
+        let trackSpace = viewportHeight - thumbHeight
+        let maxScroll = contentHeight - viewportHeight
+        let progress = maxScroll > 0 ? min(max(scrollOffset / maxScroll, 0), 1) : 0
+
+        return Capsule()
+            .fill(Color("SecondaryTextColor").opacity(0.35))
+            .frame(width: indicatorWidth, height: thumbHeight)
+            .offset(y: trackSpace * progress)
+            .padding(.vertical, 3)
+            .padding(.trailing, indicatorInset)
+            .frame(maxHeight: .infinity, alignment: .top)
+            .opacity(isScrolling ? 1 : 0)
+            .animation(.easeInOut(duration: 0.2), value: isScrolling)
     }
 
-    private static func configureScroller(for view: NSView) {
-        guard let scrollView = view.enclosingScrollView else { return }
-        scrollView.scrollerStyle = .overlay
-        scrollView.hasVerticalScroller = true
-        scrollView.autohidesScrollers = true
-        if let scroller = scrollView.verticalScroller {
-            scroller.controlSize = .mini
-            scroller.scrollerStyle = .overlay
+    private func showIndicator() {
+        isScrolling = true
+        fadeTask?.cancel()
+        fadeTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1.2))
+            guard !Task.isCancelled else { return }
+            isScrolling = false
         }
     }
+}
+
+private struct ContentHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
+private struct ScrollOffsetKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
+private struct ViewportHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }
