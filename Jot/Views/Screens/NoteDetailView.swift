@@ -105,6 +105,14 @@ struct NoteDetailView: View {
     @StateObject var meetingAudioRecorder = AudioRecorder(barCount: 28)
     @State var meetingSummaryGenerator = MeetingSummaryGenerator()
 
+    // Persisted meeting data (loaded from note, updated on save)
+    @State var savedIsMeetingNote: Bool = false
+    @State var savedMeetingSummary: String = ""
+    @State var savedMeetingTranscript: String = ""
+    @State var savedMeetingDuration: TimeInterval = 0
+    @State var savedMeetingLanguage: String = ""
+    @State var savedMeetingManualNotes: String = ""
+
     // MARK: - Scroll / toolbar state
     @FocusState private var titleFocused: Bool
     @State private var localEditorFocusID: UUID?
@@ -194,6 +202,12 @@ struct NoteDetailView: View {
         self._aiBlockLoadedFromContent = State(initialValue: parsed.summary != nil || parsed.keyPoints != nil)
         self._editedStickers = State(initialValue: note.stickers)
         self._lastSavedStickers = State(initialValue: note.stickers)
+        // Meeting data
+        self._savedIsMeetingNote = State(initialValue: note.isMeetingNote)
+        self._savedMeetingSummary = State(initialValue: note.meetingSummary)
+        self._savedMeetingTranscript = State(initialValue: note.meetingTranscript)
+        self._savedMeetingDuration = State(initialValue: note.meetingDuration)
+        self._savedMeetingLanguage = State(initialValue: note.meetingLanguage)
     }
 
     // MARK: - Body
@@ -294,6 +308,17 @@ struct NoteDetailView: View {
             if !backlinks.isEmpty {
                 backlinksSection
                     .padding(.top, 4)
+            }
+
+            if savedIsMeetingNote && !savedMeetingSummary.isEmpty {
+                MeetingNoteDetailPanel(
+                    meetingSummary: savedMeetingSummary,
+                    meetingTranscript: savedMeetingTranscript,
+                    meetingManualNotes: savedMeetingManualNotes,
+                    meetingDuration: savedMeetingDuration,
+                    meetingLanguage: savedMeetingLanguage
+                )
+                .transition(.opacity.combined(with: .offset(y: -8)))
             }
 
             if let summaryText = aiSummaryText {
@@ -574,6 +599,15 @@ struct NoteDetailView: View {
             }
             editedStickers = note.stickers
             lastSavedStickers = note.stickers
+            // Restore meeting data for new note
+            savedIsMeetingNote = note.isMeetingNote
+            savedMeetingSummary = note.meetingSummary
+            savedMeetingTranscript = note.meetingTranscript
+            savedMeetingDuration = note.meetingDuration
+            savedMeetingLanguage = note.meetingLanguage
+            savedMeetingManualNotes = ""
+            showMeetingPanel = false
+            meetingRecordingState = .idle
             isPlacingSticker = false
             selectedStickerID = nil
             showVoiceRecorderOverlay = false; showLinkInputOverlay = false; showImagePicker = false; showFileLinkPicker = false

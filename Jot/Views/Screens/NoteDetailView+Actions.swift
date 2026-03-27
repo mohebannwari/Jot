@@ -638,6 +638,16 @@ extension NoteDetailView {
         // Persist
         notesManager.updateNote(updatedNote)
 
+        // Update local state so the detail panel appears immediately
+        withAnimation(.jotSpring) {
+            savedIsMeetingNote = true
+            savedMeetingSummary = updatedNote.meetingSummary
+            savedMeetingTranscript = updatedNote.meetingTranscript
+            savedMeetingDuration = updatedNote.meetingDuration
+            savedMeetingLanguage = updatedNote.meetingLanguage
+            savedMeetingManualNotes = meetingManualNotes
+        }
+
         dismissMeetingPanel()
     }
 
