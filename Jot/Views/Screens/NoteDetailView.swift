@@ -208,6 +208,7 @@ struct NoteDetailView: View {
         self._savedMeetingTranscript = State(initialValue: note.meetingTranscript)
         self._savedMeetingDuration = State(initialValue: note.meetingDuration)
         self._savedMeetingLanguage = State(initialValue: note.meetingLanguage)
+        self._savedMeetingManualNotes = State(initialValue: note.meetingManualNotes)
     }
 
     // MARK: - Body
@@ -325,6 +326,7 @@ struct NoteDetailView: View {
                         updated.meetingSummary = savedMeetingSummary
                         updated.meetingDuration = savedMeetingDuration
                         updated.meetingLanguage = savedMeetingLanguage
+                        updated.meetingManualNotes = newNotes
                         updated.isMeetingNote = true
                         notesManager.updateNote(updated)
                     }
@@ -1943,6 +1945,12 @@ struct NoteDetailView: View {
             return true
         case .link:
             presentLinkInputOverlay()
+            return true
+        case .convertToWebClip:
+            NotificationCenter.default.post(
+                name: .convertSelectedTextToWebClip, object: nil,
+                userInfo: ["editorInstanceID": editorInstanceID]
+            )
             return true
         case .searchOnPage:
             presentSearchOnPage()

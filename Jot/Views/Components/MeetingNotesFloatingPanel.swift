@@ -2,8 +2,8 @@
 //  MeetingNotesFloatingPanel.swift
 //  Jot
 //
-//  Floating panel for AI Meeting Notes — recording controls, live transcript,
-//  AI-generated summary, and manual notes in a tabbed glass interface.
+//  Accordion panel for AI Meeting Notes — starts as a compact recording pill,
+//  expands to show tabs for summary, transcript, and manual notes.
 //
 
 import SwiftUI
@@ -24,41 +24,44 @@ struct MeetingNotesFloatingPanel: View {
     let onDismiss: () -> Void
 
     @Environment(\.colorScheme) private var colorScheme
+    @State private var isExpanded = false
 
     private let panelWidth: CGFloat = 400
     private let panelRadius: CGFloat = 22
-    private let headerHeight: CGFloat = 44
+    private let pillRadius: CGFloat = 100
+
+    private var isComplete: Bool { recordingState == .complete }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            recordingHeader
-            tabBar
-            tabContent
-            footerButtons
+            if isExpanded || isComplete {
+                tabBar
+                tabContent
+            }
+            if !isComplete {
+                recordingBar
+            }
+            if isExpanded || isComplete {
+                footerButtons
+            }
         }
         .frame(width: panelWidth)
-        .background(
-            RoundedRectangle(cornerRadius: panelRadius, style: .continuous)
-                .fill(panelBackground)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: panelRadius, style: .continuous)
-                .stroke(borderColor, lineWidth: 1)
-        )
+        .modifier(MeetingPanelBackgroundModifier(
+            cornerRadius: (isExpanded || isComplete) ? panelRadius : pillRadius,
+            panelBackground: panelBackground,
+            borderColor: borderColor
+        ))
         .appleIntelligenceGlow(
-            cornerRadius: panelRadius,
+            cornerRadius: (isExpanded || isComplete) ? panelRadius : pillRadius,
             mode: isSummaryLoading ? .continuous : .oneShot
         )
-        .shadow(color: .black.opacity(0.04), radius: 1, y: 1)
-        .shadow(color: .black.opacity(0.08), radius: 8, y: 4)
-        .shadow(color: .black.opacity(0.04), radius: 24, y: 8)
     }
 
-    // MARK: - Recording Header
+    // MARK: - Recording Bar (always visible)
 
-    private var recordingHeader: some View {
+    private var recordingBar: some View {
         HStack(spacing: 10) {
-            // Recording indicator
+            // Recording indicator dot
             if recordingState == .recording {
                 Circle()
                     .fill(Color.red)
@@ -73,6 +76,10 @@ struct MeetingNotesFloatingPanel: View {
                     .fill(Color.purple)
                     .frame(width: 8, height: 8)
                     .modifier(PulsingModifier())
+            } else if recordingState == .complete {
+                Circle()
+                    .fill(Color.green)
+                    .frame(width: 8, height: 8)
             }
 
             // Status label
@@ -88,19 +95,20 @@ struct MeetingNotesFloatingPanel: View {
 
             Spacer()
 
-            // Controls
-            if recordingState == .recording || recordingState == .paused {
-                recordingControls
-            }
+            // Controls + cancel
+            actionButtons
 
-            // Close button
-            Button(action: onDismiss) {
-                Image("IconXMark")
-                    .renderingMode(.template)
+            // Expand/collapse chevron
+            Button {
+                withAnimation(.jotSpring) {
+                    isExpanded.toggle()
+                }
+            } label: {
+                Image(isExpanded ? "IconChevronDownSmall" : "IconChevronTopSmall")
                     .resizable()
-                    .scaledToFit()
-                    .foregroundColor(Color("SecondaryTextColor"))
+                    .renderingMode(.template)
                     .frame(width: 16, height: 16)
+                    .foregroundColor(Color("SecondaryTextColor"))
             }
             .buttonStyle(.plain)
             .macPointingHandCursor()
@@ -110,41 +118,54 @@ struct MeetingNotesFloatingPanel: View {
         .padding(.vertical, 12)
     }
 
-    private var recordingControls: some View {
+    private var actionButtons: some View {
         HStack(spacing: 6) {
             if recordingState == .recording {
-                // Pause button
                 Button(action: onPause) {
                     Image(systemName: "pause.fill")
                         .font(.system(size: 10, weight: .semibold))
-                        .foregroundColor(Color("PrimaryTextColor"))
+                        .foregroundColor(.white)
                         .frame(width: 28, height: 28)
-                        .background(Color("ButtonSecondaryBgColor"), in: Circle())
+                        .background(Color.orange, in: Circle())
                 }
                 .buttonStyle(.plain)
                 .macPointingHandCursor()
                 .subtleHoverScale(1.06)
             } else if recordingState == .paused {
-                // Resume button
                 Button(action: onResume) {
                     Image(systemName: "play.fill")
                         .font(.system(size: 10, weight: .semibold))
-                        .foregroundColor(Color("PrimaryTextColor"))
+                        .foregroundColor(.white)
                         .frame(width: 28, height: 28)
-                        .background(Color("ButtonSecondaryBgColor"), in: Circle())
+                        .background(Color.blue, in: Circle())
                 }
                 .buttonStyle(.plain)
                 .macPointingHandCursor()
                 .subtleHoverScale(1.06)
             }
 
-            // Stop button
-            Button(action: onStop) {
-                Image(systemName: "stop.fill")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundColor(.white)
+            if recordingState == .recording || recordingState == .paused {
+                Button(action: onStop) {
+                    Image(systemName: "stop.fill")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(.white)
+                        .frame(width: 28, height: 28)
+                        .background(Color.red.opacity(0.85), in: Circle())
+                }
+                .buttonStyle(.plain)
+                .macPointingHandCursor()
+                .subtleHoverScale(1.06)
+            }
+
+            Button(action: onDismiss) {
+                Image("IconXMark")
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .foregroundColor(Color("PrimaryTextColor"))
+                    .frame(width: 12, height: 12)
                     .frame(width: 28, height: 28)
-                    .background(Color.red.opacity(0.85), in: Circle())
+                    .background(Color.primary.opacity(0.15), in: Circle())
             }
             .buttonStyle(.plain)
             .macPointingHandCursor()
@@ -176,9 +197,23 @@ struct MeetingNotesFloatingPanel: View {
                 .buttonStyle(.plain)
                 .macPointingHandCursor()
             }
+
         }
         .padding(.horizontal, 16)
+        .padding(.top, 16)
         .padding(.bottom, 8)
+    }
+
+    private var completeIndicator: some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(Color.green)
+                .frame(width: 6, height: 6)
+            Text(formattedDuration)
+                .font(FontManager.metadata(size: 11, weight: .medium))
+                .foregroundColor(Color("SecondaryTextColor"))
+                .monospacedDigit()
+        }
     }
 
     // MARK: - Tab Content
@@ -407,9 +442,14 @@ struct MeetingNotesFloatingPanel: View {
                     .buttonStyle(.plain)
                     .macPointingHandCursor()
                     .subtleHoverScale(1.04)
+
+                Spacer()
+
+                completeIndicator
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.top, 12)
+            .padding(.bottom, 16)
         }
     }
 
@@ -444,11 +484,11 @@ struct MeetingNotesFloatingPanel: View {
     // MARK: - Colors
 
     private var panelBackground: Color {
-        colorScheme == .dark ? Color("DetailPaneColor") : .white
+        Color("SurfaceElevatedColor")
     }
 
     private var tabSelectedBackground: Color {
-        colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.06)
+        Color("SurfaceTranslucentColor")
     }
 
     private var textAreaBackground: Color {
@@ -456,7 +496,42 @@ struct MeetingNotesFloatingPanel: View {
     }
 
     private var borderColor: Color {
-        colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.08)
+        Color("BorderSubtleColor")
+    }
+}
+
+// MARK: - Panel Background
+
+private struct MeetingPanelBackgroundModifier: ViewModifier {
+    let cornerRadius: CGFloat
+    let panelBackground: Color
+    let borderColor: Color
+
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, iOS 26.0, *) {
+            content
+                .glassEffect(
+                    .regular.interactive(false),
+                    in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                )
+        } else {
+            content
+                .background(
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(.ultraThinMaterial)
+                )
+                .background(
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(panelBackground.opacity(0.78))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .stroke(borderColor, lineWidth: 1)
+                )
+                .shadow(color: .black.opacity(0.04), radius: 1, y: 1)
+                .shadow(color: .black.opacity(0.08), radius: 8, y: 4)
+                .shadow(color: .black.opacity(0.04), radius: 24, y: 8)
+        }
     }
 }
 

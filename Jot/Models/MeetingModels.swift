@@ -105,7 +105,10 @@ extension Array where Element == TranscriptSegment {
     func serialized() -> String {
         map { segment in
             let ts = String(format: "%.1f", segment.timestamp)
-            return "\(ts)|\(segment.text)"
+            let escapedText = segment.text
+                .replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "\n", with: "\\n")
+            return "\(ts)|\(escapedText)"
         }.joined(separator: "\n")
     }
 
@@ -117,8 +120,11 @@ extension Array where Element == TranscriptSegment {
             guard parts.count == 2,
                   let timestamp = TimeInterval(parts[0])
             else { return nil }
+            let unescapedText = String(parts[1])
+                .replacingOccurrences(of: "\\n", with: "\n")
+                .replacingOccurrences(of: "\\\\", with: "\\")
             return TranscriptSegment(
-                text: String(parts[1]),
+                text: unescapedText,
                 timestamp: timestamp,
                 isFinal: true
             )

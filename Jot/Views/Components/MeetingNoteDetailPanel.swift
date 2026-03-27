@@ -37,7 +37,6 @@ struct MeetingNoteDetailPanel: View {
             RoundedRectangle(cornerRadius: panelRadius, style: .continuous)
                 .fill(panelBackground)
         )
-        .clipShape(RoundedRectangle(cornerRadius: panelRadius, style: .continuous))
     }
 
     // MARK: - Accordion Header
@@ -296,15 +295,15 @@ struct MeetingNoteDetailPanel: View {
     // MARK: - Colors
 
     private var panelBackground: Color {
-        colorScheme == .dark ? Color("DetailPaneColor") : .white
+        Color("SurfaceElevatedColor")
     }
 
     private var tabSelectedBackground: Color {
-        colorScheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.06)
+        Color("SurfaceTranslucentColor")
     }
 
     private var borderColor: Color {
-        colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.08)
+        Color("BorderSubtleColor")
     }
 }
 

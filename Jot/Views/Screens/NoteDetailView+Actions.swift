@@ -638,6 +638,7 @@ extension NoteDetailView {
             updatedNote.meetingDuration = newDuration
         }
         updatedNote.meetingLanguage = newLanguage
+        updatedNote.meetingManualNotes = meetingManualNotes
 
         // Set the note title from summary if it's still untitled
         if let result = meetingSummaryResult, !result.title.isEmpty {

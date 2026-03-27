@@ -47,6 +47,7 @@ final class NoteEntity {
     var meetingSummary: String = ""
     var meetingDuration: Double = 0
     var meetingLanguage: String = ""
+    var meetingManualNotes: String = ""
 
     // MARK: - Web Clip Support
     var webClipURL: String?
@@ -125,6 +126,7 @@ final class NoteEntity {
         self.meetingSummary = note.meetingSummary
         self.meetingDuration = note.meetingDuration
         self.meetingLanguage = note.meetingLanguage
+        self.meetingManualNotes = note.meetingManualNotes
 
         // Extract web clip data from content if present
         self.extractWebClipData()
@@ -193,6 +195,7 @@ final class NoteEntity {
         note.meetingSummary = meetingSummary
         note.meetingDuration = meetingDuration
         note.meetingLanguage = meetingLanguage
+        note.meetingManualNotes = meetingManualNotes
         return note
     }
 }

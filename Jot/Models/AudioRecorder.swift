@@ -345,6 +345,9 @@ extension AudioRecorder {
     fileprivate func installTapIfNeeded() {
         guard !tapInstalled else { return }
         guard let outputFormat else { return }
+        // Capture the buffer callback at install time so the audio thread
+        // holds a stable reference and doesn't race with MainActor clearing it.
+        let bufferCallback = onBufferAvailable
         bridgeMixer.installTap(
             onBus: 0,
             bufferSize: 1024,
@@ -364,7 +367,7 @@ extension AudioRecorder {
                 }
             }
             // Forward buffer to transcription service if in meeting mode
-            self.onBufferAvailable?(buffer)
+            bufferCallback?(buffer)
             self.dispatchToMain {
                 self.updateLevels(computedLevels)
             }

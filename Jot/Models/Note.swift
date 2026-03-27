@@ -28,6 +28,7 @@ struct Note: Identifiable, Codable, Equatable {
     var meetingSummary: String = ""
     var meetingDuration: TimeInterval = 0
     var meetingLanguage: String = ""
+    var meetingManualNotes: String = ""
 
     init(
         title: String,
