@@ -35,11 +35,11 @@ final class MeetingTranscriptionService: ObservableObject {
         recordingStartDate = Date()
         isTranscribing = true
 
-        if #available(macOS 26.0, *) {
-            startSpeechAnalyzerTranscription()
-        } else {
-            startSFSpeechRecognizerTranscription()
-        }
+        // v1: Use SFSpeechRecognizer for reliable transcription on all macOS versions.
+        // SpeechAnalyzer (macOS 26) requires AssetInventory model download which may
+        // not be complete. SFSpeechRecognizer with on-device recognition is the safe path.
+        // TODO: v2 -- add SpeechAnalyzer with proper asset lifecycle management.
+        startSFSpeechRecognizerTranscription()
     }
 
     /// Feed an audio buffer from AudioRecorder's tap.
@@ -103,6 +103,33 @@ extension MeetingTranscriptionService {
             preset: .progressiveTranscription
         )
 
+        // Must verify assets are installed before using SpeechAnalyzer.
+        // Without this check, SpeechRecognizerWorker.preRunRecognition() hits
+        // a precondition failure (SIGTRAP) when the model isn't downloaded.
+        transcriptionTask = Task { [weak self] in
+            guard let self else { return }
+
+            // Check and install assets if needed
+            do {
+                if let installRequest = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
+                    // Assets not ready -- try to install, fall back if it takes too long
+                    try await installRequest.downloadAndInstall()
+                }
+            } catch {
+                // Assets unavailable -- fall back to SFSpeechRecognizer
+                await MainActor.run { [weak self] in
+                    self?.startSFSpeechRecognizerTranscription()
+                }
+                return
+            }
+
+            await MainActor.run { [weak self] in
+                self?.startSpeechAnalyzerAfterAssetCheck(transcriber: transcriber)
+            }
+        }
+    }
+
+    fileprivate func startSpeechAnalyzerAfterAssetCheck(transcriber: SpeechTranscriber) {
         // Create the AnalyzerInput stream (wraps AVAudioPCMBuffer)
         let (inputStream, inputContinuation) = AsyncStream.makeStream(of: AnalyzerInput.self)
 
@@ -136,9 +163,6 @@ extension MeetingTranscriptionService {
                         // Update last non-final segment in place, or append new
                         if let lastIndex = self.segments.indices.last, !self.segments[lastIndex].isFinal {
                             self.segments[lastIndex].text = text
-                            // Mark as final after a pause (SpeechTranscriber delivers
-                            // progressive results; treat each new result as replacing
-                            // the previous partial)
                         } else {
                             self.segments.append(TranscriptSegment(
                                 text: text,
@@ -158,6 +182,7 @@ extension MeetingTranscriptionService {
         }
 
         // Task 3: Run the analyzer (blocks until input finishes)
+        // Store as transcriptionTask so stopTranscription() can cancel it
         transcriptionTask = Task {
             do {
                 let _ = try await analyzer.analyzeSequence(inputStream)
