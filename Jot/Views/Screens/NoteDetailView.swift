@@ -314,9 +314,20 @@ struct NoteDetailView: View {
                 MeetingNoteDetailPanel(
                     meetingSummary: savedMeetingSummary,
                     meetingTranscript: savedMeetingTranscript,
-                    meetingManualNotes: savedMeetingManualNotes,
+                    meetingManualNotes: $savedMeetingManualNotes,
                     meetingDuration: savedMeetingDuration,
-                    meetingLanguage: savedMeetingLanguage
+                    meetingLanguage: savedMeetingLanguage,
+                    meetingDate: note.date,
+                    onNotesChanged: { newNotes in
+                        // Persist manual notes changes
+                        var updated = note
+                        updated.meetingTranscript = savedMeetingTranscript
+                        updated.meetingSummary = savedMeetingSummary
+                        updated.meetingDuration = savedMeetingDuration
+                        updated.meetingLanguage = savedMeetingLanguage
+                        updated.isMeetingNote = true
+                        notesManager.updateNote(updated)
+                    }
                 )
                 .transition(.opacity.combined(with: .offset(y: -8)))
             }

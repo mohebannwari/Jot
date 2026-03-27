@@ -244,6 +244,11 @@ extension MeetingTranscriptionService {
                 }
 
                 if error != nil && !Task.isCancelled {
+                    // Mark the current segment as final before restarting --
+                    // otherwise the new recognition's text overwrites the old segment
+                    if let lastIndex = self.segments.indices.last, !self.segments[lastIndex].isFinal {
+                        self.segments[lastIndex].isFinal = true
+                    }
                     // Auto-restart on error for continuous transcription
                     self.restartRecognitionForContinuity()
                 }
@@ -255,6 +260,11 @@ extension MeetingTranscriptionService {
     /// we tear down and restart a new request to continue transcribing.
     private func restartRecognitionForContinuity() {
         guard isTranscribing else { return }
+
+        // Finalize the last segment so the new recognition doesn't overwrite it
+        if let lastIndex = segments.indices.last, !segments[lastIndex].isFinal {
+            segments[lastIndex].isFinal = true
+        }
 
         recognitionRequest?.endAudio()
         recognitionTask?.cancel()

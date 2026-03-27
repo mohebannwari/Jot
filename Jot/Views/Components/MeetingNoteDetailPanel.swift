@@ -12,9 +12,11 @@ import SwiftUI
 struct MeetingNoteDetailPanel: View {
     let meetingSummary: String
     let meetingTranscript: String
-    let meetingManualNotes: String
+    @Binding var meetingManualNotes: String
     let meetingDuration: TimeInterval
     let meetingLanguage: String
+    let meetingDate: Date
+    var onNotesChanged: ((String) -> Void)? = nil
 
     @State private var isExpanded = false
     @State private var selectedTab: MeetingTab = .summary
@@ -57,6 +59,14 @@ struct MeetingNoteDetailPanel: View {
             Text("Meeting Notes")
                 .font(FontManager.heading(size: 13, weight: .semibold))
                 .foregroundColor(Color("PrimaryTextColor"))
+
+            Text(formattedDate)
+                .font(FontManager.metadata(size: 11, weight: .medium))
+                .foregroundColor(Color("TertiaryTextColor"))
+
+            Circle()
+                .fill(Color("TertiaryTextColor").opacity(0.4))
+                .frame(width: 3, height: 3)
 
             Text(formattedDuration)
                 .font(FontManager.metadata(size: 11, weight: .medium))
@@ -234,21 +244,36 @@ struct MeetingNoteDetailPanel: View {
     // MARK: - Notes Tab
 
     private var notesContent: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            if meetingManualNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Text("No manual notes were taken during this meeting.")
-                    .font(FontManager.body(size: 13))
-                    .foregroundColor(Color("TertiaryTextColor"))
-            } else {
-                Text(meetingManualNotes)
-                    .font(FontManager.body(size: 13))
-                    .foregroundColor(Color("PrimaryTextColor"))
-                    .lineSpacing(3)
+        TextEditor(text: $meetingManualNotes)
+            .font(FontManager.body(size: 13))
+            .foregroundColor(Color("PrimaryTextColor"))
+            .scrollContentBackground(.hidden)
+            .scrollIndicators(.never)
+            .lineSpacing(3)
+            .frame(minHeight: 60)
+            .overlay(alignment: .topLeading) {
+                if meetingManualNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text("Add notes...")
+                        .font(FontManager.body(size: 13))
+                        .foregroundColor(Color("TertiaryTextColor"))
+                        .allowsHitTesting(false)
+                        .padding(.top, 8)
+                        .padding(.leading, 5)
+                }
             }
-        }
+            .onChange(of: meetingManualNotes) { _, newValue in
+                onNotesChanged?(newValue)
+            }
     }
 
     // MARK: - Helpers
+
+    private var formattedDate: String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter.string(from: meetingDate)
+    }
 
     private var formattedDuration: String {
         let hours = Int(meetingDuration) / 3600
