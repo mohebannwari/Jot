@@ -608,17 +608,36 @@ extension NoteDetailView {
     func saveMeetingNote() {
         guard meetingRecordingState == .complete else { return }
 
-        // Update the current note with meeting data
-        var updatedNote = note
-        updatedNote.isMeetingNote = true
-        updatedNote.meetingTranscript = meetingTranscriptionService.serializedTranscript()
-        updatedNote.meetingSummary = meetingSummaryGenerator.formatAsRichText(
+        let newTranscript = meetingTranscriptionService.serializedTranscript()
+        let newSummary = meetingSummaryGenerator.formatAsRichText(
             meetingSummaryResult ?? MeetingSummaryDisplayResult(
                 title: "Meeting Notes", summary: "", keyPoints: [], actionItems: [], decisions: []
             )
         )
-        updatedNote.meetingDuration = meetingAudioRecorder.duration
-        updatedNote.meetingLanguage = meetingTranscriptionService.detectedLanguage
+        let newDuration = meetingAudioRecorder.duration
+        let newLanguage = meetingTranscriptionService.detectedLanguage
+
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateStyle = .medium
+        dateFormatter.timeStyle = .short
+        let dateLabel = dateFormatter.string(from: Date())
+
+        var updatedNote = note
+        updatedNote.isMeetingNote = true
+
+        // Append to existing meeting data if the note already has meeting content.
+        // Each meeting session is separated by a dated header so history is preserved.
+        if note.isMeetingNote && !note.meetingSummary.isEmpty {
+            let separator = "\n\n---\n[[h2]]Meeting -- \(dateLabel)[[/h2]]\n"
+            updatedNote.meetingSummary = note.meetingSummary + separator + newSummary
+            updatedNote.meetingTranscript = note.meetingTranscript + "\n" + newTranscript
+            updatedNote.meetingDuration = note.meetingDuration + newDuration
+        } else {
+            updatedNote.meetingSummary = newSummary
+            updatedNote.meetingTranscript = newTranscript
+            updatedNote.meetingDuration = newDuration
+        }
+        updatedNote.meetingLanguage = newLanguage
 
         // Set the note title from summary if it's still untitled
         if let result = meetingSummaryResult, !result.title.isEmpty {

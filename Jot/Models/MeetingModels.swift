@@ -125,10 +125,9 @@ extension Array where Element == TranscriptSegment {
         }
     }
 
-    /// Plain text transcript for AI processing (no timestamps).
+    /// Plain text transcript for AI processing (no timestamps, all segments).
     func plainText() -> String {
-        filter(\.isFinal)
-            .map(\.text)
+        map(\.text)
             .joined(separator: " ")
     }
 }

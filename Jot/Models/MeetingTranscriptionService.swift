@@ -74,14 +74,14 @@ final class MeetingTranscriptionService: ObservableObject {
         }
     }
 
-    /// Serialized transcript for persistence.
+    /// Serialized transcript for persistence (includes ALL segments).
     func serializedTranscript() -> String {
-        segments.filter(\.isFinal).serialized()
+        segments.serialized()
     }
 
-    /// Plain text for AI summarization.
+    /// Plain text for AI summarization (all segments, not just final).
     func plainTextTranscript() -> String {
-        segments.plainText()
+        segments.map(\.text).joined(separator: " ")
     }
 }
 
