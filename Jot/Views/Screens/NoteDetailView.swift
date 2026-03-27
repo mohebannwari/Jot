@@ -120,6 +120,7 @@ struct NoteDetailView: View {
     @State private var isDraggingMeetingPanel = false
     @State private var meetingPanelDragOffset: CGFloat = 0
     @State private var meetingPanelContainerWidth: CGFloat = 600
+    @State private var meetingPanelLayoutWorkItem: DispatchWorkItem?
 
     // MARK: - Scroll / toolbar state
     @FocusState private var titleFocused: Bool
@@ -414,10 +415,10 @@ struct NoteDetailView: View {
         .padding(.horizontal, 60)
         .frame(maxWidth: .infinity, minHeight: scrollViewHeight, alignment: .topLeading)
         .onChange(of: meetingPanelWidthRatio) { _, _ in
-            persistMeetingPanelLayout()
+            scheduleMeetingPanelLayoutSave()
         }
         .onChange(of: meetingPanelHeight) { _, _ in
-            persistMeetingPanelLayout()
+            scheduleMeetingPanelLayoutSave()
         }
         .overlay(alignment: .topLeading) {
             StickerCanvasOverlay(
@@ -510,11 +511,20 @@ struct NoteDetailView: View {
     private var meetingDropZoneIndicator: some View {
         if isDraggingMeetingPanel {
             RoundedRectangle(cornerRadius: 2)
-                .fill(Color.accentColor.opacity(0.5))
+                .fill(Color.accentColor.opacity(0.8))
                 .frame(height: 3)
                 .padding(.horizontal, 20)
                 .transition(.opacity.combined(with: .scale(scale: 0.8, anchor: .center)))
         }
+    }
+
+    private func scheduleMeetingPanelLayoutSave() {
+        meetingPanelLayoutWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [self] in
+            persistMeetingPanelLayout()
+        }
+        meetingPanelLayoutWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: workItem)
     }
 
     private func persistMeetingPanelLayout() {
