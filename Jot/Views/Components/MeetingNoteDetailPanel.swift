@@ -143,7 +143,7 @@ struct MeetingNoteDetailPanel: View {
             .padding(.horizontal, 14)
             .padding(.bottom, 12)
         }
-        .scrollIndicators(.automatic)
+        .scrollIndicators(.never)
         .frame(maxHeight: maxContentHeight)
         .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
     }
@@ -261,7 +261,7 @@ struct MeetingNoteDetailPanel: View {
                         .font(FontManager.body(size: 13))
                         .foregroundColor(Color("TertiaryTextColor"))
                         .allowsHitTesting(false)
-                        .padding(.top, 16)
+                        .padding(.top, 9)
                         .padding(.leading, 13)
                 }
             }
