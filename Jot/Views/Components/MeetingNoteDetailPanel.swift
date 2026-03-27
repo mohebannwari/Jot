@@ -310,97 +310,64 @@ struct MeetingNoteDetailPanel: View {
 
 // MARK: - Thin Scroll View
 
-/// ScrollView with native indicators hidden and a custom thin capsule
-/// indicator that only appears while scrolling, then fades out.
+/// ScrollView with native indicators hidden and a custom thin capsule indicator.
 private struct ThinScrollView<Content: View>: View {
     let maxHeight: CGFloat
     @ViewBuilder let content: Content
-
-    @State private var contentHeight: CGFloat = 1
-    @State private var scrollOffset: CGFloat = 0
-    @State private var viewportHeight: CGFloat = 1
-    @State private var isScrolling = false
-    @State private var fadeTask: Task<Void, Never>?
-
-    private let thumbWidth: CGFloat = 4
-    private let minThumbHeight: CGFloat = 28
-
-    private var needsIndicator: Bool { contentHeight > viewportHeight + 1 }
 
     var body: some View {
         ScrollView(.vertical) {
             content
                 .background(
-                    GeometryReader { geo in
-                        let offset = -geo.frame(in: .named("thinScroll")).origin.y
-                        Color.clear
-                            .preference(key: ContentHeightKey.self, value: geo.size.height)
-                            .preference(key: ScrollOffsetKey.self, value: offset)
+                    GeometryReader { contentGeo in
+                        Color.clear.preference(
+                            key: ScrollMetricsKey.self,
+                            value: ScrollMetrics(
+                                contentHeight: contentGeo.size.height,
+                                offset: contentGeo.frame(in: .named("thinScroll")).origin.y
+                            )
+                        )
                     }
                 )
         }
         .scrollIndicators(.never)
         .coordinateSpace(name: "thinScroll")
         .frame(maxHeight: maxHeight)
-        .overlay(
-            GeometryReader { geo in
-                Color.clear
-                    .onAppear { viewportHeight = geo.size.height }
-                    .onChange(of: geo.size.height) { _, h in viewportHeight = h }
+        .overlayPreferenceValue(ScrollMetricsKey.self) { metrics in
+            GeometryReader { viewportGeo in
+                let vp = viewportGeo.size.height
+                let ch = metrics.contentHeight
+                let offset = -metrics.offset
+
+                if ch > vp + 1 {
+                    let ratio = vp / ch
+                    let thumbH = max(vp * ratio, 28)
+                    let maxScroll = ch - vp
+                    let progress = maxScroll > 0 ? min(max(offset / maxScroll, 0), 1) : 0
+                    let track = vp - thumbH - 6
+
+                    Capsule()
+                        .fill(Color.black.opacity(0.18))
+                        .frame(width: 4, height: thumbH)
+                        .offset(y: 3 + track * progress)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                        .padding(.trailing, 2)
+                        .allowsHitTesting(false)
+                        .animation(.interactiveSpring, value: offset)
+                }
             }
-        )
-        .onPreferenceChange(ContentHeightKey.self) { contentHeight = max($0, 1) }
-        .onPreferenceChange(ScrollOffsetKey.self) { newOffset in
-            scrollOffset = newOffset
-            showIndicator()
-        }
-        .overlay(alignment: .topTrailing) {
-            if needsIndicator {
-                indicator
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var indicator: some View {
-        let visibleRatio = viewportHeight / contentHeight
-        let thumbHeight = max(viewportHeight * visibleRatio, minThumbHeight)
-        let maxScroll = contentHeight - viewportHeight
-        let progress = maxScroll > 0 ? min(max(scrollOffset / maxScroll, 0), 1) : 0
-        let trackRange = viewportHeight - thumbHeight - 6 // 3pt padding top+bottom
-
-        Capsule()
-            .fill(Color.gray.opacity(isScrolling ? 0.5 : 0.2))
-            .frame(width: thumbWidth, height: thumbHeight)
-            .offset(y: 3 + trackRange * progress)
-            .padding(.trailing, 2)
-            .allowsHitTesting(false)
-            .animation(.easeOut(duration: 0.15), value: isScrolling)
-            .animation(.interactiveSpring, value: scrollOffset)
-    }
-
-    private func showIndicator() {
-        isScrolling = true
-        fadeTask?.cancel()
-        fadeTask = Task { @MainActor in
-            try? await Task.sleep(for: .seconds(1.2))
-            guard !Task.isCancelled else { return }
-            isScrolling = false
         }
     }
 }
 
-private struct ContentHeightKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+private struct ScrollMetrics: Equatable {
+    var contentHeight: CGFloat = 0
+    var offset: CGFloat = 0
 }
 
-private struct ScrollOffsetKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
-}
-
-private struct ViewportHeightKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+private struct ScrollMetricsKey: PreferenceKey {
+    static var defaultValue = ScrollMetrics()
+    static func reduce(value: inout ScrollMetrics, nextValue: () -> ScrollMetrics) {
+        value = nextValue()
+    }
 }
