@@ -329,7 +329,10 @@ struct NoteDetailView: View {
                         updated.meetingManualNotes = newNotes
                         updated.isMeetingNote = true
                         notesManager.updateNote(updated)
-                    }
+                    },
+                    panelHeight: .constant(300),
+                    panelWidthRatio: .constant(1.0),
+                    containerWidth: 600
                 )
                 .transition(.opacity.combined(with: .offset(y: -8)))
             }
