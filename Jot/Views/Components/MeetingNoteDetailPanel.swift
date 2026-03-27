@@ -262,7 +262,7 @@ struct MeetingNoteDetailPanel: View {
                         .font(FontManager.body(size: 13))
                         .foregroundColor(Color("TertiaryTextColor"))
                         .allowsHitTesting(false)
-                        .padding(.top, 12)
+                        .padding(.top, 9)
                         .padding(.leading, 13)
                 }
             }
@@ -313,24 +313,31 @@ struct MeetingNoteDetailPanel: View {
 
 // MARK: - Overlay Scroller Forcer
 
-/// Forces the enclosing NSScrollView to use overlay scroller style (thin, no track)
-/// regardless of the system "Show scroll bars" preference.
+/// Forces the enclosing NSScrollView to use a thin overlay scroller
+/// with no track background, regardless of system preferences.
 private struct OverlayScrollerForcer: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
         DispatchQueue.main.async {
-            if let scrollView = view.enclosingScrollView {
-                scrollView.scrollerStyle = .overlay
-            }
+            Self.configureScroller(for: view)
         }
         return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
         DispatchQueue.main.async {
-            if let scrollView = nsView.enclosingScrollView {
-                scrollView.scrollerStyle = .overlay
-            }
+            Self.configureScroller(for: nsView)
+        }
+    }
+
+    private static func configureScroller(for view: NSView) {
+        guard let scrollView = view.enclosingScrollView else { return }
+        scrollView.scrollerStyle = .overlay
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+        if let scroller = scrollView.verticalScroller {
+            scroller.controlSize = .mini
+            scroller.scrollerStyle = .overlay
         }
     }
 }
