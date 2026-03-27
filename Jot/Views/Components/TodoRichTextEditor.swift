@@ -180,23 +180,27 @@ struct TodoRichTextEditor: View {
                         onMention: {
                             withAnimation(.smooth(duration: 0.15)) { showURLPasteMenu = false }
                             syncMenuState(["isURLPasteMenuShowing": false])
+                            var payload: [String: Any] = [
+                                "url": urlPasteURL,
+                                "range": NSValue(range: urlPasteRange),
+                            ]
+                            if let eid = editorInstanceID { payload["editorInstanceID"] = eid }
                             NotificationCenter.default.post(
                                 name: .urlPasteSelectMention,
-                                object: [
-                                    "url": urlPasteURL,
-                                    "range": NSValue(range: urlPasteRange),
-                                ] as [String: Any]
+                                object: payload
                             )
                         },
                         onPasteAsURL: {
                             withAnimation(.smooth(duration: 0.15)) { showURLPasteMenu = false }
                             syncMenuState(["isURLPasteMenuShowing": false])
+                            var payload: [String: Any] = [
+                                "url": urlPasteURL,
+                                "range": NSValue(range: urlPasteRange),
+                            ]
+                            if let eid = editorInstanceID { payload["editorInstanceID"] = eid }
                             NotificationCenter.default.post(
                                 name: .urlPasteSelectPlainLink,
-                                object: [
-                                    "url": urlPasteURL,
-                                    "range": NSValue(range: urlPasteRange),
-                                ] as [String: Any]
+                                object: payload
                             )
                         }
                     )
@@ -437,6 +441,7 @@ struct TodoRichTextEditor: View {
                   let url = info["url"] as? String,
                   let rangeValue = info["range"] as? NSValue,
                   let rectValue = info["rect"] as? NSValue else { return }
+            if let nid = info["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
 
             let range = rangeValue.rangeValue
             let rect = rectValue.rectValue
@@ -457,7 +462,9 @@ struct TodoRichTextEditor: View {
             }
             syncMenuState(["isURLPasteMenuShowing": true])
         }
-        .onReceive(NotificationCenter.default.publisher(for: .urlPasteDismiss)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .urlPasteDismiss)) { notification in
+            if let info = notification.object as? [String: Any],
+               let nid = info["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
             if showURLPasteMenu {
                 withAnimation(.smooth(duration: 0.15)) { showURLPasteMenu = false }
                 syncMenuState(["isURLPasteMenuShowing": false])

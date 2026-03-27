@@ -2142,6 +2142,16 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 }
             }
 
+            let convertToWebClip = NotificationCenter.default.addObserver(
+                forName: .convertSelectedTextToWebClip, object: nil, queue: .main
+            ) { [weak self] notification in
+                if let nid = notification.userInfo?["editorInstanceID"] as? UUID,
+                   let myID = self?.editorInstanceID, nid != myID { return }
+                Task { @MainActor [weak self] in
+                    self?.convertSelectedTextToWebClip()
+                }
+            }
+
             let insertFileLink = NotificationCenter.default.addObserver(
                 forName: .insertFileLinkInEditor, object: nil, queue: .main
             ) { [weak self] notification in
@@ -2396,6 +2406,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 guard let info = notification.object as? [String: Any],
                       let url = info["url"] as? String,
                       let rangeValue = info["range"] as? NSValue else { return }
+                if let nid = info["editorInstanceID"] as? UUID,
+                   let myID = self?.editorInstanceID, nid != myID { return }
                 let range = rangeValue.rangeValue
                 Task { @MainActor [weak self] in
                     self?.replaceURLPasteWithWebClip(url: url, range: range)
@@ -2408,6 +2420,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 guard let info = notification.object as? [String: Any],
                       let url = info["url"] as? String,
                       let rangeValue = info["range"] as? NSValue else { return }
+                if let nid = info["editorInstanceID"] as? UUID,
+                   let myID = self?.editorInstanceID, nid != myID { return }
                 let range = rangeValue.rangeValue
                 Task { @MainActor [weak self] in
                     self?.replaceURLPasteWithPlainLink(url: url, range: range)
@@ -2417,7 +2431,15 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             let urlPasteDismiss = NotificationCenter.default.addObserver(
                 forName: .urlPasteDismiss, object: nil, queue: .main
             ) { [weak self] notification in
-                let range = (notification.object as? NSValue)?.rangeValue
+                if let info = notification.object as? [String: Any],
+                   let nid = info["editorInstanceID"] as? UUID,
+                   let myID = self?.editorInstanceID, nid != myID { return }
+                let range: NSRange?
+                if let info = notification.object as? [String: Any] {
+                    range = (info["range"] as? NSValue)?.rangeValue
+                } else {
+                    range = (notification.object as? NSValue)?.rangeValue
+                }
                 Task { @MainActor [weak self] in
                     if let range { self?.clearURLPasteHighlight(range: range) }
                 }
@@ -2739,7 +2761,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
 
             observers = [
                 windowKey,
-                insertTodo, insertLink, insertFileLink, insertVoiceTranscript, insertImage, applyTool, applyCommandMenuTool,
+                insertTodo, insertLink, convertToWebClip, insertFileLink, insertVoiceTranscript, insertImage, applyTool, applyCommandMenuTool,
                 applyNotePickerSelection, navigateNoteLink,
                 performSearch, highlightSearch, clearSearch, replaceMatch, replaceAll,
                 proofreadShow, proofreadClear, proofreadApply, captureSelection,
@@ -3864,7 +3886,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             }
 
             // Dismiss URL/code paste menus on any text change
-            NotificationCenter.default.post(name: .urlPasteDismiss, object: nil)
+            let dismissPayload: [String: Any]? = editorInstanceID.map { ["editorInstanceID": $0] }
+            NotificationCenter.default.post(name: .urlPasteDismiss, object: dismissPayload)
             NotificationCenter.default.post(name: .codePasteDismiss, object: nil)
 
             syncText()
@@ -4590,6 +4613,22 @@ struct TodoEditorRepresentable: NSViewRepresentable {
 
             // Select the pasted URL text range and replace with web clip
             textView.setSelectedRange(range)
+            insertWebClip(url: url)
+        }
+
+        private func convertSelectedTextToWebClip() {
+            guard let textView = textView else { return }
+            let selectedRange = textView.selectedRange()
+            guard selectedRange.length > 0,
+                  let textStorage = textView.textStorage,
+                  selectedRange.location + selectedRange.length <= textStorage.length else { return }
+
+            let selectedText = textStorage.attributedSubstring(from: selectedRange).string
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard InlineNSTextView.isLikelyURL(selectedText) else { return }
+
+            let normalizedURL = Self.normalizedURL(from: selectedText)
+            let url = normalizedURL.isEmpty ? selectedText : normalizedURL
             insertWebClip(url: url)
         }
 
@@ -7639,14 +7678,17 @@ final class InlineNSTextView: NSTextView {
                         height: rect.height
                     )
 
+                    let eid = self.editorInstanceID
                     DispatchQueue.main.async {
+                        var payload: [String: Any] = [
+                            "url": pastedText,
+                            "range": NSValue(range: pastedRange),
+                            "rect": NSValue(rect: adjustedRect),
+                        ]
+                        if let eid = eid { payload["editorInstanceID"] = eid }
                         NotificationCenter.default.post(
                             name: .urlPasteDetected,
-                            object: [
-                                "url": pastedText,
-                                "range": NSValue(range: pastedRange),
-                                "rect": NSValue(rect: adjustedRect),
-                            ] as [String: Any]
+                            object: payload
                         )
                     }
                 }
@@ -7715,7 +7757,7 @@ final class InlineNSTextView: NSTextView {
         }
     }
 
-    private static func isLikelyURL(_ text: String) -> Bool {
+    static func isLikelyURL(_ text: String) -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !trimmed.contains(" "), !trimmed.contains("\n") else {
             return false
@@ -8196,11 +8238,13 @@ final class InlineNSTextView: NSTextView {
                 NotificationCenter.default.post(name: .urlPasteSelectFocused, object: nil, userInfo: eidInfo)
                 return
             case 53:  // Escape
-                NotificationCenter.default.post(name: .urlPasteDismiss, object: nil)
+                let dismissPayload: [String: Any]? = editorInstanceID.map { ["editorInstanceID": $0] }
+                NotificationCenter.default.post(name: .urlPasteDismiss, object: dismissPayload)
                 return
             default:
                 // Any other key dismisses the menu and passes through
-                NotificationCenter.default.post(name: .urlPasteDismiss, object: nil)
+                let dismissPayload: [String: Any]? = editorInstanceID.map { ["editorInstanceID": $0] }
+                NotificationCenter.default.post(name: .urlPasteDismiss, object: dismissPayload)
                 super.keyDown(with: event)
                 return
             }
@@ -8948,6 +8992,7 @@ extension Notification.Name {
     static let insertVoiceTranscriptInEditor = Notification.Name("insertVoiceTranscriptInEditor")
     static let insertImageInEditor = Notification.Name("insertImageInEditor")
     static let deleteWebClipAttachment = Notification.Name("deleteWebClipAttachment")
+    static let convertSelectedTextToWebClip = Notification.Name("convertSelectedTextToWebClip")
     static let applyEditTool = Notification.Name("applyEditTool")
 
     // Command menu notifications

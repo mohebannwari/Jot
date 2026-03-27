@@ -29,10 +29,10 @@ struct NoteDetailView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @EnvironmentObject private var themeManager: ThemeManager
-    @EnvironmentObject private var notesManager: SimpleSwiftDataManager
+    @EnvironmentObject var notesManager: SimpleSwiftDataManager
 
     // MARK: - Core editing state
-    @State private var editedTitle: String
+    @State var editedTitle: String
     @State var editedContent: String
     @State private var autosaveWorkItem: DispatchWorkItem?
     @State private var lastSavedSnapshot: DraftSnapshot
@@ -93,6 +93,25 @@ struct NoteDetailView: View {
 
     // Text Generation floating panel
     @State var showTextGenPanel: Bool = false
+
+    // Meeting Notes
+    @State var showMeetingPanel: Bool = false
+    @State var meetingRecordingState: MeetingRecordingState = .idle
+    @State var meetingSelectedTab: MeetingTab = .transcript
+    @State var meetingManualNotes: String = ""
+    @State var meetingSummaryResult: MeetingSummaryDisplayResult? = nil
+    @State var isMeetingSummaryLoading: Bool = false
+    @StateObject var meetingTranscriptionService = MeetingTranscriptionService()
+    @StateObject var meetingAudioRecorder = AudioRecorder(barCount: 28)
+    @State var meetingSummaryGenerator = MeetingSummaryGenerator()
+
+    // Persisted meeting data (loaded from note, updated on save)
+    @State var savedIsMeetingNote: Bool = false
+    @State var savedMeetingSummary: String = ""
+    @State var savedMeetingTranscript: String = ""
+    @State var savedMeetingDuration: TimeInterval = 0
+    @State var savedMeetingLanguage: String = ""
+    @State var savedMeetingManualNotes: String = ""
 
     // MARK: - Scroll / toolbar state
     @FocusState private var titleFocused: Bool
@@ -183,6 +202,13 @@ struct NoteDetailView: View {
         self._aiBlockLoadedFromContent = State(initialValue: parsed.summary != nil || parsed.keyPoints != nil)
         self._editedStickers = State(initialValue: note.stickers)
         self._lastSavedStickers = State(initialValue: note.stickers)
+        // Meeting data
+        self._savedIsMeetingNote = State(initialValue: note.isMeetingNote)
+        self._savedMeetingSummary = State(initialValue: note.meetingSummary)
+        self._savedMeetingTranscript = State(initialValue: note.meetingTranscript)
+        self._savedMeetingDuration = State(initialValue: note.meetingDuration)
+        self._savedMeetingLanguage = State(initialValue: note.meetingLanguage)
+        self._savedMeetingManualNotes = State(initialValue: note.meetingManualNotes)
     }
 
     // MARK: - Body
@@ -283,6 +309,29 @@ struct NoteDetailView: View {
             if !backlinks.isEmpty {
                 backlinksSection
                     .padding(.top, 4)
+            }
+
+            if savedIsMeetingNote && !savedMeetingSummary.isEmpty {
+                MeetingNoteDetailPanel(
+                    meetingSummary: savedMeetingSummary,
+                    meetingTranscript: savedMeetingTranscript,
+                    meetingManualNotes: $savedMeetingManualNotes,
+                    meetingDuration: savedMeetingDuration,
+                    meetingLanguage: savedMeetingLanguage,
+                    meetingDate: note.date,
+                    onNotesChanged: { newNotes in
+                        // Persist manual notes changes
+                        var updated = note
+                        updated.meetingTranscript = savedMeetingTranscript
+                        updated.meetingSummary = savedMeetingSummary
+                        updated.meetingDuration = savedMeetingDuration
+                        updated.meetingLanguage = savedMeetingLanguage
+                        updated.meetingManualNotes = newNotes
+                        updated.isMeetingNote = true
+                        notesManager.updateNote(updated)
+                    }
+                )
+                .transition(.opacity.combined(with: .offset(y: -8)))
             }
 
             if let summaryText = aiSummaryText {
@@ -465,6 +514,10 @@ struct NoteDetailView: View {
                 .allowsHitTesting(showTextGenPanel)
         }
         .overlay {
+            meetingNotesFloatingOverlay
+                .allowsHitTesting(showMeetingPanel)
+        }
+        .overlay {
             highlightColorPickerOverlay
                 .allowsHitTesting(showHighlightColorPicker)
         }
@@ -559,6 +612,15 @@ struct NoteDetailView: View {
             }
             editedStickers = note.stickers
             lastSavedStickers = note.stickers
+            // Restore meeting data for new note
+            savedIsMeetingNote = note.isMeetingNote
+            savedMeetingSummary = note.meetingSummary
+            savedMeetingTranscript = note.meetingTranscript
+            savedMeetingDuration = note.meetingDuration
+            savedMeetingLanguage = note.meetingLanguage
+            savedMeetingManualNotes = ""
+            showMeetingPanel = false
+            meetingRecordingState = .idle
             isPlacingSticker = false
             selectedStickerID = nil
             showVoiceRecorderOverlay = false; showLinkInputOverlay = false; showImagePicker = false; showFileLinkPicker = false
@@ -616,6 +678,10 @@ struct NoteDetailView: View {
             if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
             guard let description = notification.object as? String else { return }
             Task { await handleAITextGenerate(description: description) }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .aiMeetingNotesStart)) { notification in
+            if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
+            startMeetingRecording()
         }
         .onReceive(NotificationCenter.default.publisher(for: .aiProofreadApplySuggestion)) { notification in
             if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
@@ -841,6 +907,38 @@ struct NoteDetailView: View {
             }
         }
         .allowsHitTesting(showTextGenPanel)
+    }
+
+    @ViewBuilder
+    private var meetingNotesFloatingOverlay: some View {
+        GeometryReader { geometry in
+            if showMeetingPanel {
+                let bottomPadding: CGFloat = 52
+
+                VStack {
+                    Spacer()
+                    MeetingNotesFloatingPanel(
+                        transcriptionService: meetingTranscriptionService,
+                        recordingState: meetingRecordingState,
+                        duration: meetingAudioRecorder.duration,
+                        summaryResult: meetingSummaryResult,
+                        isSummaryLoading: isMeetingSummaryLoading,
+                        manualNotes: $meetingManualNotes,
+                        selectedTab: $meetingSelectedTab,
+                        onPause: { pauseMeetingRecording() },
+                        onResume: { resumeMeetingRecording() },
+                        onStop: { stopMeetingRecording() },
+                        onSave: { saveMeetingNote() },
+                        onDismiss: { dismissMeetingPanel() }
+                    )
+                    .padding(.bottom, bottomPadding)
+                }
+                .frame(maxWidth: .infinity)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .zIndex(160)
+            }
+        }
+        .allowsHitTesting(showMeetingPanel)
     }
 
     @ViewBuilder
@@ -1225,7 +1323,7 @@ struct NoteDetailView: View {
     }
 
     private var anyAIPanelVisible: Bool {
-        showEditContentPanel || showTranslatePanel || showTextGenPanel
+        showEditContentPanel || showTranslatePanel || showTextGenPanel || showMeetingPanel
     }
 
     private var isNewNote: Bool {
@@ -1847,6 +1945,12 @@ struct NoteDetailView: View {
             return true
         case .link:
             presentLinkInputOverlay()
+            return true
+        case .convertToWebClip:
+            NotificationCenter.default.post(
+                name: .convertSelectedTextToWebClip, object: nil,
+                userInfo: ["editorInstanceID": editorInstanceID]
+            )
             return true
         case .searchOnPage:
             presentSearchOnPage()

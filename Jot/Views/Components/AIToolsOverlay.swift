@@ -110,6 +110,10 @@ struct AIToolsOverlay: View {
                 NotificationCenter.default.post(name: .aiEditRequestSelection, object: nil, userInfo: eidInfo)
                 state = .textGenPromptField
             }
+            toolBarButton(icon: "IconMeetingNotes", tooltip: "Meeting Notes") {
+                NotificationCenter.default.post(name: .aiMeetingNotesStart, object: nil, userInfo: eidInfo)
+                state = .collapsed
+            }
         }
     }
 

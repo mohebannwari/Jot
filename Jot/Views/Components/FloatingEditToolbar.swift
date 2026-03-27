@@ -112,6 +112,7 @@ struct FloatingEditToolbar: View {
             // Section 2: Quick actions
             HStack(spacing: 8) {
                 toolIconButton("IconTodos", tool: .todo)
+                toolIconButton("insert link", tool: .convertToWebClip)
                 toolIconButton("IconAlignmentLeftBar", tool: .blockQuote)
                 toolIconButton("IconMarker2", tool: .highlight, isActive: isHighlightActive)
             }
@@ -400,6 +401,7 @@ enum EditTool: String, CaseIterable {
     case sticker
     case tabs
     case cards
+    case convertToWebClip
 
     var isToggleable: Bool {
         switch self {
@@ -448,6 +450,7 @@ enum EditTool: String, CaseIterable {
         case .sticker: return "Post-it"
         case .tabs: return "Tabs"
         case .cards: return "Cards"
+        case .convertToWebClip: return "Convert to Web Clip"
         }
     }
 

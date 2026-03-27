@@ -4716,6 +4716,17 @@ struct NoteListCard: View {
             }
 
             HStack(spacing: 6) {
+                if note.isMeetingNote {
+                    Image("IconMeetingNotes")
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
+                        .foregroundColor(isActiveNote
+                            ? Color("ButtonPrimaryTextColor").opacity(0.7)
+                            : Color("SecondaryTextColor"))
+                        .frame(width: 12, height: 12)
+                }
+
                 Text(Self.compactDateString(from: note.date))
                     .font(FontManager.metadata(size: 11, weight: .medium))
                     .foregroundColor(isActiveNote

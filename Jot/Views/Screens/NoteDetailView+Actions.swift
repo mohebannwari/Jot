@@ -59,6 +59,8 @@ extension NoteDetailView {
                 break  // handled by .aiTranslateSubmit notification
             case .textGenerate:
                 break  // handled by .aiTextGenSubmit notification
+            case .meetingNotes:
+                break  // handled by .aiMeetingNotesStart notification
             }
         } catch {
             withAnimation(.jotSpring) {
@@ -496,5 +498,199 @@ extension NoteDetailView {
         DispatchQueue.main.async {
             self.performInNoteSearch(self.searchOnPageQuery)
         }
+    }
+
+    // MARK: - Meeting Notes
+
+    @MainActor
+    func startMeetingRecording() {
+        guard meetingRecordingState == .idle else { return }
+
+        meetingSummaryResult = nil
+        isMeetingSummaryLoading = false
+        meetingManualNotes = ""
+        meetingSelectedTab = .transcript
+
+        // Configure audio recorder for meeting mode
+        meetingAudioRecorder.setMeetingMode(true)
+        let transcriptionService = meetingTranscriptionService
+        meetingAudioRecorder.onBufferAvailable = { buffer in
+            transcriptionService.feedBuffer(buffer)
+        }
+
+        Task {
+            do {
+                try await meetingAudioRecorder.start()
+                meetingTranscriptionService.startTranscription()
+                withAnimation(.jotSpring) {
+                    meetingRecordingState = .recording
+                    showMeetingPanel = true
+                }
+            } catch {
+                withAnimation(.jotSpring) {
+                    aiPanelState = .error("Failed to start recording: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
+    @MainActor
+    func pauseMeetingRecording() {
+        guard meetingRecordingState == .recording else { return }
+        Task {
+            await meetingAudioRecorder.pause()
+            withAnimation(.jotSpring) {
+                meetingRecordingState = .paused
+            }
+        }
+    }
+
+    @MainActor
+    func resumeMeetingRecording() {
+        guard meetingRecordingState == .paused else { return }
+        Task {
+            try? await meetingAudioRecorder.resume()
+            withAnimation(.jotSpring) {
+                meetingRecordingState = .recording
+            }
+        }
+    }
+
+    @MainActor
+    func stopMeetingRecording() {
+        guard meetingRecordingState == .recording || meetingRecordingState == .paused else { return }
+
+        Task {
+            // Stop audio and transcription
+            let audioURL = await meetingAudioRecorder.stop()
+            meetingTranscriptionService.stopTranscription()
+
+            withAnimation(.jotSpring) {
+                meetingRecordingState = .processing
+                meetingSelectedTab = .summary
+                isMeetingSummaryLoading = true
+            }
+
+            // Generate summary
+            do {
+                let (result, _) = try await meetingSummaryGenerator.generateSummary(
+                    from: meetingTranscriptionService.segments,
+                    manualNotes: meetingManualNotes
+                )
+
+                withAnimation(.jotSpring) {
+                    meetingSummaryResult = result
+                    isMeetingSummaryLoading = false
+                    meetingRecordingState = .complete
+                }
+            } catch {
+                withAnimation(.jotSpring) {
+                    isMeetingSummaryLoading = false
+                    meetingRecordingState = .complete
+                    meetingSummaryResult = MeetingSummaryDisplayResult(
+                        title: "Meeting Notes",
+                        summary: "Summary generation failed: \(error.localizedDescription)",
+                        keyPoints: [],
+                        actionItems: [],
+                        decisions: []
+                    )
+                }
+            }
+
+            // Cleanup audio file
+            if let url = audioURL {
+                AudioRecorder.cleanupMeetingAudio(at: url)
+            }
+        }
+    }
+
+    @MainActor
+    func saveMeetingNote() {
+        guard meetingRecordingState == .complete else { return }
+
+        let newTranscript = meetingTranscriptionService.serializedTranscript()
+        let newSummary = meetingSummaryGenerator.formatAsRichText(
+            meetingSummaryResult ?? MeetingSummaryDisplayResult(
+                title: "Meeting Notes", summary: "", keyPoints: [], actionItems: [], decisions: []
+            )
+        )
+        let newDuration = meetingAudioRecorder.duration
+        let newLanguage = meetingTranscriptionService.detectedLanguage
+
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateStyle = .medium
+        dateFormatter.timeStyle = .short
+        let dateLabel = dateFormatter.string(from: Date())
+
+        var updatedNote = note
+        updatedNote.isMeetingNote = true
+
+        // Append to existing meeting data if the note already has meeting content.
+        // Each meeting session is separated by a dated header so history is preserved.
+        if note.isMeetingNote && !note.meetingSummary.isEmpty {
+            let separator = "\n\n---\n[[h2]]Meeting -- \(dateLabel)[[/h2]]\n"
+            updatedNote.meetingSummary = note.meetingSummary + separator + newSummary
+            updatedNote.meetingTranscript = note.meetingTranscript + "\n" + newTranscript
+            updatedNote.meetingDuration = note.meetingDuration + newDuration
+        } else {
+            updatedNote.meetingSummary = newSummary
+            updatedNote.meetingTranscript = newTranscript
+            updatedNote.meetingDuration = newDuration
+        }
+        updatedNote.meetingLanguage = newLanguage
+        updatedNote.meetingManualNotes = meetingManualNotes
+
+        // Set the note title from summary if it's still untitled
+        if let result = meetingSummaryResult, !result.title.isEmpty {
+            let currentTitle = editedTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+            if currentTitle.isEmpty || currentTitle == "Untitled" || currentTitle == "New Note" || currentTitle == "Note Title" {
+                updatedNote.title = result.title
+                editedTitle = result.title
+            }
+        }
+
+        // Set content to the formatted summary if note is empty
+        if editedContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            updatedNote.content = updatedNote.meetingSummary
+            editedContent = updatedNote.meetingSummary
+        }
+
+        // Persist
+        notesManager.updateNote(updatedNote)
+
+        // Update local state so the detail panel appears immediately
+        withAnimation(.jotSpring) {
+            savedIsMeetingNote = true
+            savedMeetingSummary = updatedNote.meetingSummary
+            savedMeetingTranscript = updatedNote.meetingTranscript
+            savedMeetingDuration = updatedNote.meetingDuration
+            savedMeetingLanguage = updatedNote.meetingLanguage
+            savedMeetingManualNotes = meetingManualNotes
+        }
+
+        dismissMeetingPanel()
+    }
+
+    @MainActor
+    func dismissMeetingPanel() {
+        // If still recording, stop first
+        if meetingRecordingState == .recording || meetingRecordingState == .paused {
+            Task {
+                let audioURL = await meetingAudioRecorder.stop()
+                meetingTranscriptionService.stopTranscription()
+                if let url = audioURL {
+                    AudioRecorder.cleanupMeetingAudio(at: url)
+                }
+            }
+        }
+
+        withAnimation(.jotSpring) {
+            showMeetingPanel = false
+            meetingRecordingState = .idle
+        }
+
+        // Cleanup
+        meetingAudioRecorder.onBufferAvailable = nil
+        meetingAudioRecorder.setMeetingMode(false)
     }
 }

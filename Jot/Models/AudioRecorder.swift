@@ -53,6 +53,13 @@ public final class AudioRecorder: NSObject, ObservableObject, AudioRecorderServi
 
     public private(set) var fileURL: URL?
 
+    /// Called on the audio processing thread with each new buffer.
+    /// Used by MeetingTranscriptionService to feed SpeechAnalyzer.
+    var onBufferAvailable: ((AVAudioPCMBuffer) -> Void)?
+
+    /// When true, recording files go to MeetingCapture/ instead of MicCapture/.
+    private(set) var isMeetingMode: Bool = false
+
     private let barCount: Int
     private let defaultSampleRate: Double = 44_100
     private let preferredChannelCount: AVAudioChannelCount = 1
@@ -284,7 +291,7 @@ extension AudioRecorder {
         if let existing = fileURL {
             try? FileManager.default.removeItem(at: existing)
         }
-        let url = try Self.makeRecordingURL()
+        let url = try isMeetingMode ? Self.makeMeetingRecordingURL() : Self.makeRecordingURL()
         let sampleRate = outputFormat?.sampleRate ?? targetSampleRate
         let channelCount = Int(outputFormat?.channelCount ?? preferredChannelCount)
         let settings: [String: Any] = [
@@ -338,6 +345,9 @@ extension AudioRecorder {
     fileprivate func installTapIfNeeded() {
         guard !tapInstalled else { return }
         guard let outputFormat else { return }
+        // Capture the buffer callback at install time so the audio thread
+        // holds a stable reference and doesn't race with MainActor clearing it.
+        let bufferCallback = onBufferAvailable
         bridgeMixer.installTap(
             onBus: 0,
             bufferSize: 1024,
@@ -356,6 +366,8 @@ extension AudioRecorder {
                     }
                 }
             }
+            // Forward buffer to transcription service if in meeting mode
+            bufferCallback?(buffer)
             self.dispatchToMain {
                 self.updateLevels(computedLevels)
             }
@@ -554,5 +566,42 @@ extension AudioRecorder {
             throw RecorderError.fileCreationFailed
         }
         return url
+    }
+
+    @discardableResult
+    internal static func makeMeetingRecordingURL() throws -> URL {
+        let directory = FileManager.default
+            .temporaryDirectory
+            .appendingPathComponent("MeetingCapture", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true)
+        let url =
+            directory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("m4a")
+        guard FileManager.default.createFile(atPath: url.path, contents: nil) else {
+            throw RecorderError.fileCreationFailed
+        }
+        return url
+    }
+
+    /// Enable meeting mode before calling start(). Directs audio to MeetingCapture/ directory.
+    @MainActor
+    func setMeetingMode(_ enabled: Bool) {
+        isMeetingMode = enabled
+    }
+
+    /// Clean up a meeting recording file after it's been processed.
+    static func cleanupMeetingAudio(at url: URL) {
+        try? FileManager.default.removeItem(at: url)
+    }
+
+    /// Clean up all files in the MeetingCapture directory.
+    static func cleanupAllMeetingAudio() {
+        let directory = FileManager.default
+            .temporaryDirectory
+            .appendingPathComponent("MeetingCapture", isDirectory: true)
+        try? FileManager.default.removeItem(at: directory)
     }
 }

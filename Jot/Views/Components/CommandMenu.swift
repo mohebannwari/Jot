@@ -267,6 +267,7 @@ extension EditTool {
         case .tabs: return "IconDossier"
         case .cards: return "IconCarussel"
         case .dashedList: return "IconDashList"
+        case .convertToWebClip: return "insert link"
         }
     }
 
@@ -308,6 +309,7 @@ extension EditTool {
         case .tabs: return "rectangle.split.3x1"
         case .cards: return "rectangle.3.group"
         case .dashedList: return "list.dash"
+        case .convertToWebClip: return "link"
         }
     }
 }
