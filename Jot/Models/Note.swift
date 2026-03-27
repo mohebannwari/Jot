@@ -22,6 +22,13 @@ struct Note: Identifiable, Codable, Equatable {
     var deletedDate: Date?
     var stickers: [Sticker] = []
 
+    // Meeting Notes
+    var isMeetingNote: Bool = false
+    var meetingTranscript: String = ""
+    var meetingSummary: String = ""
+    var meetingDuration: TimeInterval = 0
+    var meetingLanguage: String = ""
+
     init(
         title: String,
         content: String,
@@ -31,7 +38,8 @@ struct Note: Identifiable, Codable, Equatable {
         isArchived: Bool = false,
         isLocked: Bool = false,
         isDeleted: Bool = false,
-        deletedDate: Date? = nil
+        deletedDate: Date? = nil,
+        isMeetingNote: Bool = false
     ) {
         self.id = UUID()
         self.title = title
@@ -44,5 +52,6 @@ struct Note: Identifiable, Codable, Equatable {
         self.isLocked = isLocked
         self.isDeleted = isDeleted
         self.deletedDate = deletedDate
+        self.isMeetingNote = isMeetingNote
     }
 }

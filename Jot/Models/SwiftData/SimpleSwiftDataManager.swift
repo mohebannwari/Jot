@@ -448,6 +448,13 @@ final class SimpleSwiftDataManager: ObservableObject {
             noteEntity.isPinned = existingNote?.isPinned ?? updatedNote.isPinned
             noteEntity.isLocked = existingNote?.isLocked ?? updatedNote.isLocked
 
+            // Meeting notes
+            noteEntity.isMeetingNote = updatedNote.isMeetingNote
+            noteEntity.meetingTranscript = updatedNote.meetingTranscript
+            noteEntity.meetingSummary = updatedNote.meetingSummary
+            noteEntity.meetingDuration = updatedNote.meetingDuration
+            noteEntity.meetingLanguage = updatedNote.meetingLanguage
+
             try modelContext.save()
 
             // Update local array — skip the expensive recomputeDerivedNotes() for content-only saves

@@ -29,10 +29,10 @@ struct NoteDetailView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @EnvironmentObject private var themeManager: ThemeManager
-    @EnvironmentObject private var notesManager: SimpleSwiftDataManager
+    @EnvironmentObject var notesManager: SimpleSwiftDataManager
 
     // MARK: - Core editing state
-    @State private var editedTitle: String
+    @State var editedTitle: String
     @State var editedContent: String
     @State private var autosaveWorkItem: DispatchWorkItem?
     @State private var lastSavedSnapshot: DraftSnapshot
@@ -93,6 +93,17 @@ struct NoteDetailView: View {
 
     // Text Generation floating panel
     @State var showTextGenPanel: Bool = false
+
+    // Meeting Notes
+    @State var showMeetingPanel: Bool = false
+    @State var meetingRecordingState: MeetingRecordingState = .idle
+    @State var meetingSelectedTab: MeetingTab = .transcript
+    @State var meetingManualNotes: String = ""
+    @State var meetingSummaryResult: MeetingSummaryDisplayResult? = nil
+    @State var isMeetingSummaryLoading: Bool = false
+    @StateObject var meetingTranscriptionService = MeetingTranscriptionService()
+    @StateObject var meetingAudioRecorder = AudioRecorder(barCount: 28)
+    let meetingSummaryGenerator = MeetingSummaryGenerator()
 
     // MARK: - Scroll / toolbar state
     @FocusState private var titleFocused: Bool
@@ -465,6 +476,10 @@ struct NoteDetailView: View {
                 .allowsHitTesting(showTextGenPanel)
         }
         .overlay {
+            meetingNotesFloatingOverlay
+                .allowsHitTesting(showMeetingPanel)
+        }
+        .overlay {
             highlightColorPickerOverlay
                 .allowsHitTesting(showHighlightColorPicker)
         }
@@ -616,6 +631,10 @@ struct NoteDetailView: View {
             if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
             guard let description = notification.object as? String else { return }
             Task { await handleAITextGenerate(description: description) }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .aiMeetingNotesStart)) { notification in
+            if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
+            startMeetingRecording()
         }
         .onReceive(NotificationCenter.default.publisher(for: .aiProofreadApplySuggestion)) { notification in
             if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
@@ -841,6 +860,38 @@ struct NoteDetailView: View {
             }
         }
         .allowsHitTesting(showTextGenPanel)
+    }
+
+    @ViewBuilder
+    private var meetingNotesFloatingOverlay: some View {
+        GeometryReader { geometry in
+            if showMeetingPanel {
+                let bottomPadding: CGFloat = 52
+
+                VStack {
+                    Spacer()
+                    MeetingNotesFloatingPanel(
+                        transcriptionService: meetingTranscriptionService,
+                        recordingState: meetingRecordingState,
+                        duration: meetingAudioRecorder.duration,
+                        summaryResult: meetingSummaryResult,
+                        isSummaryLoading: isMeetingSummaryLoading,
+                        manualNotes: $meetingManualNotes,
+                        selectedTab: $meetingSelectedTab,
+                        onPause: { pauseMeetingRecording() },
+                        onResume: { resumeMeetingRecording() },
+                        onStop: { stopMeetingRecording() },
+                        onSave: { saveMeetingNote() },
+                        onDismiss: { dismissMeetingPanel() }
+                    )
+                    .padding(.bottom, bottomPadding)
+                }
+                .frame(maxWidth: .infinity)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .zIndex(160)
+            }
+        }
+        .allowsHitTesting(showMeetingPanel)
     }
 
     @ViewBuilder
@@ -1225,7 +1276,7 @@ struct NoteDetailView: View {
     }
 
     private var anyAIPanelVisible: Bool {
-        showEditContentPanel || showTranslatePanel || showTextGenPanel
+        showEditContentPanel || showTranslatePanel || showTextGenPanel || showMeetingPanel
     }
 
     private var isNewNote: Bool {

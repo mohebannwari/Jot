@@ -20,6 +20,7 @@ enum AITool: String, Equatable {
     case editContent
     case translate
     case textGenerate
+    case meetingNotes
 }
 
 // MARK: - Proofread Annotation

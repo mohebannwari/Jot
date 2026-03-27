@@ -41,6 +41,13 @@ final class NoteEntity {
     // MARK: - Sticker Storage
     var stickersData: Data?
 
+    // MARK: - Meeting Notes
+    var isMeetingNote: Bool = false
+    var meetingTranscript: String = ""
+    var meetingSummary: String = ""
+    var meetingDuration: Double = 0
+    var meetingLanguage: String = ""
+
     // MARK: - Web Clip Support
     var webClipURL: String?
     var webClipTitle: String?
@@ -112,6 +119,13 @@ final class NoteEntity {
             self.stickersData = try? JSONEncoder().encode(note.stickers)
         }
 
+        // Meeting notes
+        self.isMeetingNote = note.isMeetingNote
+        self.meetingTranscript = note.meetingTranscript
+        self.meetingSummary = note.meetingSummary
+        self.meetingDuration = note.meetingDuration
+        self.meetingLanguage = note.meetingLanguage
+
         // Extract web clip data from content if present
         self.extractWebClipData()
     }
@@ -168,13 +182,17 @@ final class NoteEntity {
 
     // MARK: - Export/Conversion
     func toNote() -> Note {
-        var note = Note(title: title, content: content, tags: [], isPinned: isPinned, folderID: folderID, isArchived: isArchived, isLocked: isLocked, isDeleted: isDeleted, deletedDate: deletedDate)
+        var note = Note(title: title, content: content, tags: [], isPinned: isPinned, folderID: folderID, isArchived: isArchived, isLocked: isLocked, isDeleted: isDeleted, deletedDate: deletedDate, isMeetingNote: isMeetingNote)
         note.id = id
         note.date = modifiedAt
         note.createdAt = createdAt
         if let data = stickersData {
             note.stickers = (try? JSONDecoder().decode([Sticker].self, from: data)) ?? []
         }
+        note.meetingTranscript = meetingTranscript
+        note.meetingSummary = meetingSummary
+        note.meetingDuration = meetingDuration
+        note.meetingLanguage = meetingLanguage
         return note
     }
 }

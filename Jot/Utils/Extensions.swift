@@ -542,6 +542,15 @@ extension Notification.Name {
     static let aiTextGenSubmit = Notification.Name("AITextGenSubmit")
     // Text Generation -- insert generated text at cursor
     static let aiTextGenInsert = Notification.Name("AITextGenInsert")
+
+    // Meeting Notes
+    static let aiMeetingNotesStart = Notification.Name("AIMeetingNotesStart")
+    static let aiMeetingNotesPause = Notification.Name("AIMeetingNotesPause")
+    static let aiMeetingNotesResume = Notification.Name("AIMeetingNotesResume")
+    static let aiMeetingNotesStop = Notification.Name("AIMeetingNotesStop")
+    static let aiMeetingNotesComplete = Notification.Name("AIMeetingNotesComplete")
+    static let aiMeetingNotesSave = Notification.Name("AIMeetingNotesSave")
+    static let aiMeetingNotesDismiss = Notification.Name("AIMeetingNotesDismiss")
 }
 
 // MARK: - macOS 14 Compatibility Modifiers

@@ -157,6 +157,7 @@ extension AITool {
         case .editContent:  return "Edit Content"
         case .translate:    return "Translate"
         case .textGenerate: return "Generate Text"
+        case .meetingNotes: return "Meeting Notes"
         }
     }
 
@@ -168,6 +169,7 @@ extension AITool {
         case .editContent:  return "IconArrowsAllSides2"
         case .translate:    return "IconAiTranslate"
         case .textGenerate: return "TextGen"
+        case .meetingNotes: return "IconMeetingNotes"
         }
     }
 }
