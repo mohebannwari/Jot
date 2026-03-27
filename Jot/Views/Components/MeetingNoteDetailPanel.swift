@@ -37,12 +37,7 @@ struct MeetingNoteDetailPanel: View {
             RoundedRectangle(cornerRadius: panelRadius, style: .continuous)
                 .fill(panelBackground)
         )
-        .overlay(
-            RoundedRectangle(cornerRadius: panelRadius, style: .continuous)
-                .stroke(borderColor, lineWidth: 1)
-        )
-        .shadow(color: .black.opacity(0.04), radius: 1, y: 1)
-        .shadow(color: .black.opacity(0.06), radius: 4, y: 2)
+        .clipShape(RoundedRectangle(cornerRadius: panelRadius, style: .continuous))
     }
 
     // MARK: - Accordion Header
@@ -133,7 +128,7 @@ struct MeetingNoteDetailPanel: View {
 
     @ViewBuilder
     private var tabContent: some View {
-        ScrollView(.vertical, showsIndicators: true) {
+        ScrollView(.vertical) {
             Group {
                 switch selectedTab {
                 case .summary:
@@ -148,6 +143,7 @@ struct MeetingNoteDetailPanel: View {
             .padding(.horizontal, 14)
             .padding(.bottom, 12)
         }
+        .scrollIndicators(.automatic)
         .frame(maxHeight: maxContentHeight)
         .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
     }
@@ -249,16 +245,24 @@ struct MeetingNoteDetailPanel: View {
             .foregroundColor(Color("PrimaryTextColor"))
             .scrollContentBackground(.hidden)
             .scrollIndicators(.never)
-            .lineSpacing(3)
-            .frame(minHeight: 60)
+            .padding(8)
+            .frame(minHeight: 80)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color("SurfaceElevatedColor"))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .stroke(borderColor, lineWidth: 1)
+            )
             .overlay(alignment: .topLeading) {
                 if meetingManualNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Text("Add notes...")
                         .font(FontManager.body(size: 13))
                         .foregroundColor(Color("TertiaryTextColor"))
                         .allowsHitTesting(false)
-                        .padding(.top, 8)
-                        .padding(.leading, 5)
+                        .padding(.top, 16)
+                        .padding(.leading, 13)
                 }
             }
             .onChange(of: meetingManualNotes) { _, newValue in
