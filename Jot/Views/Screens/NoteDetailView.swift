@@ -113,6 +113,15 @@ struct NoteDetailView: View {
     @State var savedMeetingLanguage: String = ""
     @State var savedMeetingManualNotes: String = ""
 
+    // Meeting panel layout
+    @State private var meetingPanelSlot: MeetingPanelSlot = .aboveAIPanels
+    @State private var meetingPanelWidthRatio: CGFloat = 1.0
+    @State private var meetingPanelHeight: CGFloat = 300
+    @State private var isDraggingMeetingPanel = false
+    @State private var meetingPanelDragOffset: CGFloat = 0
+    @State private var meetingPanelContainerWidth: CGFloat = 600
+    @State private var meetingPanelLayoutWorkItem: DispatchWorkItem?
+
     // MARK: - Scroll / toolbar state
     @FocusState private var titleFocused: Bool
     @State private var localEditorFocusID: UUID?
@@ -157,6 +166,12 @@ struct NoteDetailView: View {
 
     private var editorIdentity: String {
         "\(note.id.uuidString)-\(themeManager.currentBodyFontStyle.rawValue)"
+    }
+
+    private enum MeetingPanelSlot: Int, CaseIterable {
+        case aboveAIPanels = 0
+        case belowAIPanels = 1
+        case belowEditor = 2
     }
 
     private struct DraftSnapshot: Equatable {
@@ -209,6 +224,9 @@ struct NoteDetailView: View {
         self._savedMeetingDuration = State(initialValue: note.meetingDuration)
         self._savedMeetingLanguage = State(initialValue: note.meetingLanguage)
         self._savedMeetingManualNotes = State(initialValue: note.meetingManualNotes)
+        self._meetingPanelSlot = State(initialValue: MeetingPanelSlot(rawValue: note.meetingPanelSlot) ?? .aboveAIPanels)
+        self._meetingPanelWidthRatio = State(initialValue: CGFloat(note.meetingPanelWidthRatio))
+        self._meetingPanelHeight = State(initialValue: CGFloat(note.meetingPanelHeight))
     }
 
     // MARK: - Body
@@ -311,27 +329,11 @@ struct NoteDetailView: View {
                     .padding(.top, 4)
             }
 
-            if savedIsMeetingNote && !savedMeetingSummary.isEmpty {
-                MeetingNoteDetailPanel(
-                    meetingSummary: savedMeetingSummary,
-                    meetingTranscript: savedMeetingTranscript,
-                    meetingManualNotes: $savedMeetingManualNotes,
-                    meetingDuration: savedMeetingDuration,
-                    meetingLanguage: savedMeetingLanguage,
-                    meetingDate: note.date,
-                    onNotesChanged: { newNotes in
-                        // Persist manual notes changes
-                        var updated = note
-                        updated.meetingTranscript = savedMeetingTranscript
-                        updated.meetingSummary = savedMeetingSummary
-                        updated.meetingDuration = savedMeetingDuration
-                        updated.meetingLanguage = savedMeetingLanguage
-                        updated.meetingManualNotes = newNotes
-                        updated.isMeetingNote = true
-                        notesManager.updateNote(updated)
-                    }
-                )
-                .transition(.opacity.combined(with: .offset(y: -8)))
+            // SLOT: aboveAIPanels
+            if meetingPanelSlot == .aboveAIPanels {
+                meetingNotePanel
+            } else if isDraggingMeetingPanel {
+                meetingDropZoneIndicator
             }
 
             if let summaryText = aiSummaryText {
@@ -365,6 +367,14 @@ struct NoteDetailView: View {
                 )
                 .transition(.opacity.combined(with: .offset(y: -8)))
             }
+
+            // SLOT: belowAIPanels
+            if meetingPanelSlot == .belowAIPanels {
+                meetingNotePanel
+            } else if isDraggingMeetingPanel {
+                meetingDropZoneIndicator
+            }
+
             TodoRichTextEditor(
                 text: $editedContent,
                 focusRequestID: localEditorFocusID ?? focusRequestID,
@@ -378,15 +388,38 @@ struct NoteDetailView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, -28) // Extend editor into VStack padding for table row handle gutter
 
+            // SLOT: belowEditor
+            if meetingPanelSlot == .belowEditor {
+                meetingNotePanel
+            } else if isDraggingMeetingPanel {
+                meetingDropZoneIndicator
+            }
+
             if commandMenuNeedsSpace {
                 Color.clear
                     .frame(height: 320)
                     .id("menuSpacer")
             }
         }
+        .background(
+            GeometryReader { geo in
+                Color.clear.onAppear {
+                    meetingPanelContainerWidth = geo.size.width
+                }
+                .onChange(of: geo.size.width) { _, w in
+                    meetingPanelContainerWidth = w
+                }
+            }
+        )
         .padding(.top, 48)
         .padding(.horizontal, 60)
         .frame(maxWidth: .infinity, minHeight: scrollViewHeight, alignment: .topLeading)
+        .onChange(of: meetingPanelWidthRatio) { _, _ in
+            scheduleMeetingPanelLayoutSave()
+        }
+        .onChange(of: meetingPanelHeight) { _, _ in
+            scheduleMeetingPanelLayoutSave()
+        }
         .overlay(alignment: .topLeading) {
             StickerCanvasOverlay(
                 stickers: $editedStickers,
@@ -404,6 +437,108 @@ struct NoteDetailView: View {
                     selectedStickerID = nil  // deselect stickers
                 }
         )
+    }
+
+    // MARK: - Meeting Panel (Drag-to-Reorder)
+
+    @ViewBuilder
+    private var meetingNotePanel: some View {
+        if savedIsMeetingNote && !savedMeetingSummary.isEmpty {
+            MeetingNoteDetailPanel(
+                meetingSummary: savedMeetingSummary,
+                meetingTranscript: savedMeetingTranscript,
+                meetingManualNotes: $savedMeetingManualNotes,
+                meetingDuration: savedMeetingDuration,
+                meetingLanguage: savedMeetingLanguage,
+                meetingDate: note.date,
+                onNotesChanged: { newNotes in
+                    var updated = note
+                    updated.meetingTranscript = savedMeetingTranscript
+                    updated.meetingSummary = savedMeetingSummary
+                    updated.meetingDuration = savedMeetingDuration
+                    updated.meetingLanguage = savedMeetingLanguage
+                    updated.meetingManualNotes = newNotes
+                    updated.isMeetingNote = true
+                    notesManager.updateNote(updated)
+                },
+                panelHeight: $meetingPanelHeight,
+                panelWidthRatio: $meetingPanelWidthRatio,
+                containerWidth: meetingPanelContainerWidth,
+                onDragChanged: { value in
+                    withAnimation(.jotSmoothFast) {
+                        isDraggingMeetingPanel = true
+                    }
+                    meetingPanelDragOffset = value.translation.height
+                },
+                onDragEnded: { value in
+                    let dy = value.translation.height
+                    withAnimation(.jotSmoothFast) {
+                        isDraggingMeetingPanel = false
+                        meetingPanelDragOffset = 0
+
+                        let threshold: CGFloat = 60
+                        if dy > threshold {
+                            switch meetingPanelSlot {
+                            case .aboveAIPanels: meetingPanelSlot = .belowAIPanels
+                            case .belowAIPanels: meetingPanelSlot = .belowEditor
+                            case .belowEditor: break
+                            }
+                        } else if dy < -threshold {
+                            switch meetingPanelSlot {
+                            case .aboveAIPanels: break
+                            case .belowAIPanels: meetingPanelSlot = .aboveAIPanels
+                            case .belowEditor: meetingPanelSlot = .belowAIPanels
+                            }
+                        }
+                    }
+                    persistMeetingPanelLayout()
+                }
+            )
+            .offset(y: isDraggingMeetingPanel ? meetingPanelDragOffset : 0)
+            .zIndex(isDraggingMeetingPanel ? 100 : 0)
+            .shadow(
+                color: isDraggingMeetingPanel ? .black.opacity(0.15) : .clear,
+                radius: isDraggingMeetingPanel ? 12 : 0,
+                y: isDraggingMeetingPanel ? 4 : 0
+            )
+            .scaleEffect(isDraggingMeetingPanel ? 1.02 : 1.0)
+            .animation(.jotSmoothFast, value: isDraggingMeetingPanel)
+            .transition(.opacity.combined(with: .offset(y: -8)))
+        }
+    }
+
+    @ViewBuilder
+    private var meetingDropZoneIndicator: some View {
+        if isDraggingMeetingPanel {
+            RoundedRectangle(cornerRadius: 2)
+                .fill(Color.accentColor.opacity(0.8))
+                .frame(height: 3)
+                .padding(.horizontal, 20)
+                .transition(.opacity.combined(with: .scale(scale: 0.8, anchor: .center)))
+        }
+    }
+
+    private func scheduleMeetingPanelLayoutSave() {
+        meetingPanelLayoutWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [self] in
+            persistMeetingPanelLayout()
+        }
+        meetingPanelLayoutWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: workItem)
+    }
+
+    private func persistMeetingPanelLayout() {
+        var updated = note
+        updated.meetingPanelSlot = meetingPanelSlot.rawValue
+        updated.meetingPanelWidthRatio = Double(meetingPanelWidthRatio)
+        updated.meetingPanelHeight = Double(meetingPanelHeight)
+        updated.isMeetingNote = savedIsMeetingNote
+        updated.meetingSummary = savedMeetingSummary
+        updated.meetingTranscript = savedMeetingTranscript
+        updated.meetingDuration = savedMeetingDuration
+        updated.meetingLanguage = savedMeetingLanguage
+        updated.meetingManualNotes = savedMeetingManualNotes
+        notesManager.updateNote(updated)
     }
 
     private var noteContentLayout: some View {
@@ -619,6 +754,9 @@ struct NoteDetailView: View {
             savedMeetingDuration = note.meetingDuration
             savedMeetingLanguage = note.meetingLanguage
             savedMeetingManualNotes = ""
+            meetingPanelSlot = MeetingPanelSlot(rawValue: note.meetingPanelSlot) ?? .aboveAIPanels
+            meetingPanelWidthRatio = CGFloat(note.meetingPanelWidthRatio)
+            meetingPanelHeight = CGFloat(note.meetingPanelHeight)
             showMeetingPanel = false
             meetingRecordingState = .idle
             isPlacingSticker = false

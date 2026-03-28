@@ -30,6 +30,12 @@ struct Note: Identifiable, Codable, Equatable {
     var meetingLanguage: String = ""
     var meetingManualNotes: String = ""
 
+    // Meeting Panel Layout
+    var meetingPanelSlot: Int = 0          // 0 = aboveAIPanels, 1 = belowAIPanels, 2 = belowEditor
+    var meetingPanelWidthRatio: Double = 1.0  // 0.0...1.0 ratio of container width
+    var meetingPanelHeight: Double = 300      // absolute height in points
+
+
     init(
         title: String,
         content: String,

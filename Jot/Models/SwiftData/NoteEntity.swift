@@ -49,6 +49,11 @@ final class NoteEntity {
     var meetingLanguage: String = ""
     var meetingManualNotes: String = ""
 
+    // Meeting Panel Layout
+    var meetingPanelSlot: Int = 0
+    var meetingPanelWidthRatio: Double = 1.0
+    var meetingPanelHeight: Double = 300
+
     // MARK: - Web Clip Support
     var webClipURL: String?
     var webClipTitle: String?
@@ -127,6 +132,9 @@ final class NoteEntity {
         self.meetingDuration = note.meetingDuration
         self.meetingLanguage = note.meetingLanguage
         self.meetingManualNotes = note.meetingManualNotes
+        self.meetingPanelSlot = note.meetingPanelSlot
+        self.meetingPanelWidthRatio = note.meetingPanelWidthRatio
+        self.meetingPanelHeight = note.meetingPanelHeight
 
         // Extract web clip data from content if present
         self.extractWebClipData()
@@ -196,6 +204,9 @@ final class NoteEntity {
         note.meetingDuration = meetingDuration
         note.meetingLanguage = meetingLanguage
         note.meetingManualNotes = meetingManualNotes
+        note.meetingPanelSlot = meetingPanelSlot
+        note.meetingPanelWidthRatio = meetingPanelWidthRatio
+        note.meetingPanelHeight = meetingPanelHeight
         return note
     }
 }
