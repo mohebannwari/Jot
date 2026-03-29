@@ -162,10 +162,10 @@ extension View {
 // MARK: - Context Menu Icon Helper
 
 /// macOS `.contextMenu` renders via NSMenu which ignores SwiftUI `.frame()`.
-/// This creates an Image with explicit NSImage.size so NSMenu respects 18×18.
+/// This creates an Image with explicit NSImage.size so NSMenu respects 16×16.
 #if os(macOS)
 extension Image {
-    static func menuIcon(_ name: String, size: CGFloat = 18) -> Image {
+    static func menuIcon(_ name: String, size: CGFloat = 16) -> Image {
         let img = NSImage(named: name) ?? NSImage()
         img.isTemplate = true
         img.size = NSSize(width: size, height: size)
@@ -330,39 +330,54 @@ extension Folder {
         guard let hex = colorHex else { return Color("SecondaryTextColor") }
         return Color(hex: hex)
     }
+
+    /// Returns the folder icon color -- Tailwind 600 in light mode, raw color in dark.
+    func folderDisplayColor(for colorScheme: ColorScheme) -> Color {
+        guard let hex = colorHex?.lowercased() else { return Color("SecondaryTextColor") }
+        guard colorScheme == .light else { return Color(hex: hex) }
+        if let shade = Self.tailwind600[hex] { return Color(hex: shade) }
+        // Custom color: reduce brightness ~18 %
+        let ns = NSColor(Color(hex: hex)).usingColorSpace(.sRGB)
+            ?? NSColor(Color(hex: hex)).usingColorSpace(.deviceRGB)
+            ?? NSColor(red: 0.5, green: 0.5, blue: 0.5, alpha: 1)
+        var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        ns.getHue(&h, saturation: &s, brightness: &b, alpha: &a)
+        return Color(hue: Double(h), saturation: Double(s),
+                     brightness: Double(max(b * 0.82, 0)), opacity: 1)
+    }
 }
 
-// MARK: - Solid Folder Tint
+// MARK: - Folder Container Fill (Tailwind 600 Shade)
 
-extension Color {
-    /// Returns a fully opaque tint derived from this color, suitable for folder
-    /// section backgrounds. Light mode blends 78 % toward white; dark mode blends
-    /// 75 % toward a warm near-black base.
-    func solidFolderTint(for colorScheme: ColorScheme) -> Color {
-        let ns = NSColor(self).usingColorSpace(.sRGB)
-            ?? NSColor(self).usingColorSpace(.deviceRGB)
-            ?? NSColor(red: 0.5, green: 0.5, blue: 0.5, alpha: 1)
+extension Folder {
+    /// Tailwind 600 shades keyed by stored preset hex.
+    fileprivate static let tailwind600: [String: String] = [
+        "#ef4444": "#dc2626",  // red-600
+        "#facc15": "#ca8a04",  // yellow-600
+        "#22c55e": "#16a34a",  // green-600
+        "#d946ef": "#c026d3",  // fuchsia-600
+        "#3b82f6": "#2563eb",  // blue-600
+    ]
 
-        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-        ns.getRed(&r, green: &g, blue: &b, alpha: &a)
-
-        switch colorScheme {
-        case .dark:
-            let baseR: CGFloat = 0.08, baseG: CGFloat = 0.06, baseB: CGFloat = 0.05
-            let t: CGFloat = 0.73
-            return Color(
-                red:   r * (1 - t) + baseR * t,
-                green: g * (1 - t) + baseG * t,
-                blue:  b * (1 - t) + baseB * t
-            )
-        default:
-            let t: CGFloat = 0.75
-            return Color(
-                red:   r * (1 - t) + 1.0 * t,
-                green: g * (1 - t) + 1.0 * t,
-                blue:  b * (1 - t) + 1.0 * t
-            )
+    /// Returns the solid Tailwind 600 container fill for this folder's color.
+    /// Default (no color) folders use stone-600.
+    func folderContainerFill(for colorScheme: ColorScheme) -> Color {
+        guard let hex = colorHex?.lowercased() else {
+            return Color(hex: "#57534e") // stone-600
         }
+
+        if let shade = Self.tailwind600[hex] {
+            return Color(hex: shade)
+        }
+
+        // Custom color: reduce brightness ~18 % to approximate the 600 step.
+        let ns = NSColor(Color(hex: hex)).usingColorSpace(.sRGB)
+            ?? NSColor(Color(hex: hex)).usingColorSpace(.deviceRGB)
+            ?? NSColor(red: 0.5, green: 0.5, blue: 0.5, alpha: 1)
+        var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        ns.getHue(&h, saturation: &s, brightness: &b, alpha: &a)
+        return Color(hue: Double(h), saturation: Double(s),
+                     brightness: Double(max(b * 0.82, 0)), opacity: 1)
     }
 }
 

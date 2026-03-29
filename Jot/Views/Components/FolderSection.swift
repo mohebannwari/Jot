@@ -101,7 +101,7 @@ struct FolderSection: View {
                 Image(isExpanded ? "IconChevronTopSmall" : "IconChevronDownSmall")
                     .resizable()
                     .renderingMode(.template)
-                    .frame(width: 18, height: 18)
+                    .frame(width: 16, height: 16)
                     .foregroundColor(Color("SecondaryTextColor"))
             }
             .padding(.horizontal, 8)
@@ -116,7 +116,7 @@ struct FolderSection: View {
 
             // Folder rows
             if isExpanded {
-                VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: 4) {
                     ForEach(folders, id: \.id) { folder in
                         let isFolderExpanded = expandedFolderIDs.contains(folder.id)
                         VStack(alignment: .leading, spacing: 4) {
@@ -129,7 +129,7 @@ struct FolderSection: View {
                                     note: peekNote,
                                     isSelected: selectedNoteIDs.contains(peekNote.id),
                                     isActiveNote: peekNote.id == activeNoteID,
-                                    activeIconTint: folder.folderColor,
+                                    activeIconTint: folder.folderDisplayColor(for: colorScheme),
                                     isInsideFolder: true,
                                     onTap: { interaction in onOpenNote(peekNote, interaction) },
                                     onTogglePin: { shouldPin in
@@ -174,14 +174,14 @@ struct FolderSection: View {
                             .resizable()
                             .scaledToFit()
                             .foregroundColor(Color("SecondaryTextColor"))
-                            .frame(width: 18, height: 18)
+                            .frame(width: 16, height: 16)
 
                         Image("IconFolder1")
                             .renderingMode(.template)
                             .resizable()
                             .scaledToFit()
-                            .foregroundColor(peekFolder.folderColor)
-                            .frame(width: 18, height: 18)
+                            .foregroundColor(peekFolder.folderDisplayColor(for: colorScheme))
+                            .frame(width: 16, height: 16)
 
                         Text(peekFolder.name)
                             .font(FontManager.heading(size: 15, weight: .medium))
@@ -212,7 +212,7 @@ struct FolderSection: View {
 
                     if peekRevealedFolderID == peekFolder.id {
                         // All notes in this folder
-                        folderNotesList(peekFolder)
+                        folderNotesList(peekFolder, wrapInContainer: false)
                             .padding(.leading, 26)
                     } else {
                         // Active note only
@@ -220,7 +220,7 @@ struct FolderSection: View {
                             note: peekNote,
                             isSelected: selectedNoteIDs.contains(peekNote.id),
                             isActiveNote: peekNote.id == activeNoteID,
-                            activeIconTint: peekFolder.folderColor,
+                            activeIconTint: peekFolder.folderDisplayColor(for: colorScheme),
                             isInsideFolder: true,
                             onTap: { interaction in onOpenNote(peekNote, interaction) },
                             onTogglePin: { shouldPin in
@@ -273,8 +273,8 @@ struct FolderSection: View {
                 .renderingMode(.template)
                 .resizable()
                 .scaledToFit()
-                .foregroundColor(folder.folderColor)
-                .frame(width: 18, height: 18)
+                .foregroundColor(folder.folderDisplayColor(for: colorScheme))
+                .frame(width: 16, height: 16)
 
             if isRenamingThisFolder {
                 TextField("Folder Name", text: $renamingName)
@@ -297,6 +297,12 @@ struct FolderSection: View {
                     .truncationMode(.tail)
                     .onTapGesture(count: 2) {
                         startRename(folder)
+                    }
+                    .onTapGesture(count: 1) {
+                        HapticManager.shared.buttonTap()
+                        withAnimation(.jotSmoothFast) {
+                            toggleFolderExpansion(folder.id)
+                        }
                     }
             }
 
@@ -349,9 +355,9 @@ struct FolderSection: View {
                     }
                 } label: {
                     Image(systemName: "ellipsis")
-                        .font(FontManager.icon(size: 14, weight: .medium))
+                        .font(FontManager.icon(size: 12, weight: .medium))
                         .foregroundColor(Color("SecondaryTextColor"))
-                        .frame(width: 18, height: 18)
+                        .frame(width: 12, height: 12)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -366,7 +372,7 @@ struct FolderSection: View {
                         .resizable()
                         .scaledToFit()
                         .foregroundColor(Color("SecondaryTextColor"))
-                        .frame(width: 18, height: 18)
+                        .frame(width: 16, height: 16)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -384,7 +390,7 @@ struct FolderSection: View {
         )
         .overlay {
             if highlightedFolderID == folder.id {
-                FolderHighlightPulse(color: folder.folderColor)
+                FolderHighlightPulse(color: folder.folderDisplayColor(for: colorScheme))
                     .padding(.horizontal, rowHoverHorizontalInset)
             }
         }
@@ -465,11 +471,12 @@ struct FolderSection: View {
         ))
     }
 
-    private func folderNotesList(_ folder: Folder) -> some View {
+    private func folderNotesList(_ folder: Folder, wrapInContainer: Bool = true) -> some View {
         let notes = notesByFolder[folder.id] ?? []
         let showsAll = showAllNotesFolderIDs.contains(folder.id)
         let shouldLimit = notes.count > 5 && !showsAll
         let visibleNotes = shouldLimit ? Array(notes.prefix(5)) : notes
+        let containerFill = wrapInContainer ? folder.folderContainerFill(for: colorScheme) : nil
 
         return Group {
             if !notes.isEmpty {
@@ -479,11 +486,13 @@ struct FolderSection: View {
                             note: note,
                             isSelected: selectedNoteIDs.contains(note.id),
                             isActiveNote: note.id == activeNoteID,
-                            activeIconTint: folder.folderColor,
+                            activeIconTint: folder.folderDisplayColor(for: colorScheme),
                             isInsideFolder: true,
+                            forceLightText: containerFill != nil,
                             leadingIconAssetName: note.isLocked
                                 ? "IconLock"
                                 : (splitNoteIDs.contains(note.id) ? "IconArrowSplitUp" : nil),
+                            leadingIconSize: splitNoteIDs.contains(note.id) ? 14 : 16,
                             hoverLeadingIconAssetName: note.isLocked ? "IconUnlocked" : nil,
                             persistentLeadingIconBg: false,
                             leadingIconBgColor: .clear,
@@ -537,7 +546,18 @@ struct FolderSection: View {
                         .subtleHoverScale(1.02)
                     }
                 }
-                .padding(.leading, 26)
+                .padding(6)
+                .background {
+                    if let containerFill {
+                        if visibleNotes.count == 1 {
+                            Capsule(style: .continuous)
+                                .fill(containerFill)
+                        } else {
+                            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                                .fill(containerFill)
+                        }
+                    }
+                }
             }
         }
     }

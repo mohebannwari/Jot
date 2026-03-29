@@ -363,7 +363,7 @@ struct ContentView: View {
         }
     }
     private let detailToggleToContentExtraSpacingWhenSidebarHidden: CGFloat = 16
-    private let sidebarIconSize: CGFloat = 18
+    private let sidebarIconSize: CGFloat = 16
     private let sidebarTopIconSpacingCollapsed: CGFloat = 2
     private let sidebarTopBarButtonSize: CGFloat = 26
     private let sidebarTopBarTrafficLightGap: CGFloat = 12
@@ -1592,7 +1592,7 @@ struct ContentView: View {
                     }
                 }
                 .scrollIndicators(.never)
-                .padding(.top, -6)
+                .padding(.top, 4)
                 .padding(.bottom, 4)
 
                 // Update panel (production — Sparkle)
@@ -1961,8 +1961,8 @@ struct ContentView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.top, 20)
-            .padding(.bottom, 24)
+            .padding(.top, 8)
+            .padding(.bottom, 12)
         }
     }
 
@@ -2205,7 +2205,7 @@ struct ContentView: View {
                                     .resizable()
                                     .scaledToFit()
                                     .foregroundColor(folder.folderColor)
-                                    .frame(width: 18, height: 18)
+                                    .frame(width: 16, height: 16)
 
                                 Text(folder.name)
                                     .font(FontManager.heading(size: 15, weight: .medium))
@@ -2602,9 +2602,8 @@ struct ContentView: View {
                         }
                 }
             }
-            .scrollClipDisabled()
             .scrollIndicators(.never)
-            .padding(.top, -6)
+            .padding(.top, 4)
             .padding(.bottom, 4)
 
             // Update panel (production — Sparkle)
@@ -3011,7 +3010,7 @@ struct ContentView: View {
                                     .resizable()
                                     .scaledToFit()
                                     .foregroundColor(Color("SecondaryTextColor"))
-                                    .frame(width: 18, height: 18)
+                                    .frame(width: 16, height: 16)
                                     .padding(4)
                                     .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                                     .hoverContainer(cornerRadius: 8)
@@ -3212,7 +3211,7 @@ struct ContentView: View {
                     .resizable()
                     .scaledToFit()
                     .foregroundColor(Color("SecondaryTextColor"))
-                    .frame(width: 18, height: 18)
+                    .frame(width: 16, height: 16)
                     .padding(4)
                     .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
@@ -3230,7 +3229,7 @@ struct ContentView: View {
                     .resizable()
                     .scaledToFit()
                     .foregroundColor(Color("SecondaryTextColor"))
-                    .frame(width: 18, height: 18)
+                    .frame(width: 16, height: 16)
                     .padding(4)
                     .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
@@ -3250,7 +3249,7 @@ struct ContentView: View {
                     .resizable()
                     .scaledToFit()
                     .foregroundColor(Color("SecondaryTextColor"))
-                    .frame(width: 18, height: 18)
+                    .frame(width: 16, height: 16)
                     .padding(4)
                     .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
@@ -4300,6 +4299,7 @@ struct NotesSection: View {
                     leadingIconAssetName: note.isLocked
                         ? "IconLock"
                         : (splitNoteIDs.contains(note.id) ? "IconArrowSplitUp" : nil),
+                    leadingIconSize: splitNoteIDs.contains(note.id) ? 14 : 16,
                     hoverLeadingIconAssetName: note.isLocked ? "IconUnlocked" : nil,
                     persistentLeadingIconBg: false,
                     leadingIconBgColor: .clear,
@@ -4392,7 +4392,7 @@ private struct SplitPickerOverlayCard: View {
                     .resizable()
                     .scaledToFit()
                     .foregroundColor(Color("SecondaryTextColor"))
-                    .frame(width: 18, height: 18)
+                    .frame(width: 16, height: 16)
                 TextField("Search", text: $searchQuery)
                     .font(.system(size: 11, weight: .medium))
                     .tracking(-0.2)
@@ -4429,7 +4429,7 @@ private struct SplitPickerOverlayRow: View {
                     .resizable()
                     .scaledToFit()
                     .foregroundColor(Color("SecondaryTextColor"))
-                    .frame(width: 18, height: 18)
+                    .frame(width: 16, height: 16)
                 Text(note.title.isEmpty ? "Untitled" : note.title)
                     .font(.system(size: 15, weight: .medium))
                     .foregroundColor(.primary)
@@ -4461,7 +4461,9 @@ struct NoteListCard: View {
     var isActiveNote: Bool = false
     var activeIconTint: Color = Color("SecondaryTextColor")
     var isInsideFolder: Bool = false
+    var forceLightText: Bool = false
     var leadingIconAssetName: String? = nil
+    var leadingIconSize: CGFloat = 16
     var hoverLeadingIconAssetName: String? = nil
     var showLeadingIconOnHoverOnly: Bool = false
     var persistentLeadingIconBg: Bool = false
@@ -4490,10 +4492,24 @@ struct NoteListCard: View {
     @FocusState private var isFieldFocused: Bool
     @Environment(\.colorScheme) private var colorScheme
 
+    private var activeTextColor: Color {
+        forceLightText ? Color(hex: "#1A1A1A") : Color("ButtonPrimaryTextColor")
+    }
+
+    private var activeBgColor: Color {
+        forceLightText ? .white : Color("ButtonPrimaryBgColor")
+    }
+
+    private var primaryTextColor: Color {
+        forceLightText ? .white : Color("PrimaryTextColor")
+    }
+
+    private var secondaryTextColor: Color {
+        forceLightText ? .white.opacity(0.7) : Color("SecondaryTextColor")
+    }
+
     private var leadingIconTint: Color {
-        isActiveNote
-            ? Color("ButtonPrimaryTextColor")
-            : Color("SecondaryTextColor")
+        isActiveNote ? activeTextColor : secondaryTextColor
     }
 
     @ViewBuilder
@@ -4542,7 +4558,7 @@ struct NoteListCard: View {
                                     .renderingMode(.template)
                                     .resizable()
                                     .scaledToFit()
-                                    .frame(width: 18, height: 18)
+                                    .frame(width: 16, height: 16)
                             }
                         } else {
                             Label {
@@ -4651,7 +4667,7 @@ struct NoteListCard: View {
                         .resizable()
                         .scaledToFit()
                         .foregroundColor(currentFg)
-                        .frame(width: 18, height: 18)
+                        .frame(width: leadingIconSize, height: leadingIconSize)
                         .opacity(isLeadingIconVisible && !isShowingHoverVariant ? 1 : 0)
 
                     if let hoverIcon = hoverLeadingIconAssetName {
@@ -4660,7 +4676,7 @@ struct NoteListCard: View {
                             .resizable()
                             .scaledToFit()
                             .foregroundColor(currentFg)
-                            .frame(width: 18, height: 18)
+                            .frame(width: leadingIconSize, height: leadingIconSize)
                             .opacity(isLeadingIconVisible && isShowingHoverVariant ? 1 : 0)
                     }
                 }
@@ -4704,8 +4720,8 @@ struct NoteListCard: View {
                 Text(note.title)
                     .font(FontManager.heading(size: 15, weight: .medium))
                     .foregroundColor(isActiveNote
-                        ? Color("ButtonPrimaryTextColor")
-                        : Color("PrimaryTextColor"))
+                        ? activeTextColor
+                        : primaryTextColor)
                     .tracking(-0.1)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -4716,32 +4732,21 @@ struct NoteListCard: View {
             }
 
             HStack(spacing: 6) {
-                if note.isMeetingNote {
-                    Image("IconMeetingNotes")
-                        .renderingMode(.template)
-                        .resizable()
-                        .scaledToFit()
-                        .foregroundColor(isActiveNote
-                            ? Color("ButtonPrimaryTextColor").opacity(0.7)
-                            : Color("SecondaryTextColor"))
-                        .frame(width: 12, height: 12)
-                }
-
                 Text(Self.compactDateString(from: note.date))
                     .font(FontManager.metadata(size: 11, weight: .medium))
                     .foregroundColor(isActiveNote
-                        ? Color("ButtonPrimaryTextColor").opacity(0.7)
-                        : Color("SecondaryTextColor"))
+                        ? activeTextColor.opacity(0.7)
+                        : secondaryTextColor)
 
                 Menu {
                     noteContextMenuContent
                 } label: {
                     Image(systemName: "ellipsis")
-                        .font(FontManager.icon(size: 14, weight: .medium))
+                        .font(FontManager.icon(size: 12, weight: .medium))
                         .foregroundColor(isActiveNote
-                            ? Color("ButtonPrimaryTextColor").opacity(isEllipsisHovered ? 1.0 : 0.5)
-                            : Color("SecondaryTextColor").opacity(isEllipsisHovered ? 1.0 : 0.7))
-                        .frame(width: 18, height: 18)
+                            ? activeTextColor.opacity(isEllipsisHovered ? 1.0 : 0.5)
+                            : secondaryTextColor.opacity(isEllipsisHovered ? 1.0 : 0.7))
+                        .frame(width: 12, height: 12)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -4756,7 +4761,9 @@ struct NoteListCard: View {
         .background {
             if isActiveNote {
                 Capsule()
-                    .fill(Color("ButtonPrimaryBgColor"))
+                    .fill(activeBgColor)
+                    .shadow(color: .black.opacity(forceLightText ? 0.18 : 0), radius: 6, x: 0, y: 3)
+                    .shadow(color: .black.opacity(forceLightText ? 0.10 : 0), radius: 2, x: 0, y: 1)
             } else if isSelected {
                 Capsule()
                     .fill(Color("SurfaceTranslucentColor"))
@@ -4923,7 +4930,7 @@ struct PinnedNotesSection: View {
                 Image(isExpanded ? "IconChevronTopSmall" : "IconChevronDownSmall")
                     .resizable()
                     .renderingMode(.template)
-                    .frame(width: 18, height: 18)
+                    .frame(width: 16, height: 16)
                     .foregroundColor(Color("SecondaryTextColor"))
             }
             .padding(.horizontal, 8)
@@ -4978,7 +4985,7 @@ struct PinnedNotesSection: View {
                         .resizable()
                         .scaledToFit()
                         .foregroundColor(Color("SecondaryTextColor"))
-                        .frame(width: 18, height: 18)
+                        .frame(width: 16, height: 16)
 
                     NoteListCard(
                         note: peekNote,
@@ -5068,7 +5075,7 @@ struct LockedNotesSection: View {
                 Image(isExpanded ? "IconChevronTopSmall" : "IconChevronDownSmall")
                     .resizable()
                     .renderingMode(.template)
-                    .frame(width: 18, height: 18)
+                    .frame(width: 16, height: 16)
                     .foregroundColor(Color("SecondaryTextColor"))
             }
             .padding(.horizontal, 8)
@@ -5123,7 +5130,7 @@ struct LockedNotesSection: View {
                         .resizable()
                         .scaledToFit()
                         .foregroundColor(Color("SecondaryTextColor"))
-                        .frame(width: 18, height: 18)
+                        .frame(width: 16, height: 16)
 
                     NoteListCard(
                         note: peekNote,
