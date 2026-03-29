@@ -172,7 +172,7 @@ class TextFormattingManager: ObservableObject {
             textStorage.beginEditing()
 
             // Reset font: body size, regular weight, respects font style pref (Charter/System/Mono)
-            let bodyFont = FontManager.headingNS(size: HeadingLevel.none.fontSize, weight: .regular)
+            let bodyFont = FontManager.bodyNS(size: HeadingLevel.none.fontSize, weight: .regular)
             textStorage.addAttribute(.font, value: bodyFont, range: paragraphRange)
 
             // Strip inline decorations
@@ -393,12 +393,15 @@ class TextFormattingManager: ObservableObject {
             let hasOL = paragraphRange.length > 0
                 && textStorage.attribute(.orderedListNumber, at: paragraphRange.location, effectiveRange: nil) != nil
 
-            textStorage.beginEditing()
             if hasOL {
                 if let dotRange = text.range(of: ". ") {
                     let prefixLen = text.distance(from: text.startIndex, to: dotRange.upperBound)
                     let removeRange = NSRange(location: paragraphRange.location, length: prefixLen)
+                    guard textView.shouldChangeText(in: removeRange, replacementString: "") else { return }
+                    textStorage.beginEditing()
                     textStorage.replaceCharacters(in: removeRange, with: "")
+                    textStorage.endEditing()
+                    textView.didChangeText()
                 }
             } else {
                 var insertText = text
@@ -407,13 +410,16 @@ class TextFormattingManager: ObservableObject {
                 }
                 let prefix = "1. "
                 let newText = prefix + insertText
+                guard textView.shouldChangeText(in: paragraphRange, replacementString: newText) else { return }
+                textStorage.beginEditing()
                 textStorage.replaceCharacters(in: paragraphRange, with: newText)
                 let prefixRange = NSRange(location: paragraphRange.location, length: prefix.count)
                 textStorage.addAttribute(.orderedListNumber, value: 1, range: prefixRange)
                 textStorage.addAttribute(.font, value: FontManager.bodyNS(), range: prefixRange)
                 textStorage.addAttribute(.foregroundColor, value: NSColor.labelColor, range: prefixRange)
+                textStorage.endEditing()
+                textView.didChangeText()
             }
-            textStorage.endEditing()
         }
 
         // MARK: - Block Quote

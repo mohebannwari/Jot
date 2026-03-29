@@ -132,7 +132,7 @@ struct FloatingSearch: View {
                     .resizable()
                     .scaledToFit()
                     .foregroundColor(Color("SecondaryTextColor"))
-                    .frame(width: 18, height: 18)
+                    .frame(width: 16, height: 16)
 
                 TextField("Search", text: $searchText)
                     .font(FontManager.heading(size: 13, weight: .medium))
@@ -163,7 +163,7 @@ struct FloatingSearch: View {
                         .resizable()
                         .scaledToFit()
                         .foregroundColor(Color("SecondaryTextColor"))
-                        .frame(width: 18, height: 18)
+                        .frame(width: 16, height: 16)
                 }
                 .buttonStyle(.plain)
                 .subtleHoverScale(1.06)
@@ -206,7 +206,7 @@ struct FloatingSearch: View {
                                     .resizable()
                                     .scaledToFit()
                                     .foregroundColor(Color("SecondaryTextColor"))
-                                    .frame(width: 18, height: 18)
+                                    .frame(width: 16, height: 16)
 
                                 Text(query)
                                     .font(FontManager.heading(size: 15, weight: .medium))
@@ -269,7 +269,7 @@ struct FloatingSearch: View {
                         .resizable()
                         .scaledToFit()
                         .foregroundColor(Color("SecondaryTextColor"))
-                        .frame(width: 18, height: 18)
+                        .frame(width: 16, height: 16)
 
                     Text(result.title)
                         .font(FontManager.heading(size: 15, weight: .medium))
@@ -301,7 +301,7 @@ struct FloatingSearch: View {
                             .resizable()
                             .scaledToFit()
                             .foregroundColor(.white)
-                            .frame(width: 14, height: 14)
+                            .frame(width: 16, height: 16)
 
                         Text(folder.name)
                             .font(FontManager.heading(size: 11, weight: .medium))

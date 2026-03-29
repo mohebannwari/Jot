@@ -20,7 +20,7 @@ struct NoteToolsBar: View {
 
     @State private var isExpanded = false
 
-    private let iconSize: CGFloat = 18
+    private let iconSize: CGFloat = 16
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -41,10 +41,6 @@ struct NoteToolsBar: View {
             }
             #if os(macOS)
             ShareToolButton(note: note, iconSize: iconSize)
-                .frame(width: iconSize, height: iconSize)
-                .padding(4)
-                .glassTooltip("Share")
-                .hoverContainer(cornerRadius: 8)
             #endif
 
             // MARK: - Ellipsis toggle / divider
@@ -226,60 +222,56 @@ struct ToolbarExpandedPreferenceKey: PreferenceKey {
     }
 }
 
-// MARK: - Side-Only Clip
-
-/// Clips left and right edges but allows vertical overflow (tooltips above, shadows below).
-private struct SideClipShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        Path(CGRect(x: rect.minX, y: rect.minY - 200, width: rect.width, height: rect.height + 400))
-    }
-}
-
 // MARK: - macOS Share Button
 
 #if os(macOS)
-private struct ShareToolButton: NSViewRepresentable {
+private struct ShareToolButton: View {
     let note: Note
     let iconSize: CGFloat
 
-    func makeNSView(context: Context) -> NSButton {
-        let button = NSButton(frame: .zero)
-        button.bezelStyle = .inline
-        button.isBordered = false
-        button.image = NSImage(named: "IconShareOs")
-        button.image?.isTemplate = true
-        button.contentTintColor = NSColor(named: "IconSecondaryColor")
-        button.imageScaling = .scaleProportionallyUpOrDown
-        button.setFrameSize(NSSize(width: iconSize, height: iconSize))
-        button.target = context.coordinator
-        button.action = #selector(Coordinator.showSharePicker(_:))
-        button.toolTip = "Share"
-        return button
-    }
-
-    func updateNSView(_ nsView: NSButton, context: Context) {
-        context.coordinator.note = note
-    }
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(note: note)
-    }
-
-    class Coordinator: NSObject {
-        var note: Note
-
-        init(note: Note) {
-            self.note = note
+    var body: some View {
+        Button {
+            showSharePicker()
+        } label: {
+            Image("IconArrowRounded")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .foregroundColor(Color("IconSecondaryColor"))
+                .frame(width: iconSize, height: iconSize)
+                .padding(4)
+                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .background(ShareAnchorView())
         }
+        .buttonStyle(.plain)
+        .macPointingHandCursor()
+        .glassTooltip("Share")
+        .hoverContainer(cornerRadius: 8)
+    }
 
-        @objc func showSharePicker(_ sender: NSButton) {
-            var shareText = note.title
-            if !note.content.isEmpty {
-                shareText += "\n\n" + note.content.strippingColorMarkup
-            }
-            let picker = NSSharingServicePicker(items: [shareText])
-            picker.show(relativeTo: sender.bounds, of: sender, preferredEdge: .minY)
+    private func showSharePicker() {
+        guard let anchorView = ShareAnchorView.lastView else { return }
+        var shareText = note.title
+        if !note.content.isEmpty {
+            shareText += "\n\n" + note.content.strippingColorMarkup
         }
+        let picker = NSSharingServicePicker(items: [shareText])
+        picker.show(relativeTo: anchorView.bounds, of: anchorView, preferredEdge: .minY)
+    }
+}
+
+/// Invisible NSView anchor for NSSharingServicePicker popover positioning.
+private struct ShareAnchorView: NSViewRepresentable {
+    static weak var lastView: NSView?
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        Self.lastView = view
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        Self.lastView = nsView
     }
 }
 #endif

@@ -30,12 +30,9 @@ final class NoteEntity {
     // MARK: - Performance Optimized Properties
     @Transient
     var contentPreview: String {
-        let maxLength = 150
-        if content.count <= maxLength {
-            return content
-        }
-        let truncated = String(content.prefix(maxLength))
-        return truncated + "..."
+        let stripped = content.replacingOccurrences(
+            of: #"\[\[/?[^\]]*\]\]"#, with: "", options: .regularExpression)
+        return stripped.count <= 150 ? stripped : String(stripped.prefix(150)) + "..."
     }
 
     // MARK: - Sticker Storage
@@ -49,10 +46,8 @@ final class NoteEntity {
     var meetingLanguage: String = ""
     var meetingManualNotes: String = ""
 
-    // Meeting Panel Layout
-    var meetingPanelSlot: Int = 0
-    var meetingPanelWidthRatio: Double = 1.0
-    var meetingPanelHeight: Double = 300
+    // MARK: - Tags
+    var tags: [String] = []
 
     // MARK: - Web Clip Support
     var webClipURL: String?
@@ -132,10 +127,7 @@ final class NoteEntity {
         self.meetingDuration = note.meetingDuration
         self.meetingLanguage = note.meetingLanguage
         self.meetingManualNotes = note.meetingManualNotes
-        self.meetingPanelSlot = note.meetingPanelSlot
-        self.meetingPanelWidthRatio = note.meetingPanelWidthRatio
-        self.meetingPanelHeight = note.meetingPanelHeight
-
+        self.tags = note.tags
         // Extract web clip data from content if present
         self.extractWebClipData()
     }
@@ -192,7 +184,7 @@ final class NoteEntity {
 
     // MARK: - Export/Conversion
     func toNote() -> Note {
-        var note = Note(title: title, content: content, tags: [], isPinned: isPinned, folderID: folderID, isArchived: isArchived, isLocked: isLocked, isDeleted: isDeleted, deletedDate: deletedDate, isMeetingNote: isMeetingNote)
+        var note = Note(title: title, content: content, tags: tags, isPinned: isPinned, folderID: folderID, isArchived: isArchived, isLocked: isLocked, isDeleted: isDeleted, deletedDate: deletedDate, isMeetingNote: isMeetingNote)
         note.id = id
         note.date = modifiedAt
         note.createdAt = createdAt
@@ -204,9 +196,6 @@ final class NoteEntity {
         note.meetingDuration = meetingDuration
         note.meetingLanguage = meetingLanguage
         note.meetingManualNotes = meetingManualNotes
-        note.meetingPanelSlot = meetingPanelSlot
-        note.meetingPanelWidthRatio = meetingPanelWidthRatio
-        note.meetingPanelHeight = meetingPanelHeight
         return note
     }
 }

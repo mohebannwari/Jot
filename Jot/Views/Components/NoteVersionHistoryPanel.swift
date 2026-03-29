@@ -62,7 +62,7 @@ struct NoteVersionHistoryPanel: View {
                 Image(systemName: "xmark")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundColor(Color("SettingsPlaceholderTextColor"))
-                    .frame(width: 22, height: 22)
+                    .frame(width: 16, height: 16)
                     .thinLiquidGlass(in: Circle())
             }
             .buttonStyle(.plain)

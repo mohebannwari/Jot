@@ -20,14 +20,12 @@ enum AIToolsState: Equatable {
 struct AIToolsOverlay: View {
     @Binding var state: AIToolsState
     var editorInstanceID: UUID?
-    @State private var promptText = ""
-    @State private var translateLanguage = ""
     @State private var textGenPromptText = ""
     @Environment(\.colorScheme) private var colorScheme
 
     private let pillPadding: CGFloat = 8
     private let edgeInset: CGFloat = 0
-    private let iconSize: CGFloat = 18
+    private let iconSize: CGFloat = 16
     private let toolBarHPadding: CGFloat = 12
     private let toolBarVPadding: CGFloat = 8
     private let toolBarGap: CGFloat = 18
@@ -79,7 +77,7 @@ struct AIToolsOverlay: View {
         Button {
             state = .expanded
         } label: {
-            toolIcon("IconAppleIntelligenceIcon", size: 20)
+            toolIcon("IconAppleIntelligenceIcon", size: 16)
                 .padding(4)
                 .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
@@ -156,160 +154,6 @@ struct AIToolsOverlay: View {
     }
 
 
-    // MARK: - Prompt Field Card
-
-    private var promptFieldCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            promptCardHeader
-            promptTextArea
-            promptEnterButton
-        }
-        .padding(promptCardPadding)
-        .frame(width: promptCardWidth)
-        .liquidGlass(in: RoundedRectangle(cornerRadius: promptCardRadius, style: .continuous))
-    }
-
-    private var promptCardHeader: some View {
-        HStack(spacing: 6) {
-            HStack(spacing: 6) {
-                Image("IconArrowsAllSides2")
-                    .renderingMode(.template)
-                    .resizable()
-                    .scaledToFit()
-                    .foregroundColor(Color("SecondaryTextColor"))
-                    .frame(width: 18, height: 18)
-                Text("Edit Content")
-                    .font(FontManager.heading(size: 11, weight: .semibold))
-                    .foregroundColor(Color("PrimaryTextColor"))
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-        }
-    }
-
-    private var promptTextArea: some View {
-        TextEditor(text: $promptText)
-            .font(FontManager.metadata(size: 12, weight: .regular))
-            .foregroundColor(Color("PrimaryTextColor"))
-            .scrollContentBackground(.hidden)
-            .scrollIndicators(.never)
-            .padding(8)
-            .frame(height: 158)
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(textAreaBackgroundColor)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.08), lineWidth: 1)
-            )
-            .onKeyPress(.return) {
-                let trimmed = promptText.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !trimmed.isEmpty else { return .ignored }
-                NotificationCenter.default.post(name: .aiEditSubmit, object: trimmed, userInfo: eidInfo)
-                promptText = ""
-                state = .collapsed
-                return .handled
-            }
-            .onKeyPress(.escape) {
-                state = .expanded
-                return .handled
-            }
-    }
-
-    private var promptEnterButton: some View {
-        Button {
-            let trimmed = promptText.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty else { return }
-            NotificationCenter.default.post(name: .aiEditSubmit, object: trimmed, userInfo: eidInfo)
-            promptText = ""
-            state = .collapsed
-        } label: {
-            Text("Enter")
-                .font(FontManager.heading(size: 12, weight: .semibold))
-                .foregroundColor(enterButtonTextColor)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
-                .background(
-                    Capsule()
-                        .fill(enterButtonBackgroundColor)
-                )
-        }
-        .buttonStyle(.plain)
-        .macPointingHandCursor()
-        .subtleHoverScale(1.02)
-    }
-
-    // MARK: - Translate Field Card
-
-    private var translateFieldCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 6) {
-                HStack(spacing: 6) {
-                    Image("IconAiTranslate")
-                        .renderingMode(.template)
-                        .resizable()
-                        .scaledToFit()
-                        .foregroundColor(Color("SecondaryTextColor"))
-                        .frame(width: 18, height: 18)
-                    Text("Translate")
-                        .font(FontManager.heading(size: 11, weight: .semibold))
-                        .foregroundColor(Color("PrimaryTextColor"))
-                }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-            }
-
-            TextField("Target language...", text: $translateLanguage)
-                .font(FontManager.metadata(size: 12, weight: .regular))
-                .foregroundColor(Color("PrimaryTextColor"))
-                .textFieldStyle(.plain)
-                .padding(10)
-                .background(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(textAreaBackgroundColor)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.08), lineWidth: 1)
-                )
-                .onSubmit {
-                    submitTranslation()
-                }
-                .onKeyPress(.escape) {
-                    state = .expanded
-                    return .handled
-                }
-
-            Button {
-                submitTranslation()
-            } label: {
-                Text("Translate")
-                    .font(FontManager.heading(size: 12, weight: .semibold))
-                    .foregroundColor(enterButtonTextColor)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-                    .background(
-                        Capsule()
-                            .fill(enterButtonBackgroundColor)
-                    )
-            }
-            .buttonStyle(.plain)
-            .macPointingHandCursor()
-            .subtleHoverScale(1.02)
-        }
-        .padding(promptCardPadding)
-        .frame(width: promptCardWidth)
-        .liquidGlass(in: RoundedRectangle(cornerRadius: promptCardRadius, style: .continuous))
-    }
-
-    private func submitTranslation() {
-        let trimmed = translateLanguage.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        NotificationCenter.default.post(name: .aiTranslateSubmit, object: trimmed, userInfo: eidInfo)
-        translateLanguage = ""
-        state = .collapsed
-    }
 
     // MARK: - Text Gen Prompt Field Card
 
@@ -322,7 +166,7 @@ struct AIToolsOverlay: View {
                         .resizable()
                         .scaledToFit()
                         .foregroundColor(Color("SecondaryTextColor"))
-                        .frame(width: 18, height: 18)
+                        .frame(width: 16, height: 16)
                     Text("Generate Text")
                         .font(FontManager.heading(size: 11, weight: .semibold))
                         .foregroundColor(Color("PrimaryTextColor"))

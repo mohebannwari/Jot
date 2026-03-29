@@ -163,7 +163,7 @@ struct MeetingNotesFloatingPanel: View {
                     .resizable()
                     .scaledToFit()
                     .foregroundColor(Color("PrimaryTextColor"))
-                    .frame(width: 12, height: 12)
+                    .frame(width: 16, height: 16)
                     .frame(width: 28, height: 28)
                     .background(Color.primary.opacity(0.15), in: Circle())
             }

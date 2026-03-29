@@ -353,8 +353,8 @@ struct SettingsPage: View {
                                             Image("IconCheckmark1")
                                                 .renderingMode(.template)
                                                 .resizable()
-                                                .aspectRatio(contentMode: .fit)
-                                                .frame(width: 14, height: 14)
+                                                .scaledToFit()
+                                                .frame(width: 16, height: 16)
                                                 .foregroundColor(Color("PrimaryTextColor"))
                                                 .padding(4)
                                                 .background(
@@ -376,8 +376,8 @@ struct SettingsPage: View {
                                             Image("IconCrossMedium")
                                                 .renderingMode(.template)
                                                 .resizable()
-                                                .aspectRatio(contentMode: .fit)
-                                                .frame(width: 14, height: 14)
+                                                .scaledToFit()
+                                                .frame(width: 16, height: 16)
                                                 .foregroundColor(Color("PrimaryTextColor"))
                                                 .padding(4)
                                                 .background(
@@ -427,7 +427,7 @@ struct SettingsPage: View {
                             ZStack {
                                 Circle()
                                     .fill(colorScheme == .dark ? Color(white: 0.22) : Color(white: 0.88))
-                                    .frame(width: 20, height: 20)
+                                    .frame(width: 16, height: 16)
                                 Text("?")
                                     .font(.system(size: 12, weight: .semibold))
                                     .foregroundColor(Color("SettingsPlaceholderTextColor"))
@@ -994,7 +994,7 @@ struct SettingsPage: View {
                 .resizable()
                 .scaledToFit()
                 .foregroundColor(Color("SettingsIconSecondaryColor"))
-                .frame(width: 18, height: 18)
+                .frame(width: 16, height: 16)
                 .padding(4)
                 .background(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -1028,7 +1028,7 @@ struct SettingsPage: View {
                     .resizable()
                     .scaledToFit()
                     .foregroundColor(isSelected ? type.selectedText(for: colorScheme) : Color("SettingsIconSecondaryColor"))
-                    .frame(width: 18, height: 18)
+                    .frame(width: 16, height: 16)
 
                 Text(type.rawValue)
                     .font(FontManager.heading(size: 15, weight: .medium))
@@ -1097,7 +1097,7 @@ struct SettingsPage: View {
                     .resizable()
                     .scaledToFit()
                     .foregroundColor(.white)
-                    .frame(width: 18, height: 18)
+                    .frame(width: 16, height: 16)
                     .scaleEffect(celebrateScale)
                     .rotationEffect(.degrees(celebrateRotation))
 

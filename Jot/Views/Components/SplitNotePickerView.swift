@@ -40,7 +40,7 @@ struct SplitNotePickerView: View {
                     .resizable()
                     .scaledToFit()
                     .foregroundColor(Color("SecondaryTextColor"))
-                    .frame(width: 18, height: 18)
+                    .frame(width: 16, height: 16)
                 TextField("Search", text: $searchQuery)
                     .font(.system(size: 11, weight: .medium))
                     .tracking(-0.2)
@@ -48,7 +48,7 @@ struct SplitNotePickerView: View {
             }
             .padding(8)
 
-            VStack(spacing: 0) {
+            LazyVStack(spacing: 0) {
                 ForEach(filteredNotes) { note in
                     PickerNoteRow(note: note, onSelect: onSelect)
                 }
@@ -94,7 +94,7 @@ private struct PickerNoteRow: View {
                     .resizable()
                     .scaledToFit()
                     .foregroundColor(Color("SecondaryTextColor"))
-                    .frame(width: 18, height: 18)
+                    .frame(width: 16, height: 16)
                 Text(note.title.isEmpty ? "Untitled" : note.title)
                     .font(.system(size: 15, weight: .medium))
                     .foregroundColor(.primary)

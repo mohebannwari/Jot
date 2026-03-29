@@ -192,13 +192,13 @@ struct FloatingEditToolbar: View {
                     .renderingMode(.template)
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 18, height: 18)
+                    .frame(width: 16, height: 16)
                     .foregroundColor(pillTextColor.opacity(0.6))
                 Image("IconChevronDownSmall")
                     .renderingMode(.template)
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 18, height: 18)
+                    .frame(width: 16, height: 16)
                     .foregroundColor(pillTextColor.opacity(0.6))
             }
             .padding(.leading, 12)
@@ -246,7 +246,7 @@ struct FloatingEditToolbar: View {
                     .renderingMode(.template)
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 18, height: 18)
+                    .frame(width: 16, height: 16)
                     .foregroundColor(pillTextColor.opacity(0.6))
             }
             .padding(.leading, 12)
@@ -283,7 +283,7 @@ struct FloatingEditToolbar: View {
                     .renderingMode(.template)
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 18, height: 18)
+                    .frame(width: 16, height: 16)
                     .foregroundColor(pillTextColor.opacity(0.6))
             }
             .padding(.leading, 12)
@@ -312,12 +312,12 @@ struct FloatingEditToolbar: View {
             HStack(spacing: 0) {
                 Circle()
                     .fill(currentTextColorHex.flatMap { Color(hex: $0) } ?? pillTextColor)
-                    .frame(width: 18, height: 18)
+                    .frame(width: 16, height: 16)
                 Image("IconChevronDownSmall")
                     .renderingMode(.template)
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 18, height: 18)
+                    .frame(width: 16, height: 16)
                     .foregroundColor(pillTextColor.opacity(0.6))
             }
             .padding(.leading, 8)
@@ -347,7 +347,7 @@ struct FloatingEditToolbar: View {
                 .renderingMode(.template)
                 .resizable()
                 .scaledToFit()
-                .frame(width: 18, height: 18)
+                .frame(width: 16, height: 16)
                 .foregroundColor(activeSubmenu == submenu ? Color("AccentColor") : Color("IconSecondaryColor"))
         }
         .buttonStyle(.plain)
@@ -367,7 +367,7 @@ struct FloatingEditToolbar: View {
                 .renderingMode(.template)
                 .resizable()
                 .scaledToFit()
-                .frame(width: 18, height: 18)
+                .frame(width: 16, height: 16)
                 .foregroundColor(isActive ? Color("AccentColor") : Color("IconSecondaryColor"))
         }
         .buttonStyle(.plain)

@@ -44,8 +44,8 @@ final class CalloutOverlayView: NSView {
     private let pillLeftOffset:     CGFloat = 18   // Figma: left: 18px
     private let chipIconGap:        CGFloat = 5
     private let chipChevGap:        CGFloat = 3
-    private let iconSize:           CGFloat = 18
-    private let chevronSize:        CGFloat = 18   // was 14 -- updated per Figma
+    private let iconSize:           CGFloat = 16
+    private let chevronSize:        CGFloat = 16   // was 14 -- updated per Figma
 
     /// Pill height = pillPadding(4) + iconSize(18) + pillPadding(4) = 26px
     private var pillHeight: CGFloat { pillPadding * 2 + iconSize }

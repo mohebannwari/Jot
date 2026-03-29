@@ -802,7 +802,7 @@ struct FileLinkPillView: View {
                 .renderingMode(.template)
                 .resizable()
                 .scaledToFit()
-                .frame(width: 12, height: 12)
+                .frame(width: 16, height: 16)
                 .foregroundStyle(contentColor)
         }
         .padding(.horizontal, 8)
@@ -842,7 +842,7 @@ final class InlineImageOverlayView: NSView {
     private let edgeOutset: CGFloat = 6
 
     /// Corner radius scales proportionally with image width.
-    private var computedCornerRadius: CGFloat { 16 }
+    private var computedCornerRadius: CGFloat { 22 }
 
     private enum ResizeEdge { case right, bottom, corner }
     private var isDragging = false
@@ -2058,6 +2058,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             codeBlockOverlays.removeAll()
             tabsOverlays.values.forEach { $0.removeFromSuperview() }
             tabsOverlays.removeAll()
+            cardSectionOverlays.values.forEach { $0.removeFromSuperview() }
+            cardSectionOverlays.removeAll()
         }
 
         deinit {
@@ -3733,7 +3735,50 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         }
 
         func updateColorScheme(_ scheme: ColorScheme) {
+            guard scheme != currentColorScheme else { return }
             currentColorScheme = scheme
+            rerenderPillAttachments()
+        }
+
+        /// Re-renders all notelink and filelink pill images to match the current
+        /// color scheme. Called after appearance changes; safe to call at any time.
+        private func rerenderPillAttachments() {
+            guard let textView = textView,
+                  let textStorage = textView.textStorage,
+                  textStorage.length > 0 else { return }
+
+            isUpdating = true
+            textStorage.beginEditing()
+
+            var pillRanges: [(range: NSRange, replacement: NSAttributedString)] = []
+
+            textStorage.enumerateAttribute(.attachment, in: NSRange(location: 0, length: textStorage.length), options: []) { value, charRange, _ in
+                let attrs = textStorage.attributes(at: charRange.location, effectiveRange: nil)
+                if let attachment = value as? NotelinkAttachment {
+                    let newPill = makeNotelinkAttachment(noteID: attachment.noteID, noteTitle: attachment.noteTitle)
+                    pillRanges.append((range: charRange, replacement: newPill))
+                } else if let nlID = attrs[.notelinkID] as? String,
+                          let nlTitle = attrs[.notelinkTitle] as? String {
+                    let newPill = makeNotelinkAttachment(noteID: nlID, noteTitle: nlTitle)
+                    pillRanges.append((range: charRange, replacement: newPill))
+                } else if let attachment = value as? FileLinkAttachment {
+                    let newPill = makeFileLinkAttachment(filePath: attachment.filePath, displayName: attachment.displayName, bookmarkBase64: attachment.bookmarkBase64)
+                    pillRanges.append((range: charRange, replacement: newPill))
+                } else if let filePath = attrs[.fileLinkPath] as? String {
+                    let displayName = (attrs[.fileLinkDisplayName] as? String) ?? URL(fileURLWithPath: filePath).lastPathComponent
+                    let bookmark = (attrs[.fileLinkBookmark] as? String) ?? ""
+                    let newPill = makeFileLinkAttachment(filePath: filePath, displayName: displayName, bookmarkBase64: bookmark)
+                    pillRanges.append((range: charRange, replacement: newPill))
+                }
+            }
+
+            // Apply replacements in reverse order to preserve character offsets
+            for item in pillRanges.reversed() {
+                textStorage.replaceCharacters(in: item.range, with: item.replacement)
+            }
+
+            textStorage.endEditing()
+            isUpdating = false
         }
 
         func applyInitialText(_ text: String) {
@@ -3906,20 +3951,42 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 let loc = max(0, min(storage.length - 1, affectedCharRange.location))
                 let paraRange = (storage.string as NSString).paragraphRange(
                     for: NSRange(location: loc, length: 0))
+
+                // Also check the preceding paragraph when the cursor sits on a bare
+                // newline right after a block attachment (the \n is a separate paragraph,
+                // so the primary paraRange misses the attachment).
+                let checkRanges: [NSRange]
+                if loc > 0, paraRange.length <= 1 {
+                    let prevLoc = max(0, loc - 1)
+                    let prevPara = (storage.string as NSString).paragraphRange(
+                        for: NSRange(location: prevLoc, length: 0))
+                    checkRanges = [paraRange, prevPara]
+                } else {
+                    checkRanges = [paraRange]
+                }
+
                 var hasBlockAttachment = false
-                storage.enumerateAttribute(.attachment, in: paraRange, options: []) { value, _, stop in
-                    if value is NoteCalloutAttachment
-                        || value is NoteCodeBlockAttachment
-                        || value is NoteTableAttachment
-                        || value is NoteTabsAttachment
-                        || value is NoteCardSectionAttachment {
-                        hasBlockAttachment = true
-                        stop.pointee = true
+                var blockParaRange = paraRange
+                for range in checkRanges {
+                    storage.enumerateAttribute(.attachment, in: range, options: []) { value, _, stop in
+                        if value is NoteCalloutAttachment
+                            || value is NoteCodeBlockAttachment
+                            || value is NoteTableAttachment
+                            || value is NoteTabsAttachment
+                            || value is NoteCardSectionAttachment
+                            || value is NoteDividerAttachment {
+                            hasBlockAttachment = true
+                            stop.pointee = true
+                        }
+                    }
+                    if hasBlockAttachment {
+                        blockParaRange = range
+                        break
                     }
                 }
                 if hasBlockAttachment {
                     // Insert a newline after the block paragraph, then insert the typed text there
-                    let afterBlock = NSMaxRange(paraRange)
+                    let afterBlock = NSMaxRange(blockParaRange)
                     isUpdating = true
                     storage.beginEditing()
                     // Ensure there's a newline at the end of the block paragraph to land on
@@ -8618,6 +8685,8 @@ final class InlineNSTextView: NSTextView {
                    lastStar != searchStr.index(before: searchStr.endIndex) {
                     let beforeStar = searchStr.index(before: lastStar)
                     let afterStar = searchStr.index(after: lastStar)
+                    // Bounds check: afterStar must be a valid index before subscripting
+                    guard afterStar < searchStr.endIndex else { return }
                     // Make sure it's a single * (not **)
                     if (lastStar == searchStr.startIndex || searchStr[beforeStar] != "*")
                         && searchStr[afterStar] != "*" {
@@ -8701,32 +8770,27 @@ final class InlineNSTextView: NSTextView {
     // MARK: - Context Menu Implementation
     
     override func menu(for event: NSEvent) -> NSMenu? {
-        // Create a custom context menu for the text editor
-        let menu = NSMenu()
-        
-        // Standard text editing actions
-        menu.addItem(NSMenuItem(title: "Cut", action: #selector(cut(_:)), keyEquivalent: "x"))
-        menu.addItem(NSMenuItem(title: "Copy", action: #selector(copy(_:)), keyEquivalent: "c"))
-        menu.addItem(NSMenuItem(title: "Paste", action: #selector(paste(_:)), keyEquivalent: "v"))
-        
-        menu.addItem(NSMenuItem.separator())
-        
-        // Text formatting actions
-        menu.addItem(NSMenuItem(title: "Bold", action: #selector(toggleBold(_:)), keyEquivalent: "b"))
-        menu.addItem(NSMenuItem(title: "Italic", action: #selector(toggleItalic(_:)), keyEquivalent: "i"))
-        menu.addItem(NSMenuItem(title: "Underline", action: #selector(toggleUnderline(_:)), keyEquivalent: "u"))
-        
-        menu.addItem(NSMenuItem.separator())
-        
-        // Special formatting actions
-        menu.addItem(NSMenuItem(title: "Insert Todo", action: #selector(insertTodo(_:)), keyEquivalent: ""))
-        menu.addItem(NSMenuItem(title: "Insert Bullet List", action: #selector(insertBulletList(_:)), keyEquivalent: ""))
-        
-        menu.addItem(NSMenuItem.separator())
-        
-        // Select all
-        menu.addItem(NSMenuItem(title: "Select All", action: #selector(selectAll(_:)), keyEquivalent: "a"))
-        
+        // Start with the system menu so Writing Tools, Lookup, and all standard
+        // system items are preserved intact.
+        let menu = super.menu(for: event) ?? NSMenu()
+
+        // Jot-specific formatting actions inserted at the top, before system items.
+        let boldItem = NSMenuItem(title: "Bold", action: #selector(toggleBold(_:)), keyEquivalent: "")
+        let italicItem = NSMenuItem(title: "Italic", action: #selector(toggleItalic(_:)), keyEquivalent: "")
+        let underlineItem = NSMenuItem(title: "Underline", action: #selector(toggleUnderline(_:)), keyEquivalent: "")
+        let todoItem = NSMenuItem(title: "Insert Todo", action: #selector(insertTodo(_:)), keyEquivalent: "")
+        let bulletItem = NSMenuItem(title: "Insert Bullet List", action: #selector(insertBulletList(_:)), keyEquivalent: "")
+        let separator = NSMenuItem.separator()
+
+        // Insert in reverse order so they appear in the intended top-to-bottom sequence.
+        menu.insertItem(separator, at: 0)
+        menu.insertItem(bulletItem, at: 0)
+        menu.insertItem(todoItem, at: 0)
+        menu.insertItem(NSMenuItem.separator(), at: 0)
+        menu.insertItem(underlineItem, at: 0)
+        menu.insertItem(italicItem, at: 0)
+        menu.insertItem(boldItem, at: 0)
+
         return menu
     }
     

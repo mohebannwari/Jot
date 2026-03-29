@@ -60,7 +60,7 @@ struct TrashSheet: View {
                 .resizable()
                 .scaledToFit()
                 .foregroundColor(Color("SecondaryTextColor"))
-                .frame(width: 18, height: 18)
+                .frame(width: 16, height: 16)
 
             Text("Trash")
                 .font(FontManager.heading(size: 15, weight: .semibold))
@@ -155,7 +155,7 @@ struct TrashSheet: View {
                         .resizable()
                         .scaledToFit()
                         .foregroundColor(Color("SecondaryTextColor"))
-                        .frame(width: 18, height: 18)
+                        .frame(width: 16, height: 16)
                         .padding(6)
                         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
@@ -178,7 +178,7 @@ struct TrashSheet: View {
                         .resizable()
                         .scaledToFit()
                         .foregroundColor(.red.opacity(0.8))
-                        .frame(width: 18, height: 18)
+                        .frame(width: 16, height: 16)
                         .padding(6)
                         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }

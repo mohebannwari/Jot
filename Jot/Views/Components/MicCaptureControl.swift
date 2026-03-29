@@ -101,7 +101,7 @@ public struct MicCaptureControl: View {
 // inner circle:   26 / 2 = 13    →  17 - 4 = 13 ✓ concentric
 //
 private enum MicGeometry {
-    static let iconSize: CGFloat = 18
+    static let iconSize: CGFloat = 16
     static let buttonInset: CGFloat = 4
     static let buttonDiameter: CGFloat = iconSize + buttonInset * 2   // 26
     static let capsuleInset: CGFloat = 4
@@ -130,7 +130,6 @@ private extension MicCaptureControl {
         .padding(MicGeometry.capsuleInset)
         .thinLiquidGlass(in: Capsule())
         .accessibilityLabel(Text("Start recording"))
-        .keyboardShortcut(.space, modifiers: [])
     }
 
     var recordingView: some View {
@@ -159,7 +158,7 @@ private extension MicCaptureControl {
                 spacing: 3,
                 color: Color("SecondaryTextColor")
             )
-            .frame(width: 20, height: 20)
+            .frame(width: 16, height: 16)
             .frame(width: MicGeometry.buttonDiameter, height: MicGeometry.buttonDiameter)
             .padding(.trailing, 4)
         }
@@ -220,7 +219,7 @@ private extension MicCaptureControl {
                     ProgressView()
                         .progressViewStyle(CircularProgressViewStyle(tint: .white))
                         .scaleEffect(0.8)
-                        .frame(width: 20, height: 20)
+                        .frame(width: 16, height: 16)
                         .frame(width: MicGeometry.buttonDiameter, height: MicGeometry.buttonDiameter)
                 } else {
                     Image("IconArrowUpCircle")
@@ -244,17 +243,7 @@ private extension MicCaptureControl {
         .overlay(cancelShortcut)
     }
 
-    private var cancelButtonColor: Color {
-        colorScheme == .dark
-            ? Color(white: 0.25)
-            : Color(white: 0.85)
-    }
 
-    private var resumeButtonColor: Color {
-        colorScheme == .dark
-            ? Color(white: 0.25)
-            : Color(white: 0.85)
-    }
 
     private var resumeIconColor: Color {
         Color("PrimaryTextColor")
@@ -281,7 +270,7 @@ private extension MicCaptureControl {
     func errorBanner(message: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(FontManager.icon(size: 18, weight: .semibold))
+                .font(FontManager.icon(size: 16, weight: .semibold))
                 .foregroundStyle(.orange)
 
             Text(message)
@@ -321,11 +310,23 @@ final class MicCaptureViewModel: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     let autoStart: Bool
 
+    private static let shortElapsedFormatter: DateComponentsFormatter = {
+        let f = DateComponentsFormatter()
+        f.allowedUnits = [.minute, .second]
+        f.zeroFormattingBehavior = .pad
+        return f
+    }()
+
+    private static let longElapsedFormatter: DateComponentsFormatter = {
+        let f = DateComponentsFormatter()
+        f.allowedUnits = [.hour, .minute, .second]
+        f.zeroFormattingBehavior = .pad
+        return f
+    }()
+
     var elapsedTime: String? {
         guard recorder.duration > 0 else { return nil }
-        let formatter = DateComponentsFormatter()
-        formatter.allowedUnits = recorder.duration >= 3600 ? [.hour, .minute, .second] : [.minute, .second]
-        formatter.zeroFormattingBehavior = .pad
+        let formatter = recorder.duration >= 3600 ? Self.longElapsedFormatter : Self.shortElapsedFormatter
         return formatter.string(from: recorder.duration)
     }
 

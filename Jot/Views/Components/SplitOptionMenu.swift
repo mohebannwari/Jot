@@ -34,7 +34,7 @@ struct SplitOptionMenu: View {
                     .resizable()
                     .scaledToFit()
                     .foregroundColor(Color("SecondaryTextColor"))
-                    .frame(width: 18, height: 18)
+                    .frame(width: 16, height: 16)
                 Text(label)
                     .font(.system(size: 13, weight: .medium))
                     .foregroundColor(.primary)

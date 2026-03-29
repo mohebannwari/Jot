@@ -21,7 +21,7 @@ struct ArchivedNoteRow: View {
 
     private static let dateFormatter: DateFormatter = {
         let f = DateFormatter()
-        f.dateFormat = "dd.MM.yyyy"
+        f.dateStyle = .short
         return f
     }()
 
@@ -53,7 +53,7 @@ struct ArchivedNoteRow: View {
                             .renderingMode(.template)
                             .resizable()
                             .scaledToFit()
-                            .frame(width: 14, height: 14)
+                            .frame(width: 16, height: 16)
                             .foregroundColor(Color("SecondaryTextColor"))
                             .padding(4)
                             .contentShape(Circle())
@@ -73,7 +73,7 @@ struct ArchivedNoteRow: View {
                             .renderingMode(.template)
                             .resizable()
                             .scaledToFit()
-                            .frame(width: 14, height: 14)
+                            .frame(width: 16, height: 16)
                             .foregroundColor(.red)
                             .padding(4)
                             .contentShape(Circle())

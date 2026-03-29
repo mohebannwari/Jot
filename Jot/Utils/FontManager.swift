@@ -18,7 +18,7 @@ import AppKit
 struct FontManager {
     // Duplicated from ThemeManager.bodyFontStyleDefaultsKey to avoid accessing
     // a main-actor-isolated property from a nonisolated context.
-    private nonisolated static let bodyFontStyleKey = "BodyFontStyle"
+    private nonisolated static let bodyFontStyleKey = "AppBodyFontStyle"
 
     nonisolated private static func currentBodyFontStyle(
         userDefaults: UserDefaults = .standard
@@ -105,7 +105,7 @@ struct FontManager {
     // MARK: - Icon Fonts
 
     /// Standard icon font for UI/action symbols across the app.
-    static func icon(size: CGFloat = 20, weight: Weight = .regular) -> Font {
+    static func icon(size: CGFloat = 16, weight: Weight = .regular) -> Font {
         Font.system(size: size, weight: weight.toSwiftUIWeight(), design: .default)
     }
     

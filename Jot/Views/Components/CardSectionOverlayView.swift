@@ -201,9 +201,15 @@ final class CardSectionOverlayView: NSView {
             .codeBlock, .fileLink, .sticker, .tabs, .cards, .lineBreak, .link, .searchOnPage
         ]
 
+        // Guard: ignore notifications from a different editor instance (split-view safety)
+        let matchesEditor: (Notification) -> Bool = { [weak self] n in
+            guard let eid = n.userInfo?["editorInstanceID"] as? UUID else { return true }
+            return eid == self?.editorInstanceID
+        }
+
         // 1. EditTool -- delegate to TextFormattingManager
         formattingObservers.append(nc.addObserver(forName: .applyEditTool, object: nil, queue: .main) { [weak self] n in
-            guard let self = self, let tv = focusedCardTV() else { return }
+            guard matchesEditor(n), let self = self, let tv = focusedCardTV() else { return }
             guard let raw = n.userInfo?["tool"] as? String, let tool = EditTool(rawValue: raw) else { return }
             guard !excludedTools.contains(tool) else { return }
             self.formatter.applyFormatting(to: tv, tool: tool)
@@ -213,7 +219,7 @@ final class CardSectionOverlayView: NSView {
 
         // 2. Font size
         formattingObservers.append(nc.addObserver(forName: .applyFontSize, object: nil, queue: .main) { [weak self] n in
-            guard let self = self, let tv = focusedCardTV() else { return }
+            guard matchesEditor(n), let self = self, let tv = focusedCardTV() else { return }
             guard let size = n.userInfo?["size"] as? CGFloat else { return }
             self.formatter.applyFontSize(size, to: tv, range: tv.selectedRange())
             self.syncCardContent(tv)
@@ -221,7 +227,7 @@ final class CardSectionOverlayView: NSView {
 
         // 3. Font family
         formattingObservers.append(nc.addObserver(forName: .applyFontFamily, object: nil, queue: .main) { [weak self] n in
-            guard let self = self, let tv = focusedCardTV() else { return }
+            guard matchesEditor(n), let self = self, let tv = focusedCardTV() else { return }
             guard let styleRaw = n.userInfo?["style"] as? String,
                   let style = BodyFontStyle(rawValue: styleRaw) else { return }
             self.formatter.applyFontFamily(style, to: tv, range: tv.selectedRange())
@@ -230,7 +236,7 @@ final class CardSectionOverlayView: NSView {
 
         // 4. Text color
         formattingObservers.append(nc.addObserver(forName: .applyTextColor, object: nil, queue: .main) { [weak self] n in
-            guard let self = self, let tv = focusedCardTV() else { return }
+            guard matchesEditor(n), let self = self, let tv = focusedCardTV() else { return }
             guard let hex = n.userInfo?["hex"] as? String else { return }
             self.formatter.applyTextColor(hex: hex, range: tv.selectedRange(), to: tv)
             self.syncCardContent(tv)
@@ -238,14 +244,14 @@ final class CardSectionOverlayView: NSView {
 
         // 5. Remove text color
         formattingObservers.append(nc.addObserver(forName: .removeTextColor, object: nil, queue: .main) { [weak self] n in
-            guard let self = self, let tv = focusedCardTV() else { return }
+            guard matchesEditor(n), let self = self, let tv = focusedCardTV() else { return }
             self.formatter.removeTextColor(range: tv.selectedRange(), from: tv)
             self.syncCardContent(tv)
         })
 
         // 6. Highlight color
         formattingObservers.append(nc.addObserver(forName: .applyHighlightColor, object: nil, queue: .main) { [weak self] n in
-            guard let self = self, let tv = focusedCardTV() else { return }
+            guard matchesEditor(n), let self = self, let tv = focusedCardTV() else { return }
             guard let hex = n.userInfo?["hex"] as? String else { return }
             self.formatter.applyHighlight(hex: hex, range: tv.selectedRange(), to: tv)
             self.syncCardContent(tv)
@@ -253,7 +259,7 @@ final class CardSectionOverlayView: NSView {
 
         // 7. Remove highlight
         formattingObservers.append(nc.addObserver(forName: .removeHighlightColor, object: nil, queue: .main) { [weak self] n in
-            guard let self = self, let tv = focusedCardTV() else { return }
+            guard matchesEditor(n), let self = self, let tv = focusedCardTV() else { return }
             self.formatter.removeHighlight(range: tv.selectedRange(), from: tv)
             self.syncCardContent(tv)
         })
@@ -262,7 +268,7 @@ final class CardSectionOverlayView: NSView {
         // No syncCardContent needed -- textDidChange fires synchronously inside
         // insertTodo's didChangeText() and handles serialization.
         formattingObservers.append(nc.addObserver(forName: .todoToolbarAction, object: nil, queue: .main) { [weak self] n in
-            guard let self = self, let tv = focusedCardTV() else { return }
+            guard matchesEditor(n), let self = self, let tv = focusedCardTV() else { return }
             self.formatter.applyFormatting(to: tv, tool: .todo)
         })
 
@@ -270,7 +276,7 @@ final class CardSectionOverlayView: NSView {
         // Stores the originating card text view so replacement/insert can target it
         // even after focus shifts to the AI panel buttons.
         formattingObservers.append(nc.addObserver(forName: .aiEditRequestSelection, object: nil, queue: .main) { [weak self] n in
-            guard let self = self, let tv = focusedCardTV() else { return }
+            guard matchesEditor(n), let self = self, let tv = focusedCardTV() else { return }
             self.aiTargetCardTV = tv
             let range = tv.selectedRange()
             let text = (tv.string as NSString).substring(with: range)
@@ -292,7 +298,7 @@ final class CardSectionOverlayView: NSView {
         // Uses aiTargetCardTV instead of focusedCardTV() because focus has shifted
         // to the panel by the time the user clicks Replace.
         formattingObservers.append(nc.addObserver(forName: .aiEditApplyReplacement, object: nil, queue: .main) { [weak self] n in
-            guard let self = self, let tv = self.aiTargetCardTV else { return }
+            guard matchesEditor(n), let self = self, let tv = self.aiTargetCardTV else { return }
             guard let replacement = n.userInfo?["replacement"] as? String else { return }
             let original = n.userInfo?["original"] as? String ?? ""
             if original.isEmpty {
@@ -311,7 +317,7 @@ final class CardSectionOverlayView: NSView {
 
         // 11. AI: insert generated text at cursor.
         formattingObservers.append(nc.addObserver(forName: .aiTextGenInsert, object: nil, queue: .main) { [weak self] n in
-            guard let self = self, let tv = self.aiTargetCardTV else { return }
+            guard matchesEditor(n), let self = self, let tv = self.aiTargetCardTV else { return }
             guard let text = n.object as? String else { return }
             tv.insertText(text, replacementRange: tv.selectedRange())
             self.syncCardContent(tv)
@@ -666,6 +672,8 @@ final class CardSectionOverlayView: NSView {
 
             let sv = _CardScrollView()
             sv.overlayView = self
+            sv.wantsLayer = true
+            sv.layer?.masksToBounds = true
             sv.documentView = tv
             sv.hasVerticalScroller = true
             sv.hasHorizontalScroller = false

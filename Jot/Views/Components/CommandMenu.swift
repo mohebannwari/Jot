@@ -190,12 +190,12 @@ struct CommandMenuItem: View {
                         .scaledToFit()
                 } else {
                     Image(systemName: tool.iconName)
-                        .font(FontManager.icon(size: 18, weight: .medium))
+                        .font(FontManager.icon(size: 16, weight: .medium))
                         .symbolRenderingMode(.monochrome)
                 }
             }
             .foregroundStyle(isHighlighted ? highlightedForegroundColor : Color("IconSecondaryColor"))
-            .frame(width: 18, height: 18)
+            .frame(width: 16, height: 16)
 
             // Tool name
             Text(tool.name)

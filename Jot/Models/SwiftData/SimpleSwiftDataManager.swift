@@ -454,6 +454,8 @@ final class SimpleSwiftDataManager: ObservableObject {
             noteEntity.meetingSummary = updatedNote.meetingSummary
             noteEntity.meetingDuration = updatedNote.meetingDuration
             noteEntity.meetingLanguage = updatedNote.meetingLanguage
+            noteEntity.meetingManualNotes = updatedNote.meetingManualNotes
+            noteEntity.tags = updatedNote.tags
 
             try modelContext.save()
 
@@ -1043,7 +1045,22 @@ final class SimpleSwiftDataManager: ObservableObject {
             descriptor.fetchLimit = limit
 
             let entities = try modelContext.fetch(descriptor)
-            let results = entities.map { $0.toNote() }.filter { !$0.isLocked }
+            var results = entities.map { $0.toNote() }.filter { !$0.isLocked }
+
+            // The predicate only matches the first term (SwiftData #Predicate
+            // cannot loop over a dynamic array). Post-filter in memory for any
+            // additional terms so that multi-word queries return correct results.
+            let allTerms = normalizedQuery.lowercased()
+                .split(separator: " ")
+                .map(String.init)
+                .filter { !$0.isEmpty }
+            if allTerms.count > 1 {
+                results = results.filter { note in
+                    let haystack = (note.title + " " + note.content).lowercased()
+                    return allTerms.allSatisfy { haystack.contains($0) }
+                }
+            }
+
             logger.info("Search for '\(query)' returned \(results.count) results")
             return results
         } catch {

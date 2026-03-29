@@ -25,9 +25,9 @@ struct FileDropOverlay: View {
 
             VStack(spacing: 8) {
                 Image("IconDropImport")
-                    .resizable()
                     .renderingMode(.template)
-                    .aspectRatio(contentMode: .fit)
+                    .resizable()
+                    .scaledToFit()
                     .frame(width: 42, height: 49.5)
                     .foregroundStyle(Color("DropImportIconColor"))
 

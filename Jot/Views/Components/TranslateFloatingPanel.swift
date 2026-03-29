@@ -29,7 +29,11 @@ struct TranslateFloatingPanel: View {
         )
         .appleIntelligenceGlow(cornerRadius: 22, mode: .continuous)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .onKeyPress(.return) { onReplace(); return .handled }
+        .onKeyPress(.return) {
+            if case .error = state { return .ignored }
+            onReplace()
+            return .handled
+        }
         .onKeyPress(.escape) { onDismiss(); return .handled }
     }
 
@@ -42,7 +46,7 @@ struct TranslateFloatingPanel: View {
                 .resizable()
                 .scaledToFit()
                 .foregroundColor(Color("SecondaryTextColor"))
-                .frame(width: 18, height: 18)
+                .frame(width: 16, height: 16)
 
             Text(AITool.translate.aiDisplayName.uppercased())
                 .font(FontManager.metadata(size: 11, weight: .semibold))
@@ -57,7 +61,7 @@ struct TranslateFloatingPanel: View {
                     .resizable()
                     .scaledToFit()
                     .foregroundColor(Color("SecondaryTextColor"))
-                    .frame(width: 18, height: 18)
+                    .frame(width: 16, height: 16)
             }
             .buttonStyle(.plain)
             .macPointingHandCursor()

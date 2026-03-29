@@ -243,12 +243,13 @@ final class ThemeManager: ObservableObject {
         }
     }
 
+
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
 
         let savedTheme =
-            userDefaults.string(forKey: Self.themeDefaultsKey) ?? AppTheme.light.rawValue
-        self.currentTheme = AppTheme(rawValue: savedTheme) ?? .light
+            userDefaults.string(forKey: Self.themeDefaultsKey) ?? AppTheme.system.rawValue
+        self.currentTheme = AppTheme(rawValue: savedTheme) ?? .system
 
         let savedBodyFontStyle =
             userDefaults.string(forKey: Self.bodyFontStyleDefaultsKey) ?? BodyFontStyle.default.rawValue

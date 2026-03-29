@@ -28,7 +28,11 @@ struct TextGenFloatingPanel: View {
         )
         .appleIntelligenceGlow(cornerRadius: 22, mode: .continuous)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .onKeyPress(.return) { onAccept(); return .handled }
+        .onKeyPress(.return) {
+            if case .error = state { return .ignored }
+            onAccept()
+            return .handled
+        }
         .onKeyPress(.escape) { onDismiss(); return .handled }
     }
 
@@ -41,7 +45,7 @@ struct TextGenFloatingPanel: View {
                 .resizable()
                 .scaledToFit()
                 .foregroundColor(Color("SecondaryTextColor"))
-                .frame(width: 18, height: 18)
+                .frame(width: 16, height: 16)
 
             Text(AITool.textGenerate.aiDisplayName.uppercased())
                 .font(FontManager.metadata(size: 11, weight: .semibold))
@@ -56,7 +60,7 @@ struct TextGenFloatingPanel: View {
                     .resizable()
                     .scaledToFit()
                     .foregroundColor(Color("SecondaryTextColor"))
-                    .frame(width: 18, height: 18)
+                    .frame(width: 16, height: 16)
             }
             .buttonStyle(.plain)
             .macPointingHandCursor()

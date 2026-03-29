@@ -91,7 +91,7 @@ struct QuickLookOverlayView: View {
                     .resizable()
                     .scaledToFit()
                     .foregroundStyle(Color("SecondaryTextColor"))
-                    .frame(width: 18, height: 18)
+                    .frame(width: 16, height: 16)
             }
             .buttonStyle(.plain)
             .subtleHoverScale(1.1)

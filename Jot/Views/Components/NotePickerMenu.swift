@@ -133,7 +133,8 @@ struct NotePickerMenuItem: View {
             Image("IconNoteText")
                 .renderingMode(.template)
                 .resizable()
-                .frame(width: 14, height: 14)
+                .scaledToFit()
+                .frame(width: 16, height: 16)
                 .foregroundStyle(isHighlighted ? highlightedForegroundColor.opacity(0.7) : .secondary)
 
             Text(note.title.isEmpty ? "Untitled" : note.title)
