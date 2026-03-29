@@ -17,40 +17,16 @@ struct MeetingNoteDetailPanel: View {
     let meetingLanguage: String
     let meetingDate: Date
     var onNotesChanged: ((String) -> Void)? = nil
-
-    // Layout bindings (from parent)
-    @Binding var panelHeight: CGFloat
-    @Binding var panelWidthRatio: CGFloat
-    var containerWidth: CGFloat
-
-    // Drag callbacks for reorder (Task 3 will wire these up)
-    var onDragChanged: ((DragGesture.Value) -> Void)? = nil
-    var onDragEnded: ((DragGesture.Value) -> Void)? = nil
+    var onDismiss: (() -> Void)? = nil
 
     @State private var isExpanded = false
     @State private var selectedTab: MeetingTab = .summary
     @Environment(\.colorScheme) private var colorScheme
 
-    // Resize state
-    @State private var isDraggingRight = false
-    @State private var isDraggingBottom = false
-    @State private var dragStartWidth: CGFloat = 0
-    @State private var dragStartHeight: CGFloat = 0
-    @State private var isHeaderHovered = false
-
     private let panelRadius: CGFloat = 22
-
-    // Constants
-    static let minWidth: CGFloat = 400
-    static let minHeight: CGFloat = 120
+    private static let maxContentHeight: CGFloat = 300
 
     var body: some View {
-        let effectiveWidth = max(
-            min(Self.minWidth, containerWidth),
-            min(containerWidth, panelWidthRatio * containerWidth)
-        )
-
-
         VStack(alignment: .leading, spacing: 0) {
             accordionHeader
             if isExpanded {
@@ -58,22 +34,12 @@ struct MeetingNoteDetailPanel: View {
                 tabContent
             }
         }
-        .frame(width: effectiveWidth, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: panelRadius, style: .continuous)
                 .fill(panelBackground)
         )
         .clipShape(RoundedRectangle(cornerRadius: panelRadius, style: .continuous))
-        .overlay(alignment: .trailing) {
-            if isExpanded {
-                rightResizeHandle
-            }
-        }
-        .overlay(alignment: .bottom) {
-            if isExpanded {
-                bottomResizeHandle
-            }
-        }
     }
 
     // MARK: - Accordion Header
@@ -85,7 +51,7 @@ struct MeetingNoteDetailPanel: View {
                 .resizable()
                 .scaledToFit()
                 .foregroundColor(Color("SecondaryTextColor"))
-                .frame(width: 16, height: 16)
+                .frame(width: 14, height: 14)
 
             Text("Meeting Notes")
                 .font(FontManager.heading(size: 13, weight: .semibold))
@@ -113,18 +79,25 @@ struct MeetingNoteDetailPanel: View {
 
             Spacer()
 
-            if isHeaderHovered && onDragChanged != nil {
-                Image(systemName: "line.3.horizontal")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(Color("TertiaryTextColor"))
-                    .transition(.opacity)
-            }
-
             Image(isExpanded ? "IconChevronTopSmall" : "IconChevronDownSmall")
                 .resizable()
                 .renderingMode(.template)
                 .frame(width: 16, height: 16)
                 .foregroundColor(Color("SecondaryTextColor"))
+
+            if let onDismiss {
+                Button(action: onDismiss) {
+                    Image("IconXMark")
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
+                        .foregroundColor(Color("SecondaryTextColor"))
+                        .frame(width: 16, height: 16)
+                }
+                .buttonStyle(.plain)
+                .macPointingHandCursor()
+                .subtleHoverScale(1.1)
+            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
@@ -134,12 +107,6 @@ struct MeetingNoteDetailPanel: View {
                 isExpanded.toggle()
             }
         }
-        .onHover { isHeaderHovered = $0 }
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 8)
-                .onChanged { value in onDragChanged?(value) }
-                .onEnded { value in onDragEnded?(value) }
-        )
         .macPointingHandCursor()
     }
 
@@ -177,8 +144,7 @@ struct MeetingNoteDetailPanel: View {
 
     @ViewBuilder
     private var tabContent: some View {
-        let contentAreaHeight = max(Self.minHeight - 80, panelHeight - 80)
-        ThinScrollView(maxHeight: contentAreaHeight) {
+        ThinScrollView(maxHeight: Self.maxContentHeight) {
             Group {
                 switch selectedTab {
                 case .summary:
@@ -318,73 +284,17 @@ struct MeetingNoteDetailPanel: View {
             }
     }
 
-    // MARK: - Resize Handles
-
-    private var rightResizeHandle: some View {
-        Color.clear
-            .frame(width: 12)
-            .frame(maxHeight: .infinity)
-            .contentShape(Rectangle())
-            .onHover { hovering in
-                if hovering {
-                    NSCursor.compatFrameResize(position: "right").push()
-                } else {
-                    NSCursor.pop()
-                }
-            }
-            .gesture(
-                DragGesture(minimumDistance: 1)
-                    .onChanged { value in
-                        if !isDraggingRight {
-                            isDraggingRight = true
-                            dragStartWidth = panelWidthRatio * containerWidth
-                        }
-                        let newWidth = dragStartWidth + value.translation.width
-                        let effectiveMin = min(Self.minWidth, containerWidth)
-                        let clamped = max(effectiveMin, min(containerWidth, newWidth))
-                        panelWidthRatio = containerWidth > 0 ? clamped / containerWidth : 1.0
-                    }
-                    .onEnded { _ in
-                        isDraggingRight = false
-                    }
-            )
-    }
-
-    private var bottomResizeHandle: some View {
-        Color.clear
-            .frame(height: 12)
-            .frame(maxWidth: .infinity)
-            .contentShape(Rectangle())
-            .onHover { hovering in
-                if hovering {
-                    NSCursor.compatFrameResize(position: "bottom").push()
-                } else {
-                    NSCursor.pop()
-                }
-            }
-            .gesture(
-                DragGesture(minimumDistance: 1)
-                    .onChanged { value in
-                        if !isDraggingBottom {
-                            isDraggingBottom = true
-                            dragStartHeight = panelHeight
-                        }
-                        let newHeight = dragStartHeight + value.translation.height
-                        panelHeight = max(Self.minHeight, newHeight)
-                    }
-                    .onEnded { _ in
-                        isDraggingBottom = false
-                    }
-            )
-    }
-
     // MARK: - Helpers
 
+    private static let meetingDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .medium
+        f.timeStyle = .short
+        return f
+    }()
+
     private var formattedDate: String {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .short
-        return formatter.string(from: meetingDate)
+        Self.meetingDateFormatter.string(from: meetingDate)
     }
 
     private var formattedDuration: String {
@@ -424,6 +334,7 @@ struct MeetingNoteDetailPanel: View {
 private struct ThinScrollView<Content: View>: View {
     let maxHeight: CGFloat
     @ViewBuilder let content: Content
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         ScrollView(.vertical) {
@@ -457,7 +368,7 @@ private struct ThinScrollView<Content: View>: View {
                     let track = vp - thumbH - 6
 
                     Capsule()
-                        .fill(Color.black.opacity(0.18))
+                        .fill(colorScheme == .dark ? Color.white.opacity(0.25) : Color.black.opacity(0.18))
                         .frame(width: 4, height: thumbH)
                         .offset(y: 3 + track * progress)
                         .frame(maxWidth: .infinity, alignment: .trailing)

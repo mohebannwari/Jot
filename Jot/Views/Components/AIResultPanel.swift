@@ -12,11 +12,22 @@ struct AIResultPanel: View {
     let state: AIPanelState
     let onDismiss: () -> Void
     @Environment(\.colorScheme) private var colorScheme
+    @State private var isExpanded = true
+
+    private var isCollapsible: Bool {
+        switch state {
+        case .summary, .keyPoints: return true
+        default: return false
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             headerRow
-            contentArea
+            if isExpanded {
+                contentArea
+                    .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
+            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
@@ -36,7 +47,7 @@ struct AIResultPanel: View {
                 .resizable()
                 .scaledToFit()
                 .foregroundColor(Color("SecondaryTextColor"))
-                .frame(width: 18, height: 18)
+                .frame(width: 14, height: 14)
 
             Text(toolLabel.uppercased())
                 .font(FontManager.metadata(size: 11, weight: .semibold))
@@ -45,17 +56,33 @@ struct AIResultPanel: View {
 
             Spacer()
 
+            if isCollapsible {
+                Image(isExpanded ? "IconChevronTopSmall" : "IconChevronDownSmall")
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .foregroundColor(Color("SecondaryTextColor"))
+                    .frame(width: 16, height: 16)
+            }
+
             Button(action: onDismiss) {
                 Image("IconXMark")
                     .renderingMode(.template)
                     .resizable()
                     .scaledToFit()
                     .foregroundColor(Color("SecondaryTextColor"))
-                    .frame(width: 18, height: 18)
+                    .frame(width: 16, height: 16)
             }
             .buttonStyle(.plain)
             .macPointingHandCursor()
             .subtleHoverScale(1.1)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard isCollapsible else { return }
+            withAnimation(.jotSmoothFast) {
+                isExpanded.toggle()
+            }
         }
     }
 

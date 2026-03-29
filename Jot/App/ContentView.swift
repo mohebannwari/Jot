@@ -2008,9 +2008,6 @@ struct ContentView: View {
                 toggleSidebar(to: false)
             }
             splitMenuIconButton()
-            sidebarTopBarIcon(assetName: themeManager.currentTheme == .light ? "IconMoon" : "IconSun") {
-                themeManager.setTheme(themeManager.currentTheme == .light ? .dark : .light)
-            }
         }
         .padding(.leading, iconLeading - windowContentPadding)
         .frame(width: sidebarDesignColumnWidth, height: sidebarTopBarButtonSize, alignment: .leading)
@@ -2524,6 +2521,16 @@ struct ContentView: View {
             }
             .buttonStyle(.plain)
             .keyboardShortcut(".", modifiers: [.command])
+            .opacity(0.001)
+
+            // Cmd+T -> toggle light/dark theme
+            Button {
+                themeManager.setTheme(themeManager.currentTheme == .light ? .dark : .light)
+            } label: {
+                Color.clear.frame(width: 1, height: 1)
+            }
+            .buttonStyle(.plain)
+            .keyboardShortcut("t", modifiers: [.command])
             .opacity(0.001)
         }
         .accessibilityHidden(true)
