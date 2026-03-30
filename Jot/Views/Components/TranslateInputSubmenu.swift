@@ -15,8 +15,8 @@ struct TranslateInputSubmenu: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            TextField("Target language...", text: $language)
-                .font(FontManager.metadata(size: 12, weight: .regular))
+            TextField("TARGET LANGUAGE...", text: $language)
+                .font(FontManager.metadata(size: 11, weight: .regular))
                 .foregroundColor(Color("PrimaryTextColor"))
                 .textFieldStyle(.plain)
                 .padding(10)

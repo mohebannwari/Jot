@@ -52,6 +52,7 @@ struct AIResultPanel: View {
                 Text(loadingLabel)
                     .font(FontManager.metadata(size: 11, weight: .semibold))
                     .foregroundColor(Color("SecondaryTextColor"))
+                    .shimmering(active: true)
             } else {
                 Image(toolIconName)
                     .renderingMode(.template)

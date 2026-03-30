@@ -98,7 +98,7 @@ struct SummaryResult {
 @available(macOS 26.0, *)
 @Generable
 struct KeyPointsResult {
-    @Guide(description: "3-7 key points extracted as short, punchy bullets")
+    @Guide(description: "3-5 high-level takeaways that capture the main themes of the note. Consolidate related sub-points into single key points rather than listing every line.")
     var points: [String]
 }
 
@@ -112,9 +112,9 @@ struct ProofreadAnnotationsResult {
 @available(macOS 26.0, *)
 @Generable
 struct ProofreadAnnotationItem {
-    @Guide(description: "Exact erroneous phrase from source")
+    @Guide(description: "Exact character-for-character substring from the input text that contains the error")
     var original: String
-    @Guide(description: "Corrected replacement")
+    @Guide(description: "Corrected replacement for the error")
     var replacement: String
 }
 
@@ -280,10 +280,10 @@ final class AppleIntelligenceService {
             throw AIServiceError.unavailable(unavailabilityReason)
         }
         let session = LanguageModelSession(
-            instructions: "You are a precise writing assistant. Summarize the user's note concisely and accurately."
+            instructions: "You are a precise writing assistant. Summarize the user's note concisely and accurately. Only include information explicitly stated in the note. Do not add, infer, or embellish any details not present in the source text."
         )
         let response = try await session.respond(
-            to: "Summarize this note:\n\n\(text)",
+            to: "Summarize only what is explicitly written in this note:\n\n\(text)",
             generating: SummaryResult.self
         )
         return response.content.text
@@ -294,10 +294,10 @@ final class AppleIntelligenceService {
             throw AIServiceError.unavailable(unavailabilityReason)
         }
         let session = LanguageModelSession(
-            instructions: "You are a precise writing assistant. Extract the most important points from the user's note as short, actionable bullets."
+            instructions: "You are a precise writing assistant. Identify the 3-5 main themes or takeaways from the user's note. Consolidate related sub-points into single high-level key points. Do not list every individual line — synthesize related items together. Do not add topics not covered in the note."
         )
         let response = try await session.respond(
-            to: "Extract the key points from this note:\n\n\(text)",
+            to: "Identify the main themes of this note. Consolidate related items into 3-5 high-level key points:\n\n\(text)",
             generating: KeyPointsResult.self
         )
         return response.content.points
@@ -308,10 +308,10 @@ final class AppleIntelligenceService {
             throw AIServiceError.unavailable(unavailabilityReason)
         }
         let session = LanguageModelSession(
-            instructions: "You are a meticulous editor. Identify specific grammar, spelling, and clarity errors. Return exact erroneous phrases and their corrections. Return an empty array if the text is error-free."
+            instructions: "You are a meticulous editor. Identify only genuine grammar, spelling, and clarity errors in the provided text. Every 'original' field must be an EXACT character-for-character substring found in the input text. Do not fabricate errors that do not exist. Do not suggest stylistic rewrites. Return an empty array if the text is error-free."
         )
         let response = try await session.respond(
-            to: "Find and list specific errors in this text with corrections:\n\n\(text)",
+            to: "Review this text and identify ONLY real errors. Each 'original' value must appear verbatim in the text below:\n\n\(text)",
             generating: ProofreadAnnotationsResult.self
         )
         return response.content.annotations.map {
@@ -319,29 +319,51 @@ final class AppleIntelligenceService {
         }
     }
 
-    func editContent(text: String, instruction: String) async throws -> String {
+    func editContent(text: String, instruction: String, isSelection: Bool = false) async throws -> String {
         guard #available(macOS 26.0, *) else {
             throw AIServiceError.unavailable(unavailabilityReason)
         }
-        let session = LanguageModelSession(
-            instructions: "You are a skilled writing assistant. Apply the user's editing instruction precisely while preserving the note's overall structure and voice."
-        )
+        let systemPrompt: String
+        let userPrompt: String
+        if isSelection {
+            systemPrompt = """
+            You are a skilled writing assistant. The user has selected a specific word or phrase \
+            and wants you to apply an editing instruction to it. Return only the replacement text — \
+            do not include any explanation, preamble, or surrounding context.
+            """
+            userPrompt = "The user selected this text: \"\(text)\"\n\nInstruction: \(instruction)\n\nReturn only the replacement text."
+        } else {
+            systemPrompt = "You are a skilled writing assistant. Apply the user's editing instruction precisely while preserving the note's overall structure and voice."
+            userPrompt = "Apply this instruction to the note: \(instruction)\n\nNote:\n\(text)"
+        }
+        let session = LanguageModelSession(instructions: systemPrompt)
         let response = try await session.respond(
-            to: "Apply this instruction to the note: \(instruction)\n\nNote:\n\(text)",
+            to: userPrompt,
             generating: EditResult.self
         )
         return response.content.revisedText
     }
 
-    func translate(text: String, to language: String) async throws -> String {
+    func translate(text: String, to language: String, isSelection: Bool = false) async throws -> String {
         guard #available(macOS 26.0, *) else {
             throw AIServiceError.unavailable(unavailabilityReason)
         }
-        let session = LanguageModelSession(
-            instructions: "You are a precise translator. Translate the user's text into the requested language accurately while preserving tone, meaning, and formatting."
-        )
+        let systemPrompt: String
+        let userPrompt: String
+        if isSelection {
+            systemPrompt = """
+            You are a precise translator. The user has selected a specific word or phrase \
+            and wants it translated. Return only the translated text — no explanation, \
+            no preamble, no surrounding context.
+            """
+            userPrompt = "Translate \"\(text)\" into \(language). Return only the translation."
+        } else {
+            systemPrompt = "You are a precise translator. Translate the user's text into the requested language accurately while preserving tone, meaning, and formatting."
+            userPrompt = "Translate this text into \(language):\n\n\(text)"
+        }
+        let session = LanguageModelSession(instructions: systemPrompt)
         let response = try await session.respond(
-            to: "Translate this text into \(language):\n\n\(text)",
+            to: userPrompt,
             generating: TranslationResult.self
         )
         return response.content.translatedText
@@ -373,11 +395,11 @@ final class AppleIntelligenceService {
         throw AIServiceError.unavailable(unavailabilityReason)
     }
 
-    func editContent(text: String, instruction: String) async throws -> String {
+    func editContent(text: String, instruction: String, isSelection: Bool = false) async throws -> String {
         throw AIServiceError.unavailable(unavailabilityReason)
     }
 
-    func translate(text: String, to language: String) async throws -> String {
+    func translate(text: String, to language: String, isSelection: Bool = false) async throws -> String {
         throw AIServiceError.unavailable(unavailabilityReason)
     }
 

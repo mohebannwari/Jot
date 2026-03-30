@@ -51,6 +51,7 @@ struct TranslateFloatingPanel: View {
                 Text("Translating...")
                     .font(FontManager.metadata(size: 11, weight: .semibold))
                     .foregroundColor(Color("SecondaryTextColor"))
+                    .shimmering(active: true)
             } else {
                 Image(AITool.translate.aiIconName)
                     .renderingMode(.template)

@@ -83,6 +83,7 @@ struct MeetingNotesFloatingPanel: View {
             Text(statusLabel)
                 .font(FontManager.heading(size: 12, weight: .semibold))
                 .foregroundColor(Color("PrimaryTextColor"))
+                .shimmering(active: recordingState == .processing)
 
             // Duration
             Text(formattedDuration)
