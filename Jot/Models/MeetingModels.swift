@@ -77,11 +77,11 @@ struct MeetingSession: Identifiable, Codable, Equatable {
 @available(macOS 26.0, *)
 @Generable
 struct MeetingChunkSummary {
-    @Guide(description: "3-5 key points from this portion of the meeting")
+    @Guide(description: "Key points explicitly stated in this transcript excerpt. Do not infer or fabricate points not spoken.")
     var keyPoints: [String]
-    @Guide(description: "Action items mentioned, each with assignee if stated")
+    @Guide(description: "Action items explicitly mentioned in the transcript, each with assignee if stated. Empty if none mentioned.")
     var actionItems: [MeetingActionItem]
-    @Guide(description: "Decisions or conclusions reached in this portion")
+    @Guide(description: "Decisions explicitly stated in this excerpt. Empty array if none mentioned.")
     var decisions: [String]
 }
 
@@ -97,15 +97,15 @@ struct MeetingActionItem {
 @available(macOS 26.0, *)
 @Generable
 struct MeetingSummaryResult {
-    @Guide(description: "One-sentence title summarizing the meeting topic")
+    @Guide(description: "One-sentence title reflecting a topic actually discussed in the transcript")
     var title: String
-    @Guide(description: "2-3 paragraph summary of the meeting content and outcomes")
+    @Guide(description: "Summary covering only topics actually discussed in the transcript. Do not fabricate details.")
     var summary: String
-    @Guide(description: "All key points from the entire meeting")
+    @Guide(description: "Key points from the meeting, each directly supported by the transcript. Do not infer or add points not spoken.")
     var keyPoints: [String]
-    @Guide(description: "All action items extracted from the meeting")
+    @Guide(description: "Action items explicitly stated in the meeting. Do not fabricate tasks.")
     var actionItems: [MeetingActionItem]
-    @Guide(description: "Key decisions made during the meeting")
+    @Guide(description: "Decisions explicitly made during the meeting. Empty if none stated.")
     var decisions: [String]
 }
 

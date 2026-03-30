@@ -1514,15 +1514,13 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     )
                 }
             } else {
-                // No selection - hide floating toolbar
-                // Clear cache only if user deliberately placed cursor (view still has focus).
-                // When focus is lost (e.g. clicking AI tools button), preserve cache so the
-                // selection is still available for the tool that caused the focus shift.
-                if textView.window?.firstResponder == textView {
-                    lastKnownSelectionRange = NSRange(location: NSNotFound, length: 0)
-                    lastKnownSelectionText = ""
-                    lastKnownSelectionWindowRect = .zero
-                }
+                // No selection - hide floating toolbar.
+                // Do NOT clear the selection cache here. The cache exists specifically
+                // to survive toolbar clicks (which cause AppKit to deselect the textView
+                // synchronously during mouse-down, before SwiftUI's onChange fires).
+                // The cache is naturally overwritten when the user makes a new selection,
+                // and its only consumers (translate/edit) are gated behind the floating
+                // toolbar which requires a selection to appear.
                 var info: [String: Any] = ["hasSelection": false]
                 if let eid = editorInstanceID { info["editorInstanceID"] = eid }
                 NotificationCenter.default.post(
@@ -2395,9 +2393,13 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                    let myID = self?.editorInstanceID, nid != myID { return }
                 Task { @MainActor [weak self] in
                     guard let self = self, let textView = self.textView else { return }
-                    // Skip if a card text view is first responder — the card overlay captures its own selection.
+                    // Skip if a card text view is first responder — the card overlay
+                    // captures its own selection. But DO NOT skip for field editors
+                    // (e.g. the TranslateInputSubmenu's TextField), which are also
+                    // NSTextView instances but aren't card editors.
                     if let firstResp = textView.window?.firstResponder as? NSTextView,
-                       firstResp !== textView { return }
+                       firstResp !== textView,
+                       !firstResp.isFieldEditor { return }
                     self.captureSelectionForEditContent()
                 }
             }
@@ -2495,6 +2497,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     guard let self = self, let textView = self.textView else { return }
                     if let fr = textView.window?.firstResponder as? NSTextView, fr !== textView { return }
                     let range = self.lastKnownSelectionRange
+                    guard range.length > 0 else { return }
                     self.formatter.applyTextColor(hex: hex, range: range, to: textView)
                     self.syncText()
                 }

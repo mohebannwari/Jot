@@ -136,13 +136,15 @@ extension MeetingSummaryGenerator {
         let session = LanguageModelSession(
             instructions: """
             You are analyzing a meeting transcript excerpt (\(index) of \(total)). \
-            Extract key points, action items with assignees, and decisions made. \
-            Be concise and factual. If no action items or decisions are found, leave those arrays empty.
+            Extract ONLY information explicitly stated in the transcript. \
+            Do not infer topics not discussed. Do not fabricate action items, decisions, or attendee names. \
+            If nothing relevant is found in a category, leave that array empty. \
+            Every point must be directly supported by words in the transcript.
             """
         )
 
         let response = try await session.respond(
-            to: "Analyze this portion of a meeting transcript:\n\n\(chunk)",
+            to: "Extract only what is explicitly said in this transcript excerpt. Do not add anything not present:\n\n\(chunk)",
             generating: MeetingChunkSummary.self
         )
 
@@ -183,9 +185,11 @@ extension MeetingSummaryGenerator {
 
         let session = LanguageModelSession(
             instructions: """
-            You are creating the final summary of a meeting. Synthesize the provided notes into \
-            a coherent summary. Remove duplicates, consolidate related points, and produce a clean, \
-            professional meeting summary. The title should capture the main topic discussed.
+            You are creating the final summary of a meeting. Synthesize ONLY the provided notes — \
+            do not add information not present in the input. Remove duplicates and consolidate \
+            related points. The title must reflect a topic actually discussed. \
+            Do not invent attendee names, dates, or details not in the source material. \
+            If the input is sparse, produce a short summary rather than fabricating content.
             """
         )
 

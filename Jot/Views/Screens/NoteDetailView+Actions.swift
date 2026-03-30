@@ -83,9 +83,10 @@ extension NoteDetailView {
             aiIsProcessing = true
         }
 
+        let hasSelection = !capturedSelectionText.isEmpty
         do {
             let revised = try await AppleIntelligenceService.shared.editContent(
-                text: sourceText, instruction: instruction)
+                text: sourceText, instruction: instruction, isSelection: hasSelection)
             withAnimation(.jotSpring) {
                 aiPanelState = .editPreview(
                     revised: revised,
@@ -189,9 +190,10 @@ extension NoteDetailView {
             aiIsProcessing = true
         }
 
+        let hasSelection = !capturedSelectionText.isEmpty
         do {
             let translated = try await AppleIntelligenceService.shared.translate(
-                text: sourceText, to: language)
+                text: sourceText, to: language, isSelection: hasSelection)
             withAnimation(.jotSpring) {
                 aiPanelState = .translatePreview(
                     translated: translated,
@@ -632,12 +634,6 @@ extension NoteDetailView {
                 updatedNote.title = result.title
                 editedTitle = result.title
             }
-        }
-
-        // Set content to the formatted summary if note is empty
-        if editedContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            updatedNote.content = newSession.summary
-            editedContent = newSession.summary
         }
 
         // Persist

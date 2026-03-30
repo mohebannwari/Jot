@@ -51,6 +51,7 @@ struct EditContentFloatingPanel: View {
                 Text("Editing...")
                     .font(FontManager.metadata(size: 11, weight: .semibold))
                     .foregroundColor(Color("SecondaryTextColor"))
+                    .shimmering(active: true)
             } else {
                 Image(AITool.editContent.aiIconName)
                     .renderingMode(.template)
