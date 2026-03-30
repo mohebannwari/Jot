@@ -2497,6 +2497,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     guard let self = self, let textView = self.textView else { return }
                     if let fr = textView.window?.firstResponder as? NSTextView, fr !== textView { return }
                     let range = self.lastKnownSelectionRange
+                    guard range.length > 0 else { return }
                     self.formatter.applyTextColor(hex: hex, range: range, to: textView)
                     self.syncText()
                 }
