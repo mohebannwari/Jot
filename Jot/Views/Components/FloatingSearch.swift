@@ -295,18 +295,21 @@ struct FloatingSearch: View {
                 }
 
                 if let note = result.note, let folder = folder(for: note.folderID) {
+                    let pillFg: Color = (colorScheme == .dark && folder.folderColorNeedsDarkForeground)
+                        ? .black : .white
+
                     HStack(spacing: 4) {
                         Image("IconFolder1")
                             .renderingMode(.template)
                             .resizable()
                             .scaledToFit()
-                            .foregroundColor(.white)
+                            .foregroundColor(pillFg)
                             .frame(width: 16, height: 16)
 
                         Text(folder.name)
                             .font(FontManager.heading(size: 11, weight: .medium))
                             .tracking(-0.2)
-                            .foregroundColor(.white)
+                            .foregroundColor(pillFg)
                             .lineLimit(1)
                     }
                     .padding(.horizontal, 8)

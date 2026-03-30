@@ -608,37 +608,22 @@ extension NoteDetailView {
     func saveMeetingNote() {
         guard meetingRecordingState == .complete else { return }
 
-        let newTranscript = meetingTranscriptionService.serializedTranscript()
-        let newSummary = meetingSummaryGenerator.formatAsRichText(
-            meetingSummaryResult ?? MeetingSummaryDisplayResult(
-                title: "Meeting Notes", summary: "", keyPoints: [], actionItems: [], decisions: []
-            )
+        let newSession = MeetingSession(
+            date: Date(),
+            summary: meetingSummaryGenerator.formatAsRichText(
+                meetingSummaryResult ?? MeetingSummaryDisplayResult(
+                    title: "Meeting Notes", summary: "", keyPoints: [], actionItems: [], decisions: []
+                )
+            ),
+            transcript: meetingTranscriptionService.serializedTranscript(),
+            duration: meetingAudioRecorder.duration,
+            language: meetingTranscriptionService.detectedLanguage,
+            manualNotes: meetingManualNotes
         )
-        let newDuration = meetingAudioRecorder.duration
-        let newLanguage = meetingTranscriptionService.detectedLanguage
-
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateStyle = .medium
-        dateFormatter.timeStyle = .short
-        let dateLabel = dateFormatter.string(from: Date())
 
         var updatedNote = note
         updatedNote.isMeetingNote = true
-
-        // Append to existing meeting data if the note already has meeting content.
-        // Each meeting session is separated by a dated header so history is preserved.
-        if note.isMeetingNote && !note.meetingSummary.isEmpty {
-            let separator = "\n\n---\n[[h2]]Meeting -- \(dateLabel)[[/h2]]\n"
-            updatedNote.meetingSummary = note.meetingSummary + separator + newSummary
-            updatedNote.meetingTranscript = note.meetingTranscript + "\n" + newTranscript
-            updatedNote.meetingDuration = note.meetingDuration + newDuration
-        } else {
-            updatedNote.meetingSummary = newSummary
-            updatedNote.meetingTranscript = newTranscript
-            updatedNote.meetingDuration = newDuration
-        }
-        updatedNote.meetingLanguage = newLanguage
-        updatedNote.meetingManualNotes = meetingManualNotes
+        updatedNote.meetingSessions = note.meetingSessions + [newSession]
 
         // Set the note title from summary if it's still untitled
         if let result = meetingSummaryResult, !result.title.isEmpty {
@@ -651,8 +636,8 @@ extension NoteDetailView {
 
         // Set content to the formatted summary if note is empty
         if editedContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            updatedNote.content = updatedNote.meetingSummary
-            editedContent = updatedNote.meetingSummary
+            updatedNote.content = newSession.summary
+            editedContent = newSession.summary
         }
 
         // Persist
@@ -661,11 +646,7 @@ extension NoteDetailView {
         // Update local state so the detail panel appears immediately
         withAnimation(.jotSpring) {
             savedIsMeetingNote = true
-            savedMeetingSummary = updatedNote.meetingSummary
-            savedMeetingTranscript = updatedNote.meetingTranscript
-            savedMeetingDuration = updatedNote.meetingDuration
-            savedMeetingLanguage = updatedNote.meetingLanguage
-            savedMeetingManualNotes = meetingManualNotes
+            savedMeetingSessions = updatedNote.meetingSessions
         }
 
         dismissMeetingPanel()

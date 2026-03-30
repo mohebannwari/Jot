@@ -16,6 +16,12 @@ These rules are absolute. No exceptions. No rationalizations. No "just this once
 
 ---
 
+## Thinking & Effort
+- **Effort level must always be set to maximum.** This is the default. Never reduce effort, never use low-effort or quick modes. Every response gets full reasoning depth, no matter how simple the task appears.
+- Ultra think after every prompt. Full depth, full rigor, always.
+
+---
+
 ## Workflow — Always Follow
 
 Read and follow `workflow.md` at the project root before every task. It defines the complete development lifecycle, validation gates, and shipping process for this project. The global workflow at `~/.claude/workflow.md` contains universal rules (debugging, subagent architecture, philosophy); the project-level `workflow.md` layers Jot-specific conventions on top. Both are authoritative.

@@ -1019,7 +1019,13 @@ struct ContentView: View {
                 isPinned: note.isPinned,
                 isLocked: note.isLocked,
                 onTogglePin: { setPinState(for: [note.id], pinned: !note.isPinned) },
-                onToggleLock: { notesManager.toggleLock(id: note.id) },
+                onToggleLock: {
+                    if note.isLocked {
+                        handleLockIconTap(note)
+                    } else {
+                        notesManager.toggleLock(id: note.id)
+                    }
+                },
                 onArchive: {
                     archiveNotes([note.id])
                     isPreviewVisible = false
@@ -1604,6 +1610,12 @@ struct ContentView: View {
                     )
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                     .padding(.bottom, 8)
+                } else if updateManager.isDownloading {
+                    UpdatePanelView(
+                        variant: .downloading(version: updateManager.updateVersion)
+                    )
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .padding(.bottom, 8)
                 }
 
                 // Update panel (dev builds only)
@@ -1723,7 +1735,13 @@ struct ContentView: View {
                         },
                         splitNoteIDs: splitNoteIDs,
                         onSplitIconTap: activateSplitForNote,
-                        onToggleLockNote: { id in notesManager.toggleLock(id: id) },
+                        onToggleLockNote: { id in
+                            if let note = notesManager.notes.first(where: { $0.id == id }), note.isLocked {
+                                handleLockIconTap(note)
+                            } else {
+                                notesManager.toggleLock(id: id)
+                            }
+                        },
                         onLockIconTap: { note in handleLockIconTap(note) },
                         highlightedFolderID: highlightedFolderID,
                         isExpanded: $isFoldersSectionExpanded
@@ -1747,7 +1765,13 @@ struct ContentView: View {
                         onTogglePinForNotes: setPinState,
                         onExportNotes: presentExport,
                         onArchiveNotes: archiveNotes,
-                        onToggleLockNote: { id in notesManager.toggleLock(id: id) },
+                        onToggleLockNote: { id in
+                            if let note = notesManager.notes.first(where: { $0.id == id }), note.isLocked {
+                                handleLockIconTap(note)
+                            } else {
+                                notesManager.toggleLock(id: id)
+                            }
+                        },
                         onLockIconTap: { note in handleLockIconTap(note) },
                         onRenameNote: { note, newTitle in
                             var updatedNote = note
@@ -1775,7 +1799,13 @@ struct ContentView: View {
                         onTogglePinForNotes: setPinState,
                         onExportNotes: presentExport,
                         onArchiveNotes: archiveNotes,
-                        onToggleLockNote: { id in notesManager.toggleLock(id: id) },
+                        onToggleLockNote: { id in
+                            if let note = notesManager.notes.first(where: { $0.id == id }), note.isLocked {
+                                handleLockIconTap(note)
+                            } else {
+                                notesManager.toggleLock(id: id)
+                            }
+                        },
                         onLockIconTap: { note in handleLockIconTap(note) },
                         onRenameNote: { note, newTitle in
                             var updatedNote = note
@@ -1807,7 +1837,13 @@ struct ContentView: View {
                         onTogglePinForNotes: setPinState,
                         onExportNotes: presentExport,
                         onArchiveNotes: archiveNotes,
-                        onToggleLockNote: { id in notesManager.toggleLock(id: id) },
+                        onToggleLockNote: { id in
+                            if let note = notesManager.notes.first(where: { $0.id == id }), note.isLocked {
+                                handleLockIconTap(note)
+                            } else {
+                                notesManager.toggleLock(id: id)
+                            }
+                        },
                         onLockIconTap: { note in handleLockIconTap(note) },
                         onRenameNote: { note, newTitle in
                             var updatedNote = note
@@ -1835,7 +1871,13 @@ struct ContentView: View {
                         onTogglePinForNotes: setPinState,
                         onExportNotes: presentExport,
                         onArchiveNotes: archiveNotes,
-                        onToggleLockNote: { id in notesManager.toggleLock(id: id) },
+                        onToggleLockNote: { id in
+                            if let note = notesManager.notes.first(where: { $0.id == id }), note.isLocked {
+                                handleLockIconTap(note)
+                            } else {
+                                notesManager.toggleLock(id: id)
+                            }
+                        },
                         onLockIconTap: { note in handleLockIconTap(note) },
                         onRenameNote: { note, newTitle in
                             var updatedNote = note
@@ -1863,7 +1905,13 @@ struct ContentView: View {
                         onTogglePinForNotes: setPinState,
                         onExportNotes: presentExport,
                         onArchiveNotes: archiveNotes,
-                        onToggleLockNote: { id in notesManager.toggleLock(id: id) },
+                        onToggleLockNote: { id in
+                            if let note = notesManager.notes.first(where: { $0.id == id }), note.isLocked {
+                                handleLockIconTap(note)
+                            } else {
+                                notesManager.toggleLock(id: id)
+                            }
+                        },
                         onLockIconTap: { note in handleLockIconTap(note) },
                         onRenameNote: { note, newTitle in
                             var updatedNote = note
@@ -1891,7 +1939,13 @@ struct ContentView: View {
                         onTogglePinForNotes: setPinState,
                         onExportNotes: presentExport,
                         onArchiveNotes: archiveNotes,
-                        onToggleLockNote: { id in notesManager.toggleLock(id: id) },
+                        onToggleLockNote: { id in
+                            if let note = notesManager.notes.first(where: { $0.id == id }), note.isLocked {
+                                handleLockIconTap(note)
+                            } else {
+                                notesManager.toggleLock(id: id)
+                            }
+                        },
                         onLockIconTap: { note in handleLockIconTap(note) },
                         onRenameNote: { note, newTitle in
                             var updatedNote = note
@@ -1919,7 +1973,13 @@ struct ContentView: View {
                         onTogglePinForNotes: setPinState,
                         onExportNotes: presentExport,
                         onArchiveNotes: archiveNotes,
-                        onToggleLockNote: { id in notesManager.toggleLock(id: id) },
+                        onToggleLockNote: { id in
+                            if let note = notesManager.notes.first(where: { $0.id == id }), note.isLocked {
+                                handleLockIconTap(note)
+                            } else {
+                                notesManager.toggleLock(id: id)
+                            }
+                        },
                         onLockIconTap: { note in handleLockIconTap(note) },
                         onRenameNote: { note, newTitle in
                             var updatedNote = note
@@ -1947,7 +2007,13 @@ struct ContentView: View {
                         onTogglePinForNotes: setPinState,
                         onExportNotes: presentExport,
                         onArchiveNotes: archiveNotes,
-                        onToggleLockNote: { id in notesManager.toggleLock(id: id) },
+                        onToggleLockNote: { id in
+                            if let note = notesManager.notes.first(where: { $0.id == id }), note.isLocked {
+                                handleLockIconTap(note)
+                            } else {
+                                notesManager.toggleLock(id: id)
+                            }
+                        },
                         onLockIconTap: { note in handleLockIconTap(note) },
                         onDropNoteToUnfiled: { noteID in
                             moveNote(noteID: noteID, toFolderID: nil)
@@ -2617,9 +2683,17 @@ struct ContentView: View {
             if updateManager.isUpdateAvailable {
                 UpdatePanelView(
                     variant: .relaunch(version: updateManager.updateVersion),
-                    imageYOffset: -65,
                     onRelaunch: { updateManager.relaunch() },
                     onRemindLater: { updateManager.remindLater() }
+                )
+                .shadow(color: .black.opacity(0.12), radius: 10, x: 0, y: 6)
+                .shadow(color: .black.opacity(0.08), radius: 24, x: 0, y: 16)
+                .shadow(color: .black.opacity(0.04), radius: 40, x: 0, y: 32)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .padding(.bottom, 8)
+            } else if updateManager.isDownloading {
+                UpdatePanelView(
+                    variant: .downloading(version: updateManager.updateVersion)
                 )
                 .shadow(color: .black.opacity(0.12), radius: 10, x: 0, y: 6)
                 .shadow(color: .black.opacity(0.08), radius: 24, x: 0, y: 16)
@@ -2633,7 +2707,6 @@ struct ContentView: View {
             if buildWatcher.isUpdateAvailable {
                 UpdatePanelView(
                     variant: .relaunch(version: buildWatcher.buildVersion),
-                    imageYOffset: -65,
                     onRelaunch: { buildWatcher.relaunch() },
                     onRemindLater: { buildWatcher.remindLater() }
                 )

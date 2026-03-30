@@ -326,6 +326,27 @@ extension Color {
 // MARK: - Folder Color Helper
 
 extension Folder {
+    /// Whether this folder's pill color is too bright for white text (dark mode contrast fix).
+    var folderColorNeedsDarkForeground: Bool {
+        guard let hex = colorHex?.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "#")) else {
+            // Default "SecondaryTextColor" -- in dark mode this is light, needs dark text
+            return true
+        }
+        guard hex.count == 6,
+              let r = UInt8(hex.prefix(2), radix: 16),
+              let g = UInt8(hex.dropFirst(2).prefix(2), radix: 16),
+              let b = UInt8(hex.dropFirst(4).prefix(2), radix: 16)
+        else { return false }
+
+        // W3C relative luminance
+        func linearize(_ c: UInt8) -> Double {
+            let s = Double(c) / 255.0
+            return s <= 0.03928 ? s / 12.92 : pow((s + 0.055) / 1.055, 2.4)
+        }
+        let luminance = 0.2126 * linearize(r) + 0.7152 * linearize(g) + 0.0722 * linearize(b)
+        return luminance > 0.4
+    }
+
     var folderColor: Color {
         guard let hex = colorHex else { return Color("SecondaryTextColor") }
         return Color(hex: hex)

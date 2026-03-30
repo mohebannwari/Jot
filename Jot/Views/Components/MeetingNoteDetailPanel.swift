@@ -4,34 +4,41 @@
 //
 //  Collapsible, tabbed panel that displays persisted meeting note data
 //  (summary, transcript, manual notes) at the top of the note detail pane.
-//  Sits in the same position as AI summary/key points panels.
+//  Supports multiple recording sessions per note, each rendered as its own
+//  accordion with independent tabs and state.
 //
 
 import SwiftUI
 
 struct MeetingNoteDetailPanel: View {
-    let meetingSummary: String
-    let meetingTranscript: String
-    @Binding var meetingManualNotes: String
-    let meetingDuration: TimeInterval
-    let meetingLanguage: String
-    let meetingDate: Date
-    var onNotesChanged: ((String) -> Void)? = nil
-    var onDismiss: (() -> Void)? = nil
+    @Binding var sessions: [MeetingSession]
+    var onNotesChanged: ((UUID, String) -> Void)?
+    var onDismiss: (() -> Void)?
 
-    @State private var isExpanded = false
-    @State private var selectedTab: MeetingTab = .summary
     @Environment(\.colorScheme) private var colorScheme
 
     private let panelRadius: CGFloat = 22
-    private static let maxContentHeight: CGFloat = 300
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            accordionHeader
-            if isExpanded {
-                tabBar
-                tabContent
+            panelHeader
+
+            let reversed = Array(sessions.reversed())
+            ForEach(Array(reversed.enumerated()), id: \.element.id) { index, session in
+                if index > 0 {
+                    HandDrawnDividerLine(seed: index)
+                        .stroke(Color("PrimaryTextColor").opacity(0.2), lineWidth: 0.9)
+                        .frame(height: 1)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 2)
+                }
+                SessionAccordion(
+                    session: session,
+                    defaultExpanded: index == 0,
+                    onNotesChanged: { newNotes in
+                        onNotesChanged?(session.id, newNotes)
+                    }
+                )
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -42,9 +49,9 @@ struct MeetingNoteDetailPanel: View {
         .clipShape(RoundedRectangle(cornerRadius: panelRadius, style: .continuous))
     }
 
-    // MARK: - Accordion Header
+    // MARK: - Panel Header
 
-    private var accordionHeader: some View {
+    private var panelHeader: some View {
         HStack(spacing: 8) {
             Image("IconMeetingNotes")
                 .renderingMode(.template)
@@ -57,33 +64,19 @@ struct MeetingNoteDetailPanel: View {
                 .font(FontManager.heading(size: 13, weight: .semibold))
                 .foregroundColor(Color("PrimaryTextColor"))
 
-            Text(formattedDate)
-                .font(FontManager.metadata(size: 11, weight: .medium))
-                .foregroundColor(Color("TertiaryTextColor"))
-
-            Circle()
-                .fill(Color("TertiaryTextColor").opacity(0.4))
-                .frame(width: 3, height: 3)
-
-            Text(formattedDuration)
-                .font(FontManager.metadata(size: 11, weight: .medium))
-                .foregroundColor(Color("TertiaryTextColor"))
-                .monospacedDigit()
-
-            if !meetingLanguage.isEmpty {
-                Text(meetingLanguage.uppercased())
+            if sessions.count > 1 {
+                Text("\(sessions.count) sessions")
                     .font(FontManager.metadata(size: 10, weight: .medium))
                     .foregroundColor(Color("TertiaryTextColor"))
-                    .kerning(0.3)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(
+                        Capsule()
+                            .fill(Color("SurfaceTranslucentColor"))
+                    )
             }
 
             Spacer()
-
-            Image(isExpanded ? "IconChevronTopSmall" : "IconChevronDownSmall")
-                .resizable()
-                .renderingMode(.template)
-                .frame(width: 16, height: 16)
-                .foregroundColor(Color("SecondaryTextColor"))
 
             if let onDismiss {
                 Button(action: onDismiss) {
@@ -100,8 +93,81 @@ struct MeetingNoteDetailPanel: View {
             }
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .contentShape(RoundedRectangle(cornerRadius: panelRadius, style: .continuous))
+        .padding(.top, 12)
+        .padding(.bottom, 4)
+    }
+
+    // MARK: - Colors
+
+    private var panelBackground: Color {
+        colorScheme == .dark ? Color("DetailPaneColor") : .white
+    }
+}
+
+// MARK: - Session Accordion
+
+/// Renders a single meeting session with its own expand/collapse, tabs, and content.
+private struct SessionAccordion: View {
+    let session: MeetingSession
+    var onNotesChanged: ((String) -> Void)?
+
+    @State private var isExpanded: Bool
+    @State private var selectedTab: MeetingTab = .summary
+    @Environment(\.colorScheme) private var colorScheme
+
+    private static let maxContentHeight: CGFloat = 300
+
+    init(session: MeetingSession, defaultExpanded: Bool = false, onNotesChanged: ((String) -> Void)? = nil) {
+        self.session = session
+        self.onNotesChanged = onNotesChanged
+        self._isExpanded = State(initialValue: defaultExpanded)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            sessionHeader
+            if isExpanded {
+                tabBar
+                tabContent
+            }
+        }
+    }
+
+    // MARK: - Session Header
+
+    private var sessionHeader: some View {
+        HStack(spacing: 8) {
+            Text(formattedDate)
+                .font(FontManager.metadata(size: 11, weight: .medium))
+                .foregroundColor(Color("SecondaryTextColor"))
+
+            Circle()
+                .fill(Color("TertiaryTextColor").opacity(0.4))
+                .frame(width: 3, height: 3)
+
+            Text(formattedDuration)
+                .font(FontManager.metadata(size: 11, weight: .medium))
+                .foregroundColor(Color("TertiaryTextColor"))
+                .monospacedDigit()
+
+            if !session.language.isEmpty {
+                Text(session.language.uppercased())
+                    .font(FontManager.metadata(size: 10, weight: .medium))
+                    .foregroundColor(Color("TertiaryTextColor"))
+                    .kerning(0.3)
+            }
+
+            Spacer()
+
+            Image(isExpanded ? "IconChevronTopSmall" : "IconChevronDownSmall")
+                .resizable()
+                .renderingMode(.template)
+                .frame(width: 16, height: 16)
+                .foregroundColor(Color("SecondaryTextColor"))
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .contentShape(Rectangle())
         .onTapGesture {
             withAnimation(.jotSmoothFast) {
                 isExpanded.toggle()
@@ -166,9 +232,7 @@ struct MeetingNoteDetailPanel: View {
 
     private var summaryContent: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // Parse the meetingSummary -- it's in Jot's rich text format.
-            // For MVP, render as plain text with basic structure detection.
-            let lines = meetingSummary.components(separatedBy: "\n").filter { !$0.isEmpty }
+            let lines = session.summary.components(separatedBy: "\n").filter { !$0.isEmpty }
             ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
                 meetingSummaryLine(line)
             }
@@ -225,7 +289,7 @@ struct MeetingNoteDetailPanel: View {
     // MARK: - Transcript Tab
 
     private var transcriptContent: some View {
-        let segments = [TranscriptSegment].deserialized(from: meetingTranscript)
+        let segments = [TranscriptSegment].deserialized(from: session.transcript)
 
         return VStack(alignment: .leading, spacing: 6) {
             if segments.isEmpty {
@@ -254,7 +318,62 @@ struct MeetingNoteDetailPanel: View {
     // MARK: - Notes Tab
 
     private var notesContent: some View {
-        TextEditor(text: $meetingManualNotes)
+        NotesEditor(text: session.manualNotes, onChanged: onNotesChanged)
+    }
+
+    // MARK: - Helpers
+
+    private static let sessionDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .medium
+        f.timeStyle = .short
+        return f
+    }()
+
+    private var formattedDate: String {
+        Self.sessionDateFormatter.string(from: session.date)
+    }
+
+    private var formattedDuration: String {
+        let hours = Int(session.duration) / 3600
+        let minutes = (Int(session.duration) % 3600) / 60
+        let seconds = Int(session.duration) % 60
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
+        }
+        return String(format: "%02d:%02d", minutes, seconds)
+    }
+
+    private func formatTimestamp(_ timestamp: TimeInterval) -> String {
+        let minutes = Int(timestamp) / 60
+        let seconds = Int(timestamp) % 60
+        return String(format: "%d:%02d", minutes, seconds)
+    }
+
+    private var tabSelectedBackground: Color {
+        Color("SurfaceTranslucentColor")
+    }
+}
+
+// MARK: - Notes Editor (callback-based wrapper)
+
+/// Wraps TextEditor for session manual notes, calling back on changes
+/// rather than requiring a direct Binding to the session.
+private struct NotesEditor: View {
+    let text: String
+    var onChanged: ((String) -> Void)?
+
+    @State private var editableText: String = ""
+    @Environment(\.colorScheme) private var colorScheme
+
+    init(text: String, onChanged: ((String) -> Void)? = nil) {
+        self.text = text
+        self.onChanged = onChanged
+        self._editableText = State(initialValue: text)
+    }
+
+    var body: some View {
+        TextEditor(text: $editableText)
             .font(FontManager.body(size: 13))
             .foregroundColor(Color("PrimaryTextColor"))
             .scrollContentBackground(.hidden)
@@ -270,7 +389,7 @@ struct MeetingNoteDetailPanel: View {
                     .stroke(borderColor, lineWidth: 1)
             )
             .overlay(alignment: .topLeading) {
-                if meetingManualNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                if editableText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Text("Add notes...")
                         .font(FontManager.body(size: 13))
                         .foregroundColor(Color("TertiaryTextColor"))
@@ -279,48 +398,9 @@ struct MeetingNoteDetailPanel: View {
                         .padding(.leading, 13)
                 }
             }
-            .onChange(of: meetingManualNotes) { _, newValue in
-                onNotesChanged?(newValue)
+            .onChange(of: editableText) { _, newValue in
+                onChanged?(newValue)
             }
-    }
-
-    // MARK: - Helpers
-
-    private static let meetingDateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateStyle = .medium
-        f.timeStyle = .short
-        return f
-    }()
-
-    private var formattedDate: String {
-        Self.meetingDateFormatter.string(from: meetingDate)
-    }
-
-    private var formattedDuration: String {
-        let hours = Int(meetingDuration) / 3600
-        let minutes = (Int(meetingDuration) % 3600) / 60
-        let seconds = Int(meetingDuration) % 60
-        if hours > 0 {
-            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
-        }
-        return String(format: "%02d:%02d", minutes, seconds)
-    }
-
-    private func formatTimestamp(_ timestamp: TimeInterval) -> String {
-        let minutes = Int(timestamp) / 60
-        let seconds = Int(timestamp) % 60
-        return String(format: "%d:%02d", minutes, seconds)
-    }
-
-    // MARK: - Colors
-
-    private var panelBackground: Color {
-        colorScheme == .dark ? Color("DetailPaneColor") : .white
-    }
-
-    private var tabSelectedBackground: Color {
-        Color("SurfaceTranslucentColor")
     }
 
     private var borderColor: Color {
@@ -390,5 +470,61 @@ private struct ScrollMetricsKey: PreferenceKey {
     static var defaultValue = ScrollMetrics()
     static func reduce(value: inout ScrollMetrics, nextValue: () -> ScrollMetrics) {
         value = nextValue()
+    }
+}
+
+// MARK: - Hand-Drawn Divider Line
+
+/// Matches the hand-drawn wavy divider used in the note editor (DividerSizeAttachmentCell).
+/// Uses a deterministic pseudo-random hash so the line is stable across redraws.
+private struct HandDrawnDividerLine: Shape {
+    let seed: Int
+
+    private func hash(_ i: Int) -> CGFloat {
+        var h = UInt64(bitPattern: Int64(i))
+        h = h &* 6364136223846793005 &+ 1442695040888963407
+        h = (h >> 33) ^ h
+        return CGFloat(h % 10000) / 10000.0
+    }
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let baseY = rect.midY
+        var x = rect.minX
+        var y = baseY
+        var drift: CGFloat = 0
+        var i = seed &* 1000
+
+        path.move(to: CGPoint(x: x, y: y))
+
+        while x < rect.maxX {
+            let r1 = hash(i &* 31 &+ 7)
+            let r2 = hash(i &* 47 &+ 13)
+            let r3 = hash(i &* 73 &+ 29)
+            let r4 = hash(i &* 97 &+ 41)
+
+            let segLen = 6.0 + r1 * 12.0
+            let nextX = min(x + segLen, rect.maxX)
+            let midX = (x + nextX) / 2
+
+            drift += (r2 - 0.5) * 1.2
+            drift *= 0.85
+
+            let bumpUp = (r3 - 0.5) * 2.8
+            let bumpDown = (r4 - 0.5) * 2.8
+            let nextY = baseY + drift
+
+            path.addCurve(
+                to: CGPoint(x: nextX, y: nextY),
+                control1: CGPoint(x: midX - segLen * 0.15, y: y + bumpUp),
+                control2: CGPoint(x: midX + segLen * 0.15, y: nextY + bumpDown)
+            )
+
+            x = nextX
+            y = nextY
+            i += 1
+        }
+
+        return path
     }
 }

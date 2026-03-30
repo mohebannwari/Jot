@@ -39,19 +39,31 @@ struct EditContentFloatingPanel: View {
 
     // MARK: - Header
 
+    private var isLoading: Bool {
+        if case .loading(.editContent) = state { return true }
+        return false
+    }
+
     private var headerRow: some View {
         HStack(spacing: 6) {
-            Image(AITool.editContent.aiIconName)
-                .renderingMode(.template)
-                .resizable()
-                .scaledToFit()
-                .foregroundColor(Color("SecondaryTextColor"))
-                .frame(width: 16, height: 16)
+            if isLoading {
+                BrailleLoader(pattern: .scan, size: 11)
+                Text("Editing...")
+                    .font(FontManager.metadata(size: 11, weight: .semibold))
+                    .foregroundColor(Color("SecondaryTextColor"))
+            } else {
+                Image(AITool.editContent.aiIconName)
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .foregroundColor(Color("SecondaryTextColor"))
+                    .frame(width: 16, height: 16)
 
-            Text(AITool.editContent.aiDisplayName.uppercased())
-                .font(FontManager.metadata(size: 11, weight: .semibold))
-                .foregroundColor(Color("SecondaryTextColor"))
-                .kerning(0.5)
+                Text(AITool.editContent.aiDisplayName.uppercased())
+                    .font(FontManager.metadata(size: 11, weight: .semibold))
+                    .foregroundColor(Color("SecondaryTextColor"))
+                    .kerning(0.5)
+            }
 
             Spacer()
 

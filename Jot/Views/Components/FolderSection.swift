@@ -116,7 +116,7 @@ struct FolderSection: View {
 
             // Folder rows
             if isExpanded {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 0) {
                     ForEach(folders, id: \.id) { folder in
                         let isFolderExpanded = expandedFolderIDs.contains(folder.id)
                         VStack(alignment: .leading, spacing: 4) {
@@ -129,7 +129,7 @@ struct FolderSection: View {
                                     note: peekNote,
                                     isSelected: selectedNoteIDs.contains(peekNote.id),
                                     isActiveNote: peekNote.id == activeNoteID,
-                                    activeIconTint: folder.folderDisplayColor(for: colorScheme),
+                                    activeIconTint: folder.folderColor,
                                     isInsideFolder: true,
                                     onTap: { interaction in onOpenNote(peekNote, interaction) },
                                     onTogglePin: { shouldPin in
@@ -180,7 +180,7 @@ struct FolderSection: View {
                             .renderingMode(.template)
                             .resizable()
                             .scaledToFit()
-                            .foregroundColor(peekFolder.folderDisplayColor(for: colorScheme))
+                            .foregroundColor(peekFolder.folderColor)
                             .frame(width: 16, height: 16)
 
                         Text(peekFolder.name)
@@ -212,7 +212,7 @@ struct FolderSection: View {
 
                     if peekRevealedFolderID == peekFolder.id {
                         // All notes in this folder
-                        folderNotesList(peekFolder, wrapInContainer: false)
+                        folderNotesList(peekFolder)
                             .padding(.leading, 26)
                     } else {
                         // Active note only
@@ -220,7 +220,7 @@ struct FolderSection: View {
                             note: peekNote,
                             isSelected: selectedNoteIDs.contains(peekNote.id),
                             isActiveNote: peekNote.id == activeNoteID,
-                            activeIconTint: peekFolder.folderDisplayColor(for: colorScheme),
+                            activeIconTint: peekFolder.folderColor,
                             isInsideFolder: true,
                             onTap: { interaction in onOpenNote(peekNote, interaction) },
                             onTogglePin: { shouldPin in
@@ -273,7 +273,7 @@ struct FolderSection: View {
                 .renderingMode(.template)
                 .resizable()
                 .scaledToFit()
-                .foregroundColor(folder.folderDisplayColor(for: colorScheme))
+                .foregroundColor(folder.folderColor)
                 .frame(width: 16, height: 16)
 
             if isRenamingThisFolder {
@@ -390,7 +390,7 @@ struct FolderSection: View {
         )
         .overlay {
             if highlightedFolderID == folder.id {
-                FolderHighlightPulse(color: folder.folderDisplayColor(for: colorScheme))
+                FolderHighlightPulse(color: folder.folderColor)
                     .padding(.horizontal, rowHoverHorizontalInset)
             }
         }
@@ -471,12 +471,11 @@ struct FolderSection: View {
         ))
     }
 
-    private func folderNotesList(_ folder: Folder, wrapInContainer: Bool = true) -> some View {
+    private func folderNotesList(_ folder: Folder) -> some View {
         let notes = notesByFolder[folder.id] ?? []
         let showsAll = showAllNotesFolderIDs.contains(folder.id)
         let shouldLimit = notes.count > 5 && !showsAll
         let visibleNotes = shouldLimit ? Array(notes.prefix(5)) : notes
-        let containerFill = wrapInContainer ? folder.folderContainerFill(for: colorScheme) : nil
 
         return Group {
             if !notes.isEmpty {
@@ -486,9 +485,8 @@ struct FolderSection: View {
                             note: note,
                             isSelected: selectedNoteIDs.contains(note.id),
                             isActiveNote: note.id == activeNoteID,
-                            activeIconTint: folder.folderDisplayColor(for: colorScheme),
+                            activeIconTint: folder.folderColor,
                             isInsideFolder: true,
-                            forceLightText: containerFill != nil,
                             leadingIconAssetName: note.isLocked
                                 ? "IconLock"
                                 : (splitNoteIDs.contains(note.id) ? "IconArrowSplitUp" : nil),
@@ -546,18 +544,7 @@ struct FolderSection: View {
                         .subtleHoverScale(1.02)
                     }
                 }
-                .padding(6)
-                .background {
-                    if let containerFill {
-                        if visibleNotes.count == 1 {
-                            Capsule(style: .continuous)
-                                .fill(containerFill)
-                        } else {
-                            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                                .fill(containerFill)
-                        }
-                    }
-                }
+                .padding(.leading, 26)
             }
         }
     }

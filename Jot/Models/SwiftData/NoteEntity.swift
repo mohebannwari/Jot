@@ -40,6 +40,8 @@ final class NoteEntity {
 
     // MARK: - Meeting Notes
     var isMeetingNote: Bool = false
+    var meetingSessionsData: Data?
+    // Legacy flat fields — kept for backward-compat migration
     var meetingTranscript: String = ""
     var meetingSummary: String = ""
     var meetingDuration: Double = 0
@@ -122,11 +124,21 @@ final class NoteEntity {
 
         // Meeting notes
         self.isMeetingNote = note.isMeetingNote
-        self.meetingTranscript = note.meetingTranscript
-        self.meetingSummary = note.meetingSummary
-        self.meetingDuration = note.meetingDuration
-        self.meetingLanguage = note.meetingLanguage
-        self.meetingManualNotes = note.meetingManualNotes
+        if !note.meetingSessions.isEmpty {
+            self.meetingSessionsData = try? JSONEncoder().encode(note.meetingSessions)
+            self.meetingTranscript = ""
+            self.meetingSummary = ""
+            self.meetingDuration = 0
+            self.meetingLanguage = ""
+            self.meetingManualNotes = ""
+        } else {
+            self.meetingSessionsData = nil
+            self.meetingTranscript = note.meetingTranscript
+            self.meetingSummary = note.meetingSummary
+            self.meetingDuration = note.meetingDuration
+            self.meetingLanguage = note.meetingLanguage
+            self.meetingManualNotes = note.meetingManualNotes
+        }
         self.tags = note.tags
         // Extract web clip data from content if present
         self.extractWebClipData()
@@ -191,11 +203,21 @@ final class NoteEntity {
         if let data = stickersData {
             note.stickers = (try? JSONDecoder().decode([Sticker].self, from: data)) ?? []
         }
-        note.meetingTranscript = meetingTranscript
-        note.meetingSummary = meetingSummary
-        note.meetingDuration = meetingDuration
-        note.meetingLanguage = meetingLanguage
-        note.meetingManualNotes = meetingManualNotes
+        // Decode sessions, or migrate from legacy flat fields
+        if let data = meetingSessionsData,
+           let sessions = try? JSONDecoder().decode([MeetingSession].self, from: data) {
+            note.meetingSessions = sessions
+        } else if isMeetingNote && !meetingSummary.isEmpty {
+            // Legacy migration: synthesize a single session from flat fields
+            note.meetingSessions = [MeetingSession(
+                date: modifiedAt,
+                summary: meetingSummary,
+                transcript: meetingTranscript,
+                duration: meetingDuration,
+                language: meetingLanguage,
+                manualNotes: meetingManualNotes
+            )]
+        }
         return note
     }
 }

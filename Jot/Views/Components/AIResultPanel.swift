@@ -40,19 +40,31 @@ struct AIResultPanel: View {
 
     // MARK: - Header
 
+    private var isLoading: Bool {
+        if case .loading = state { return true }
+        return false
+    }
+
     private var headerRow: some View {
         HStack(spacing: 6) {
-            Image(toolIconName)
-                .renderingMode(.template)
-                .resizable()
-                .scaledToFit()
-                .foregroundColor(Color("SecondaryTextColor"))
-                .frame(width: 14, height: 14)
+            if isLoading {
+                BrailleLoader(pattern: loadingPattern, size: 11)
+                Text(loadingLabel)
+                    .font(FontManager.metadata(size: 11, weight: .semibold))
+                    .foregroundColor(Color("SecondaryTextColor"))
+            } else {
+                Image(toolIconName)
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .foregroundColor(Color("SecondaryTextColor"))
+                    .frame(width: 14, height: 14)
 
-            Text(toolLabel.uppercased())
-                .font(FontManager.metadata(size: 11, weight: .semibold))
-                .foregroundColor(Color("SecondaryTextColor"))
-                .kerning(0.5)
+                Text(toolLabel.uppercased())
+                    .font(FontManager.metadata(size: 11, weight: .semibold))
+                    .foregroundColor(Color("SecondaryTextColor"))
+                    .kerning(0.5)
+            }
 
             Spacer()
 
@@ -152,6 +164,28 @@ struct AIResultPanel: View {
     }
 
     // MARK: - Helpers
+
+    private var loadingPattern: BraillePattern {
+        switch state {
+        case .loading(.summary):      return .breathe
+        case .loading(.keyPoints):    return .breathe
+        case .loading(.proofread):    return .snake
+        case .loading(.meetingNotes): return .checkerboard
+        case .loading:                return .breathe
+        default:                      return .breathe
+        }
+    }
+
+    private var loadingLabel: String {
+        switch state {
+        case .loading(.summary):      return "Summarizing..."
+        case .loading(.keyPoints):    return "Extracting..."
+        case .loading(.proofread):    return "Proofreading..."
+        case .loading(.meetingNotes): return "Processing..."
+        case .loading:                return "Thinking..."
+        default:                      return ""
+        }
+    }
 
     private var toolLabel: String {
         switch state {

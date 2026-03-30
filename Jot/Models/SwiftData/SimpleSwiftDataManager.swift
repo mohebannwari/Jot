@@ -450,11 +450,21 @@ final class SimpleSwiftDataManager: ObservableObject {
 
             // Meeting notes
             noteEntity.isMeetingNote = updatedNote.isMeetingNote
-            noteEntity.meetingTranscript = updatedNote.meetingTranscript
-            noteEntity.meetingSummary = updatedNote.meetingSummary
-            noteEntity.meetingDuration = updatedNote.meetingDuration
-            noteEntity.meetingLanguage = updatedNote.meetingLanguage
-            noteEntity.meetingManualNotes = updatedNote.meetingManualNotes
+            if !updatedNote.meetingSessions.isEmpty {
+                noteEntity.meetingSessionsData = try? JSONEncoder().encode(updatedNote.meetingSessions)
+                noteEntity.meetingTranscript = ""
+                noteEntity.meetingSummary = ""
+                noteEntity.meetingDuration = 0
+                noteEntity.meetingLanguage = ""
+                noteEntity.meetingManualNotes = ""
+            } else {
+                noteEntity.meetingSessionsData = nil
+                noteEntity.meetingTranscript = updatedNote.meetingTranscript
+                noteEntity.meetingSummary = updatedNote.meetingSummary
+                noteEntity.meetingDuration = updatedNote.meetingDuration
+                noteEntity.meetingLanguage = updatedNote.meetingLanguage
+                noteEntity.meetingManualNotes = updatedNote.meetingManualNotes
+            }
             noteEntity.tags = updatedNote.tags
 
             try modelContext.save()

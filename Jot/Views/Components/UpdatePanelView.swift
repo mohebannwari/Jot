@@ -3,6 +3,7 @@ import SwiftUI
 // MARK: - Variant
 
 enum UpdatePanelVariant: Equatable {
+    case downloading(version: String)
     case relaunch(version: String)
 }
 
@@ -10,83 +11,63 @@ enum UpdatePanelVariant: Equatable {
 
 struct UpdatePanelView: View {
     let variant: UpdatePanelVariant
-    var imageYOffset: CGFloat = -80
     var onRelaunch: () -> Void = {}
     var onRemindLater: () -> Void = {}
 
     @Environment(\.colorScheme) private var colorScheme
+    @State private var isPreparingRelaunch = false
 
-    private let cardHeight: CGFloat = 112
-    private let outerRadius: CGFloat = 22
-    private let innerRadius: CGFloat = 20 // concentric: 22 - 2
+    private let cornerRadius: CGFloat = 22
 
     var body: some View {
-        VStack(spacing: 0) {
-            cardContent
-            buttonSection
-        }
-        .padding(2)
-        .thinLiquidGlass(in: RoundedRectangle(cornerRadius: outerRadius, style: .continuous))
-    }
-
-    // MARK: - Card
-
-    private var cardContent: some View {
-        ZStack(alignment: .topLeading) {
-            backgroundLayer
-
+        VStack(alignment: .leading, spacing: 12) {
+            // Content section (icon + header)
             VStack(alignment: .leading, spacing: 12) {
                 iconView
                 headerSection
             }
-            .padding(16)
+            .padding(8)
+
+            // Button section or download progress
+            if isPreparingRelaunch {
+                downloadProgressSection
+            } else {
+                buttonSection
+            }
         }
-        .frame(height: cardHeight)
-        .clipShape(RoundedRectangle(cornerRadius: innerRadius, style: .continuous))
-        .shadow(color: .black.opacity(0.08), radius: 4, x: 0, y: 2)
-        .shadow(color: .black.opacity(0.04), radius: 1, x: 0, y: 1)
+        .padding(8)
+        .background { backgroundLayer }
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
     }
 
     // MARK: - Background
+    // Figma: image w=274.58% h=245.37% left=-23.42% top=-145.37%
+    // Gradient: absolute inset-0, transparent -> bg/secondary
+
+    private var surfaceColor: Color {
+        colorScheme == .dark
+            ? Color(red: 0.047, green: 0.039, blue: 0.035)
+            : .white
+    }
 
     private var backgroundLayer: some View {
         GeometryReader { geo in
+            let w = geo.size.width
+            let h = geo.size.height
+
             Image("SettingsThemeAuto")
                 .resizable()
-                .aspectRatio(contentMode: .fill)
-                .frame(width: geo.size.width, height: geo.size.height)
-                .scaleEffect(1.5)
-                .offset(x: 20, y: imageYOffset)
-                .clipped()
+                .frame(width: w * 2.7458, height: h * 2.4537)
+                .offset(x: w * -0.2342, y: h * -1.4537)
         }
-        .overlay(alignment: .bottom) { gradientOverlay }
-    }
-
-    private var gradientOverlay: some View {
-        // On macOS 26+ the glass material shows through, so fade to clear.
-        // On older systems, fade to a solid surface color.
-        let surfaceColor: Color = {
-            if #available(macOS 26.0, iOS 26.0, *) {
-                return colorScheme == .dark
-                    ? Color.black.opacity(0.85)
-                    : Color.white.opacity(0.85)
-            } else {
-                return Color("DetailPaneSurfaceColor")
-            }
-        }()
-
-        return LinearGradient(
-            stops: [
-                .init(color: .clear, location: 0),
-                .init(color: .clear, location: 0.15),
-                .init(color: surfaceColor.opacity(0.5), location: 0.40),
-                .init(color: surfaceColor.opacity(0.85), location: 0.55),
-                .init(color: surfaceColor, location: 0.68),
-                .init(color: surfaceColor, location: 1.0),
-            ],
-            startPoint: .top,
-            endPoint: .bottom
-        )
+        .clipped()
+        .overlay {
+            LinearGradient(
+                colors: [surfaceColor.opacity(0), surfaceColor],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        }
     }
 
     // MARK: - Icon
@@ -102,17 +83,25 @@ struct UpdatePanelView: View {
 
     // MARK: - Header
 
-    @ViewBuilder
     private var headerSection: some View {
-        if case .relaunch(let version) = variant {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Update to version \(version)")
-                    .font(.system(size: 15, weight: .medium))
-                    .tracking(-0.5)
-                    .lineLimit(1)
-                    .foregroundStyle(Color("PrimaryTextColor"))
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Update to version \(variantVersion)")
+                .font(.system(size: 15, weight: .medium))
+                .tracking(-0.5)
+                .lineLimit(1)
+                .foregroundStyle(Color("PrimaryTextColor"))
 
-                Text("Relaunch to apply")
+            switch variant {
+            case .downloading:
+                HStack(spacing: 6) {
+                    BrailleLoader(pattern: .orbit, size: 11)
+                    Text("Downloading update...")
+                        .font(.system(size: 12, weight: .medium))
+                        .tracking(-0.3)
+                        .foregroundStyle(Color("SecondaryTextColor"))
+                }
+            case .relaunch:
+                Text("Ready to install")
                     .font(.system(size: 12, weight: .medium))
                     .tracking(-0.3)
                     .foregroundStyle(Color("SecondaryTextColor"))
@@ -120,26 +109,123 @@ struct UpdatePanelView: View {
         }
     }
 
+    private var variantVersion: String {
+        switch variant {
+        case .downloading(let v), .relaunch(let v): return v
+        }
+    }
+
     // MARK: - Button Section
 
+    @ViewBuilder
     private var buttonSection: some View {
-        VStack(spacing: 8) {
-            ShimmerButton(
-                label: "Relaunch",
-                action: onRelaunch
-            )
+        switch variant {
+        case .downloading:
+            EmptyView()
 
-            Button(action: onRemindLater) {
-                Text("Remind me later")
-                    .font(.system(size: 11, weight: .medium))
-                    .tracking(-0.2)
-                    .foregroundStyle(Color("SecondaryTextColor"))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
+        case .relaunch:
+            VStack(spacing: 8) {
+                ShimmerButton(
+                    label: "Download & Relaunch",
+                    action: {
+                        withAnimation(.jotSpring) {
+                            isPreparingRelaunch = true
+                        }
+                        Task { @MainActor in
+                            try? await Task.sleep(for: .seconds(12))
+                            onRelaunch()
+                        }
+                    }
+                )
+
+                Button(action: onRemindLater) {
+                    Text("Remind me later")
+                        .font(.system(size: 11, weight: .medium))
+                        .tracking(-0.2)
+                        .foregroundStyle(Color("SecondaryTextColor"))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
+        }
+    }
+
+    // MARK: - Download Progress
+
+    private var downloadProgressSection: some View {
+        VStack(spacing: 4) {
+            Text("DOWNLOADING...")
+                .font(FontManager.metadata(size: 11, weight: .medium))
+                .foregroundStyle(Color("PrimaryTextColor"))
+                .kerning(0.5)
+
+            BrailleTrailBar()
         }
         .padding(8)
+        .thinLiquidGlass(in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
+    }
+}
+
+// MARK: - Braille Cascade Bar
+
+private struct BrailleTrailBar: View {
+    var duration: TimeInterval = 12
+
+    private let helixFrames = BraillePattern.helix.frames
+    private let barHeight: CGFloat = 16
+
+    @State private var frameIndex: Int = 0
+    @State private var fillProgress: CGFloat = 0
+    @State private var animationTask: Task<Void, Never>?
+
+    var body: some View {
+        GeometryReader { geo in
+            let tileWidth: CGFloat = 32
+            let tileCount = max(1, Int(ceil(geo.size.width / tileWidth)))
+
+            ZStack(alignment: .leading) {
+                // Cascade braille characters filling the entire bar
+                HStack(spacing: 0) {
+                    ForEach(0..<tileCount, id: \.self) { i in
+                        let tileFrame = (frameIndex + i * 3) % helixFrames.count
+                        Text(helixFrames[tileFrame])
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    }
+                }
+                .frame(width: geo.size.width, height: geo.size.height, alignment: .leading)
+                .foregroundStyle(Color.accentColor)
+                // Clip to the fill progress width
+                .mask(alignment: .leading) {
+                    Rectangle()
+                        .frame(width: geo.size.width * fillProgress)
+                }
+            }
+        }
+        .frame(height: barHeight)
+        .background(Color("BorderSubtleColor").opacity(0.15))
+        .clipShape(Capsule())
+        .onAppear { startAnimation() }
+        .onDisappear { animationTask?.cancel() }
+    }
+
+    private func startAnimation() {
+        animationTask?.cancel()
+
+        // Fill progress: 0 -> 1 over the duration
+        withAnimation(.easeInOut(duration: duration)) {
+            fillProgress = 1
+        }
+
+        // Cascade frame cycling
+        animationTask = Task { @MainActor in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(BraillePattern.helix.nativeInterval))
+                guard !Task.isCancelled else { return }
+                frameIndex = (frameIndex + 1) % helixFrames.count
+            }
+        }
     }
 }
 
@@ -212,11 +298,11 @@ private struct ShimmerButton: View {
                 .tracking(-0.4)
                 .foregroundStyle(Color("ButtonPrimaryTextColor"))
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
+                .frame(height: 42)
                 .background(Color("ButtonPrimaryBgColor"))
                 .overlay { shimmerOverlay }
                 .clipShape(Capsule())
-                .shadow(color: .white.opacity(0.8), radius: 4, x: 0, y: 0)
+                .shadow(color: .white, radius: 8, x: 0, y: 0)
         }
         .buttonStyle(.plain)
         .onAppear {

@@ -107,11 +107,7 @@ struct NoteDetailView: View {
 
     // Persisted meeting data (loaded from note, updated on save)
     @State var savedIsMeetingNote: Bool = false
-    @State var savedMeetingSummary: String = ""
-    @State var savedMeetingTranscript: String = ""
-    @State var savedMeetingDuration: TimeInterval = 0
-    @State var savedMeetingLanguage: String = ""
-    @State var savedMeetingManualNotes: String = ""
+    @State var savedMeetingSessions: [MeetingSession] = []
 
     // MARK: - Scroll / toolbar state
     @FocusState private var titleFocused: Bool
@@ -204,11 +200,7 @@ struct NoteDetailView: View {
         self._lastSavedStickers = State(initialValue: note.stickers)
         // Meeting data
         self._savedIsMeetingNote = State(initialValue: note.isMeetingNote)
-        self._savedMeetingSummary = State(initialValue: note.meetingSummary)
-        self._savedMeetingTranscript = State(initialValue: note.meetingTranscript)
-        self._savedMeetingDuration = State(initialValue: note.meetingDuration)
-        self._savedMeetingLanguage = State(initialValue: note.meetingLanguage)
-        self._savedMeetingManualNotes = State(initialValue: note.meetingManualNotes)
+        self._savedMeetingSessions = State(initialValue: note.meetingSessions)
         // Meeting panel layout fields removed — panel renders at fixed position and full width.
     }
 
@@ -313,37 +305,26 @@ struct NoteDetailView: View {
             }
 
             // Meeting notes panel — fixed position above AI panels
-            if savedIsMeetingNote && !savedMeetingSummary.isEmpty {
+            if savedIsMeetingNote && !savedMeetingSessions.isEmpty {
                 MeetingNoteDetailPanel(
-                    meetingSummary: savedMeetingSummary,
-                    meetingTranscript: savedMeetingTranscript,
-                    meetingManualNotes: $savedMeetingManualNotes,
-                    meetingDuration: savedMeetingDuration,
-                    meetingLanguage: savedMeetingLanguage,
-                    meetingDate: note.date,
-                    onNotesChanged: { newNotes in
+                    sessions: $savedMeetingSessions,
+                    onNotesChanged: { sessionID, newNotes in
+                        if let idx = savedMeetingSessions.firstIndex(where: { $0.id == sessionID }) {
+                            savedMeetingSessions[idx].manualNotes = newNotes
+                        }
                         var updated = note
-                        updated.meetingTranscript = savedMeetingTranscript
-                        updated.meetingSummary = savedMeetingSummary
-                        updated.meetingDuration = savedMeetingDuration
-                        updated.meetingLanguage = savedMeetingLanguage
-                        updated.meetingManualNotes = newNotes
+                        updated.meetingSessions = savedMeetingSessions
                         updated.isMeetingNote = true
                         notesManager.updateNote(updated)
                     },
                     onDismiss: {
                         withAnimation(.jotSpring) {
                             savedIsMeetingNote = false
-                            savedMeetingSummary = ""
-                            savedMeetingTranscript = ""
+                            savedMeetingSessions = []
                         }
                         var updated = note
                         updated.isMeetingNote = false
-                        updated.meetingSummary = ""
-                        updated.meetingTranscript = ""
-                        updated.meetingManualNotes = ""
-                        updated.meetingDuration = 0
-                        updated.meetingLanguage = ""
+                        updated.meetingSessions = []
                         notesManager.updateNote(updated)
                     }
                 )
@@ -635,11 +616,7 @@ struct NoteDetailView: View {
             lastSavedStickers = note.stickers
             // Restore meeting data for new note
             savedIsMeetingNote = note.isMeetingNote
-            savedMeetingSummary = note.meetingSummary
-            savedMeetingTranscript = note.meetingTranscript
-            savedMeetingDuration = note.meetingDuration
-            savedMeetingLanguage = note.meetingLanguage
-            savedMeetingManualNotes = ""
+            savedMeetingSessions = note.meetingSessions
             showMeetingPanel = false
             meetingRecordingState = .idle
             isPlacingSticker = false
@@ -1516,11 +1493,7 @@ struct NoteDetailView: View {
 
     private var proofreadLoadingPill: some View {
         HStack(spacing: 8) {
-            Image("IconBroomSparkle")
-                .renderingMode(.template)
-                .resizable().scaledToFit()
-                .foregroundColor(Color("SecondaryTextColor"))
-                .frame(width: 16, height: 16)
+            BrailleLoader(pattern: .snake, size: 11)
             Text("Proofreading...")
                 .font(FontManager.heading(size: 12, weight: .medium))
                 .foregroundColor(Color("PrimaryTextColor"))

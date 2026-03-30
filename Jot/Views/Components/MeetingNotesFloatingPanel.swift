@@ -72,10 +72,7 @@ struct MeetingNotesFloatingPanel: View {
                     .fill(Color.orange)
                     .frame(width: 8, height: 8)
             } else if recordingState == .processing {
-                Circle()
-                    .fill(Color.purple)
-                    .frame(width: 8, height: 8)
-                    .modifier(PulsingModifier())
+                BrailleLoader(pattern: .checkerboard, size: 10)
             } else if recordingState == .complete {
                 Circle()
                     .fill(Color.green)

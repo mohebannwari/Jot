@@ -24,6 +24,11 @@ struct Note: Identifiable, Codable, Equatable {
 
     // Meeting Notes
     var isMeetingNote: Bool = false
+    var meetingSessions: [MeetingSession] = []
+
+    // Legacy flat fields — kept for Codable backward-compat with existing data.
+    // New code MUST use meetingSessions. These are populated only during
+    // migration of pre-sessions notes and cleared on next save.
     var meetingTranscript: String = ""
     var meetingSummary: String = ""
     var meetingDuration: TimeInterval = 0

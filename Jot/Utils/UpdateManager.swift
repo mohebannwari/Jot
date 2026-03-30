@@ -12,6 +12,7 @@ final class UpdateManager: NSObject, ObservableObject {
     // MARK: - Published State
 
     @Published private(set) var isUpdateAvailable: Bool = false
+    @Published private(set) var isDownloading: Bool = false
     @Published private(set) var updateVersion: String = ""
     @Published var showUpToDateAlert: Bool = false
     @Published var showUpdateErrorAlert: Bool = false
@@ -100,6 +101,14 @@ final class UpdateManager: NSObject, ObservableObject {
         replyHandler = reply
         withAnimation(.jotSpring) {
             updateVersion = version
+            isDownloading = true
+        }
+    }
+
+    fileprivate func handleUpdateReady(reply: @escaping (SPUUserUpdateChoice) -> Void) {
+        replyHandler = reply
+        withAnimation(.jotSpring) {
+            isDownloading = false
             isUpdateAvailable = true
         }
     }
@@ -107,6 +116,7 @@ final class UpdateManager: NSObject, ObservableObject {
     fileprivate func handleUpdateDismissed() {
         withAnimation(.jotSpring) {
             isUpdateAvailable = false
+            isDownloading = false
         }
         replyHandler = nil
     }
@@ -165,7 +175,9 @@ private final class UserDriverBridge: NSObject, SPUUserDriver {
 
     // MARK: - Download Progress (silent)
 
-    func showDownloadInitiated(cancellation: @escaping () -> Void) {}
+    func showDownloadInitiated(cancellation: @escaping () -> Void) {
+        // Downloading state already set via handleUpdateFound
+    }
     func showDownloadDidReceiveExpectedContentLength(_ expectedContentLength: UInt64) {}
     func showDownloadDidReceiveData(ofLength length: UInt64) {}
 
@@ -177,8 +189,7 @@ private final class UserDriverBridge: NSObject, SPUUserDriver {
     // MARK: - Ready to Install
 
     func showReady(toInstallAndRelaunch reply: @escaping (SPUUserUpdateChoice) -> Void) {
-        // Update the reply handler so relaunch() uses the latest one
-        owner?.replyHandler = reply
+        owner?.handleUpdateReady(reply: reply)
     }
 
     // MARK: - Installing
