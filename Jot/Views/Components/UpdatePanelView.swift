@@ -41,7 +41,8 @@ struct UpdatePanelView: View {
     }
 
     // MARK: - Background
-    // Figma: image w=274.58% h=245.37% left=-23.42% top=-145.37%
+    // Figma (relaunch):    image w=274.58% h=245.37% left=-23.42% top=-145.37%
+    // Figma (downloading): image w=265.90% h=278.34% left=-20.25% top=-178.16%
     // Gradient: absolute inset-0, transparent -> bg/secondary
 
     private var surfaceColor: Color {
@@ -50,15 +51,23 @@ struct UpdatePanelView: View {
             : .white
     }
 
+    private func bgImageLayout(_ size: CGSize) -> (w: CGFloat, h: CGFloat, x: CGFloat, y: CGFloat) {
+        let w = size.width
+        let h = size.height
+        if isPreparingRelaunch {
+            return (w * 2.659, h * 2.7834, w * -0.2025, h * -1.7816)
+        } else {
+            return (w * 2.7458, h * 2.4537, w * -0.2342, h * -1.4537)
+        }
+    }
+
     private var backgroundLayer: some View {
         GeometryReader { geo in
-            let w = geo.size.width
-            let h = geo.size.height
-
+            let img = bgImageLayout(geo.size)
             Image("SettingsThemeAuto")
                 .resizable()
-                .frame(width: w * 2.7458, height: h * 2.4537)
-                .offset(x: w * -0.2342, y: h * -1.4537)
+                .frame(width: img.w, height: img.h)
+                .offset(x: img.x, y: img.y)
         }
         .clipped()
         .overlay {

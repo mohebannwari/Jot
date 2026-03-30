@@ -1179,6 +1179,7 @@ struct ContentView: View {
 
     private func singleNotePane(note: Note, width: CGFloat, cornerRadius: CGFloat) -> some View {
         detailPane(note: note)
+            .geometryGroup()
             .frame(width: width)
             .frame(maxHeight: .infinity)
             .background(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).fill(detailBg))
@@ -1398,6 +1399,7 @@ struct ContentView: View {
             }
         }
         .animation(.easeInOut(duration: 0.15), value: previewingVersion?.id)
+        .geometryGroup()
         .frame(width: width)
         .frame(maxHeight: .infinity)
         .background(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).fill(detailBg))

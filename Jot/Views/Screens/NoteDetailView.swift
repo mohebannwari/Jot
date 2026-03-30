@@ -317,6 +317,15 @@ struct NoteDetailView: View {
                         updated.isMeetingNote = true
                         notesManager.updateNote(updated)
                     },
+                    onSummaryChanged: { sessionID, newSummary in
+                        if let idx = savedMeetingSessions.firstIndex(where: { $0.id == sessionID }) {
+                            savedMeetingSessions[idx].summary = newSummary
+                        }
+                        var updated = note
+                        updated.meetingSessions = savedMeetingSessions
+                        updated.isMeetingNote = true
+                        notesManager.updateNote(updated)
+                    },
                     onDismiss: {
                         withAnimation(.jotSpring) {
                             savedIsMeetingNote = false
@@ -418,6 +427,9 @@ struct NoteDetailView: View {
                     editorScrollContent
                 }
                 .padding(.top, contentTopInsetAdjustment)
+                .transaction { t in
+                    if isSidebarAnimating { t.animation = nil }
+                }
                 .scrollDisabled(popupMenuActive)
                 .scrollClipDisabled()
                 .coordinateSpace(name: "scroll")
@@ -485,7 +497,7 @@ struct NoteDetailView: View {
                             .padding(.horizontal, 80)
                         Spacer()
                     }
-                    .frame(height: 18)
+                    .frame(height: 24)
                     .padding(.top, stickyHeaderTopPadding)
                 }
                 .frame(maxWidth: .infinity)

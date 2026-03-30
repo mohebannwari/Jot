@@ -13,6 +13,7 @@ import SwiftUI
 struct MeetingNoteDetailPanel: View {
     @Binding var sessions: [MeetingSession]
     var onNotesChanged: ((UUID, String) -> Void)?
+    var onSummaryChanged: ((UUID, String) -> Void)?
     var onDismiss: (() -> Void)?
 
     @Environment(\.colorScheme) private var colorScheme
@@ -37,6 +38,9 @@ struct MeetingNoteDetailPanel: View {
                     defaultExpanded: index == 0,
                     onNotesChanged: { newNotes in
                         onNotesChanged?(session.id, newNotes)
+                    },
+                    onSummaryChanged: { newSummary in
+                        onSummaryChanged?(session.id, newSummary)
                     }
                 )
             }
@@ -110,6 +114,7 @@ struct MeetingNoteDetailPanel: View {
 private struct SessionAccordion: View {
     let session: MeetingSession
     var onNotesChanged: ((String) -> Void)?
+    var onSummaryChanged: ((String) -> Void)?
 
     @State private var isExpanded: Bool
     @State private var selectedTab: MeetingTab = .summary
@@ -117,9 +122,10 @@ private struct SessionAccordion: View {
 
     private static let maxContentHeight: CGFloat = 300
 
-    init(session: MeetingSession, defaultExpanded: Bool = false, onNotesChanged: ((String) -> Void)? = nil) {
+    init(session: MeetingSession, defaultExpanded: Bool = false, onNotesChanged: ((String) -> Void)? = nil, onSummaryChanged: ((String) -> Void)? = nil) {
         self.session = session
         self.onNotesChanged = onNotesChanged
+        self.onSummaryChanged = onSummaryChanged
         self._isExpanded = State(initialValue: defaultExpanded)
     }
 
@@ -233,14 +239,29 @@ private struct SessionAccordion: View {
     private var summaryContent: some View {
         VStack(alignment: .leading, spacing: 8) {
             let lines = session.summary.components(separatedBy: "\n").filter { !$0.isEmpty }
-            ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
-                meetingSummaryLine(line)
+            ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
+                meetingSummaryLine(line, at: index)
             }
         }
     }
 
+    /// Toggle a `[ ] ` / `[x] ` action item at the given filtered-line index.
+    private func toggleActionItem(at filteredIndex: Int) {
+        var lines = session.summary.components(separatedBy: "\n")
+        let nonEmptyIndices = lines.enumerated().compactMap { $0.element.isEmpty ? nil : $0.offset }
+        guard filteredIndex < nonEmptyIndices.count else { return }
+        let actualIndex = nonEmptyIndices[filteredIndex]
+
+        if lines[actualIndex].hasPrefix("[ ] ") {
+            lines[actualIndex] = "[x] " + String(lines[actualIndex].dropFirst(4))
+        } else if lines[actualIndex].hasPrefix("[x] ") {
+            lines[actualIndex] = "[ ] " + String(lines[actualIndex].dropFirst(4))
+        }
+        onSummaryChanged?(lines.joined(separator: "\n"))
+    }
+
     @ViewBuilder
-    private func meetingSummaryLine(_ line: String) -> some View {
+    private func meetingSummaryLine(_ line: String, at index: Int) -> some View {
         let stripped = line
             .replacingOccurrences(of: "[[h1]]", with: "")
             .replacingOccurrences(of: "[[/h1]]", with: "")
@@ -258,15 +279,29 @@ private struct SessionAccordion: View {
                 .padding(.top, 4)
         } else if line.hasPrefix("[ ] ") {
             HStack(alignment: .top, spacing: 6) {
-                Image(systemName: "square")
-                    .font(.system(size: 11))
-                    .foregroundColor(Color("SecondaryTextColor"))
+                MeetingCheckbox(isChecked: false)
                     .padding(.top, 2)
                 Text(String(line.dropFirst(4)))
                     .font(FontManager.body(size: 13))
                     .foregroundColor(Color("PrimaryTextColor"))
                     .lineSpacing(2)
             }
+            .contentShape(Rectangle())
+            .onTapGesture { toggleActionItem(at: index) }
+            .macPointingHandCursor()
+        } else if line.hasPrefix("[x] ") {
+            HStack(alignment: .top, spacing: 6) {
+                MeetingCheckbox(isChecked: true)
+                    .padding(.top, 2)
+                Text(String(line.dropFirst(4)))
+                    .font(FontManager.body(size: 13))
+                    .foregroundColor(Color("TertiaryTextColor"))
+                    .strikethrough(color: Color("TertiaryTextColor").opacity(0.5))
+                    .lineSpacing(2)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { toggleActionItem(at: index) }
+            .macPointingHandCursor()
         } else if line.hasPrefix("- ") {
             HStack(alignment: .top, spacing: 6) {
                 Circle()
@@ -470,6 +505,54 @@ private struct ScrollMetricsKey: PreferenceKey {
     static var defaultValue = ScrollMetrics()
     static func reduce(value: inout ScrollMetrics, nextValue: () -> ScrollMetrics) {
         value = nextValue()
+    }
+}
+
+// MARK: - Meeting Checkbox
+
+/// Custom circular checkbox matching the editor's TodoCheckboxAttachmentCell design,
+/// scaled down to 13px for the meeting panel's tighter proportions.
+private struct MeetingCheckbox: View {
+    let isChecked: Bool
+    @Environment(\.colorScheme) private var colorScheme
+
+    private let size: CGFloat = 13
+    private let borderWidth: CGFloat = 1.0
+
+    var body: some View {
+        ZStack {
+            if isChecked {
+                Circle()
+                    .fill(Color("ButtonPrimaryBgColor"))
+                    .frame(width: size, height: size)
+                CheckmarkShape()
+                    .stroke(Color("ButtonPrimaryTextColor"), style: StrokeStyle(lineWidth: 1.2, lineCap: .round, lineJoin: .round))
+                    .frame(width: size, height: size)
+            } else {
+                Circle()
+                    .fill(colorScheme == .dark ? Color(white: 0.18) : .white)
+                    .frame(width: size, height: size)
+                Circle()
+                    .strokeBorder(colorScheme == .dark ? Color(white: 0.35) : Color(white: 0.72), lineWidth: borderWidth)
+                    .frame(width: size, height: size)
+            }
+        }
+        .frame(width: size, height: size)
+    }
+}
+
+/// Checkmark path matching the editor's TodoCheckboxAttachmentCell control points.
+private struct CheckmarkShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let s = min(rect.width, rect.height)
+        let ox = rect.minX + (rect.width - s) / 2
+        let oy = rect.minY + (rect.height - s) / 2
+
+        var path = Path()
+        path.move(to: CGPoint(x: ox + s * 0.28, y: oy + s * 0.50))
+        path.addLine(to: CGPoint(x: ox + s * 0.44, y: oy + s * 0.66))
+        path.addLine(to: CGPoint(x: ox + s * 0.72, y: oy + s * 0.34))
+        return path
     }
 }
 
