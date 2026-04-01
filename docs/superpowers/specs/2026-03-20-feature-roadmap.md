@@ -137,4 +137,4 @@ After a comprehensive codebase audit, we identified 16 potential features across
 - **CSV Roadmap:** `docs/roadmap.csv`
 - **Linear Project:** [Jot on Linear](https://linear.app/mohebanw/project/jot-7b32eb207f53)
 - **All issues:** DES-265 through DES-277
-- **Design System:** `.claude/DESIGN_SYSTEM.md`
+- **Design System:** `.claude/rules/design-system.md`

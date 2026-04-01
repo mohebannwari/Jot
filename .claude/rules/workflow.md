@@ -118,7 +118,7 @@ Jot/
 
 ## Design System
 
-- Reference `.claude/DESIGN_SYSTEM.md` for all color, spacing, typography, radius, and effect tokens.
+- Reference `.claude/rules/design-system.md` for all color, spacing, typography, radius, and effect tokens.
 - Never hardcode colors, spacing, or radii -- use asset catalog names.
 - `NSColor.labelColor` everywhere -- no hardcoded dark/light RGB tuples.
 - Sidebar row height: 34pt for all note rows.

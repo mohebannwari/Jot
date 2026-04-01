@@ -31,8 +31,8 @@ If the build fails, **stop immediately**. Report the build error. Do not review 
 Read these files before dispatching subagents (pass relevant content to all agents):
 
 1. `.claude/CLAUDE.md` -- project rules, architecture, prohibited patterns
-2. `.claude/DESIGN_SYSTEM.md` -- color, spacing, typography, radius tokens
-3. `workflow.md` (if it exists) -- development lifecycle
+2. `.claude/rules/design-system.md` -- color, spacing, typography, radius tokens
+3. `.claude/rules/workflow.md` -- development lifecycle
 
 Summarize the key rules from each for the subagents. Don't dump entire files -- extract the actionable constraints.
 
@@ -56,7 +56,7 @@ Find root and nested CLAUDE.md files for all changed directories. Pass to all su
 
 ## Step 4: Dispatch 3 Sonnet Subagents
 
-Launch all 3 in parallel using `Agent` tool with `model: "sonnet"`. Each receives the diff, changed files, project context (CLAUDE.md + DESIGN_SYSTEM.md rules), and the confidence scoring rubric.
+Launch all 3 in parallel using `Agent` tool with `model: "sonnet"`. Each receives the diff, changed files, project context (CLAUDE.md + design-system.md rules), and the confidence scoring rubric.
 
 ### Agent A: Simplicity, DRY, and Elegance
 

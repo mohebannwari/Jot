@@ -311,7 +311,7 @@ Nesting order in serialized form: **align > heading/bold/italic > underline > st
 
 - **Figma source:** https://www.figma.com/design/BhVLOWG63LckTVCuO3q0Tv/Jot
 - **Asset catalog:** `/Jot/Ressources/Assets.xcassets/`
-- **Design system docs:** `Jot/.claude/DESIGN_SYSTEM.md` (comprehensive token reference)
+- **Design system docs:** `Jot/.claude/rules/design-system.md` (comprehensive token reference)
 - **CLAUDE.md:** `/Jot/.claude/CLAUDE.md` (project conventions, sidebar rules, liquid glass patterns)
 
 ---

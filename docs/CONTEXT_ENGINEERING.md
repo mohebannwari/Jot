@@ -566,7 +566,7 @@ Create feature-specific templates:
 - `CLAUDE.md` - Project architecture and patterns
 - `LIQUID_GLASS_GUIDE.md` - Design system guidelines
 - `AGENTS.md` - Repository rules
-- `FIGMA.md` - Design specifications
+- `.claude/rules/figma.md` - Design specifications
 
 ### Examples
 - `examples/` - Code patterns

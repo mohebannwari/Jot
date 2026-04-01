@@ -125,7 +125,7 @@ Jot/
 ## Design
 
 - **Figma**: [Jot Design File](https://www.figma.com/design/BhVLOWG63LckTVCuO3q0Tv/Jot)
-- **Design System**: `.claude/DESIGN_SYSTEM.md`
+- **Design System**: `.claude/rules/design-system.md`
 
 ## License
 

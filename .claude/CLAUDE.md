@@ -24,7 +24,7 @@ These rules are absolute. No exceptions. No rationalizations. No "just this once
 
 ## Workflow — Always Follow
 
-Read and follow `workflow.md` at the project root before every task. It defines the complete development lifecycle, validation gates, and shipping process for this project. The global workflow at `~/.claude/workflow.md` contains universal rules (debugging, subagent architecture, philosophy); the project-level `workflow.md` layers Jot-specific conventions on top. Both are authoritative.
+The project workflow lives at `.claude/rules/workflow.md` (auto-ingested every session). It defines the complete development lifecycle, validation gates, and shipping process. The global workflow at `~/.claude/workflow.md` contains universal rules (debugging, subagent architecture, philosophy); the project-level one layers Jot-specific conventions on top. Both are authoritative.
 
 ---
 
@@ -75,7 +75,7 @@ Opus (escalation only — not parallel, not fire-and-forget):
 ---
 
 ## Design System
-→ **Always reference `.claude/DESIGN_SYSTEM.md`** for all color, spacing, typography, radius, and effect tokens.
+→ **Always reference `.claude/rules/design-system.md`** for all color, spacing, typography, radius, and effect tokens.
 → Figma source: https://www.figma.com/design/BhVLOWG63LckTVCuO3q0Tv/Jot
 → Extract tokens for **both light and dark** themes. No exceptions.
 → **Always use the official Figma MCP plugin (`claude.ai Figma`) as the primary Figma tool.** Use `get_design_context`, `get_screenshot`, `get_metadata`, `get_variable_defs`, `search_design_system` for design tokens, component specs, and screenshots.
@@ -198,7 +198,7 @@ screencapture -l $WINDOW_ID /tmp/jot_window.png
 ```
 
 When requested, analyze against:
-- Alignment, spacing, and sizing from `.claude/DESIGN_SYSTEM.md` tokens
+- Alignment, spacing, and sizing from `.claude/rules/design-system.md` tokens
 - Light and dark mode correctness
 - Liquid Glass rendering and layering
 - Typography rendering and hierarchy

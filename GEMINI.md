@@ -16,7 +16,7 @@ iOS 26+ / macOS 26+ note-taking app in SwiftUI with Apple Liquid Glass design sy
 ---
 
 ## Design System
-→ **Always reference `.claude/DESIGN_SYSTEM.md`** for all color, spacing, typography, radius, and effect tokens.
+→ **Always reference `.claude/rules/design-system.md`** for all color, spacing, typography, radius, and effect tokens.
 → Figma source: https://www.figma.com/design/BhVLOWG63LckTVCuO3q0Tv/Jot
 → Extract tokens for **both light and dark** themes. No exceptions.
 → Use **Figma MCP tools** (`mcp_figma_get_variable_defs`, `mcp_figma_get_design_context`) before any UI work to ensure precise accuracy.
@@ -133,7 +133,7 @@ screencapture -l $WINDOW_ID /tmp/jot_window.png
 ```
 
 When requested, analyze against:
-- Alignment, spacing, and sizing from `.claude/DESIGN_SYSTEM.md` tokens
+- Alignment, spacing, and sizing from `.claude/rules/design-system.md` tokens
 - Light and dark mode correctness
 - Liquid Glass rendering and layering
 - Typography rendering and hierarchy
