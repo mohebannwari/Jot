@@ -77,9 +77,9 @@ struct MeetingSession: Identifiable, Codable, Equatable {
 @available(macOS 26.0, *)
 @Generable
 struct MeetingChunkSummary {
-    @Guide(description: "Key points explicitly stated in this transcript excerpt. Do not infer or fabricate points not spoken.")
+    @Guide(description: "Key points ONLY from words explicitly spoken in this excerpt. Each point must use vocabulary from the transcript. Empty array if no key points are explicitly stated.")
     var keyPoints: [String]
-    @Guide(description: "Action items explicitly mentioned in the transcript, each with assignee if stated. Empty if none mentioned.")
+    @Guide(description: "Action items explicitly mentioned as tasks in the transcript, each with assignee if stated. Do not promote discussion topics into action items. Empty if none mentioned.")
     var actionItems: [MeetingActionItem]
     @Guide(description: "Decisions explicitly stated in this excerpt. Empty array if none mentioned.")
     var decisions: [String]
@@ -88,22 +88,22 @@ struct MeetingChunkSummary {
 @available(macOS 26.0, *)
 @Generable
 struct MeetingActionItem {
-    @Guide(description: "What needs to be done")
+    @Guide(description: "What needs to be done — use the speaker's own words where possible")
     var taskDescription: String
-    @Guide(description: "Person responsible, or 'Unassigned' if not mentioned")
+    @Guide(description: "ONLY use a name explicitly spoken in the transcript as the assignee for this specific task. Use 'Unassigned' if no specific person was named for this task.")
     var assignee: String
 }
 
 @available(macOS 26.0, *)
 @Generable
 struct MeetingSummaryResult {
-    @Guide(description: "One-sentence title reflecting a topic actually discussed in the transcript")
+    @Guide(description: "A short title (under 10 words) using only words and topics that appear in the transcript. Do not add descriptive words not spoken.")
     var title: String
-    @Guide(description: "Summary covering only topics actually discussed in the transcript. Do not fabricate details.")
+    @Guide(description: "2-4 sentence summary using only information from the input. Every claim must be traceable to specific input text. If input is sparse, write 1 sentence rather than padding.")
     var summary: String
-    @Guide(description: "Key points from the meeting, each directly supported by the transcript. Do not infer or add points not spoken.")
+    @Guide(description: "Key points from the meeting, each directly supported by the transcript. Each must use vocabulary from the source. Do not infer or add points not spoken.")
     var keyPoints: [String]
-    @Guide(description: "Action items explicitly stated in the meeting. Do not fabricate tasks.")
+    @Guide(description: "Action items explicitly stated in the meeting as tasks to be done. Do not fabricate tasks or promote discussion topics into action items.")
     var actionItems: [MeetingActionItem]
     @Guide(description: "Decisions explicitly made during the meeting. Empty if none stated.")
     var decisions: [String]

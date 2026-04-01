@@ -169,7 +169,7 @@ struct UpdatePanelView: View {
                 .foregroundStyle(Color("PrimaryTextColor"))
                 .kerning(0.5)
 
-            BrailleTrailBar()
+            BrailleTrailBar(duration: 10)
         }
         .padding(8)
         .thinLiquidGlass(in: RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -191,16 +191,14 @@ private struct BrailleTrailBar: View {
 
     var body: some View {
         GeometryReader { geo in
-            let tileWidth: CGFloat = 32
-            let tileCount = max(1, Int(ceil(geo.size.width / tileWidth)))
-
             ZStack(alignment: .leading) {
                 // Cascade braille characters filling the entire bar
                 HStack(spacing: 0) {
-                    ForEach(0..<tileCount, id: \.self) { i in
+                    ForEach(0..<tileCount(for: geo.size.width), id: \.self) { i in
                         let tileFrame = (frameIndex + i * 3) % helixFrames.count
                         Text(helixFrames[tileFrame])
                             .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .frame(maxWidth: .infinity)
                     }
                 }
                 .frame(width: geo.size.width, height: geo.size.height, alignment: .leading)
@@ -219,11 +217,17 @@ private struct BrailleTrailBar: View {
         .onDisappear { animationTask?.cancel() }
     }
 
+    private func tileCount(for width: CGFloat) -> Int {
+        let tileWidth: CGFloat = 28
+        return max(1, Int(ceil(width / tileWidth)))
+    }
+
     private func startAnimation() {
         animationTask?.cancel()
 
         // Fill progress: 0 -> 1 over the duration
-        withAnimation(.easeInOut(duration: duration)) {
+        // Use linear so the bar fills uniformly and completes before relaunch
+        withAnimation(.linear(duration: duration)) {
             fillProgress = 1
         }
 

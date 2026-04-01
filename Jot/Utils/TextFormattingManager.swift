@@ -140,7 +140,7 @@ class TextFormattingManager: ObservableObject {
                 toggleBlockQuote(to: textView, in: selectedRange)
             case .highlight:
                 return  // Highlight requires a color parameter — handled separately via applyHighlight()
-            case .searchOnPage, .table, .callout, .codeBlock, .fileLink, .sticker, .tabs, .cards, .convertToWebClip:
+            case .searchOnPage, .table, .callout, .codeBlock, .fileLink, .sticker, .tabs, .cards, .convertToWebClip, .quickLook:
                 return
             }
 
@@ -167,6 +167,7 @@ class TextFormattingManager: ObservableObject {
 
             // Expand to full paragraph range (body reset is paragraph-scoped, like headings)
             let paragraphRange = (textStorage.string as NSString).paragraphRange(for: range)
+            guard textView.shouldChangeText(in: paragraphRange, replacementString: nil) else { return }
             let snapshot = captureSnapshot(textStorage, range: paragraphRange)
 
             textStorage.beginEditing()
@@ -175,9 +176,16 @@ class TextFormattingManager: ObservableObject {
             let bodyFont = FontManager.bodyNS(size: HeadingLevel.none.fontSize, weight: .regular)
             textStorage.addAttribute(.font, value: bodyFont, range: paragraphRange)
 
-            // Strip inline decorations
+            // Strip all inline decorations — full body reset
             textStorage.removeAttribute(.underlineStyle, range: paragraphRange)
             textStorage.removeAttribute(.strikethroughStyle, range: paragraphRange)
+            textStorage.removeAttribute(.backgroundColor, range: paragraphRange)
+            textStorage.removeAttribute(.highlightColor, range: paragraphRange)
+            textStorage.removeAttribute(.link, range: paragraphRange)
+            textStorage.removeAttribute(.blockQuote, range: paragraphRange)
+            textStorage.removeAttribute(.todoChecked, range: paragraphRange)
+            textStorage.removeAttribute(Self.customTextColorKey, range: paragraphRange)
+            textStorage.addAttribute(.foregroundColor, value: NSColor.labelColor, range: paragraphRange)
 
             // Reset paragraph spacing to body defaults
             let paragraphStyle = NSMutableParagraphStyle()
@@ -186,13 +194,15 @@ class TextFormattingManager: ObservableObject {
             textStorage.addAttribute(.paragraphStyle, value: paragraphStyle, range: paragraphRange)
 
             textStorage.endEditing()
+            textView.didChangeText()
 
-            // Sync published state
+            // Sync published state — paragraph style was reset to defaults (.left alignment)
             isBold = false
             isItalic = false
             isUnderline = false
             isStrikethrough = false
             currentHeadingLevel = .none
+            currentAlignment = .left
 
             registerUndo(textView: textView, snapshot: snapshot, actionName: "Body")
         }
@@ -240,6 +250,7 @@ class TextFormattingManager: ObservableObject {
             textStorage.addAttribute(.paragraphStyle, value: paragraphStyle, range: range)
 
             textStorage.endEditing()
+            textView.didChangeText()
             currentHeadingLevel = effectiveLevel
 
             registerUndo(textView: textView, snapshot: snapshot, actionName: "Heading")
@@ -279,6 +290,7 @@ class TextFormattingManager: ObservableObject {
             }
 
             textStorage.endEditing()
+            textView.didChangeText()
             registerUndo(textView: textView, snapshot: snapshot, actionName: "Bold")
         }
 
@@ -314,6 +326,7 @@ class TextFormattingManager: ObservableObject {
             }
 
             textStorage.endEditing()
+            textView.didChangeText()
             registerUndo(textView: textView, snapshot: snapshot, actionName: "Italic")
         }
 
@@ -336,6 +349,7 @@ class TextFormattingManager: ObservableObject {
             }
 
             textStorage.endEditing()
+            textView.didChangeText()
             registerUndo(textView: textView, snapshot: snapshot, actionName: "Underline")
         }
 
@@ -355,11 +369,18 @@ class TextFormattingManager: ObservableObject {
                 isStrikethrough = false
             } else {
                 textStorage.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: range)
-                textStorage.addAttribute(.foregroundColor, value: checkedTodoTextColor, range: range)
+                // Only dim color for todo sub-ranges that are actually checked items;
+                // non-todo strikethrough keeps label color
+                textStorage.enumerateAttribute(.todoChecked, in: range, options: []) { value, subRange, _ in
+                    if value != nil {
+                        textStorage.addAttribute(.foregroundColor, value: checkedTodoTextColor, range: subRange)
+                    }
+                }
                 isStrikethrough = true
             }
 
             textStorage.endEditing()
+            textView.didChangeText()
             registerUndo(textView: textView, snapshot: snapshot, actionName: "Strikethrough")
         }
 
@@ -373,14 +394,18 @@ class TextFormattingManager: ObservableObject {
 
             if text.hasPrefix("\u{2022} ") {
                 let newText = String(text.dropFirst(2))
+                guard textView.shouldChangeText(in: paragraphRange, replacementString: newText) else { return }
                 textStorage.beginEditing()
                 textStorage.replaceCharacters(in: paragraphRange, with: newText)
                 textStorage.endEditing()
+                textView.didChangeText()
             } else {
                 let newText = "\u{2022} " + text
+                guard textView.shouldChangeText(in: paragraphRange, replacementString: newText) else { return }
                 textStorage.beginEditing()
                 textStorage.replaceCharacters(in: paragraphRange, with: newText)
                 textStorage.endEditing()
+                textView.didChangeText()
             }
         }
 
@@ -470,6 +495,7 @@ class TextFormattingManager: ObservableObject {
             }
 
             textStorage.endEditing()
+            textView.didChangeText()
             registerUndo(textView: textView, snapshot: snapshot, actionName: "Block Quote")
 
             // Set typing attributes so the first character typed gets the full quote style
@@ -502,6 +528,7 @@ class TextFormattingManager: ObservableObject {
             guard range.length > 0, range.location != NSNotFound else { return }
             guard let storage = textView.textStorage else { return }
             guard NSMaxRange(range) <= storage.length else { return }
+            guard textView.shouldChangeText(in: range, replacementString: nil) else { return }
 
             let snapshot = captureSnapshot(storage, range: range)
             let bgColor = Self.nsColorFromHex(hex).withAlphaComponent(0.35)
@@ -522,6 +549,7 @@ class TextFormattingManager: ObservableObject {
             }
 
             storage.endEditing()
+            textView.didChangeText()
 
             textView.needsDisplay = true
             registerUndo(textView: textView, snapshot: snapshot, actionName: "Highlight")
@@ -530,6 +558,7 @@ class TextFormattingManager: ObservableObject {
         func removeHighlight(range: NSRange, from textView: NSTextView) {
             guard range.length > 0, let storage = textView.textStorage else { return }
             guard NSMaxRange(range) <= storage.length else { return }
+            guard textView.shouldChangeText(in: range, replacementString: nil) else { return }
 
             let snapshot = captureSnapshot(storage, range: range)
 
@@ -543,6 +572,7 @@ class TextFormattingManager: ObservableObject {
                 }
             }
             storage.endEditing()
+            textView.didChangeText()
 
             textView.needsDisplay = true
             registerUndo(textView: textView, snapshot: snapshot, actionName: "Remove Highlight")
@@ -579,6 +609,7 @@ class TextFormattingManager: ObservableObject {
             }
 
             textStorage.endEditing()
+            textView.didChangeText()
             registerUndo(textView: textView, snapshot: snapshot, actionName: "Indentation")
         }
 
@@ -604,6 +635,7 @@ class TextFormattingManager: ObservableObject {
             }
 
             textStorage.endEditing()
+            textView.didChangeText()
             currentAlignment = alignment
             registerUndo(textView: textView, snapshot: snapshot, actionName: "Alignment")
         }
@@ -648,19 +680,35 @@ class TextFormattingManager: ObservableObject {
         }
 
         private func insertLink(to textView: NSTextView, in range: NSRange) {
-            // For now, just wrap selected text in markdown link syntax
-            guard let text = textView.string as NSString? else { return }
-            let selectedText = text.substring(with: range)
-            // Insert markdown link with the selected text: [selectedText](url)
-            let linkText = "[\(selectedText)](url)"
+            guard let textStorage = textView.textStorage else { return }
+            let selectedText = (textView.string as NSString).substring(with: range)
 
-            if textView.shouldChangeText(in: range, replacementString: linkText) {
-                textView.replaceCharacters(in: range, with: linkText)
+            if selectedText.isEmpty {
+                // No selection — insert placeholder link text
+                let linkText = "Link"
+                let placeholderURL = "https://"
+                let attrs: [NSAttributedString.Key: Any] = [
+                    .font: FontManager.bodyNS(),
+                    .foregroundColor: NSColor.controlAccentColor,
+                    .underlineStyle: NSUnderlineStyle.single.rawValue,
+                    .link: placeholderURL,
+                ]
+                let linkStr = NSAttributedString(string: linkText, attributes: attrs)
+                if textView.shouldChangeText(in: range, replacementString: linkText) {
+                    textStorage.replaceCharacters(in: range, with: linkStr)
+                    textView.didChangeText()
+                    textView.setSelectedRange(NSRange(location: range.location, length: linkText.count))
+                }
+            } else {
+                // Apply .link attribute to selected text with a placeholder URL
+                let snapshot = captureSnapshot(textStorage, range: range)
+                textStorage.beginEditing()
+                textStorage.addAttribute(.link, value: "https://", range: range)
+                textStorage.addAttribute(.foregroundColor, value: NSColor.controlAccentColor, range: range)
+                textStorage.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: range)
+                textStorage.endEditing()
                 textView.didChangeText()
-
-                // Select the "url" part for easy replacement
-                let newRange = NSRange(location: range.location + (selectedText as NSString).length + 3, length: 3)
-                textView.setSelectedRange(newRange)
+                registerUndo(textView: textView, snapshot: snapshot, actionName: "Insert Link")
             }
         }
 
@@ -682,6 +730,7 @@ class TextFormattingManager: ObservableObject {
             guard range.length > 0, range.location != NSNotFound else { return }
             guard let storage = textView.textStorage else { return }
             guard NSMaxRange(range) <= storage.length else { return }
+            guard textView.shouldChangeText(in: range, replacementString: nil) else { return }
 
             let snapshot = captureSnapshot(storage, range: range)
             let nsColor = Self.nsColorFromHex(hex)
@@ -690,6 +739,7 @@ class TextFormattingManager: ObservableObject {
             storage.addAttribute(.foregroundColor, value: nsColor, range: range)
             storage.addAttribute(Self.customTextColorKey, value: true, range: range)
             storage.endEditing()
+            textView.didChangeText()
 
             // Force the layout manager to re-render glyphs in the affected range.
             // Without this, selected text in dark mode won't visually update until deselected.
@@ -701,6 +751,7 @@ class TextFormattingManager: ObservableObject {
         func removeTextColor(range: NSRange, from textView: NSTextView) {
             guard range.length > 0, let storage = textView.textStorage else { return }
             guard NSMaxRange(range) <= storage.length else { return }
+            guard textView.shouldChangeText(in: range, replacementString: nil) else { return }
 
             let snapshot = captureSnapshot(storage, range: range)
 
@@ -708,6 +759,7 @@ class TextFormattingManager: ObservableObject {
             storage.removeAttribute(Self.customTextColorKey, range: range)
             storage.addAttribute(.foregroundColor, value: NSColor.labelColor, range: range)
             storage.endEditing()
+            textView.didChangeText()
 
             textView.layoutManager?.invalidateDisplay(forCharacterRange: range)
             textView.needsDisplay = true
@@ -757,30 +809,36 @@ class TextFormattingManager: ObservableObject {
 
             guard let textStorage = textView.textStorage else { return }
 
-            // Check for bold/italic via NSFontManager trait masks for broad compatibility
+            // Check for bold/italic across entire selection — report true only if ALL runs match
+            var allBold = true, allItalic = true
             textStorage.enumerateAttribute(.font, in: selectedRange, options: []) {
-                value, _, stop in
+                value, _, _ in
                 if let font = value as? NSFont {
                     let traits = NSFontManager.shared.traits(of: font)
-                    isBold = traits.contains(.boldFontMask)
-                    isItalic = traits.contains(.italicFontMask)
-                    stop.pointee = true
+                    if !traits.contains(.boldFontMask) { allBold = false }
+                    if !traits.contains(.italicFontMask) { allItalic = false }
+                } else {
+                    allBold = false
+                    allItalic = false
                 }
             }
+            isBold = allBold
+            isItalic = allItalic
 
-            // Check for underline
-            textStorage.enumerateAttribute(.underlineStyle, in: selectedRange, options: []) {
-                value, _, stop in
-                isUnderline = (value as? Int ?? 0) != 0
-                stop.pointee = true
+            // Check for underline across entire selection — nil means "no attribute",
+            // which is the same as "not underlined". The nil-coalescing to 0 handles both.
+            var allUnderline = selectedRange.length > 0
+            textStorage.enumerateAttributes(in: selectedRange, options: []) { attrs, _, _ in
+                if (attrs[.underlineStyle] as? Int ?? 0) == 0 { allUnderline = false }
             }
+            isUnderline = allUnderline
 
-            // Check for strikethrough
-            textStorage.enumerateAttribute(.strikethroughStyle, in: selectedRange, options: []) {
-                value, _, stop in
-                isStrikethrough = (value as? Int ?? 0) != 0
-                stop.pointee = true
+            // Check for strikethrough across entire selection
+            var allStrikethrough = selectedRange.length > 0
+            textStorage.enumerateAttributes(in: selectedRange, options: []) { attrs, _, _ in
+                if (attrs[.strikethroughStyle] as? Int ?? 0) == 0 { allStrikethrough = false }
             }
+            isStrikethrough = allStrikethrough
 
             // Check for highlight — any highlighted run in selection activates the button
             var foundHighlight = false
@@ -808,19 +866,25 @@ class TextFormattingManager: ObservableObject {
         let paragraphRange = (textView.string as NSString).paragraphRange(for: range)
         let text = (textView.string as NSString).substring(with: paragraphRange)
 
-        textStorage.beginEditing()
         if text.hasPrefix("- ") {
             let newText = String(text.dropFirst(2))
+            guard textView.shouldChangeText(in: paragraphRange, replacementString: newText) else { return }
+            textStorage.beginEditing()
             textStorage.replaceCharacters(in: paragraphRange, with: newText)
+            textStorage.endEditing()
+            textView.didChangeText()
         } else {
             var insertText = text
             if insertText.hasPrefix("\u{2022} ") {
                 insertText = String(insertText.dropFirst(2))
             }
             let newText = "- " + insertText
+            guard textView.shouldChangeText(in: paragraphRange, replacementString: newText) else { return }
+            textStorage.beginEditing()
             textStorage.replaceCharacters(in: paragraphRange, with: newText)
+            textStorage.endEditing()
+            textView.didChangeText()
         }
-        textStorage.endEditing()
     }
 
     // MARK: - Per-Selection Font Size

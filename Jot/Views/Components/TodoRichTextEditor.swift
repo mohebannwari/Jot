@@ -74,6 +74,12 @@ struct TodoRichTextEditor: View {
     @State private var urlPasteURL: String = ""
     @State private var urlPasteRange: NSRange = NSRange(location: 0, length: 0)
 
+    // Quick Look hover tooltip state
+    @State private var showQuickLookTooltip = false
+    @State private var quickLookTooltipPosition: CGPoint = .zero
+    @State private var quickLookTooltipCharIndex: Int = 0
+    @State private var quickLookHideTask: Task<Void, Never>? = nil
+
     // Code paste option menu state
     @State private var showCodePasteMenu = false
     @State private var codePasteMenuPosition: CGPoint = .zero
@@ -164,8 +170,8 @@ struct TodoRichTextEditor: View {
                         onSelect: { note in handleNotePickerSelection(note) }
                     )
                     .offset(
-                        x: clampedNotePickerPosition(for: geometry.size).x,
-                        y: clampedNotePickerPosition(for: geometry.size).y
+                        x: clampedNotePickerPosition(for: geometry).x,
+                        y: clampedNotePickerPosition(for: geometry).y
                     )
                     .allowsHitTesting(notePickerRevealed)
                     .transition(.identity)
@@ -180,6 +186,7 @@ struct TodoRichTextEditor: View {
                         onMention: {
                             withAnimation(.smooth(duration: 0.15)) { showURLPasteMenu = false }
                             syncMenuState(["isURLPasteMenuShowing": false])
+                            defer { urlPasteRange = NSRange(location: 0, length: 0) }
                             var payload: [String: Any] = [
                                 "url": urlPasteURL,
                                 "range": NSValue(range: urlPasteRange),
@@ -193,6 +200,7 @@ struct TodoRichTextEditor: View {
                         onPasteAsURL: {
                             withAnimation(.smooth(duration: 0.15)) { showURLPasteMenu = false }
                             syncMenuState(["isURLPasteMenuShowing": false])
+                            defer { urlPasteRange = NSRange(location: 0, length: 0) }
                             var payload: [String: Any] = [
                                 "url": urlPasteURL,
                                 "range": NSValue(range: urlPasteRange),
@@ -259,6 +267,38 @@ struct TodoRichTextEditor: View {
                     .zIndex(999)
                 }
             }
+        }
+        .overlay(alignment: .topLeading) {
+            LinkQuickLookTooltip()
+                .scaleEffect(showQuickLookTooltip ? 1 : 0.9, anchor: .bottom)
+                .opacity(showQuickLookTooltip ? 1 : 0)
+                .offset(
+                    x: quickLookTooltipPosition.x,
+                    y: quickLookTooltipPosition.y
+                )
+                .allowsHitTesting(showQuickLookTooltip)
+                .onHover { hovering in
+                    guard showQuickLookTooltip else { return }
+                    if hovering {
+                        quickLookHideTask?.cancel()
+                        quickLookHideTask = nil
+                    } else {
+                        scheduleQuickLookHide()
+                    }
+                }
+                .onTapGesture {
+                    guard showQuickLookTooltip else { return }
+                    var info: [String: Any] = ["charIndex": quickLookTooltipCharIndex]
+                    if let eid = editorInstanceID { info["editorInstanceID"] = eid }
+                    NotificationCenter.default.post(
+                        name: .linkHoverQuickLookTriggered,
+                        object: nil,
+                        userInfo: info
+                    )
+                    showQuickLookTooltip = false
+                }
+                .animation(.easeOut(duration: 0.15), value: showQuickLookTooltip)
+                .zIndex(998)
         }
     }
 
@@ -468,6 +508,7 @@ struct TodoRichTextEditor: View {
             if showURLPasteMenu {
                 withAnimation(.smooth(duration: 0.15)) { showURLPasteMenu = false }
                 syncMenuState(["isURLPasteMenuShowing": false])
+                urlPasteRange = NSRange(location: 0, length: 0)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .codePasteDetected)) { notification in
@@ -502,6 +543,55 @@ struct TodoRichTextEditor: View {
                 syncMenuState(["isCodePasteMenuShowing": false])
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .linkHoverDetected)) { notification in
+            guard let info = notification.userInfo,
+                  let rectValue = info["rect"] as? NSValue,
+                  let charIndex = info["charIndex"] as? Int else { return }
+            if let nid = info["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
+
+            let rect = rectValue.rectValue
+
+            // Cancel any pending hide
+            quickLookHideTask?.cancel()
+            quickLookHideTask = nil
+
+            // If already showing (moving between links), hide first so
+            // the new tooltip fades in cleanly at the new position.
+            if showQuickLookTooltip {
+                showQuickLookTooltip = false
+            }
+
+            // Position tooltip centered above the link
+            let tooltipWidth: CGFloat = 144
+            let pillHeight: CGFloat = 36  // 16 icon + 10*2 padding
+            let gap: CGFloat = 6
+            let x = rect.midX - tooltipWidth / 2
+            let y = rect.minY - pillHeight - gap
+
+            quickLookTooltipPosition = CGPoint(x: max(4, x), y: max(0, y))
+            quickLookTooltipCharIndex = charIndex
+
+            // Show after a microtask so SwiftUI registers the position
+            // change while hidden, then animates the appearance.
+            DispatchQueue.main.async {
+                showQuickLookTooltip = true
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .linkHoverDismiss)) { notification in
+            if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
+            scheduleQuickLookHide()
+        }
+    }
+
+    private func scheduleQuickLookHide() {
+        quickLookHideTask?.cancel()
+        quickLookHideTask = Task {
+            try? await Task.sleep(nanoseconds: 500_000_000) // 500ms
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                showQuickLookTooltip = false
+            }
+        }
     }
 
     var body: some View {
@@ -510,17 +600,20 @@ struct TodoRichTextEditor: View {
 
     // MARK: - Command Menu Handlers
 
-    /// Two-phase dismiss: reverse entrance animation, then remove from hierarchy
+    /// Two-phase dismiss: reverse entrance animation, then remove from hierarchy.
+    /// isDismissing guard prevents double-dismiss flicker from concurrent keyboard
+    /// and notification paths.
+    @State private var isDismissingCommandMenu = false
+
     private func dismissCommandMenu() {
-        // Guard against re-entry: the .hideCommandMenu notification handler
-        // also calls this function, so bail if already dismissed.
-        guard showCommandMenu else { return }
+        // Guard against re-entry from concurrent dismiss paths
+        guard showCommandMenu, !isDismissingCommandMenu else { return }
+        isDismissingCommandMenu = true
 
         // Immediately stop keyboard interception
         syncMenuState(["isCommandMenuShowing": false, "commandSlashLocation": -1])
 
-        // Notify NoteDetailView to re-enable scroll (deferred to avoid
-        // re-entrant SwiftUI state updates during the current transaction)
+        // Notify NoteDetailView to re-enable scroll
         let eidInfo: [String: Any]? = editorInstanceID.map { ["editorInstanceID": $0] }
         DispatchQueue.main.async {
             NotificationCenter.default.post(
@@ -530,17 +623,21 @@ struct TodoRichTextEditor: View {
             )
         }
 
-        // Phase 1: animate reverse entrance (scale down to cursor, items cascade out)
+        // Phase 1: animate reverse entrance
         withAnimation(.smooth(duration: 0.25)) {
             commandMenuRevealed = false
         }
 
         // Phase 2: remove from hierarchy after exit animation settles
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            guard !self.commandMenuRevealed else { return }
+            guard !self.commandMenuRevealed else {
+                self.isDismissingCommandMenu = false
+                return
+            }
             self.showCommandMenu = false
             self.commandSlashLocation = -1
             self.commandMenuFilterText = ""
+            self.isDismissingCommandMenu = false
         }
     }
 
@@ -681,16 +778,30 @@ struct TodoRichTextEditor: View {
         )
     }
 
-    private func clampedNotePickerPosition(for containerSize: CGSize) -> CGPoint {
+    private func clampedNotePickerPosition(for geometry: GeometryProxy) -> CGPoint {
+        let containerSize = geometry.size
         let outerPadding = NotePickerLayout.outerPadding * 2
         let contentHeight = NotePickerLayout.idealHeight(for: filteredNotePickerItems.count)
         let totalHeight = contentHeight + outerPadding
         let totalWidth = NotePickerLayout.width + outerPadding
         let maxX = max(0, containerSize.width - totalWidth)
-        let maxY = max(0, containerSize.height - totalHeight)
         let clampedX = min(max(notePickerPosition.x, 0), maxX)
-        let clampedY = min(max(notePickerPosition.y, 0), maxY)
-        return CGPoint(x: clampedX, y: clampedY)
+
+        // Use viewport-relative coordinates (same pattern as clampedCommandMenuPosition)
+        // to correctly flip above/below on long scrollable documents
+        let globalFrame = geometry.frame(in: .global)
+        let cursorViewportY = notePickerPosition.y + globalFrame.minY
+        let windowHeight = NSApp.keyWindow?.contentView?.bounds.height ?? globalFrame.height
+        let spaceBelow = windowHeight - cursorViewportY - 24 // 24 = approximate cursor height
+
+        let yPosition: CGFloat
+        if spaceBelow >= totalHeight {
+            yPosition = notePickerPosition.y + 24
+        } else {
+            // Flip above cursor
+            yPosition = max(0, notePickerPosition.y - totalHeight)
+        }
+        return CGPoint(x: clampedX, y: yPosition)
     }
 
 }

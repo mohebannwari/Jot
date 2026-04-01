@@ -84,6 +84,59 @@ public final class FileAttachmentStorageManager {
         }
     }
 
+    /// Clean up file attachments that are not referenced in any notes.
+    /// - Parameter notes: All notes (active + archived + deleted) to check for references
+    func cleanupUnusedFiles(referencedInNotes notes: [Note]) {
+        guard let storageURL = try? storageDirectoryURLSync() else {
+            logger.error("cleanupUnusedFiles: Cannot access storage directory")
+            return
+        }
+
+        // Collect all referenced stored filenames from [[file|typeId|storedName|origName]] tags
+        var referencedFiles = Set<String>()
+        // Pattern captures the storedFilename (second pipe-delimited field)
+        let filePattern = #"\[\[file\|[^|]+\|([^|]+)\|[^\]]*\]\]"#
+        guard let regex = try? NSRegularExpression(pattern: filePattern, options: []) else {
+            logger.error("cleanupUnusedFiles: Failed to compile regex")
+            return
+        }
+
+        for note in notes {
+            let matches = regex.matches(
+                in: note.content,
+                options: [],
+                range: NSRange(note.content.startIndex..., in: note.content)
+            )
+            for match in matches {
+                if let range = Range(match.range(at: 1), in: note.content) {
+                    referencedFiles.insert(String(note.content[range]))
+                }
+            }
+        }
+
+        // Move file I/O off the main thread
+        let referenced = referencedFiles
+        let dirURL = storageURL
+        let log = logger
+        Task.detached(priority: .background) {
+            do {
+                let fileURLs = try FileManager.default.contentsOfDirectory(
+                    at: dirURL,
+                    includingPropertiesForKeys: nil
+                )
+                for fileURL in fileURLs {
+                    let filename = fileURL.lastPathComponent
+                    guard !filename.hasPrefix(".") else { continue }
+                    if !referenced.contains(filename) {
+                        try? FileManager.default.removeItem(at: fileURL)
+                    }
+                }
+            } catch {
+                log.error("cleanupUnusedFiles: Failed to list directory: \(error.localizedDescription)")
+            }
+        }
+    }
+
     private func resolveTypeIdentifier(for url: URL, fallbackExtension ext: String) -> String {
         if let values = try? url.resourceValues(forKeys: [.typeIdentifierKey]),
            let identifier = values.typeIdentifier {

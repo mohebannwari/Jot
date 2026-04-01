@@ -402,6 +402,7 @@ enum EditTool: String, CaseIterable {
     case tabs
     case cards
     case convertToWebClip
+    case quickLook
 
     var isToggleable: Bool {
         switch self {
@@ -451,6 +452,7 @@ enum EditTool: String, CaseIterable {
         case .tabs: return "Tabs"
         case .cards: return "Cards"
         case .convertToWebClip: return "Convert to Web Clip"
+        case .quickLook: return "Quick Look"
         }
     }
 

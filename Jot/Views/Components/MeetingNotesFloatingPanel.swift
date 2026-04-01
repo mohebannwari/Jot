@@ -260,7 +260,8 @@ struct MeetingNotesFloatingPanel: View {
                             .foregroundColor(Color("SecondaryTextColor"))
                             .padding(.top, 4)
 
-                        ForEach(Array(result.keyPoints.enumerated()), id: \.offset) { _, point in
+                        ForEach(Array(result.keyPoints.enumerated()), id: \.offset) { index, point in
+                            let isLowConfidence = isLowGrounding(result.grounding?.keyPointScores, at: index)
                             HStack(alignment: .top, spacing: 6) {
                                 Circle()
                                     .fill(Color("SecondaryTextColor").opacity(0.4))
@@ -271,6 +272,12 @@ struct MeetingNotesFloatingPanel: View {
                                     .foregroundColor(Color("PrimaryTextColor"))
                                     .lineSpacing(2)
                             }
+                            .opacity(isLowConfidence ? 0.55 : 1.0)
+                            .overlay(alignment: .topTrailing) {
+                                if isLowConfidence {
+                                    groundingWarningBadge
+                                }
+                            }
                         }
                     }
 
@@ -280,7 +287,8 @@ struct MeetingNotesFloatingPanel: View {
                             .foregroundColor(Color("SecondaryTextColor"))
                             .padding(.top, 4)
 
-                        ForEach(Array(result.actionItems.enumerated()), id: \.offset) { _, item in
+                        ForEach(Array(result.actionItems.enumerated()), id: \.offset) { index, item in
+                            let isLowConfidence = isLowGrounding(result.grounding?.actionItemScores, at: index)
                             HStack(alignment: .top, spacing: 6) {
                                 Image(systemName: "square")
                                     .font(.system(size: 11))
@@ -297,6 +305,12 @@ struct MeetingNotesFloatingPanel: View {
                                     }
                                 }
                             }
+                            .opacity(isLowConfidence ? 0.55 : 1.0)
+                            .overlay(alignment: .topTrailing) {
+                                if isLowConfidence {
+                                    groundingWarningBadge
+                                }
+                            }
                         }
                     }
 
@@ -306,7 +320,8 @@ struct MeetingNotesFloatingPanel: View {
                             .foregroundColor(Color("SecondaryTextColor"))
                             .padding(.top, 4)
 
-                        ForEach(Array(result.decisions.enumerated()), id: \.offset) { _, decision in
+                        ForEach(Array(result.decisions.enumerated()), id: \.offset) { index, decision in
+                            let isLowConfidence = isLowGrounding(result.grounding?.decisionScores, at: index)
                             HStack(alignment: .top, spacing: 6) {
                                 Circle()
                                     .fill(Color("SecondaryTextColor").opacity(0.4))
@@ -316,6 +331,12 @@ struct MeetingNotesFloatingPanel: View {
                                     .font(FontManager.body(size: 13))
                                     .foregroundColor(Color("PrimaryTextColor"))
                                     .lineSpacing(2)
+                            }
+                            .opacity(isLowConfidence ? 0.55 : 1.0)
+                            .overlay(alignment: .topTrailing) {
+                                if isLowConfidence {
+                                    groundingWarningBadge
+                                }
                             }
                         }
                     }
@@ -477,6 +498,27 @@ struct MeetingNotesFloatingPanel: View {
         let minutes = Int(timestamp) / 60
         let seconds = Int(timestamp) % 60
         return String(format: "%d:%02d", minutes, seconds)
+    }
+
+    // MARK: - Grounding Indicators
+
+    private static let groundingThreshold: Double = 0.3
+
+    private func isLowGrounding(_ scores: [Double]?, at index: Int) -> Bool {
+        guard let scores, index < scores.count else { return false }
+        return scores[index] < Self.groundingThreshold
+    }
+
+    private var groundingWarningBadge: some View {
+        Text("Unverified")
+            .font(FontManager.metadata(size: 9, weight: .medium))
+            .foregroundColor(Color("TertiaryTextColor"))
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2)
+            .background(
+                Capsule()
+                    .fill(Color("SurfaceTranslucentColor"))
+            )
     }
 
     // MARK: - Colors

@@ -41,7 +41,8 @@ public final class ImageStorageManager {
     /// - Parameter url: Source URL of the image file
     /// - Returns: Filename of the saved image, or nil if save failed
     public func saveImage(from url: URL) async -> String? {
-        // Ensure storage directory exists
+        // Ensure storage directory exists before writing
+        await ensureStorageDirectoryExists()
         guard let storageURL = await getStorageDirectory() else {
             logger.error("Failed to get storage directory")
             return nil
@@ -74,6 +75,33 @@ public final class ImageStorageManager {
         }
     }
     
+    /// Save an NSImage directly (e.g. from clipboard paste) to the storage directory
+    /// - Parameter image: The NSImage to save
+    /// - Returns: Filename of the saved image, or nil if save failed
+    public func saveImageData(_ image: NSImage) async -> String? {
+        await ensureStorageDirectoryExists()
+        guard let storageURL = await getStorageDirectory() else {
+            logger.error("Failed to get storage directory")
+            return nil
+        }
+
+        guard let processedData = await processImage(image) else {
+            logger.error("Failed to process clipboard image")
+            return nil
+        }
+
+        let filename = UUID().uuidString + ".jpg"
+        let destinationURL = storageURL.appendingPathComponent(filename)
+
+        do {
+            try processedData.write(to: destinationURL)
+            return filename
+        } catch {
+            logger.error("Failed to write clipboard image data: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
     /// Get the full URL for an image filename
     /// - Parameter filename: The image filename
     /// - Returns: Full URL to the image file, or nil if not found
@@ -116,47 +144,51 @@ public final class ImageStorageManager {
         
         // Get all image filenames from notes
         var referencedImages = Set<String>()
-        let imagePattern = #"\[\[image\|\|\|([^\]]+)\]\]"#
-        
+        // Must exclude both ] and | in capture group to avoid capturing width ratio
+        // e.g. [[image|||foo.jpg|||0.3300]] should capture only "foo.jpg"
+        let imagePattern = #"\[\[image\|\|\|([^\]|]+)(?:\|\|\|[0-9]*\.?[0-9]+)?\]\]"#
+
+        guard let regex = try? NSRegularExpression(pattern: imagePattern, options: []) else {
+            logger.error("Failed to compile image cleanup regex")
+            return
+        }
+
         for note in notes {
-            if let regex = try? NSRegularExpression(pattern: imagePattern, options: []) {
-                let matches = regex.matches(
-                    in: note.content,
-                    options: [],
-                    range: NSRange(note.content.startIndex..., in: note.content)
-                )
-                
-                for match in matches {
-                    if let range = Range(match.range(at: 1), in: note.content) {
-                        let filename = String(note.content[range])
-                        referencedImages.insert(filename)
-                    }
+            let matches = regex.matches(
+                in: note.content,
+                options: [],
+                range: NSRange(note.content.startIndex..., in: note.content)
+            )
+
+            for match in matches {
+                if let range = Range(match.range(at: 1), in: note.content) {
+                    let filename = String(note.content[range])
+                    referencedImages.insert(filename)
                 }
             }
         }
         
-        // Get all files in storage directory
-        do {
-            let fileURLs = try FileManager.default.contentsOfDirectory(
-                at: storageURL,
-                includingPropertiesForKeys: nil
-            )
-            
-            var deletedCount = 0
-            for fileURL in fileURLs {
-                let filename = fileURL.lastPathComponent
-                
-                // Skip hidden files
-                guard !filename.hasPrefix(".") else { continue }
-                
-                // Delete if not referenced
-                if !referencedImages.contains(filename) {
-                    try? FileManager.default.removeItem(at: fileURL)
-                    deletedCount += 1
+        // Move file enumeration and deletion off the main thread
+        let referenced = referencedImages
+        let dirURL = storageURL
+        let log = logger
+        Task.detached(priority: .background) {
+            do {
+                let fileURLs = try FileManager.default.contentsOfDirectory(
+                    at: dirURL,
+                    includingPropertiesForKeys: nil
+                )
+
+                for fileURL in fileURLs {
+                    let filename = fileURL.lastPathComponent
+                    guard !filename.hasPrefix(".") else { continue }
+                    if !referenced.contains(filename) {
+                        try? FileManager.default.removeItem(at: fileURL)
+                    }
                 }
+            } catch {
+                log.error("Failed to list storage directory: \(error.localizedDescription)")
             }
-        } catch {
-            logger.error("Failed to list storage directory: \(error.localizedDescription)")
         }
     }
     
@@ -187,6 +219,17 @@ public final class ImageStorageManager {
         return try? getStorageDirectorySync()
     }
     
+    /// Synchronous access to storage directory for callers that cannot await.
+    /// Creates the directory if needed.
+    func getStorageDirectoryForSync() -> URL? {
+        guard let url = try? getStorageDirectorySync() else { return nil }
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: url.path) {
+            try? fm.createDirectory(at: url, withIntermediateDirectories: true)
+        }
+        return url
+    }
+
     /// Synchronous version of getStorageDirectory
     private func getStorageDirectorySync() throws -> URL {
         let fileManager = FileManager.default
@@ -200,32 +243,28 @@ public final class ImageStorageManager {
     }
     
     /// Process image: resize if needed and compress to JPEG.
-    /// Runs on a background thread to avoid blocking the UI.
+    /// Captures a CGImage snapshot on the main actor (AppKit-safe), then
+    /// runs all heavy work (resize, compress) on a detached background task.
     private func processImage(_ image: NSImage) async -> Data? {
+        // Capture CGImage on @MainActor before entering the background task —
+        // NSImage is not thread-safe; cgImage(forProposedRect:) calls AppKit internally
+        guard let sourceCG = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            return nil
+        }
         let maxWidth = maxImageWidth
         let quality = compressionQuality
+        let width = CGFloat(sourceCG.width)
+        let height = CGFloat(sourceCG.height)
+
         return await Task.detached(priority: .userInitiated) {
-            // Get image dimensions
-            guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
-                return nil
-            }
-
-            let width = CGFloat(cgImage.width)
-            let height = CGFloat(cgImage.height)
-
             // Calculate new size if image is too large
-            var newSize = NSSize(width: width, height: height)
+            var targetCG: CGImage = sourceCG
             if width > maxWidth {
                 let scale = maxWidth / width
-                newSize = NSSize(width: maxWidth, height: height * scale)
-            }
-
-            // Use CGContext for thread-safe resize (no lockFocus)
-            let targetImage: NSImage
-            if newSize != NSSize(width: width, height: height) {
+                let newSize = NSSize(width: maxWidth, height: height * scale)
                 let bitsPerComponent = 8
                 let bytesPerRow = Int(newSize.width) * 4
-                guard let colorSpace = cgImage.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB),
+                guard let colorSpace = sourceCG.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB),
                       let ctx = CGContext(
                           data: nil,
                           width: Int(newSize.width),
@@ -238,20 +277,18 @@ public final class ImageStorageManager {
                     return nil
                 }
                 ctx.interpolationQuality = .high
-                ctx.draw(cgImage, in: CGRect(origin: .zero, size: newSize))
-                guard let resizedCG = ctx.makeImage() else { return nil }
-                targetImage = NSImage(cgImage: resizedCG, size: newSize)
-            } else {
-                targetImage = image
+                ctx.draw(sourceCG, in: CGRect(origin: .zero, size: newSize))
+                guard let resized = ctx.makeImage() else { return nil }
+                targetCG = resized
             }
 
-            // Convert to JPEG data
-            guard let tiffData = targetImage.tiffRepresentation,
-                  let bitmapImage = NSBitmapImageRep(data: tiffData),
-                  let jpegData = bitmapImage.representation(
-                    using: .jpeg,
-                    properties: [.compressionFactor: quality]
-                  ) else {
+            // Convert CGImage to JPEG via NSBitmapImageRep (thread-safe when
+            // constructed directly from a CGImage, not from NSImage)
+            let bitmapRep = NSBitmapImageRep(cgImage: targetCG)
+            guard let jpegData = bitmapRep.representation(
+                using: .jpeg,
+                properties: [.compressionFactor: quality]
+            ) else {
                 return nil
             }
 

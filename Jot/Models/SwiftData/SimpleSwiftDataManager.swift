@@ -130,6 +130,13 @@ final class SimpleSwiftDataManager: ObservableObject {
                 self.notes = []
             }
 
+            if isInitialLoad && self.notes.count >= self.maxLoadLimit {
+                // Initial load hit the cap — load remaining notes in the background
+                Task { @MainActor in
+                    self.loadMoreNotes(offset: self.maxLoadLimit)
+                }
+            }
+
             if isInitialLoad {
                 // Fire-and-forget: clean up orphaned images after initial load.
                 // Fetches all notes (active + archived + deleted) so no referenced
@@ -143,6 +150,7 @@ final class SimpleSwiftDataManager: ObservableObject {
                         return
                     }
                     ImageStorageManager.shared.cleanupUnusedImages(referencedInNotes: allNotes)
+                    FileAttachmentStorageManager.shared.cleanupUnusedFiles(referencedInNotes: allNotes)
                     let contents = allNotes.map { $0.content }
                     ThumbnailCache.shared.cleanupOrphanedThumbnails(activeNoteContents: contents)
                 }
@@ -190,6 +198,10 @@ final class SimpleSwiftDataManager: ObservableObject {
     // Recomputes all derived note collections in a single pass over notes.
     // Called only when notes array changes — not on every UI render.
     private func recomputeDerivedNotes() {
+        // No manual objectWillChange.send() needed — @Published var notes already
+        // fires the publisher before didSet runs, and these derived collections
+        // update synchronously within the same didSet, so SwiftUI captures both
+        // the notes change and derived property changes in a single render cycle.
         let sortOrderRaw = UserDefaults.standard.string(forKey: ThemeManager.noteSortOrderKey) ?? "dateEdited"
         let sortOrder = NoteSortOrder(rawValue: sortOrderRaw) ?? .dateEdited
 
@@ -432,7 +444,8 @@ final class SimpleSwiftDataManager: ObservableObject {
 
             noteEntity.updateTitle(updatedNote.title)
             noteEntity.updateContent(updatedNote.content)
-            // Persist stickers
+            // Persist stickers — on encoding failure, revert in-memory stickers to match entity
+            var stickerEncodingFailed = false
             if updatedNote.stickers.isEmpty {
                 noteEntity.stickersData = nil
             } else {
@@ -440,6 +453,7 @@ final class SimpleSwiftDataManager: ObservableObject {
                     noteEntity.stickersData = try JSONEncoder().encode(updatedNote.stickers)
                 } catch {
                     logger.error("Failed to encode stickers: \(error)")
+                    stickerEncodingFailed = true
                 }
             }
             // Preserve metadata from the authoritative local notes array — the editor's
@@ -476,6 +490,10 @@ final class SimpleSwiftDataManager: ObservableObject {
                 localNote.isPinned = existing.isPinned
                 localNote.isLocked = existing.isLocked
                 localNote.folderID = existing.folderID
+                // If sticker encoding failed, keep entity-consistent stickers in memory
+                if stickerEncodingFailed {
+                    localNote.stickers = existing.stickers
+                }
                 if !metadataChanged {
                     suppressDerivedRecompute = true
                     notes[index] = localNote
@@ -707,6 +725,10 @@ final class SimpleSwiftDataManager: ObservableObject {
             deletedNotes.removeAll { ids.contains($0.id) }
             SpotlightIndexer.shared.deindexNotes(ids: ids)
             logger.info("Permanently deleted \(toDelete.count) notes")
+
+            // Clean up orphaned images and file attachments after permanent deletion
+            triggerStorageCleanup()
+
             return toDelete.count
         } catch {
             logger.error("Failed to permanently delete notes: \(error)")
@@ -727,8 +749,26 @@ final class SimpleSwiftDataManager: ObservableObject {
             try modelContext.save()
             deletedNotes.removeAll()
             logger.info("Emptied trash (\(entities.count) notes)")
+
+            // Clean up orphaned images and file attachments after emptying trash
+            triggerStorageCleanup()
         } catch {
             logger.error("Failed to empty trash: \(error)")
+        }
+    }
+
+    /// Run image and file attachment cleanup against all remaining notes.
+    private func triggerStorageCleanup() {
+        Task { @MainActor in
+            let allNotes: [Note]
+            do {
+                allNotes = try self.modelContext.fetch(FetchDescriptor<NoteEntity>()).map { $0.toNote() }
+            } catch {
+                self.logger.error("triggerStorageCleanup: failed to fetch notes — \(error)")
+                return
+            }
+            ImageStorageManager.shared.cleanupUnusedImages(referencedInNotes: allNotes)
+            FileAttachmentStorageManager.shared.cleanupUnusedFiles(referencedInNotes: allNotes)
         }
     }
 
@@ -1129,8 +1169,8 @@ final class SimpleSwiftDataManager: ObservableObject {
 
             try modelContext.save()
 
-            // Reload in-memory state
-            self.notes = notes.filter { !$0.isArchived && !$0.isDeleted }
+            // Reload in-memory state — sort by modifiedAt descending for consistent sidebar order
+            self.notes = notes.filter { !$0.isArchived && !$0.isDeleted }.sorted { $0.date > $1.date }
             self.archivedNotes = notes.filter { $0.isArchived && !$0.isDeleted }
             self.deletedNotes = notes.filter { $0.isDeleted }
             self.folders = folders.filter { !$0.isArchived }
@@ -1172,23 +1212,30 @@ final class SimpleSwiftDataManager: ObservableObject {
     // MARK: - Memory Management
 
     func loadMoreNotes(offset: Int = 0) {
+        var currentOffset = offset
         do {
             let predicate = #Predicate<NoteEntity> {
                 $0.isArchived == false && $0.isDeleted == false
             }
-            var descriptor = FetchDescriptor<NoteEntity>(
-                predicate: predicate,
-                sortBy: [SortDescriptor(\.modifiedAt, order: .reverse)]
-            )
-            descriptor.fetchOffset = offset
-            descriptor.fetchLimit = self.batchSize
+            // Load all remaining notes in batches until exhausted
+            while true {
+                var descriptor = FetchDescriptor<NoteEntity>(
+                    predicate: predicate,
+                    sortBy: [SortDescriptor(\.modifiedAt, order: .reverse)]
+                )
+                descriptor.fetchOffset = currentOffset
+                descriptor.fetchLimit = self.batchSize
 
-            let noteEntities = try modelContext.fetch(descriptor)
-            let newNotes = noteEntities.map { $0.toNote() }
+                let noteEntities = try modelContext.fetch(descriptor)
+                let newNotes = noteEntities.map { $0.toNote() }
 
-            // Append to existing notes
-            notes.append(contentsOf: newNotes)
-            logger.info("Loaded \(newNotes.count) additional notes (offset: \(offset))")
+                guard !newNotes.isEmpty else { break }
+                notes.append(contentsOf: newNotes)
+                logger.info("Loaded \(newNotes.count) additional notes (offset: \(currentOffset))")
+
+                if newNotes.count < self.batchSize { break }
+                currentOffset += newNotes.count
+            }
         } catch {
             logger.error("Failed to load more notes: \(error)")
         }

@@ -173,10 +173,6 @@ final class NoteEntity {
                     self.webClipTitle = String(content[titleSubstring])
                     self.webClipDescription = String(content[descSubstring])
                     self.webClipURL = String(content[urlSubstring])
-
-                    if let fullMatchRange = Range(match.range, in: content) {
-                        self.content = content.replacingOccurrences(of: content[fullMatchRange], with: "").trimmingCharacters(in: .whitespacesAndNewlines)
-                    }
                 }
             }
         }

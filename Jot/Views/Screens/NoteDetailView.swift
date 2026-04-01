@@ -53,7 +53,6 @@ struct NoteDetailView: View {
 
     // MARK: - Overlay state (accessed by +Actions extension)
     @State var showVoiceRecorderOverlay = false
-    @State private var showImagePicker = false
     @State private var showFileLinkPicker = false
     @State var showLinkInputOverlay = false
     @State var linkInputText = ""
@@ -633,7 +632,7 @@ struct NoteDetailView: View {
             meetingRecordingState = .idle
             isPlacingSticker = false
             selectedStickerID = nil
-            showVoiceRecorderOverlay = false; showLinkInputOverlay = false; showImagePicker = false; showFileLinkPicker = false
+            showVoiceRecorderOverlay = false; showLinkInputOverlay = false; showFileLinkPicker = false
             capturedSelectionRange = NSRange(location: NSNotFound, length: 0)
             capturedSelectionText = ""; capturedSelectionWindowRect = .zero
 
@@ -807,22 +806,6 @@ struct NoteDetailView: View {
         .onReceive(NotificationCenter.default.publisher(for: .textSelectionChanged))
         { notification in
             handleTextSelectionChanged(notification)
-        }
-        .sheet(isPresented: $showImagePicker) {
-            ImagePicker(
-                onImagesSelected: { urls in
-                    showImagePicker = false
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        urls.forEach { url in
-                            handleImageSelection(url)
-                        }
-                    }
-                },
-                onDismiss: {
-                    showImagePicker = false
-                }
-            )
-            .frame(minWidth: 800, minHeight: 600)
         }
     }
 
@@ -1946,7 +1929,7 @@ struct NoteDetailView: View {
         switch tool {
         case .imageUpload:
             hideLinkInputOverlay()
-            showImagePicker = true
+            openImageFilePanel()
             return true
         case .voiceRecord:
             hideLinkInputOverlay()
@@ -1963,6 +1946,12 @@ struct NoteDetailView: View {
             return true
         case .searchOnPage:
             presentSearchOnPage()
+            return true
+        case .quickLook:
+            NotificationCenter.default.post(
+                name: .triggerQuickLook, object: nil,
+                userInfo: ["editorInstanceID": editorInstanceID]
+            )
             return true
         case .fileLink:
             hideLinkInputOverlay()

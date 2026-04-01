@@ -69,14 +69,17 @@ struct MeetingNoteDetailPanel: View {
                 .foregroundColor(Color("PrimaryTextColor"))
 
             if sessions.count > 1 {
+                let pillColor = colorScheme == .dark
+                    ? Color(red: 0, green: 0.424, blue: 1.0)       // #006CFF
+                    : Color(red: 0, green: 0.345, blue: 0.827)     // #0058D3
                 Text("\(sessions.count) sessions")
                     .font(FontManager.metadata(size: 10, weight: .medium))
-                    .foregroundColor(Color("TertiaryTextColor"))
+                    .foregroundColor(pillColor)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
                     .background(
                         Capsule()
-                            .fill(Color("SurfaceTranslucentColor"))
+                            .fill(pillColor.opacity(0.3))
                     )
             }
 
@@ -274,7 +277,7 @@ private struct SessionAccordion: View {
                 .foregroundColor(Color("PrimaryTextColor"))
         } else if line.contains("[[h2]]") {
             Text(stripped)
-                .font(FontManager.heading(size: 12, weight: .semibold))
+                .font(FontManager.heading(size: 13, weight: .semibold))
                 .foregroundColor(Color("SecondaryTextColor"))
                 .padding(.top, 4)
         } else if line.hasPrefix("[ ] ") {
@@ -282,7 +285,7 @@ private struct SessionAccordion: View {
                 MeetingCheckbox(isChecked: false)
                     .padding(.top, 2)
                 Text(String(line.dropFirst(4)))
-                    .font(FontManager.body(size: 13))
+                    .font(FontManager.body(size: 14))
                     .foregroundColor(Color("PrimaryTextColor"))
                     .lineSpacing(2)
             }
@@ -294,7 +297,7 @@ private struct SessionAccordion: View {
                 MeetingCheckbox(isChecked: true)
                     .padding(.top, 2)
                 Text(String(line.dropFirst(4)))
-                    .font(FontManager.body(size: 13))
+                    .font(FontManager.body(size: 14))
                     .foregroundColor(Color("TertiaryTextColor"))
                     .strikethrough(color: Color("TertiaryTextColor").opacity(0.5))
                     .lineSpacing(2)
@@ -309,13 +312,13 @@ private struct SessionAccordion: View {
                     .frame(width: 5, height: 5)
                     .padding(.top, 5)
                 Text(String(line.dropFirst(2)))
-                    .font(FontManager.body(size: 13))
+                    .font(FontManager.body(size: 14))
                     .foregroundColor(Color("PrimaryTextColor"))
                     .lineSpacing(2)
             }
         } else {
             Text(stripped)
-                .font(FontManager.body(size: 13))
+                .font(FontManager.body(size: 14))
                 .foregroundColor(Color("PrimaryTextColor"))
                 .lineSpacing(3)
         }
@@ -329,7 +332,7 @@ private struct SessionAccordion: View {
         return VStack(alignment: .leading, spacing: 6) {
             if segments.isEmpty {
                 Text("No transcript available.")
-                    .font(FontManager.body(size: 13))
+                    .font(FontManager.body(size: 14))
                     .foregroundColor(Color("TertiaryTextColor"))
             } else {
                 ForEach(segments) { segment in
@@ -341,7 +344,7 @@ private struct SessionAccordion: View {
                             .frame(width: 36, alignment: .trailing)
 
                         Text(segment.text)
-                            .font(FontManager.body(size: 13))
+                            .font(FontManager.body(size: 14))
                             .foregroundColor(Color("PrimaryTextColor"))
                             .lineSpacing(2)
                     }
@@ -409,7 +412,7 @@ private struct NotesEditor: View {
 
     var body: some View {
         TextEditor(text: $editableText)
-            .font(FontManager.body(size: 13))
+            .font(FontManager.body(size: 14))
             .foregroundColor(Color("PrimaryTextColor"))
             .scrollContentBackground(.hidden)
             .scrollIndicators(.never)
@@ -426,7 +429,7 @@ private struct NotesEditor: View {
             .overlay(alignment: .topLeading) {
                 if editableText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Text("Add notes...")
-                        .font(FontManager.body(size: 13))
+                        .font(FontManager.body(size: 14))
                         .foregroundColor(Color("TertiaryTextColor"))
                         .allowsHitTesting(false)
                         .padding(.top, 9)

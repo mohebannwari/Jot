@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import UniformTypeIdentifiers
 
 extension NoteDetailView {
 
@@ -332,6 +333,22 @@ extension NoteDetailView {
 
     // MARK: - Image Selection
 
+    func openImageFilePanel() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose Images"
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowedContentTypes = [.image]
+
+        panel.begin { response in
+            guard response == .OK else { return }
+            for url in panel.urls {
+                self.handleImageSelection(url)
+            }
+        }
+    }
+
     func handleImageSelection(_ imageURL: URL) {
         Task {
             if let filename = await ImageStorageManager.shared.saveImage(from: imageURL) {
@@ -343,8 +360,6 @@ extension NoteDetailView {
                     )
                 }
             }
-
-            try? FileManager.default.removeItem(at: imageURL)
         }
     }
 

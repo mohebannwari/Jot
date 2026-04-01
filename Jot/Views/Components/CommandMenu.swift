@@ -55,6 +55,7 @@ struct CommandMenu: View {
             ScrollViewReader { proxy in
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(spacing: 0) {
+                        Spacer().frame(height: 4)
                         ForEach(Array(tools.enumerated()), id: \.element.rawValue) { index, tool in
                             CommandMenuItem(
                                 tool: tool,
@@ -73,9 +74,10 @@ struct CommandMenu: View {
                                 onSelect?(tool)
                             }
                         }
+                        Spacer().frame(height: 4)
                     }
                 }
-                .frame(height: visibleContentHeight)
+                .frame(height: visibleContentHeight + 8)
                 .modifier(ScrollBottomDetector(isAtBottom: $isAtBottom))
                 .onChange(of: selectedIndex) { _, newIndex in
                     withAnimation(.easeInOut(duration: 0.25)) {
@@ -268,6 +270,7 @@ extension EditTool {
         case .cards: return "IconCarussel"
         case .dashedList: return "IconDashList"
         case .convertToWebClip: return "insert link"
+        case .quickLook: return "IconQuickSearch"
         }
     }
 
@@ -310,6 +313,7 @@ extension EditTool {
         case .cards: return "rectangle.3.group"
         case .dashedList: return "list.dash"
         case .convertToWebClip: return "link"
+        case .quickLook: return "eye"
         }
     }
 }

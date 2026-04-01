@@ -83,6 +83,20 @@ extension View {
             .overlay(shape.stroke(Color.primary.opacity(0.12), lineWidth: 0.5))
     }
 
+    /// Applies a Liquid Glass tooltip style with a custom shape.
+    /// - On macOS 26+: real `.glassEffect()` in the given shape.
+    /// - On pre-26: solid tooltip background with stroke.
+    @ViewBuilder
+    func liquidGlassTooltip<S: Shape>(shape: S = Capsule()) -> some View {
+        if #available(macOS 26.0, *) {
+            self.glassEffect(.regular, in: shape)
+        } else {
+            self
+                .background(tooltipBackgroundColor, in: shape)
+                .overlay(shape.stroke(Color.primary.opacity(0.12), lineWidth: 0.5))
+        }
+    }
+
     /// Tooltip background: white in light mode, contrasting gray in dark mode.
     private var tooltipBackgroundColor: Color {
         Color("TooltipBackgroundColor")

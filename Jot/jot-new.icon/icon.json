@@ -1,42 +1,12 @@
 {
   "fill" : {
-    "automatic-gradient" : "display-p3:0.76807,0.76221,0.75928,1.00000"
+    "automatic-gradient" : "display-p3:0.10779,0.09845,0.09113,1.00000"
   },
   "groups" : [
     {
       "blur-material" : null,
       "layers" : [
-        {
-          "blend-mode-specializations" : [
-            {
-              "appearance" : "tinted",
-              "value" : "normal"
-            }
-          ],
-          "glass-specializations" : [
-            {
-              "value" : false
-            },
-            {
-              "appearance" : "dark",
-              "value" : true
-            },
-            {
-              "appearance" : "tinted",
-              "value" : true
-            }
-          ],
-          "hidden" : false,
-          "image-name" : "IconFeather2.png",
-          "name" : "IconFeather2",
-          "position" : {
-            "scale" : 2,
-            "translation-in-points" : [
-              37.671848507466706,
-              13.063624885653777
-            ]
-          }
-        }
+
       ],
       "lighting" : "individual",
       "position" : {
@@ -71,6 +41,30 @@
       "specular" : true,
       "translucency" : {
         "enabled" : false,
+        "value" : 0.5
+      }
+    },
+    {
+      "layers" : [
+        {
+          "glass" : true,
+          "image-name" : "IconFeather2 2.png",
+          "name" : "IconFeather2 2",
+          "position" : {
+            "scale" : 2,
+            "translation-in-points" : [
+              27.9296875,
+              18.015625
+            ]
+          }
+        }
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
         "value" : 0.5
       }
     }

@@ -8,6 +8,7 @@
 import Combine
 import SwiftUI
 import AppKit
+import Quartz
 import QuartzCore
 import UniformTypeIdentifiers
 
@@ -47,6 +48,7 @@ extension NSAttributedString.Key {
     static let fileLinkDisplayName = NSAttributedString.Key("FileLinkDisplayName")
     static let fileLinkBookmark = NSAttributedString.Key("FileLinkBookmark")
     static let todoChecked = NSAttributedString.Key("TodoChecked")
+    static let corruptedBlock = NSAttributedString.Key("CorruptedBlock")
 }
 
 enum AttachmentMarkup {
@@ -122,19 +124,25 @@ final class TypingAnimationLayoutManager: NSLayoutManager {
     /// Maps character index to its animation start time.
     private var activeAnimations: [Int: CFTimeInterval] = [:]
 
-    /// Timer that fires during active animations to drive redraw.
-    private var animationTimer: Timer?
+    /// Display-linked timer (CADisplayLink on macOS 14+, fallback Timer) for animation.
+    private var animationTimer: AnyObject?
 
     /// The text view whose display we invalidate each frame.
     weak var animatingTextView: NSTextView?
 
     // MARK: Public API
 
+    /// Maximum characters to animate per insertion. Large pastes skip animation
+    /// to avoid 120Hz invalidation scaling linearly with paste size.
+    private let maxAnimatedCharacters = 50
+
     /// Register characters in a range for animation.
     /// - Parameters:
     ///   - range: The character range to animate.
     ///   - stagger: If true, each character gets an incremental delay (paste wave).
     func animateCharacters(in range: NSRange, stagger: Bool) {
+        // Skip animation for large insertions to avoid performance degradation
+        guard range.length <= maxAnimatedCharacters else { return }
         let now = CACurrentMediaTime()
         for i in 0..<range.length {
             let charIndex = range.location + i
@@ -147,8 +155,7 @@ final class TypingAnimationLayoutManager: NSLayoutManager {
     /// Immediately cancel all running animations.
     func clearAllAnimations() {
         activeAnimations.removeAll()
-        animationTimer?.invalidate()
-        animationTimer = nil
+        stopAnimationTimer()
     }
 
     // MARK: Easing
@@ -163,28 +170,36 @@ final class TypingAnimationLayoutManager: NSLayoutManager {
 
     private func startTimerIfNeeded() {
         guard animationTimer == nil else { return }
-        animationTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 120.0, repeats: true) {
-            [weak self] _ in
-            guard let self else { return }
-            self.animatingTextView?.needsDisplay = true
-
-            // Prune completed animations (keep if end time is still in the future)
-            let now = CACurrentMediaTime()
-            self.activeAnimations = self.activeAnimations.filter {
-                now < $0.value + self.animationDuration
-            }
-
-            if self.activeAnimations.isEmpty {
-                self.animationTimer?.invalidate()
-                self.animationTimer = nil
-            }
+        // Use a common-mode timer at display refresh rate (60Hz).
+        // RunLoop.Mode.common ensures it fires during scroll tracking,
+        // unlike default-mode timers which pause during scroll.
+        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
+            self?.tickAnimation()
         }
+        RunLoop.main.add(timer, forMode: .common)
+        animationTimer = timer
+    }
+
+    private func tickAnimation() {
+        animatingTextView?.needsDisplay = true
+        let now = CACurrentMediaTime()
+        activeAnimations = activeAnimations.filter { now < $0.value + animationDuration }
+        if activeAnimations.isEmpty {
+            stopAnimationTimer()
+        }
+    }
+
+    private func stopAnimationTimer() {
+        (animationTimer as? Timer)?.invalidate()
+        animationTimer = nil
     }
 
     // MARK: Drawing Override
 
     override func drawGlyphs(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
-        if activeAnimations.isEmpty || NSGraphicsContext.current?.cgContext == nil {
+        // Guard against drawing during mid-edit when glyph/character maps may be stale
+        if activeAnimations.isEmpty || NSGraphicsContext.current?.cgContext == nil
+            || textStorage?.editedMask.contains(.editedCharacters) == true {
             super.drawGlyphs(forGlyphRange: glyphsToShow, at: origin)
         } else {
             let totalGlyphs = numberOfGlyphs
@@ -418,6 +433,8 @@ final class TypingAnimationLayoutManager: NSLayoutManager {
 final class NoteImageAttachment: NSTextAttachment {
     let storedFilename: String
     var widthRatio: CGFloat
+    /// Cached aspect ratio (width/height) to avoid 4:3 fallback reflow on cold open
+    var cachedAspectRatio: CGFloat?
 
     init(filename: String, widthRatio: CGFloat = 1.0) {
         self.storedFilename = filename
@@ -1330,11 +1347,27 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         private weak var textView: NSTextView?
         private var observers: [NSObjectProtocol] = []
         private var lastSerialized = ""
+        private var currentHoveredCharIndex: Int? = nil
         fileprivate let formatter = TextFormattingManager()
-        private var isUpdating = false
+        /// Reentrancy counter — supports nested isUpdating = true/false pairs safely.
+        /// Read as Bool for backward compatibility; set true increments, set false decrements.
+        private var _updatingCount = 0
+        private var isUpdating: Bool {
+            get { _updatingCount > 0 }
+            set {
+                if newValue {
+                    _updatingCount += 1
+                } else {
+                    _updatingCount = max(0, _updatingCount - 1)
+                }
+            }
+        }
         private var textBinding: Binding<String>
         private var lastHandledFocusRequestID: UUID?
         private let editorInstanceID: UUID?
+
+        // Debounce timer for fixInconsistentFonts — prevents running on every keystroke
+        private var fixFontsWorkItem: DispatchWorkItem?
 
         // Typing animation state
         fileprivate weak var typingAnimationManager: TypingAnimationLayoutManager?
@@ -1398,7 +1431,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
 
         private static let inlineImageCache: NSCache<NSString, NSImage> = {
             let cache = NSCache<NSString, NSImage>()
-            cache.countLimit = 24
+            cache.countLimit = 48
             cache.totalCostLimit = 50 * 1024 * 1024
             return cache
         }()
@@ -1899,6 +1932,10 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             let displayHeight = displayWidth * aspectRatio
 
             let attachment = NoteImageAttachment(filename: filename, widthRatio: widthRatio)
+            // Cache the aspect ratio so overlay updates don't need to wait for disk I/O
+            if imageSize.width > 0 && imageSize.height > 0 {
+                attachment.cachedAspectRatio = imageSize.width / imageSize.height
+            }
             let cellSize = CGSize(width: displayWidth, height: displayHeight)
             attachment.attachmentCell = ImageSizeAttachmentCell(size: cellSize)
             attachment.bounds = CGRect(origin: .zero, size: cellSize)
@@ -1990,11 +2027,67 @@ struct TodoEditorRepresentable: NSViewRepresentable {
 
 
         func endAttachmentHover() {
-            // No-op — hover preview system removed
+            guard currentHoveredCharIndex != nil else { return }
+            currentHoveredCharIndex = nil
+            var userInfo: [String: Any] = [:]
+            if let eid = editorInstanceID { userInfo["editorInstanceID"] = eid }
+            NotificationCenter.default.post(name: .linkHoverDismiss, object: nil, userInfo: userInfo)
         }
 
         func handleAttachmentHover(at point: CGPoint, in textView: NSTextView) -> Bool {
-            return false
+            guard let layoutManager = textView.layoutManager,
+                  let textStorage = textView.textStorage,
+                  let textContainer = textView.textContainer else { return false }
+
+            let ptInContainer = CGPoint(
+                x: point.x - textView.textContainerOrigin.x,
+                y: point.y - textView.textContainerOrigin.y)
+            let gi = layoutManager.glyphIndex(for: ptInContainer, in: textContainer)
+            guard gi < layoutManager.numberOfGlyphs else { return false }
+            let charIdx = layoutManager.characterIndexForGlyph(at: gi)
+            guard charIdx < textStorage.length else { return false }
+
+            // Check for any link type
+            let isNotelink = textStorage.attribute(.attachment, at: charIdx, effectiveRange: nil) is NotelinkAttachment
+                || textStorage.attribute(.notelinkID, at: charIdx, effectiveRange: nil) != nil
+            let isWebclip = textStorage.attribute(.webClipTitle, at: charIdx, effectiveRange: nil) != nil
+            let isPlainLink = textStorage.attribute(.plainLinkURL, at: charIdx, effectiveRange: nil) != nil
+            let isFileLink = textStorage.attribute(.attachment, at: charIdx, effectiveRange: nil) is FileLinkAttachment
+                || textStorage.attribute(.fileLinkPath, at: charIdx, effectiveRange: nil) != nil
+
+            guard isNotelink || isWebclip || isPlainLink || isFileLink else {
+                if currentHoveredCharIndex != nil { endAttachmentHover() }
+                return false
+            }
+
+            // Compute bounding rect and verify the point is actually inside
+            // the glyph — glyphIndex(for:in:) returns the *nearest* glyph,
+            // not the one containing the point, so hovering in whitespace
+            // between two attachment pills can snap to either one.
+            let glyphRange = NSRange(location: gi, length: 1)
+            let rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+            let adjustedRect = CGRect(
+                x: rect.origin.x + textView.textContainerOrigin.x,
+                y: rect.origin.y + textView.textContainerOrigin.y,
+                width: rect.width,
+                height: rect.height)
+
+            guard adjustedRect.contains(point) else {
+                if currentHoveredCharIndex != nil { endAttachmentHover() }
+                return false
+            }
+
+            // Same link -- no need to re-post
+            if currentHoveredCharIndex == charIdx { return true }
+
+            currentHoveredCharIndex = charIdx
+            var userInfo: [String: Any] = [
+                "rect": NSValue(rect: adjustedRect),
+                "charIndex": charIdx,
+            ]
+            if let eid = editorInstanceID { userInfo["editorInstanceID"] = eid }
+            NotificationCenter.default.post(name: .linkHoverDetected, object: nil, userInfo: userInfo)
+            return true
         }
 
         /// Checks all image overlays for a resize edge at the given window point.
@@ -2067,6 +2160,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             let callOverlays = calloutOverlays.values.map { $0 }
             let codeOverlays = codeBlockOverlays.values.map { $0 }
             let tabOverlays = tabsOverlays.values.map { $0 }
+            let cardOverlays = cardSectionOverlays.values.map { $0 }
             observers.forEach { NotificationCenter.default.removeObserver($0) }
             observers.removeAll()
             Task { @MainActor in
@@ -2076,6 +2170,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 callOverlays.forEach { $0.removeFromSuperview() }
                 codeOverlays.forEach { $0.removeFromSuperview() }
                 tabOverlays.forEach { $0.removeFromSuperview() }
+                cardOverlays.forEach { $0.removeFromSuperview() }
             }
         }
 
@@ -2103,6 +2198,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             textView.layoutManager?.delegate = self
             registerBoundsObserverIfNeeded(for: textView)
             registerFrameObserverIfNeeded(for: textView)
+            registerDisplayScaleObserver()
 
             // Prevent layout shifts when gaining focus
             let windowKey = NotificationCenter.default.addObserver(
@@ -2764,6 +2860,27 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 }
             }
 
+            let quickLookTrigger = NotificationCenter.default.addObserver(
+                forName: .triggerQuickLook, object: nil, queue: .main
+            ) { [weak self] notification in
+                if let nid = notification.userInfo?["editorInstanceID"] as? UUID,
+                   let myID = self?.editorInstanceID, nid != myID { return }
+                Task { @MainActor [weak self] in
+                    self?.triggerQuickLookForLinkAtCursor()
+                }
+            }
+
+            let quickLookHoverTrigger = NotificationCenter.default.addObserver(
+                forName: .linkHoverQuickLookTriggered, object: nil, queue: .main
+            ) { [weak self] notification in
+                guard let charIndex = notification.userInfo?["charIndex"] as? Int else { return }
+                if let nid = notification.userInfo?["editorInstanceID"] as? UUID,
+                   let myID = self?.editorInstanceID, nid != myID { return }
+                Task { @MainActor [weak self] in
+                    self?.triggerQuickLookForCharIndex(charIndex)
+                }
+            }
+
             observers = [
                 windowKey,
                 insertTodo, insertLink, convertToWebClip, insertFileLink, insertVoiceTranscript, insertImage, applyTool, applyCommandMenuTool,
@@ -2775,7 +2892,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 codePasteSelectCodeBlock, codePasteSelectPlainText, codePasteDismissObserver,
                 applyColor, removeColor, applyHighlight, removeHighlight, setHighlightRange,
                 applyFontSize, applyFontFamily,
-                settingsObserver, syncMenuState, printNote,
+                settingsObserver, syncMenuState, printNote, quickLookTrigger, quickLookHoverTrigger,
             ]
         }
 
@@ -2807,6 +2924,119 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             op.runModal(for: window, delegate: nil, didRun: nil, contextInfo: nil)
 
             textView.appearance = savedAppearance
+        }
+
+        // MARK: - Quick Look
+
+        @MainActor
+        private func triggerQuickLookForLinkAtCursor() {
+            guard let textView = self.textView as? InlineNSTextView,
+                  let textStorage = textView.textStorage,
+                  let window = textView.window,
+                  window.firstResponder === textView else { return }
+
+            let loc = textView.selectedRange().location
+            guard loc != NSNotFound, loc < textStorage.length else {
+                NSSound.beep()
+                return
+            }
+
+            guard let previewURL = resolveQuickLookURL(at: loc, in: textStorage) else {
+                NSSound.beep()
+                return
+            }
+
+            textView.quickLookPreviewURL = previewURL
+            QLPreviewPanel.shared()?.makeKeyAndOrderFront(nil)
+        }
+
+        @MainActor
+        private func triggerQuickLookForCharIndex(_ charIndex: Int) {
+            guard let textView = self.textView as? InlineNSTextView,
+                  let textStorage = textView.textStorage,
+                  charIndex < textStorage.length else { return }
+
+            guard let previewURL = resolveQuickLookURL(at: charIndex, in: textStorage) else {
+                NSSound.beep()
+                return
+            }
+
+            textView.quickLookPreviewURL = previewURL
+            QLPreviewPanel.shared()?.makeKeyAndOrderFront(nil)
+        }
+
+        /// Examines text attributes at the given character index and returns a Quick Look-compatible file URL.
+        /// For web URLs, creates a temporary `.webloc` file so QLPreviewPanel can render the page.
+        @MainActor
+        private func resolveQuickLookURL(at charIndex: Int, in textStorage: NSTextStorage) -> URL? {
+            let attrs = textStorage.attributes(at: charIndex, effectiveRange: nil)
+
+            // 1. File link with security-scoped bookmark
+            if let fileLinkAttachment = attrs[.attachment] as? FileLinkAttachment {
+                return resolveFileLinkURL(path: fileLinkAttachment.filePath, bookmark: fileLinkAttachment.bookmarkBase64)
+            }
+            if let filePath = attrs[.fileLinkPath] as? String {
+                let bookmark = (attrs[.fileLinkBookmark] as? String) ?? ""
+                return resolveFileLinkURL(path: filePath, bookmark: bookmark)
+            }
+
+            // 2. Stored file attachment
+            if let storedFilename = attrs[.fileStoredFilename] as? String,
+               let fileURL = FileAttachmentStorageManager.shared.fileURL(for: storedFilename) {
+                return fileURL
+            }
+
+            // 3. Web clip URL
+            if attrs[.webClipTitle] != nil,
+               let linkStr = Self.linkURLString(from: attrs),
+               let webURL = URL(string: linkStr) {
+                return createWeblocFile(for: webURL)
+            }
+
+            // 4. Plain link URL
+            if let linkStr = attrs[.plainLinkURL] as? String,
+               let webURL = URL(string: linkStr) {
+                return createWeblocFile(for: webURL)
+            }
+
+            // 5. Standard .link attribute (bare link text)
+            if let url = attrs[.link] as? URL {
+                return url.isFileURL ? url : createWeblocFile(for: url)
+            }
+            if let linkStr = attrs[.link] as? String, let url = URL(string: linkStr) {
+                return url.isFileURL ? url : createWeblocFile(for: url)
+            }
+
+            return nil
+        }
+
+        private func resolveFileLinkURL(path: String, bookmark: String) -> URL? {
+            if !bookmark.isEmpty, let data = Data(base64Encoded: bookmark) {
+                var isStale = false
+                if let resolved = try? URL(
+                    resolvingBookmarkData: data,
+                    options: .withSecurityScope,
+                    relativeTo: nil,
+                    bookmarkDataIsStale: &isStale
+                ) {
+                    _ = resolved.startAccessingSecurityScopedResource()
+                    return resolved
+                }
+            }
+            let fileURL = URL(fileURLWithPath: path)
+            return FileManager.default.fileExists(atPath: path) ? fileURL : nil
+        }
+
+        private func createWeblocFile(for url: URL) -> URL? {
+            let tempDir = FileManager.default.temporaryDirectory
+            let safeName = (url.host ?? "preview").replacingOccurrences(of: "/", with: "_")
+            let fileURL = tempDir.appendingPathComponent("\(safeName).webloc")
+            let plist: [String: Any] = ["URL": url.absoluteString]
+            guard let data = try? PropertyListSerialization.data(
+                fromPropertyList: plist, format: .xml, options: 0
+            ) else { return nil }
+            try? data.write(to: fileURL, options: .atomic)
+            return fileURL
         }
 
         private func applyEditorSettings() {
@@ -2907,6 +3137,20 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     }
                     self.lastKnownTextViewWidth = tv.bounds.width
                     self.scheduleOverlayUpdate()
+                }
+            }
+            observers.append(observer)
+        }
+
+        /// Re-render pill attachments when the display's backing scale changes
+        /// (e.g. window moved between Retina and non-Retina displays).
+        private func registerDisplayScaleObserver() {
+            let observer = NotificationCenter.default.addObserver(
+                forName: NSApplication.didChangeScreenParametersNotification,
+                object: nil, queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.rerenderPillAttachments()
                 }
             }
             observers.append(observer)
@@ -3035,8 +3279,17 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             guard let textView = self.textView,
                   let storage = textView.textStorage else { return }
 
+            // Search from the cursor position first to find the nearest match,
+            // avoiding wrong-occurrence replacement when the same text appears multiple times
             let fullString = storage.string as NSString
-            let found = fullString.range(of: original, options: .literal, range: NSRange(location: 0, length: fullString.length))
+            let cursorLoc = textView.selectedRange().location
+            var found = fullString.range(of: original, options: .literal,
+                                         range: NSRange(location: cursorLoc, length: fullString.length - cursorLoc))
+            if found.location == NSNotFound {
+                // Fall back to searching from the beginning
+                found = fullString.range(of: original, options: .literal,
+                                         range: NSRange(location: 0, length: fullString.length))
+            }
             guard found.location != NSNotFound else {
                 clearProofreadOverlays()
                 return
@@ -3061,6 +3314,11 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             NSAnimationContext.beginGrouping()
             NSAnimationContext.current.duration = 0
             isUpdating = true
+            defer {
+                isUpdating = false
+                NSAnimationContext.endGrouping()
+                syncText()
+            }
 
             if original.isEmpty {
                 // Full-document replacement
@@ -3084,10 +3342,6 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     textView.didChangeText()
                 }
             }
-
-            isUpdating = false
-            NSAnimationContext.endGrouping()
-            syncText()
         }
 
         // MARK: - Batch Proofread Replace All (via notification)
@@ -3888,13 +4142,18 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 pendingAnimationLength = nil
             }
 
-            // Correct any font family injection from Writing Tools, then inherit typing
-            // attributes from the cursor position so bold/italic/heading/color all propagate
-            // naturally to the next typed character.
+            // Inherit typing attributes immediately; debounce font family correction
+            // to avoid running fixInconsistentFonts on every keystroke
+            self.fixFontsWorkItem?.cancel()
+            let fontFixWork = DispatchWorkItem { [weak self] in
+                guard let self = self, !self.isUpdating else { return }
+                self.fixInconsistentFonts()
+            }
+            self.fixFontsWorkItem = fontFixWork
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: fontFixWork)
+
             DispatchQueue.main.async {
                 guard !self.isUpdating else { return }
-
-                self.fixInconsistentFonts()
 
                 // Derive typing attributes from the character at/before the cursor.
                 // This is how every modern text editor works: the next typed character
@@ -3912,6 +4171,14 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                        str.character(at: sel.location - 1) == 0x0A,
                        storage.attribute(.blockQuote, at: sel.location, effectiveRange: nil) as? Bool == true {
                         loc = sel.location
+                    }
+                    // Skip backward over attachment characters (U+FFFC) to avoid
+                    // inheriting attachment-scoped attributes like .attachment,
+                    // .baselineOffset, or block paragraph styles
+                    while loc > 0,
+                          str.character(at: loc) == 0xFFFC,
+                          storage.attribute(.attachment, at: loc, effectiveRange: nil) != nil {
+                        loc -= 1
                     }
                     var attrs = storage.attributes(at: loc, effectiveRange: nil)
                     // Strip notelink attributes so typed text after a mention
@@ -4400,8 +4667,38 @@ struct TodoEditorRepresentable: NSViewRepresentable {
 
         func handleReturn(in textView: NSTextView) -> Bool {
             let sel = textView.selectedRange()
-            guard isInTodoParagraph(range: sel),
-                  let storage = textView.textStorage else { return false }
+            guard let storage = textView.textStorage else { return false }
+
+            // Block quote: Enter on empty quoted line exits the quote
+            let curLoc = max(0, min(storage.length, sel.location))
+            if curLoc < storage.length,
+               storage.attribute(.blockQuote, at: curLoc, effectiveRange: nil) as? Bool == true {
+                let paraRange = (storage.string as NSString).paragraphRange(
+                    for: NSRange(location: curLoc, length: 0))
+                let paraText = (storage.string as NSString).substring(with: paraRange)
+                    .trimmingCharacters(in: .newlines)
+                if paraText.isEmpty {
+                    // Remove block quote from this empty paragraph
+                    isUpdating = true
+                    storage.beginEditing()
+                    storage.removeAttribute(.blockQuote, range: paraRange)
+                    let bodyStyle = NSMutableParagraphStyle()
+                    bodyStyle.paragraphSpacing = 4
+                    storage.addAttribute(.paragraphStyle, value: bodyStyle, range: paraRange)
+                    storage.addAttribute(.foregroundColor, value: NSColor.labelColor, range: paraRange)
+                    storage.endEditing()
+                    textView.setSelectedRange(NSRange(location: paraRange.location, length: 0))
+                    // Reset typing attributes to body
+                    var typingAttrs = Self.baseTypingAttributes(for: currentColorScheme)
+                    typingAttrs.removeValue(forKey: .blockQuote)
+                    textView.typingAttributes = typingAttrs
+                    isUpdating = false
+                    syncText()
+                    return true
+                }
+            }
+
+            guard isInTodoParagraph(range: sel) else { return false }
 
             let loc = max(0, min(storage.length, sel.location))
             let paraRange = (storage.string as NSString).paragraphRange(
@@ -4801,18 +5098,19 @@ struct TodoEditorRepresentable: NSViewRepresentable {
 
         private func insertTextAtCursor(_ text: String) {
             guard let textView = textView else { return }
-            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty else { return }
+            // Preserve intentional leading/trailing whitespace from AI output;
+            // only skip completely blank text
+            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
 
             replaceSelection(
                 with: NSAttributedString(
-                    string: trimmed,
+                    string: text,
                     attributes: Self.baseTypingAttributes(for: currentColorScheme)))
 
             syncText()
         }
 
-        private func insertImage(filename: String) {
+        func insertImage(filename: String) {
             guard let textView = textView,
                   let textStorage = textView.textStorage else { return }
 
@@ -4822,7 +5120,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             if Self.inlineImageCache.object(forKey: cacheKey) == nil,
                let url = ImageStorageManager.shared.getImageURL(for: filename),
                let img = NSImage(contentsOf: url) {
-                Self.inlineImageCache.setObject(img, forKey: cacheKey)
+                Self.inlineImageCache.setObject(img, forKey: cacheKey, cost: Int(img.size.width * img.size.height * 4))
             }
 
             let baseAttrs = Self.baseTypingAttributes(for: currentColorScheme)
@@ -5298,13 +5596,10 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             lastSerialized = serialize()
             textBinding.wrappedValue = lastSerialized
             isUpdating = false
-            updateImageOverlays(in: textView)
-            updateTableOverlays(in: textView)
-            updateCalloutOverlays(in: textView)
-            updateCodeBlockOverlays(in: textView)
-            updateTabsOverlays(in: textView)
-            updateCardSectionOverlays(in: textView)
 
+            // Coalesce overlay updates through the shared debounce —
+            // scheduleOverlayUpdate already cancels and reschedules correctly
+            scheduleOverlayUpdate()
         }
 
         // MARK: - Inline Image Overlay Management
@@ -5424,7 +5719,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                             guard let img = NSImage(contentsOf: url) else { return }
                             await MainActor.run { [weak self, weak overlay] in
                                 guard let self = self else { return }
-                                Self.inlineImageCache.setObject(img, forKey: cacheKey)
+                                Self.inlineImageCache.setObject(img, forKey: cacheKey, cost: Int(img.size.width * img.size.height * 4))
                                 overlay?.image = img
                                 if let tv = self.textView {
                                     self.updateImageOverlays(in: tv)
@@ -6305,6 +6600,14 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 let expectedColor = expectedAttributes[.foregroundColor] as? NSColor
             else { return }
 
+            // Suppress textDidChange during font corrections to prevent
+            // re-scheduling this function in an infinite 300ms loop
+            isUpdating = true
+            defer { isUpdating = false }
+
+            // Collect ranges that need fixing, then batch-apply inside beginEditing/endEditing
+            var fixups: [(range: NSRange, attrs: [NSAttributedString.Key: Any])] = []
+
             textStorage.enumerateAttributes(
                 in: NSRange(location: 0, length: textStorage.length)
             ) { attributes, range, _ in
@@ -6367,8 +6670,18 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 }
 
                 if needsFixing {
-                    textStorage.setAttributes(fixedAttributes, range: range)
+                    fixups.append((range: range, attrs: fixedAttributes))
                 }
+            }
+
+            // Batch all mutations in a single editing bracket so the layout manager
+            // receives one processEditing notification, not N individual ones
+            if !fixups.isEmpty {
+                textStorage.beginEditing()
+                for fixup in fixups {
+                    textStorage.setAttributes(fixup.attrs, range: fixup.range)
+                }
+                textStorage.endEditing()
             }
         }
 
@@ -6558,6 +6871,16 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     }
                 }
             }
+
+            // Suppress spell check red underlines on attachment characters (U+FFFC).
+            // Without this, the spell checker treats words adjacent to inline attachments
+            // (checkboxes, images, webclips) as misspelled due to the invisible U+FFFC boundary.
+            textStorage.enumerateAttribute(.attachment, in: fullRange, options: []) { value, range, _ in
+                if value != nil {
+                    textStorage.addAttribute(.spellingState, value: 0, range: range)
+                }
+            }
+
             textStorage.endEditing()
         }
 
@@ -6621,6 +6944,11 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             let fullRange = NSRange(location: 0, length: storage.length)
             var output = ""
             storage.enumerateAttributes(in: fullRange, options: []) { attributes, range, _ in
+                // Corrupted block placeholders — re-emit original raw markup for lossless round-trip
+                if let rawMarkup = attributes[.corruptedBlock] as? String {
+                    output.append(rawMarkup)
+                    return
+                }
                 if let attachment = attributes[.attachment] as? NSTextAttachment,
                     let cell = attachment.attachmentCell as? TodoCheckboxAttachmentCell
                 {
@@ -6641,7 +6969,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     }
                     let sanitizedURL = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
                     output.append("[[webclip|\(title)|\(description)|\(sanitizedURL)]]")
-                } else if let filePath = attributes[.fileLinkPath] as? String {
+                } else if let filePath = attributes[.fileLinkPath] as? String,
+                          (storage.string as NSString).substring(with: range).contains("\u{FFFC}") {
                     let displayName = (attributes[.fileLinkDisplayName] as? String) ?? URL(fileURLWithPath: filePath).lastPathComponent
                     let bookmark = (attributes[.fileLinkBookmark] as? String) ?? ""
                     let sanitizedPath = Self.sanitizedWebClipComponent(filePath)
@@ -6651,7 +6980,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     } else {
                         output.append("[[filelink|\(sanitizedPath)|\(sanitizedName)|\(bookmark)]]")
                     }
-                } else if let storedFilename = attributes[.fileStoredFilename] as? String {
+                } else if let storedFilename = attributes[.fileStoredFilename] as? String,
+                          (storage.string as NSString).substring(with: range).contains("\u{FFFC}") {
                     let typeIdentifierRaw = (attributes[.fileTypeIdentifier] as? String) ?? "public.data"
                     let originalNameRaw = (attributes[.fileOriginalFilename] as? String) ?? storedFilename
                     let typeIdentifier = Self.sanitizedWebClipComponent(typeIdentifierRaw)
@@ -6690,27 +7020,35 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     !(attachment.attachmentCell is TodoCheckboxAttachmentCell)
                 {
                     if let filename = attributes[.imageFilename] as? String {
+                        // Always serialize width ratio to avoid insert/deserialize default mismatch
                         let ratio = attributes[.imageWidthRatio] as? CGFloat ?? 1.0
-                        if abs(ratio - 1.0) < 0.001 {
-                            output.append("[[image|||\(filename)]]")
-                        } else {
-                            output.append("[[image|||\(filename)|||\(String(format: "%.4f", ratio))]]")
-                        }
+                        output.append("[[image|||\(filename)|||\(String(format: "%.4f", ratio))]]")
                     } else if let noteAttachment = attachment as? NoteImageAttachment {
                         let ratio = noteAttachment.widthRatio
-                        if abs(ratio - 1.0) < 0.001 {
-                            output.append("[[image|||\(noteAttachment.storedFilename)]]")
-                        } else {
-                            output.append("[[image|||\(noteAttachment.storedFilename)|||\(String(format: "%.4f", ratio))]]")
-                        }
+                        output.append("[[image|||\(noteAttachment.storedFilename)|||\(String(format: "%.4f", ratio))]]")
                     } else if let fileWrapper = attachment.fileWrapper,
                             let filename = fileWrapper.preferredFilename ?? fileWrapper.filename,
                             !filename.isEmpty,
                             filename.hasSuffix(".jpg")
                     {
                         output.append("[[image|||\(filename)]]")
+                    } else if let image = attachment.image ?? attachment.fileWrapper?.regularFileContents.flatMap({ NSImage(data: $0) }) {
+                        // Attachment has image data but no stored filename (e.g. clipboard paste
+                        // that bypassed the image save pipeline). Save synchronously to prevent
+                        // data loss on the next serialize/deserialize round-trip.
+                        let filename = UUID().uuidString + ".jpg"
+                        if let storageURL = ImageStorageManager.shared.getStorageDirectoryForSync(),
+                           let tiffData = image.tiffRepresentation,
+                           let bitmap = NSBitmapImageRep(data: tiffData),
+                           let jpegData = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.8]) {
+                            let destURL = storageURL.appendingPathComponent(filename)
+                            try? jpegData.write(to: destURL)
+                            output.append("[[image|||\(filename)]]")
+                        }
+                        // If save fails, omit the attachment rather than emitting U+FFFC garbage
                     } else {
-                        output.append((storage.string as NSString).substring(with: range))
+                        // Unknown attachment type — skip rather than emitting raw U+FFFC
+                        // which corrupts the serialized text
                     }
                 } else {
                     // Ordered list prefix: the "N. " characters carry orderedListNumber
@@ -7110,13 +7448,11 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     }
                 } else if text[index...].hasPrefix("[[table|") {
                     flushBuffer()
-                    // Find [[/table]] closing tag
                     let remaining = text[index...]
                     if let closingRange = remaining.range(of: "[[/table]]") {
                         let tableBlock = String(remaining[remaining.startIndex..<closingRange.upperBound])
                         if let tableData = NoteTableData.deserialize(from: tableBlock) {
                             let baseAttributes = Self.baseTypingAttributes(for: currentColorScheme)
-                            // Ensure newline before table
                             if result.length > 0,
                                let lastScalar = result.string.unicodeScalars.last,
                                !CharacterSet.newlines.contains(lastScalar) {
@@ -7126,7 +7462,6 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                             let attachment = makeTableAttachment(tableData: tableData)
                             result.append(attachment)
 
-                            // Ensure newline after
                             let afterClosing = closingRange.upperBound
                             if afterClosing < text.endIndex {
                                 if !text[afterClosing].isNewline {
@@ -7136,6 +7471,18 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                                 result.append(NSAttributedString(string: "\n", attributes: baseAttributes))
                             }
 
+                            index = closingRange.upperBound
+                            lastWasWebClip = false
+                            continue
+                        } else {
+                            // Deserialization failed — preserve raw markup as a .corruptedBlock
+                            // attribute so it re-serializes without data loss
+                            let rawMarkup = String(remaining[remaining.startIndex..<closingRange.upperBound])
+                            let baseAttributes = Self.baseTypingAttributes(for: currentColorScheme)
+                            var attrs = baseAttributes
+                            attrs[.corruptedBlock] = rawMarkup
+                            attrs[.backgroundColor] = NSColor.systemRed.withAlphaComponent(0.1)
+                            result.append(NSAttributedString(string: "[Corrupted table block]", attributes: attrs))
                             index = closingRange.upperBound
                             lastWasWebClip = false
                             continue
@@ -7166,6 +7513,16 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                             index = closingRange.upperBound
                             lastWasWebClip = false
                             continue
+                        } else {
+                            let rawMarkup = String(remaining[remaining.startIndex..<closingRange.upperBound])
+                            let baseAttributes = Self.baseTypingAttributes(for: currentColorScheme)
+                            var attrs = baseAttributes
+                            attrs[.corruptedBlock] = rawMarkup
+                            attrs[.backgroundColor] = NSColor.systemRed.withAlphaComponent(0.1)
+                            result.append(NSAttributedString(string: "[Corrupted code block]", attributes: attrs))
+                            index = closingRange.upperBound
+                            lastWasWebClip = false
+                            continue
                         }
                     }
                 } else if text[index...].hasPrefix("[[tabs|") {
@@ -7190,6 +7547,16 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                             } else {
                                 result.append(NSAttributedString(string: "\n", attributes: baseAttributes))
                             }
+                            index = closingRange.upperBound
+                            lastWasWebClip = false
+                            continue
+                        } else {
+                            let rawMarkup = String(remaining[remaining.startIndex..<closingRange.upperBound])
+                            let baseAttributes = Self.baseTypingAttributes(for: currentColorScheme)
+                            var attrs = baseAttributes
+                            attrs[.corruptedBlock] = rawMarkup
+                            attrs[.backgroundColor] = NSColor.systemRed.withAlphaComponent(0.1)
+                            result.append(NSAttributedString(string: "[Corrupted tabs block]", attributes: attrs))
                             index = closingRange.upperBound
                             lastWasWebClip = false
                             continue
@@ -7220,6 +7587,16 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                             index = closingRange.upperBound
                             lastWasWebClip = false
                             continue
+                        } else {
+                            let rawMarkup = String(remaining[remaining.startIndex..<closingRange.upperBound])
+                            let baseAttributes = Self.baseTypingAttributes(for: currentColorScheme)
+                            var attrs = baseAttributes
+                            attrs[.corruptedBlock] = rawMarkup
+                            attrs[.backgroundColor] = NSColor.systemRed.withAlphaComponent(0.1)
+                            result.append(NSAttributedString(string: "[Corrupted cards block]", attributes: attrs))
+                            index = closingRange.upperBound
+                            lastWasWebClip = false
+                            continue
                         }
                     }
                 } else if text[index...].hasPrefix("[[callout|") {
@@ -7247,6 +7624,16 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                                 result.append(NSAttributedString(string: "\n", attributes: baseAttributes))
                             }
 
+                            index = closingRange.upperBound
+                            lastWasWebClip = false
+                            continue
+                        } else {
+                            let rawMarkup = String(remaining[remaining.startIndex..<closingRange.upperBound])
+                            let baseAttributes = Self.baseTypingAttributes(for: currentColorScheme)
+                            var attrs = baseAttributes
+                            attrs[.corruptedBlock] = rawMarkup
+                            attrs[.backgroundColor] = NSColor.systemRed.withAlphaComponent(0.1)
+                            result.append(NSAttributedString(string: "[Corrupted callout block]", attributes: attrs))
                             index = closingRange.upperBound
                             lastWasWebClip = false
                             continue
@@ -7675,21 +8062,27 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         // MARK: - Writing Tools Support (macOS 15+)
         @available(macOS 15.0, *)
         func textViewWritingToolsWillBegin(_ textView: NSTextView) {
-            // Store text before Writing Tools starts
+            // Store text before Writing Tools starts, suppress sync during session
             textBeforeWritingTools = textView.string
+            isUpdating = true
         }
 
         @available(macOS 15.0, *)
         func textViewWritingToolsDidEnd(_ textView: NSTextView) {
+            // Unconditional reset — Writing Tools owns the outermost session frame.
+            // Internal shouldChangeText/textDidChange pairs may have nested the counter
+            // during the session; the session boundary itself must be authoritative.
+            _updatingCount = 0
             // Writing Tools may strip custom attributes (todoChecked, foregroundColor)
             // from todo paragraphs while preserving the attachment cells themselves.
             // Re-apply checked styling so the visual state matches the cell's isChecked flag.
             styleTodoParagraphs()
+            syncText()
         }
     }
 }
 
-final class InlineNSTextView: NSTextView {
+final class InlineNSTextView: NSTextView, QLPreviewPanelDataSource, QLPreviewPanelDelegate {
     // Per-instance menu state for keyboard event handling (avoids cross-editor contamination in split views)
     var isCommandMenuShowing = false
     var commandSlashLocation: Int = -1
@@ -7708,13 +8101,90 @@ final class InlineNSTextView: NSTextView {
 
     weak var actionDelegate: TodoEditorRepresentable.Coordinator?
     var editorInstanceID: UUID?
+
+    // MARK: - Quick Look
+
+    /// Set before calling QLPreviewPanel.shared.makeKeyAndOrderFront(nil).
+    var quickLookPreviewURL: URL?
+    private var qlClickOutsideMonitor: Any?
+
+    override func acceptsPreviewPanelControl(_ panel: QLPreviewPanel!) -> Bool {
+        return quickLookPreviewURL != nil
+    }
+
+    override func beginPreviewPanelControl(_ panel: QLPreviewPanel!) {
+        panel.dataSource = self
+        panel.delegate = self
+
+        // Dismiss the panel when clicking outside it.
+        qlClickOutsideMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak panel] event in
+            guard let panel = panel else { return event }
+            if event.window !== panel {
+                panel.close()
+            }
+            return event
+        }
+    }
+
+    override func endPreviewPanelControl(_ panel: QLPreviewPanel!) {
+        panel.dataSource = nil
+        panel.delegate = nil
+        quickLookPreviewURL = nil
+        if let monitor = qlClickOutsideMonitor {
+            NSEvent.removeMonitor(monitor)
+            qlClickOutsideMonitor = nil
+        }
+    }
+
+    func numberOfPreviewItems(in panel: QLPreviewPanel!) -> Int {
+        return quickLookPreviewURL != nil ? 1 : 0
+    }
+
+    func previewPanel(_ panel: QLPreviewPanel!, previewItemAt index: Int) -> (any QLPreviewItem)! {
+        return quickLookPreviewURL as? NSURL
+    }
     private var hoverTrackingArea: NSTrackingArea?
 
     /// Set during paste operations so the coordinator can skip the typing animation.
     var isPasting = false
 
     override func paste(_ sender: Any?) {
+        // Intercept clipboard images (screenshots, copy from Photos, etc.)
+        // These arrive as TIFF/PNG data and must be saved as files before insertion,
+        // otherwise they become inline NSTextAttachments that are lost on serialize.
+        let pb = NSPasteboard.general
+        let imageTypes: [NSPasteboard.PasteboardType] = [.tiff, .png]
+        if let imageType = imageTypes.first(where: { pb.data(forType: $0) != nil }),
+           let imageData = pb.data(forType: imageType),
+           let image = NSImage(data: imageData) {
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                if let filename = await ImageStorageManager.shared.saveImageData(image) {
+                    self.actionDelegate?.insertImage(filename: filename)
+                }
+            }
+            return
+        }
+
         isPasting = true
+
+        // Try RTF paste: preserve bold/italic/underline/links from external rich text
+        if let rtfData = pb.data(forType: .rtf) ?? pb.data(forType: NSPasteboard.PasteboardType.rtfd),
+           let richText = NSAttributedString(rtf: rtfData, documentAttributes: nil),
+           richText.length > 0,
+           let storage = textStorage {
+            let mapped = Self.mapExternalRichText(richText)
+            let insertRange = selectedRange()
+            if shouldChangeText(in: insertRange, replacementString: mapped.string) {
+                storage.beginEditing()
+                storage.replaceCharacters(in: insertRange, with: mapped)
+                storage.endEditing()
+                didChangeText()
+                setSelectedRange(NSRange(location: insertRange.location + mapped.length, length: 0))
+            }
+            isPasting = false
+            return
+        }
 
         let pastedText = NSPasteboard.general.string(forType: .string)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -7827,6 +8297,53 @@ final class InlineNSTextView: NSTextView {
         }
     }
 
+    /// Maps external rich text (from Safari, Pages, Word, etc.) to Jot's font stack
+    /// while preserving bold, italic, underline, strikethrough, and links.
+    private static func mapExternalRichText(_ source: NSAttributedString) -> NSAttributedString {
+        let result = NSMutableAttributedString()
+        let bodyFont = FontManager.bodyNS()
+        source.enumerateAttributes(in: NSRange(location: 0, length: source.length), options: []) { attrs, range, _ in
+            let text = (source.string as NSString).substring(with: range)
+            var mapped: [NSAttributedString.Key: Any] = [
+                .font: bodyFont,
+                .foregroundColor: NSColor.labelColor,
+            ]
+
+            // Preserve bold/italic from external font
+            if let extFont = attrs[.font] as? NSFont {
+                let traits = NSFontManager.shared.traits(of: extFont)
+                var font = bodyFont
+                if traits.contains(.boldFontMask) {
+                    font = NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask)
+                }
+                if traits.contains(.italicFontMask) {
+                    font = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask)
+                }
+                mapped[.font] = font
+            }
+
+            // Preserve underline
+            if let underline = attrs[.underlineStyle] as? Int, underline != 0 {
+                mapped[.underlineStyle] = underline
+            }
+
+            // Preserve strikethrough
+            if let strikethrough = attrs[.strikethroughStyle] as? Int, strikethrough != 0 {
+                mapped[.strikethroughStyle] = strikethrough
+            }
+
+            // Preserve links
+            if let link = attrs[.link] {
+                mapped[.link] = link
+                mapped[.foregroundColor] = NSColor.controlAccentColor
+                mapped[.underlineStyle] = NSUnderlineStyle.single.rawValue
+            }
+
+            result.append(NSAttributedString(string: text, attributes: mapped))
+        }
+        return result
+    }
+
     static func isLikelyURL(_ text: String) -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !trimmed.contains(" "), !trimmed.contains("\n") else {
@@ -7891,7 +8408,9 @@ final class InlineNSTextView: NSTextView {
             let indentedCount = nonEmptyLines.filter { $0.hasPrefix("  ") || $0.hasPrefix("\t") }.count
             if Double(indentedCount) / Double(nonEmptyLines.count) >= 0.5 { mediumCount += 1 }
         }
-        if fullText.range(of: #"\w+\("#, options: .regularExpression) != nil { mediumCount += 1 }
+        // Function call pattern: word immediately followed by ( with no space
+        // (excludes prose like "the function (which is called)")
+        if fullText.range(of: #"\w+\([^)]*\)"#, options: .regularExpression) != nil { mediumCount += 1 }
 
         // Negative signals
         var negativeCount = 0
@@ -7964,8 +8483,44 @@ final class InlineNSTextView: NSTextView {
 
     override func pasteAsPlainText(_ sender: Any?) {
         isPasting = true
+        let pastedText = NSPasteboard.general.string(forType: .string)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let isURL = Self.isLikelyURL(pastedText)
+        let beforeLocation = selectedRange().location
+
         super.pasteAsPlainText(sender)
         isPasting = false
+
+        // Run URL detection on plain-text paste too (Cmd+Shift+V)
+        if isURL && !pastedText.isEmpty {
+            let afterLocation = selectedRange().location
+            let pastedLength = afterLocation - beforeLocation
+            let storageLen = textStorage?.length ?? 0
+            if pastedLength > 0, beforeLocation + pastedLength <= storageLen {
+                let pastedRange = NSRange(location: beforeLocation, length: pastedLength)
+                textStorage?.addAttribute(.foregroundColor, value: NSColor.controlAccentColor, range: pastedRange)
+
+                if let layoutManager = layoutManager, let textContainer = textContainer {
+                    let glyphRange = layoutManager.glyphRange(forCharacterRange: pastedRange, actualCharacterRange: nil)
+                    let rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+                    let adjustedRect = CGRect(
+                        x: rect.origin.x + textContainerOrigin.x,
+                        y: rect.origin.y + textContainerOrigin.y,
+                        width: rect.width, height: rect.height)
+
+                    let eid = self.editorInstanceID
+                    DispatchQueue.main.async {
+                        var payload: [String: Any] = [
+                            "url": pastedText,
+                            "range": NSValue(range: pastedRange),
+                            "rect": NSValue(rect: adjustedRect),
+                        ]
+                        if let eid = eid { payload["editorInstanceID"] = eid }
+                        NotificationCenter.default.post(name: .urlPasteDetected, object: payload)
+                    }
+                }
+            }
+        }
     }
 
     override var intrinsicContentSize: NSSize {
@@ -8028,37 +8583,17 @@ final class InlineNSTextView: NSTextView {
             cursor.set()
             return
         }
-        // Notelink / webclip / plain link hover: show pointing hand cursor
+        // Link hover: use containment-gated handleAttachmentHover as single
+        // source of truth. Must check BEFORE super.mouseMoved — NSTextView's
+        // implementation forcibly resets the cursor to I-beam.
         let mousePoint = convert(event.locationInWindow, from: nil)
-        if let textStorage = self.textStorage,
-           let layoutManager = self.layoutManager,
-           let textContainer = self.textContainer {
-            let ptInContainer = CGPoint(
-                x: mousePoint.x - textContainerOrigin.x,
-                y: mousePoint.y - textContainerOrigin.y)
-            let gi = layoutManager.glyphIndex(for: ptInContainer, in: textContainer)
-            if gi < layoutManager.numberOfGlyphs {
-                let charIdx = layoutManager.characterIndexForGlyph(at: gi)
-                if charIdx < textStorage.length {
-                    let isNotelink = textStorage.attribute(.attachment, at: charIdx, effectiveRange: nil) is NotelinkAttachment
-                        || textStorage.attribute(.notelinkID, at: charIdx, effectiveRange: nil) != nil
-                    let isWebclip = textStorage.attribute(.webClipTitle, at: charIdx, effectiveRange: nil) != nil
-                    let isPlainLink = textStorage.attribute(.plainLinkURL, at: charIdx, effectiveRange: nil) != nil
-                    let isFileLink = textStorage.attribute(.attachment, at: charIdx, effectiveRange: nil) is FileLinkAttachment
-                        || textStorage.attribute(.fileLinkPath, at: charIdx, effectiveRange: nil) != nil
-                    if isNotelink || isWebclip || isPlainLink || isFileLink {
-                        NSCursor.pointingHand.set()
-                        return
-                    }
-                }
-            }
+        if actionDelegate?.handleAttachmentHover(at: mousePoint, in: self) == true {
+            NSCursor.pointingHand.set()
+            return
         }
 
         super.mouseMoved(with: event)
-        let point = convert(event.locationInWindow, from: nil)
-        if actionDelegate?.handleAttachmentHover(at: point, in: self) != true {
-            actionDelegate?.endAttachmentHover()
-        }
+        actionDelegate?.endAttachmentHover()
     }
 
     override func mouseExited(with event: NSEvent) {
@@ -8183,6 +8718,31 @@ final class InlineNSTextView: NSTextView {
         }
     }
 
+    // Prevent initiating internal text drags when the selection contains custom
+    // block-level attachments (images, tables, callouts, etc.) that can't survive
+    // an RTFD pasteboard round-trip. Their subclass identity would be lost.
+    override func dragSelection(with event: NSEvent, offset mouseOffset: NSSize, slideBack: Bool) -> Bool {
+        guard let storage = textStorage else {
+            return super.dragSelection(with: event, offset: mouseOffset, slideBack: slideBack)
+        }
+        let sel = selectedRange()
+        guard sel.length > 0 else {
+            return super.dragSelection(with: event, offset: mouseOffset, slideBack: slideBack)
+        }
+        var hasBlockAttachment = false
+        storage.enumerateAttribute(.attachment, in: sel, options: []) { value, _, stop in
+            if value is NoteImageAttachment || value is NoteTableAttachment
+                || value is NoteCalloutAttachment || value is NoteCodeBlockAttachment
+                || value is NoteTabsAttachment || value is NoteCardSectionAttachment
+                || value is NoteDividerAttachment {
+                hasBlockAttachment = true
+                stop.pointee = true
+            }
+        }
+        if hasBlockAttachment { return false }
+        return super.dragSelection(with: event, offset: mouseOffset, slideBack: slideBack)
+    }
+
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
         if actionDelegate?.canHandleFileDrop(sender, in: self) == true {
             return .copy
@@ -8226,6 +8786,30 @@ final class InlineNSTextView: NSTextView {
         if flags == .command, event.charactersIgnoringModifiers == "a" {
             selectAll(nil)
             return true
+        }
+        // Cmd+B/I/U — standard macOS formatting shortcuts
+        if flags == .command, let chars = event.charactersIgnoringModifiers,
+           let fmt = actionDelegate?.formatter {
+            switch chars {
+            case "b":
+                fmt.applyFormatting(to: self, tool: .bold)
+                return true
+            case "i":
+                fmt.applyFormatting(to: self, tool: .italic)
+                return true
+            case "u":
+                fmt.applyFormatting(to: self, tool: .underline)
+                return true
+            case "0":
+                fmt.applyFormatting(to: self, tool: .body)
+                return true
+            case "f":
+                // Cmd+F — trigger in-app search
+                NotificationCenter.default.post(name: .performSearchOnPage, object: nil, userInfo: editorInstanceID.map { ["editorInstanceID": $0 as Any] })
+                return true
+            default:
+                break
+            }
         }
         return super.performKeyEquivalent(with: event)
     }
@@ -8430,6 +9014,13 @@ final class InlineNSTextView: NSTextView {
     override func insertText(_ string: Any, replacementRange: NSRange) {
         let eidInfo: [String: Any]? = editorInstanceID.map { ["editorInstanceID": $0] }
 
+        // Skip @/ interception during active IME composition (CJK input)
+        // to prevent accidentally triggering menus mid-composition
+        guard !hasMarkedText() else {
+            super.insertText(string, replacementRange: replacementRange)
+            return
+        }
+
         // Check if we're inserting "@" to trigger note picker
         if let str = string as? String, str == "@" {
             // Dismiss if already showing
@@ -8544,6 +9135,10 @@ final class InlineNSTextView: NSTextView {
     /// Detects and applies markdown-style shortcuts after text insertion
     private func handleMarkdownShortcuts(inserted: String) {
         guard let textStorage = self.textStorage else { return }
+        // Group shortcut replacement with the preceding character insertion
+        // so Cmd+Z reverts both in one step
+        undoManager?.groupsByEvent = false
+        defer { undoManager?.groupsByEvent = true }
         let cursor = selectedRange().location
 
         // --- Block-level shortcuts (trigger on Space) ---
@@ -8683,16 +9278,15 @@ final class InlineNSTextView: NSTextView {
             // Italic: *text* (single asterisk, not **)
             if inserted == "*" {
                 let searchStr = textBeforeCursor
-                // Find last single * that isn't part of **
-                if let lastStar = searchStr.lastIndex(of: "*"),
-                   lastStar != searchStr.index(before: searchStr.endIndex) {
-                    let beforeStar = searchStr.index(before: lastStar)
+                // Find last single * that isn't part of ** — search before the closing *
+                let searchRange = searchStr.startIndex..<searchStr.index(before: searchStr.endIndex)
+                if let lastStar = searchStr[searchRange].lastIndex(of: "*") {
                     let afterStar = searchStr.index(after: lastStar)
                     // Bounds check: afterStar must be a valid index before subscripting
                     guard afterStar < searchStr.endIndex else { return }
-                    // Make sure it's a single * (not **)
-                    if (lastStar == searchStr.startIndex || searchStr[beforeStar] != "*")
-                        && searchStr[afterStar] != "*" {
+                    // Make sure it's a single * (not **) — check before only when not at start
+                    let notDoubleBefore = lastStar == searchStr.startIndex || searchStr[searchStr.index(before: lastStar)] != "*"
+                    if notDoubleBefore && searchStr[afterStar] != "*" {
                         let openOffset = searchStr.distance(from: searchStr.startIndex, to: lastStar)
                         let contentStart = openOffset + 1
                         let contentEnd = searchStr.count  // before closing *
@@ -8798,25 +9392,39 @@ final class InlineNSTextView: NSTextView {
     }
     
     // MARK: - Context Menu Actions
-    
+
+    private var contextMenuUserInfo: [String: Any] {
+        var info: [String: Any] = [:]
+        if let eid = editorInstanceID { info["editorInstanceID"] = eid }
+        return info
+    }
+
     @objc private func toggleBold(_ sender: Any?) {
-        NotificationCenter.default.post(name: .applyEditTool, object: nil, userInfo: ["tool": "bold"])
+        var info = contextMenuUserInfo
+        info["tool"] = "bold"
+        NotificationCenter.default.post(name: .applyEditTool, object: nil, userInfo: info)
     }
-    
+
     @objc private func toggleItalic(_ sender: Any?) {
-        NotificationCenter.default.post(name: .applyEditTool, object: nil, userInfo: ["tool": "italic"])
+        var info = contextMenuUserInfo
+        info["tool"] = "italic"
+        NotificationCenter.default.post(name: .applyEditTool, object: nil, userInfo: info)
     }
-    
+
     @objc private func toggleUnderline(_ sender: Any?) {
-        NotificationCenter.default.post(name: .applyEditTool, object: nil, userInfo: ["tool": "underline"])
+        var info = contextMenuUserInfo
+        info["tool"] = "underline"
+        NotificationCenter.default.post(name: .applyEditTool, object: nil, userInfo: info)
     }
-    
+
     @objc private func insertTodo(_ sender: Any?) {
-        NotificationCenter.default.post(name: .todoToolbarAction, object: nil)
+        NotificationCenter.default.post(name: .todoToolbarAction, object: nil, userInfo: contextMenuUserInfo)
     }
-    
+
     @objc private func insertBulletList(_ sender: Any?) {
-        NotificationCenter.default.post(name: .applyEditTool, object: nil, userInfo: ["tool": "bulletList"])
+        var info = contextMenuUserInfo
+        info["tool"] = "bulletList"
+        NotificationCenter.default.post(name: .applyEditTool, object: nil, userInfo: info)
     }
 }
 
@@ -8906,11 +9514,16 @@ private final class TodoCheckboxAttachmentCell: NSTextAttachmentCell {
                     storage.removeAttribute(.todoChecked, range: textRange)
                     storage.addAttribute(.foregroundColor, value: NSColor.labelColor, range: textRange)
                 }
+                // Force re-render of the attachment cell image (must be inside beginEditing/endEditing)
+                storage.edited(.editedAttributes, range: attachmentRange, changeInLength: 0)
+                storage.endEditing()
+            } else {
+                // No text range to style, but still need to re-render the checkbox
+                storage.beginEditing()
+                storage.edited(.editedAttributes, range: attachmentRange, changeInLength: 0)
                 storage.endEditing()
             }
 
-            // Force re-render of the attachment cell image
-            storage.edited(.editedAttributes, range: attachmentRange, changeInLength: 0)
             textView.didChangeText()
             NotificationCenter.default.post(name: NSText.didChangeNotification, object: textView)
         }
@@ -9061,6 +9674,10 @@ extension Notification.Name {
     static let deleteWebClipAttachment = Notification.Name("deleteWebClipAttachment")
     static let convertSelectedTextToWebClip = Notification.Name("convertSelectedTextToWebClip")
     static let applyEditTool = Notification.Name("applyEditTool")
+    static let triggerQuickLook = Notification.Name("triggerQuickLook")
+    static let linkHoverDetected = Notification.Name("linkHoverDetected")
+    static let linkHoverDismiss = Notification.Name("linkHoverDismiss")
+    static let linkHoverQuickLookTriggered = Notification.Name("linkHoverQuickLookTriggered")
 
     // Command menu notifications
     static let showCommandMenu = Notification.Name("ShowCommandMenu")

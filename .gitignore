@@ -102,3 +102,4 @@ Jot/Ressources/*.svg
 Jot/Ressources/*.jpg
 Jot/Ressources/*.jpeg
 .autoresearch/
+.mcp.json
