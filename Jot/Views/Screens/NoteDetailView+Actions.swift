@@ -580,7 +580,7 @@ extension NoteDetailView {
         Task {
             // Stop audio and transcription
             let audioURL = await meetingAudioRecorder.stop()
-            meetingTranscriptionService.stopTranscription()
+            await meetingTranscriptionService.stopTranscription()
 
             withAnimation(.jotSpring) {
                 meetingRecordingState = .processing
@@ -669,7 +669,7 @@ extension NoteDetailView {
         if meetingRecordingState == .recording || meetingRecordingState == .paused {
             Task {
                 let audioURL = await meetingAudioRecorder.stop()
-                meetingTranscriptionService.stopTranscription()
+                await meetingTranscriptionService.stopTranscription()
                 if let url = audioURL {
                     AudioRecorder.cleanupMeetingAudio(at: url)
                 }

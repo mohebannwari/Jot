@@ -23,11 +23,15 @@ struct EditContentFloatingPanel: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
-        .background(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(colorScheme == .dark ? Color("DetailPaneColor") : .white)
-        )
-        .appleIntelligenceGlow(cornerRadius: 22, mode: .continuous)
+        .background {
+            if #available(macOS 26.0, iOS 26.0, *) {
+                Color.clear
+            } else {
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .fill(colorScheme == .dark ? Color("DetailPaneColor") : .white)
+            }
+        }
+        .modifier(AIGlassModifier(cornerRadius: 22, glowMode: .continuous))
         .frame(maxWidth: .infinity, alignment: .leading)
         .onKeyPress(.return) {
             if case .error = state { return .ignored }

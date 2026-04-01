@@ -180,6 +180,46 @@ extension View {
     }
 }
 
+// MARK: - AI Panel Glass / Glow Modifiers
+
+/// Applies Liquid Glass on macOS 26+ and the Apple Intelligence glow on older OS versions.
+/// Use on AI panels (Translate, Edit Content, Text Gen, Summary, Key Points, Meeting Detail)
+/// whose solid background is already conditionally removed on macOS 26+.
+struct AIGlassModifier: ViewModifier {
+    let cornerRadius: CGFloat
+    var glowMode: GlowMode = .oneShot
+
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, iOS 26.0, *) {
+            content
+                .glassEffect(
+                    .regular.interactive(false),
+                    in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                )
+        } else {
+            content
+                .appleIntelligenceGlow(cornerRadius: cornerRadius, mode: glowMode)
+        }
+    }
+}
+
+/// Applies the Apple Intelligence glow ONLY on pre-macOS 26.
+/// On macOS 26+ it's a no-op because the panel already has Liquid Glass via AIGlassModifier.
+/// Use at call sites in NoteDetailView where glow was applied externally.
+struct AIGlowFallbackModifier: ViewModifier {
+    let cornerRadius: CGFloat
+    var mode: GlowMode = .oneShot
+
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, iOS 26.0, *) {
+            content
+        } else {
+            content
+                .appleIntelligenceGlow(cornerRadius: cornerRadius, mode: mode)
+        }
+    }
+}
+
 /// Wrapper for animated glass morphing effects with unique IDs
 @available(iOS 26.0, macOS 26.0, *)
 extension View {

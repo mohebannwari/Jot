@@ -2680,6 +2680,7 @@ struct ContentView: View {
             .scrollIndicators(.never)
             .padding(.top, 4)
             .padding(.bottom, 4)
+            .layoutPriority(-1)
 
             // Update panel (production — Sparkle)
             if updateManager.isUpdateAvailable {
@@ -2737,9 +2738,43 @@ struct ContentView: View {
         .frame(maxHeight: .infinity)
         .padding(.vertical, 8)
         .contentShape(Rectangle())
+        .contextMenu {
+            Button {
+                HapticManager.shared.buttonTap()
+                promptCreateFolder()
+            } label: {
+                Label {
+                    Text("Create New Folder...")
+                } icon: {
+                    Image.menuIcon("IconFolderAddRight")
+                }
+            }
+
+            Button {
+                HapticManager.shared.buttonTap()
+                Task {
+                    let imported = await NoteImportService.shared.presentImportPanel(
+                        into: notesManager,
+                        onProgress: importProgressHandler
+                    )
+                    finishImport(imported)
+                }
+            } label: {
+                Label {
+                    Text("Import Notes...")
+                } icon: {
+                    Image.menuIcon("IconImportNotes")
+                }
+            }
+        }
         .onTapGesture(count: 2) {
             HapticManager.shared.buttonTap()
             createAndOpenNewNote()
+        }
+        .onTapGesture {
+            if isSearchPresented {
+                isSearchPresented = false
+            }
         }
         .liquidGlass(in: RoundedRectangle(cornerRadius: floatingSidebarCornerRadius, style: .continuous))
         .shadow(color: .black.opacity(0.04), radius: 9.5, x: 0, y: 9)

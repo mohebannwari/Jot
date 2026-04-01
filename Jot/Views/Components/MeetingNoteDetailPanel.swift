@@ -46,10 +46,15 @@ struct MeetingNoteDetailPanel: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: panelRadius, style: .continuous)
-                .fill(panelBackground)
-        )
+        .background {
+            if #available(macOS 26.0, iOS 26.0, *) {
+                Color.clear
+            } else {
+                RoundedRectangle(cornerRadius: panelRadius, style: .continuous)
+                    .fill(panelBackground)
+            }
+        }
+        .modifier(AIGlassModifier(cornerRadius: panelRadius))
         .clipShape(RoundedRectangle(cornerRadius: panelRadius, style: .continuous))
     }
 
@@ -219,20 +224,28 @@ private struct SessionAccordion: View {
 
     @ViewBuilder
     private var tabContent: some View {
-        ThinScrollView(maxHeight: Self.maxContentHeight) {
-            Group {
-                switch selectedTab {
-                case .summary:
+        Group {
+            switch selectedTab {
+            case .summary:
+                ThinScrollView(maxHeight: Self.maxContentHeight) {
                     summaryContent
-                case .transcript:
-                    transcriptContent
-                case .notes:
-                    notesContent
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 14)
+                        .padding(.bottom, 12)
                 }
+            case .transcript:
+                ThinScrollView(maxHeight: Self.maxContentHeight) {
+                    transcriptContent
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 14)
+                        .padding(.bottom, 12)
+                }
+            case .notes:
+                notesContent
+                    .frame(maxWidth: .infinity, maxHeight: Self.maxContentHeight, alignment: .leading)
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 12)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 14)
-            .padding(.bottom, 12)
         }
         .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
     }
@@ -417,7 +430,7 @@ private struct NotesEditor: View {
             .scrollContentBackground(.hidden)
             .scrollIndicators(.never)
             .padding(8)
-            .frame(minHeight: 80)
+            .frame(minHeight: 80, maxHeight: .infinity)
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(Color("SurfaceElevatedColor"))
@@ -449,29 +462,34 @@ private struct NotesEditor: View {
 // MARK: - Thin Scroll View
 
 /// ScrollView with native indicators hidden and a custom thin capsule indicator.
+/// Hugs content height up to `maxHeight`, then scrolls.
 private struct ThinScrollView<Content: View>: View {
     let maxHeight: CGFloat
     @ViewBuilder let content: Content
     @Environment(\.colorScheme) private var colorScheme
+    @State private var contentHeight: CGFloat = 0
 
     var body: some View {
         ScrollView(.vertical) {
             content
                 .background(
                     GeometryReader { contentGeo in
-                        Color.clear.preference(
-                            key: ScrollMetricsKey.self,
-                            value: ScrollMetrics(
-                                contentHeight: contentGeo.size.height,
-                                offset: contentGeo.frame(in: .named("thinScroll")).origin.y
+                        Color.clear
+                            .preference(
+                                key: ScrollMetricsKey.self,
+                                value: ScrollMetrics(
+                                    contentHeight: contentGeo.size.height,
+                                    offset: contentGeo.frame(in: .named("thinScroll")).origin.y
+                                )
                             )
-                        )
+                            .onAppear { contentHeight = contentGeo.size.height }
+                            .onChange(of: contentGeo.size.height) { _, h in contentHeight = h }
                     }
                 )
         }
         .scrollIndicators(.never)
         .coordinateSpace(name: "thinScroll")
-        .frame(maxHeight: maxHeight)
+        .frame(height: min(contentHeight, maxHeight))
         .overlayPreferenceValue(ScrollMetricsKey.self) { metrics in
             GeometryReader { viewportGeo in
                 let vp = viewportGeo.size.height

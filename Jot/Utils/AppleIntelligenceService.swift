@@ -135,7 +135,7 @@ struct TranslationResult {
 @available(macOS 26.0, *)
 @Generable
 struct TextGenerationResult {
-    @Guide(description: "The generated text based on the user's description")
+    @Guide(description: "An expanded, well-written paragraph that elaborates on the user's idea. Must contain substantially more detail and new content beyond the input.")
     var generatedText: String
 }
 #endif
@@ -373,14 +373,53 @@ final class AppleIntelligenceService {
         guard #available(macOS 26.0, *) else {
             throw AIServiceError.unavailable(unavailabilityReason)
         }
-        let session = LanguageModelSession(
-            instructions: "You are a skilled writing assistant. Generate text based on the user's description. Write naturally and concisely. Return only the generated text with no preamble or explanation."
+
+        // First attempt: expansion framing (the on-device model handles
+        // "expand this idea" far better than "generate text about X")
+        let result = try await attemptTextGeneration(
+            instruction: """
+            You are a skilled writing assistant. The user will provide a short idea, topic, or \
+            sentence fragment. Your task is to expand it into a well-written, detailed paragraph. \
+            Add specific details, examples, and elaboration. The output must be substantially \
+            longer and more detailed than the input. Do not repeat the input verbatim. \
+            Return only the expanded text with no preamble or explanation.
+            """,
+            prompt: "Expand this idea into a detailed, well-written paragraph:\n\n\(description)"
         )
-        let response = try await session.respond(
-            to: "Generate text for the following: \(description)",
-            generating: TextGenerationResult.self
-        )
+
+        // If the model echoed the input back, retry with a continuation framing
+        if isEcho(input: description, output: result) {
+            return try await attemptTextGeneration(
+                instruction: """
+                You are a writing assistant that continues and expands text. \
+                Take the user's starting thought and write 3-5 additional sentences \
+                that build on it with new information, examples, or details. \
+                The response must NOT repeat the user's words. Write only new content.
+                """,
+                prompt: "Continue writing from this starting point. Add new sentences with new details:\n\n\(description)"
+            )
+        }
+
+        return result
+    }
+
+    private func attemptTextGeneration(instruction: String, prompt: String) async throws -> String {
+        guard #available(macOS 26.0, *) else {
+            throw AIServiceError.unavailable(unavailabilityReason)
+        }
+        let session = LanguageModelSession(instructions: instruction)
+        let response = try await session.respond(to: prompt, generating: TextGenerationResult.self)
         return response.content.generatedText
+    }
+
+    /// Detect if the model echoed the input instead of generating new content.
+    private func isEcho(input: String, output: String) -> Bool {
+        let normIn = input.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        let normOut = output.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        if normOut == normIn { return true }
+        if normOut.hasPrefix(normIn) && normOut.count < normIn.count * 2 { return true }
+        if normIn.count > 20 && normOut.contains(normIn) && normOut.count < normIn.count * 2 { return true }
+        return false
     }
     #else
     func summarize(text: String) async throws -> String {

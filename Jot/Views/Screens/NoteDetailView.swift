@@ -336,7 +336,7 @@ struct NoteDetailView: View {
                         notesManager.updateNote(updated)
                     }
                 )
-                .appleIntelligenceGlow(cornerRadius: 22, mode: .oneShot)
+                .modifier(AIGlowFallbackModifier(cornerRadius: 22, mode: .oneShot))
                 .transition(.opacity.combined(with: .offset(y: -8)))
             }
 
@@ -348,7 +348,7 @@ struct NoteDetailView: View {
                         scheduleAutosave()
                     }
                 )
-                .appleIntelligenceGlow(cornerRadius: 22, mode: .oneShot)
+                .modifier(AIGlowFallbackModifier(cornerRadius: 22, mode: .oneShot))
                 .transition(.opacity.combined(with: .offset(y: -8)))
             }
             if let keyPointsItems = aiKeyPointsItems {
@@ -359,7 +359,7 @@ struct NoteDetailView: View {
                         scheduleAutosave()
                     }
                 )
-                .appleIntelligenceGlow(cornerRadius: 22, mode: .oneShot)
+                .modifier(AIGlowFallbackModifier(cornerRadius: 22, mode: .oneShot))
                 .transition(.opacity.combined(with: .offset(y: -8)))
             }
             if shouldShowTopPanel {
