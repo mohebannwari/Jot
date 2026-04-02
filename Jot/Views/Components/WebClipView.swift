@@ -12,15 +12,6 @@ struct WebClipView: View {
     let domain: String
     let url: String?
 
-    @Environment(\.colorScheme) private var colorScheme
-
-    /// Light mode: system accent blue. Dark mode: darker Apple-style blue.
-    private var pillBackground: Color {
-        colorScheme == .dark
-            ? Color(red: 0.149, green: 0.353, blue: 0.776)  // #2658C6
-            : Color.accentColor
-    }
-
     var body: some View {
         Button {
             if let urlString = url ?? URL(string: "https://\(domain)")?.absoluteString,
@@ -33,30 +24,29 @@ struct WebClipView: View {
                 #endif
             }
         } label: {
-            HStack(spacing: 4) {
-                Image("insert link")
+            HStack(spacing: 0) {
+                Image("IconChainLink")
                     .renderingMode(.template)
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 16, height: 16)
-                    .foregroundStyle(.white)
+                    .frame(width: 14, height: 14)
 
                 Text(cleanedDomain)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.white)
+                    .font(.system(size: 12, weight: .medium))
+                    .tracking(-0.3)
                     .lineLimit(1)
                     .textCase(.lowercase)
+                    .padding(.horizontal, 4)
 
-                Image("arrow-up-right")
+                Image("IconArrowRightUpCircle")
                     .renderingMode(.template)
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 16, height: 16)
-                    .foregroundStyle(.white)
+                    .frame(width: 14, height: 14)
             }
+            .foregroundColor(.white)
             .padding(4)
-            .frame(minWidth: 54)
-            .background(pillBackground, in: Capsule(style: .continuous))
+            .background(Color("LinkPillColor"), in: Capsule())
         }
         .buttonStyle(.plain)
         .onHover { inside in

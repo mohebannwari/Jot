@@ -2687,20 +2687,16 @@ struct ContentView: View {
                 UpdatePanelView(
                     variant: .relaunch(version: updateManager.updateVersion),
                     onRelaunch: { updateManager.relaunch() },
-                    onRemindLater: { updateManager.remindLater() }
+                    onRemindLater: { updateManager.remindLater() },
+                    isEmbeddedInGlass: true
                 )
-                .shadow(color: .black.opacity(0.12), radius: 10, x: 0, y: 6)
-                .shadow(color: .black.opacity(0.08), radius: 24, x: 0, y: 16)
-                .shadow(color: .black.opacity(0.04), radius: 40, x: 0, y: 32)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 .padding(.bottom, 8)
             } else if updateManager.isDownloading {
                 UpdatePanelView(
-                    variant: .downloading(version: updateManager.updateVersion)
+                    variant: .downloading(version: updateManager.updateVersion),
+                    isEmbeddedInGlass: true
                 )
-                .shadow(color: .black.opacity(0.12), radius: 10, x: 0, y: 6)
-                .shadow(color: .black.opacity(0.08), radius: 24, x: 0, y: 16)
-                .shadow(color: .black.opacity(0.04), radius: 40, x: 0, y: 32)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 .padding(.bottom, 8)
             }
@@ -2711,11 +2707,9 @@ struct ContentView: View {
                 UpdatePanelView(
                     variant: .relaunch(version: buildWatcher.buildVersion),
                     onRelaunch: { buildWatcher.relaunch() },
-                    onRemindLater: { buildWatcher.remindLater() }
+                    onRemindLater: { buildWatcher.remindLater() },
+                    isEmbeddedInGlass: true
                 )
-                .shadow(color: .black.opacity(0.12), radius: 10, x: 0, y: 6)
-                .shadow(color: .black.opacity(0.08), radius: 24, x: 0, y: 16)
-                .shadow(color: .black.opacity(0.04), radius: 40, x: 0, y: 32)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 .padding(.bottom, 8)
             }
@@ -2918,7 +2912,6 @@ struct ContentView: View {
             TodoEditorRepresentable(
                 text: .constant(version.content),
                 colorScheme: colorScheme,
-                bottomInset: 0,
                 focusRequestID: nil,
                 editorInstanceID: nil,
                 readOnly: true

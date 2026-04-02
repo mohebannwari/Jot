@@ -56,6 +56,8 @@ icon/blue    #3B82F6
 
 All type uses **SF Pro**. Weights: Regular=400, Medium=500, SemiBold=600, Bold=700.
 
+### Figma Type Scale
+
 | Style | Size | Line Height | Tracking | Weights Available |
 |-------|------|-------------|----------|-------------------|
 | Heading/H4 | 20 | 24 | -0.20 | Medium |
@@ -65,6 +67,20 @@ All type uses **SF Pro**. Weights: Regular=400, Medium=500, SemiBold=600, Bold=7
 | Label-5 | 11 | 14 | -0.20 | Medium |
 | Tiny | 10 | 12 | 0 | Medium, SemiBold |
 | Micro | 9 | 10 | 0 | SemiBold, Bold |
+
+### FontManager API (code-level)
+
+Three font families: **Charter** (serif body), **SF Pro** (headings/UI), **SF Mono** (metadata/code).
+
+| Method | SwiftUI | Size | Weight | Notes |
+|--------|---------|------|--------|-------|
+| `body()` | `Font.custom("Charter", size:)` | 16 | Regular | Follows `bodyFontStyle` setting |
+| `heading()` | `Font.system(size:, weight:)` | 24 | Medium | Respects `bodyFontStyle` |
+| `metadata()` | `Font.system(monospaced, size:)` | 12 | Medium | Timestamps, dates |
+| `icon()` | `Font.system(size:)` | 20 | Regular | SF Symbols |
+
+Body font style is user-configurable: `default` (Charter), `system` (SF Pro), `mono` (SF Mono).
+Line spacing presets: Compact (1.0x), Default (1.2x), Relaxed (1.5x) -- stored in `ThemeManager.lineSpacing`.
 
 ---
 
@@ -109,6 +125,20 @@ Canonical radius values in use: `4, 20, 24, Capsule`
 | Token | Value |
 |-------|-------|
 | `bg-blur/tags` | Background blur, radius 4 |
+
+---
+
+## Animations & Timing
+
+All in `Extensions.swift`:
+
+| Animation | Response | Damping | Duration | Usage |
+|-----------|----------|---------|----------|-------|
+| **jotSpring** | 0.35s | 0.82 | - | Spring response for natural motion |
+| **jotBounce** | - | - | 0.3s | Bouncy easing |
+| **jotSmoothFast** | - | - | 0.2s | Fast linear transitions |
+| **jotHover** | 0.25s | 0.75 | - | Hover state animations (subtle) |
+| **jotDragSnap** | 0.18s | 0.9 | - | Drag-release snap-to-grid effect |
 
 ---
 

@@ -297,6 +297,29 @@ struct NoteDetailView: View {
                     }
                 )
 
+            // Metadata section — collapsible properties panel
+            NoteMetadataSection(
+                note: note,
+                onUpdateTags: { newTags in
+                    var updated = note
+                    updated.tags = newTags
+                    notesManager.updateNote(updated)
+                },
+                onToggleTodo: { lineIndex in
+                    var lines = editedContent.components(separatedBy: "\n")
+                    guard lineIndex < lines.count else { return }
+                    let line = lines[lineIndex]
+                    let trimmed = line.trimmingCharacters(in: .whitespaces)
+                    if trimmed.hasPrefix("[x]") {
+                        lines[lineIndex] = line.replacingOccurrences(of: "[x]", with: "[ ]", range: line.range(of: "[x]"))
+                    } else if trimmed.hasPrefix("[ ]") {
+                        lines[lineIndex] = line.replacingOccurrences(of: "[ ]", with: "[x]", range: line.range(of: "[ ]"))
+                    }
+                    editedContent = lines.joined(separator: "\n")
+                    scheduleAutosave()
+                }
+            )
+
             // Backlinks section — directly under title
             if !backlinks.isEmpty {
                 backlinksSection

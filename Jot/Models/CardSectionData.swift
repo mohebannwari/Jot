@@ -401,6 +401,7 @@ struct CardSectionData: Equatable {
             case "\t": result += "\\t"
             case "[": result += "\\["
             case "]": result += "\\]"
+            case ";": result += "\\;"
             default: result.append(ch)
             }
         }
@@ -421,6 +422,7 @@ struct CardSectionData: Equatable {
                     case "t": result.append("\t")
                     case "[": result.append("[")
                     case "]": result.append("]")
+                    case ";": result.append(";")
                     default:
                         result.append(s[i])
                         result.append(s[next])

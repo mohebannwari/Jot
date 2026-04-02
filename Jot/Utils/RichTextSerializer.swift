@@ -169,6 +169,7 @@ enum RichTextSerializer {
             let font = attributes[.font] as? NSFont
             let isBlockQuote = attributes[.blockQuote] as? Bool == true
             let highlightHex = attributes[.highlightColor] as? String
+            let highlightVariant = attributes[.highlightVariant] as? Int
             let heading = font.flatMap { headingLevel(for: $0) }
 
             var runBold = false
@@ -222,7 +223,8 @@ enum RichTextSerializer {
                 openTags += "[[color|\(hex)]]"; closeTags = "[[/color]]" + closeTags
             }
             if let hlHex = highlightHex {
-                openTags += "[[hl|\(hlHex)]]"; closeTags = "[[/hl]]" + closeTags
+                let variantSuffix = highlightVariant.map { "|\($0)" } ?? ""
+                openTags += "[[hl|\(hlHex)\(variantSuffix)]]"; closeTags = "[[/hl]]" + closeTags
             }
 
             output.append(openTags)
@@ -252,6 +254,7 @@ enum RichTextSerializer {
         var fmtAlignment: NSTextAlignment = .left
         var fmtBlockQuote = false
         var fmtHighlightHex: String? = nil
+        var fmtHighlightVariant: Int? = nil
 
         let blockQuoteColor = NSColor(name: nil) { appearance in
             let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
@@ -273,8 +276,8 @@ enum RichTextSerializer {
             }
             if let hlHex = fmtHighlightHex {
                 attrs[.highlightColor] = hlHex
-                let hlColor = TextFormattingManager.nsColorFromHex(hlHex).withAlphaComponent(0.35)
-                attrs[.backgroundColor] = hlColor
+                // Assign variant — random if not persisted (backward compat with old notes)
+                attrs[.highlightVariant] = fmtHighlightVariant ?? Int.random(in: 0..<8)
             }
             result.append(NSAttributedString(string: textBuffer, attributes: attrs))
             textBuffer = ""
@@ -307,6 +310,9 @@ enum RichTextSerializer {
                         }
                     } else if remaining.hasPrefix("[[code]]") {
                         if let endRange = text[index...].range(of: "[[/code]]") {
+                            // Preserve code content as plain text instead of silently dropping it
+                            let codeContent = String(text[index..<endRange.lowerBound])
+                            textBuffer += codeContent
                             index = endRange.upperBound
                         }
                     } else if remaining.hasPrefix("[[tabs|") {
@@ -390,11 +396,21 @@ enum RichTextSerializer {
                 let prefixLen = "[[hl|".count
                 let afterPrefix = text.index(index, offsetBy: prefixLen)
                 if let closeBracket = text[afterPrefix...].range(of: "]]") {
-                    fmtHighlightHex = String(text[afterPrefix..<closeBracket.lowerBound])
+                    let tagContent = String(text[afterPrefix..<closeBracket.lowerBound])
+                    if let pipeIdx = tagContent.firstIndex(of: "|") {
+                        // New format: [[hl|HEX|VARIANT]]
+                        fmtHighlightHex = String(tagContent[tagContent.startIndex..<pipeIdx])
+                        let afterPipe = tagContent.index(after: pipeIdx)
+                        fmtHighlightVariant = Int(tagContent[afterPipe...])
+                    } else {
+                        // Legacy format: [[hl|HEX]] — variant assigned randomly in flushBuffer
+                        fmtHighlightHex = tagContent
+                        fmtHighlightVariant = nil
+                    }
                     index = closeBracket.upperBound; continue
                 }
             } else if remaining.hasPrefix("[[/hl]]") {
-                flushBuffer(); fmtHighlightHex = nil
+                flushBuffer(); fmtHighlightHex = nil; fmtHighlightVariant = nil
                 index = text.index(index, offsetBy: 7); continue
             } else if remaining.hasPrefix("[[ol|") {
                 flushBuffer()
@@ -442,7 +458,7 @@ enum RichTextSerializer {
                         }
                         if let hlHex = fmtHighlightHex {
                             attrs[.highlightColor] = hlHex
-                            attrs[.backgroundColor] = TextFormattingManager.nsColorFromHex(hlHex).withAlphaComponent(0.35)
+                            attrs[.highlightVariant] = fmtHighlightVariant ?? Int.random(in: 0..<8)
                         }
                         result.append(NSAttributedString(string: coloredText, attributes: attrs))
                         index = closingRange.upperBound; continue

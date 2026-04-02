@@ -13,6 +13,7 @@ struct UpdatePanelView: View {
     let variant: UpdatePanelVariant
     var onRelaunch: () -> Void = {}
     var onRemindLater: () -> Void = {}
+    var isEmbeddedInGlass: Bool = false
 
     @Environment(\.colorScheme) private var colorScheme
     @State private var isPreparingRelaunch = false
@@ -162,8 +163,10 @@ struct UpdatePanelView: View {
 
     // MARK: - Download Progress
 
+    @ViewBuilder
     private var downloadProgressSection: some View {
-        VStack(spacing: 4) {
+        let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
+        let content = VStack(spacing: 4) {
             Text("DOWNLOADING...")
                 .font(FontManager.metadata(size: 11, weight: .medium))
                 .foregroundStyle(Color("PrimaryTextColor"))
@@ -172,8 +175,17 @@ struct UpdatePanelView: View {
             BrailleTrailBar(duration: 10)
         }
         .padding(8)
-        .thinLiquidGlass(in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
+
+        if isEmbeddedInGlass {
+            content
+                .background(.thinMaterial, in: shape)
+                .overlay(shape.stroke(Color.primary.opacity(0.10), lineWidth: 0.5))
+                .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
+        } else {
+            content
+                .thinLiquidGlass(in: shape)
+                .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
+        }
     }
 }
 

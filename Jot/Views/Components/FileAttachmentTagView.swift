@@ -10,6 +10,8 @@ import SwiftUI
 struct FileAttachmentTagView: View {
     let label: String
 
+    @Environment(\.colorScheme) private var colorScheme
+
     private var assetIconName: String? {
         switch label.lowercased() {
         case "image": return "gallery"
@@ -28,40 +30,31 @@ struct FileAttachmentTagView: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            Group {
-                if let assetName = assetIconName {
-                    Image(assetName)
-                        .renderingMode(.template)
-                        .resizable()
-                        .scaledToFit()
-                } else {
-                    Image(systemName: systemIconName)
-                        .font(FontManager.icon(size: 16, weight: .medium))
-                }
-            }
-            .foregroundStyle(foregroundColor)
-            .frame(width: 16, height: 16)
+            Image("IconFileLink")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 14, height: 14)
 
-            Text(label.lowercased())
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(foregroundColor)
+            Text(label)
+                .font(.system(size: 11, weight: .medium))
+                .tracking(-0.2)
+                .lineLimit(1)
+
+            Image("IconArrowRightUpCircle")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 14, height: 14)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .frame(minWidth: 54, minHeight: 20)
-        .background(backgroundColor, in: Capsule())
+        .foregroundColor(Color("PrimaryTextColor"))
+        .padding(4)
+        .background(Color("BlockContainerColor"), in: Capsule())
+        .environment(\.colorScheme, colorScheme == .dark ? .light : .dark)
         .onHover { inside in
             if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(label.uppercased()) attachment")
-    }
-
-    private var foregroundColor: Color {
-        Color("PrimaryTextColor")
-    }
-
-    private var backgroundColor: Color {
-        Color("SurfaceTranslucentColor")
     }
 }

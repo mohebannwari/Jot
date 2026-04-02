@@ -17,8 +17,6 @@ struct TodoRichTextEditor: View {
     var onToolbarAction: ((EditTool) -> Void)?
     var onCommandMenuSelection: ((EditTool) -> Void)?
     @Environment(\.colorScheme) private var colorScheme
-    private let baseBottomInset: CGFloat = 0
-
     var availableNotes: [NotePickerItem] = []
     var onNavigateToNote: ((UUID) -> Void)?
 
@@ -79,6 +77,7 @@ struct TodoRichTextEditor: View {
     @State private var quickLookTooltipPosition: CGPoint = .zero
     @State private var quickLookTooltipCharIndex: Int = 0
     @State private var quickLookHideTask: Task<Void, Never>? = nil
+    @State private var hoveredIsStoredFile = false
 
     // Code paste option menu state
     @State private var showCodePasteMenu = false
@@ -118,16 +117,11 @@ struct TodoRichTextEditor: View {
         NotificationCenter.default.post(name: .syncEditorMenuState, object: nil, userInfo: info)
     }
 
-    private var bottomInset: CGFloat {
-            return baseBottomInset
-    }
-
     private var editorWithOverlays: some View {
         Group {
                 TodoEditorRepresentable(
                     text: $text,
                     colorScheme: colorScheme,
-                    bottomInset: bottomInset,
                     focusRequestID: focusRequestID,
                     editorInstanceID: editorInstanceID,
                     onNavigateToNote: onNavigateToNote
@@ -269,36 +263,55 @@ struct TodoRichTextEditor: View {
             }
         }
         .overlay(alignment: .topLeading) {
-            LinkQuickLookTooltip()
-                .scaleEffect(showQuickLookTooltip ? 1 : 0.9, anchor: .bottom)
-                .opacity(showQuickLookTooltip ? 1 : 0)
-                .offset(
-                    x: quickLookTooltipPosition.x,
-                    y: quickLookTooltipPosition.y
-                )
-                .allowsHitTesting(showQuickLookTooltip)
-                .onHover { hovering in
-                    guard showQuickLookTooltip else { return }
-                    if hovering {
-                        quickLookHideTask?.cancel()
-                        quickLookHideTask = nil
-                    } else {
-                        scheduleQuickLookHide()
+            HStack(spacing: 4) {
+                // Quick Look pill -- always present
+                LinkQuickLookTooltip()
+                    .onTapGesture {
+                        var info: [String: Any] = ["charIndex": quickLookTooltipCharIndex]
+                        if let eid = editorInstanceID { info["editorInstanceID"] = eid }
+                        NotificationCenter.default.post(
+                            name: .linkHoverQuickLookTriggered,
+                            object: nil,
+                            userInfo: info
+                        )
+                        showQuickLookTooltip = false
                     }
+
+                // Extract pill -- only for file attachments
+                if hoveredIsStoredFile {
+                    ExtractTooltipPill()
+                        .onTapGesture {
+                            var info: [String: Any] = ["charIndex": quickLookTooltipCharIndex]
+                            if let eid = editorInstanceID { info["editorInstanceID"] = eid }
+                            NotificationCenter.default.post(
+                                name: .fileExtractTriggered,
+                                object: nil,
+                                userInfo: info
+                            )
+                            showQuickLookTooltip = false
+                        }
+                        .transition(.opacity.combined(with: .scale(scale: 0.9)))
                 }
-                .onTapGesture {
+            }
+            .scaleEffect(showQuickLookTooltip ? 1 : 0.9, anchor: .bottom)
+            .opacity(showQuickLookTooltip ? 1 : 0)
+            .offset(
+                x: quickLookTooltipPosition.x,
+                y: quickLookTooltipPosition.y
+            )
+            .allowsHitTesting(showQuickLookTooltip)
+            .onHover { hovering in
+                if hovering {
+                    // Cancel any pending hide -- cursor moved from attachment to pill
+                    quickLookHideTask?.cancel()
+                    quickLookHideTask = nil
+                } else {
                     guard showQuickLookTooltip else { return }
-                    var info: [String: Any] = ["charIndex": quickLookTooltipCharIndex]
-                    if let eid = editorInstanceID { info["editorInstanceID"] = eid }
-                    NotificationCenter.default.post(
-                        name: .linkHoverQuickLookTriggered,
-                        object: nil,
-                        userInfo: info
-                    )
-                    showQuickLookTooltip = false
+                    scheduleQuickLookHide()
                 }
-                .animation(.easeOut(duration: 0.15), value: showQuickLookTooltip)
-                .zIndex(998)
+            }
+            .animation(.easeOut(duration: 0.15), value: showQuickLookTooltip)
+            .zIndex(998)
         }
     }
 
@@ -315,14 +328,14 @@ struct TodoRichTextEditor: View {
                !(firstResp is InlineNSTextView) { return }
             NotificationCenter.default.post(name: .insertTodoInEditor, object: nil, userInfo: editorInstanceID.map { ["editorInstanceID": $0] })
         }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("InsertWebLink"))) {
+        .onReceive(NotificationCenter.default.publisher(for: .insertWebLink)) {
             notification in
             if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
             if let url = notification.object as? String {
                 NotificationCenter.default.post(name: .insertWebClipInEditor, object: url, userInfo: editorInstanceID.map { ["editorInstanceID": $0] })
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("ShowCommandMenu")))
+        .onReceive(NotificationCenter.default.publisher(for: .showCommandMenu))
         { notification in
             if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
             if let info = notification.object as? [String: Any],
@@ -345,12 +358,12 @@ struct TodoRichTextEditor: View {
                 syncMenuState(["isCommandMenuShowing": true, "commandSlashLocation": slashLocation])
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("HideCommandMenu")))
+        .onReceive(NotificationCenter.default.publisher(for: .hideCommandMenu))
         { notification in
             if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
             dismissCommandMenu()
         }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("CommandMenuFilterUpdate")))
+        .onReceive(NotificationCenter.default.publisher(for: .commandMenuFilterUpdate))
         { notification in
             if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
             guard showCommandMenu else { return }
@@ -366,14 +379,14 @@ struct TodoRichTextEditor: View {
                 dismissCommandMenu()
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("CommandMenuNavigateUp")))
+        .onReceive(NotificationCenter.default.publisher(for: .commandMenuNavigateUp))
         { notification in
             if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
             if showCommandMenu && commandMenuSelectedIndex > 0 {
                 commandMenuSelectedIndex -= 1
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("CommandMenuNavigateDown")))
+        .onReceive(NotificationCenter.default.publisher(for: .commandMenuNavigateDown))
         { notification in
             if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
             let maxIndex = max(0, filteredCommandMenuTools.count - 1)
@@ -381,7 +394,7 @@ struct TodoRichTextEditor: View {
                 commandMenuSelectedIndex += 1
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("CommandMenuSelect")))
+        .onReceive(NotificationCenter.default.publisher(for: .commandMenuSelect))
         { notification in
             if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
             if showCommandMenu {
@@ -550,6 +563,7 @@ struct TodoRichTextEditor: View {
             if let nid = info["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
 
             let rect = rectValue.rectValue
+            let isFile = (info["isFileAttachment"] as? Bool) ?? false
 
             // Cancel any pending hide
             quickLookHideTask?.cancel()
@@ -561,14 +575,18 @@ struct TodoRichTextEditor: View {
                 showQuickLookTooltip = false
             }
 
-            // Position tooltip centered above the link
-            let tooltipWidth: CGFloat = 144
+            hoveredIsStoredFile = isFile
+
+            // Position tooltip centered above the link; if there isn't
+            // enough room, flip it below so it won't overlap adjacent pills.
+            let tooltipWidth: CGFloat = isFile ? 280 : 144  // wider for dual pills
             let pillHeight: CGFloat = 36  // 16 icon + 10*2 padding
             let gap: CGFloat = 6
             let x = rect.midX - tooltipWidth / 2
-            let y = rect.minY - pillHeight - gap
+            let yAbove = rect.minY - pillHeight - gap
+            let y = yAbove >= 0 ? yAbove : rect.maxY + gap
 
-            quickLookTooltipPosition = CGPoint(x: max(4, x), y: max(0, y))
+            quickLookTooltipPosition = CGPoint(x: max(4, x), y: y)
             quickLookTooltipCharIndex = charIndex
 
             // Show after a microtask so SwiftUI registers the position

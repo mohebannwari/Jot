@@ -72,6 +72,9 @@ struct TabsContainerData {
     // Old format: [[tabs|activeIndex|height|Name1\tName2]]content1\t\tcontent2[[/tabs]]
     // New format: [[tabs|activeIndex|height|Name1\tName2|color1\tcolor2]]content1\t\tcontent2[[/tabs]]
 
+    // INVARIANT: pane.content and pane.name must always be escaped via Self.escape()
+    // before joining. The escape function converts real tabs to \t, preventing content
+    // with literal tab characters from being misread as pane separators (\t\t).
     func serialize() -> String {
         let names = panes.map { Self.escape($0.name) }.joined(separator: "\t")
         let colors = panes.map { $0.colorHex ?? "" }.joined(separator: "\t")

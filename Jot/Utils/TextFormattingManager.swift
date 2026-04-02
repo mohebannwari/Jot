@@ -41,6 +41,14 @@ class TextFormattingManager: ObservableObject {
         }
 
         // MARK: - Undo Helpers
+        //
+        // The editor uses three undo mechanisms (intentionally):
+        //   1. Snapshot/restore (here): for attribute-only changes (bold, italic, color, etc.)
+        //      where NSTextView's built-in undo would not capture the attribute delta.
+        //   2. Explicit grouping (Coordinator's beginUndoGrouping/endUndoGrouping): for
+        //      multi-step programmatic insertions (checkbox + text as one logical op).
+        //   3. NSTextView's built-in coalescing: handles character insertion/deletion
+        //      automatically. Do NOT supplement with mechanism 1 or it creates double steps.
 
         private func captureSnapshot(_ storage: NSTextStorage, range: NSRange)
             -> [(NSRange, [NSAttributedString.Key: Any])]
@@ -115,7 +123,10 @@ class TextFormattingManager: ObservableObject {
             case .dashedList:
                 toggleDashedList(to: textView, in: selectedRange)
             case .todo:
-                insertTodo(to: textView)
+                // Route through the Coordinator's insertTodo() which creates proper
+                // TodoCheckboxAttachmentCell attachments. Do NOT insert raw "[ ] " text.
+                NotificationCenter.default.post(name: .todoToolbarAction, object: nil)
+                return
             case .indentLeft:
                 adjustIndentation(to: textView, increase: false)
             case .indentRight:
@@ -181,6 +192,7 @@ class TextFormattingManager: ObservableObject {
             textStorage.removeAttribute(.strikethroughStyle, range: paragraphRange)
             textStorage.removeAttribute(.backgroundColor, range: paragraphRange)
             textStorage.removeAttribute(.highlightColor, range: paragraphRange)
+            textStorage.removeAttribute(.highlightVariant, range: paragraphRange)
             textStorage.removeAttribute(.link, range: paragraphRange)
             textStorage.removeAttribute(.blockQuote, range: paragraphRange)
             textStorage.removeAttribute(.todoChecked, range: paragraphRange)
@@ -263,31 +275,24 @@ class TextFormattingManager: ObservableObject {
             let snapshot = captureSnapshot(textStorage, range: range)
             textStorage.beginEditing()
 
+            // Single-pass: collect font runs and determine toggle direction simultaneously
             var allBold = true
-            textStorage.enumerateAttribute(.font, in: range, options: []) { value, _, _ in
+            var fontRuns: [(NSRange, NSFont)] = []
+            textStorage.enumerateAttribute(.font, in: range, options: []) { value, subRange, _ in
                 if let font = value as? NSFont {
                     let traits = NSFontManager.shared.traits(of: font)
                     if !traits.contains(.boldFontMask) { allBold = false }
+                    fontRuns.append((subRange, font))
                 } else { allBold = false }
             }
 
-            if allBold {
-                textStorage.enumerateAttribute(.font, in: range, options: []) { value, subRange, _ in
-                    if let font = value as? NSFont {
-                        let newFont = NSFontManager.shared.convert(font, toNotHaveTrait: .boldFontMask)
-                        textStorage.addAttribute(.font, value: newFont, range: subRange)
-                    }
-                }
-                isBold = false
-            } else {
-                textStorage.enumerateAttribute(.font, in: range, options: []) { value, subRange, _ in
-                    if let font = value as? NSFont {
-                        let newFont = NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask)
-                        textStorage.addAttribute(.font, value: newFont, range: subRange)
-                    }
-                }
-                isBold = true
+            for (subRange, font) in fontRuns {
+                let newFont = allBold
+                    ? NSFontManager.shared.convert(font, toNotHaveTrait: .boldFontMask)
+                    : NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask)
+                textStorage.addAttribute(.font, value: newFont, range: subRange)
             }
+            isBold = !allBold
 
             textStorage.endEditing()
             textView.didChangeText()
@@ -299,31 +304,24 @@ class TextFormattingManager: ObservableObject {
             let snapshot = captureSnapshot(textStorage, range: range)
             textStorage.beginEditing()
 
+            // Single-pass: collect font runs and determine toggle direction simultaneously
             var allItalic = true
-            textStorage.enumerateAttribute(.font, in: range, options: []) { value, _, _ in
+            var fontRuns: [(NSRange, NSFont)] = []
+            textStorage.enumerateAttribute(.font, in: range, options: []) { value, subRange, _ in
                 if let font = value as? NSFont {
                     let traits = NSFontManager.shared.traits(of: font)
                     if !traits.contains(.italicFontMask) { allItalic = false }
+                    fontRuns.append((subRange, font))
                 } else { allItalic = false }
             }
 
-            if allItalic {
-                textStorage.enumerateAttribute(.font, in: range, options: []) { value, subRange, _ in
-                    if let font = value as? NSFont {
-                        let newFont = NSFontManager.shared.convert(font, toNotHaveTrait: .italicFontMask)
-                        textStorage.addAttribute(.font, value: newFont, range: subRange)
-                    }
-                }
-                isItalic = false
-            } else {
-                textStorage.enumerateAttribute(.font, in: range, options: []) { value, subRange, _ in
-                    if let font = value as? NSFont {
-                        let newFont = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask)
-                        textStorage.addAttribute(.font, value: newFont, range: subRange)
-                    }
-                }
-                isItalic = true
+            for (subRange, font) in fontRuns {
+                let newFont = allItalic
+                    ? NSFontManager.shared.convert(font, toNotHaveTrait: .italicFontMask)
+                    : NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask)
+                textStorage.addAttribute(.font, value: newFont, range: subRange)
             }
+            isItalic = !allItalic
 
             textStorage.endEditing()
             textView.didChangeText()
@@ -531,11 +529,11 @@ class TextFormattingManager: ObservableObject {
             guard textView.shouldChangeText(in: range, replacementString: nil) else { return }
 
             let snapshot = captureSnapshot(storage, range: range)
-            let bgColor = Self.nsColorFromHex(hex).withAlphaComponent(0.35)
+            let variant = Int.random(in: 0..<8)
 
             storage.beginEditing()
-            storage.addAttribute(.backgroundColor, value: bgColor, range: range)
             storage.addAttribute(.highlightColor, value: hex, range: range)
+            storage.addAttribute(.highlightVariant, value: variant, range: range)
 
             // Strip highlight from newline characters — prevents full-width background
             // extension and highlight bleeding into new paragraphs
@@ -543,8 +541,8 @@ class TextFormattingManager: ObservableObject {
             for pos in range.location..<NSMaxRange(range) {
                 if text.character(at: pos) == 0x0A {
                     let nlRange = NSRange(location: pos, length: 1)
-                    storage.removeAttribute(.backgroundColor, range: nlRange)
                     storage.removeAttribute(.highlightColor, range: nlRange)
+                    storage.removeAttribute(.highlightVariant, range: nlRange)
                 }
             }
 
@@ -569,6 +567,7 @@ class TextFormattingManager: ObservableObject {
                 if value != nil {
                     storage.removeAttribute(.backgroundColor, range: subRange)
                     storage.removeAttribute(.highlightColor, range: subRange)
+                    storage.removeAttribute(.highlightVariant, range: subRange)
                 }
             }
             storage.endEditing()
@@ -712,15 +711,9 @@ class TextFormattingManager: ObservableObject {
             }
         }
 
-        private func insertTodo(to textView: NSTextView) {
-            let todoText = "[ ] "
-            let selectedRange = textView.selectedRange()
-
-            if textView.shouldChangeText(in: selectedRange, replacementString: todoText) {
-                textView.replaceCharacters(in: selectedRange, with: todoText)
-                textView.didChangeText()
-            }
-        }
+        // insertTodo removed — the Coordinator's insertTodo() creates proper
+        // TodoCheckboxAttachmentCell attachments. Raw "[ ] " text cannot round-trip
+        // through serialize/deserialize. See applyFormatting(.todo) above.
 
         // MARK: - Text Color
 

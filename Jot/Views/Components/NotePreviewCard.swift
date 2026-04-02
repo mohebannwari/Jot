@@ -162,7 +162,6 @@ enum NoteSnapshotRenderer {
         let rep = TodoEditorRepresentable(
             text: binding,
             colorScheme: .dark,
-            bottomInset: 0,
             focusRequestID: nil,
             editorInstanceID: nil,
             readOnly: true

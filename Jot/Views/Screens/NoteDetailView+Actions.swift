@@ -398,7 +398,7 @@ extension NoteDetailView {
     }
 
     func handleLinkInsert(_ url: String) {
-        NotificationCenter.default.post(name: Notification.Name("InsertWebLink"), object: url, userInfo: ["editorInstanceID": editorInstanceID])
+        NotificationCenter.default.post(name: .insertWebLink, object: url, userInfo: ["editorInstanceID": editorInstanceID])
     }
 
     // MARK: - Search on Page

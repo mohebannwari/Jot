@@ -110,11 +110,7 @@ struct NoteTableData: Equatable {
         if wrapText { header += "|wrap" }
         lines.append(header)
         for row in cells {
-            let escaped = row.map { cell in
-                cell.replacingOccurrences(of: "\\", with: "\\\\")
-                    .replacingOccurrences(of: "\t", with: "\\t")
-                    .replacingOccurrences(of: "\n", with: "\\n")
-            }
+            let escaped = row.map { Self.escape($0) }
             lines.append(escaped.joined(separator: "\t"))
         }
         lines.append("[[/table]]")
@@ -152,11 +148,7 @@ struct NoteTableData: Equatable {
             let line = lines[i]
             if line == "[[/table]]" { break }
             let rawCells = line.components(separatedBy: "\t")
-            let unescaped = rawCells.map { cell in
-                cell.replacingOccurrences(of: "\\n", with: "\n")
-                    .replacingOccurrences(of: "\\t", with: "\t")
-                    .replacingOccurrences(of: "\\\\", with: "\\")
-            }
+            let unescaped = rawCells.map { Self.unescape($0) }
             let normalized: [String]
             if unescaped.count < colCount {
                 normalized = unescaped + Array(repeating: "", count: colCount - unescaped.count)
@@ -190,5 +182,54 @@ struct NoteTableData: Equatable {
 
         let wrap = parts.count >= 4 && parts[3] == "wrap"
         return NoteTableData(columns: colCount, cells: rows, columnWidths: widths, wrapText: wrap)
+    }
+
+    // MARK: - Escape helpers
+
+    private static func escape(_ s: String) -> String {
+        var result = ""
+        result.reserveCapacity(s.count)
+        for ch in s {
+            switch ch {
+            case "\\": result.append("\\\\")
+            case "\n": result.append("\\n")
+            case "\t": result.append("\\t")
+            case "[":  result.append("\\[")
+            case "]":  result.append("\\]")
+            default:   result.append(ch)
+            }
+        }
+        return result
+    }
+
+    private static func unescape(_ s: String) -> String {
+        var result = ""
+        result.reserveCapacity(s.count)
+        var i = s.startIndex
+        while i < s.endIndex {
+            if s[i] == "\\" {
+                let next = s.index(after: i)
+                if next < s.endIndex {
+                    switch s[next] {
+                    case "\\": result.append("\\")
+                    case "n":  result.append("\n")
+                    case "t":  result.append("\t")
+                    case "[":  result.append("[")
+                    case "]":  result.append("]")
+                    default:
+                        result.append(s[i])
+                        result.append(s[next])
+                    }
+                    i = s.index(after: next)
+                } else {
+                    result.append(s[i])
+                    i = next
+                }
+            } else {
+                result.append(s[i])
+                i = s.index(after: i)
+            }
+        }
+        return result
     }
 }

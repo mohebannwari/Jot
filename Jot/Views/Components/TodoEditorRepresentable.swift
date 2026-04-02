@@ -32,6 +32,7 @@ extension NSAttributedString.Key {
     static let webClipTitle = NSAttributedString.Key("WebClipTitle")
     static let webClipDescription = NSAttributedString.Key("WebClipDescription")
     static let webClipDomain = NSAttributedString.Key("WebClipDomain")
+    static let webClipFullURL = NSAttributedString.Key("WebClipFullURL")
     static let plainLinkURL = NSAttributedString.Key("PlainLinkURL")
     static let imageFilename = NSAttributedString.Key("ImageFilename")
     static let imageWidthRatio = NSAttributedString.Key("ImageWidthRatio")
@@ -39,9 +40,11 @@ extension NSAttributedString.Key {
     static let fileOriginalFilename = NSAttributedString.Key("FileOriginalFilename")
     static let fileTypeIdentifier = NSAttributedString.Key("FileTypeIdentifier")
     static let fileDisplayLabel = NSAttributedString.Key("FileDisplayLabel")
+    static let fileViewMode = NSAttributedString.Key("FileViewMode")
     static let orderedListNumber = NSAttributedString.Key("OrderedListNumber")
     static let blockQuote = NSAttributedString.Key("BlockQuote")
     static let highlightColor = NSAttributedString.Key("HighlightColor")
+    static let highlightVariant = NSAttributedString.Key("HighlightVariant")
     static let notelinkID = NSAttributedString.Key("NotelinkID")
     static let notelinkTitle = NSAttributedString.Key("NotelinkTitle")
     static let fileLinkPath = NSAttributedString.Key("FileLinkPath")
@@ -51,7 +54,8 @@ extension NSAttributedString.Key {
     static let corruptedBlock = NSAttributedString.Key("CorruptedBlock")
 }
 
-enum AttachmentMarkup {
+struct AttachmentMarkup {
+    private init() {}
     static let imageMarkupPrefix = "[[image|"
     static let imagePattern = #"\[\[image\|\|\|([^\]|]+)(?:\|\|\|([0-9]*\.?[0-9]+))?\]\]"#
     static let imageRegex: NSRegularExpression? = try? NSRegularExpression(
@@ -59,7 +63,7 @@ enum AttachmentMarkup {
         options: []
     )
     static let fileMarkupPrefix = "[[file|"
-    static let filePattern = #"\[\[file\|([^|]+)\|([^|]+)\|([^\]]*)\]\]"#
+    static let filePattern = #"\[\[file\|([^|]+)\|([^|]+)\|([^|\]]*?)(?:\|([^\]]*))?\]\]"#
     static let fileRegex: NSRegularExpression? = try? NSRegularExpression(
         pattern: filePattern,
         options: []
@@ -190,6 +194,13 @@ final class TypingAnimationLayoutManager: NSLayoutManager {
     }
 
     private func stopAnimationTimer() {
+        (animationTimer as? Timer)?.invalidate()
+        animationTimer = nil
+    }
+
+    deinit {
+        // Invalidate directly — cannot call stopAnimationTimer() from deinit
+        // when the method may be actor-isolated in future Swift concurrency contexts.
         (animationTimer as? Timer)?.invalidate()
         animationTimer = nil
     }
@@ -425,6 +436,165 @@ final class TypingAnimationLayoutManager: NSLayoutManager {
                 height: rect.height)
             NSColor.labelColor.withAlphaComponent(0.2).setFill()
             NSBezierPath(roundedRect: barRect, xRadius: 1.5, yRadius: 1.5).fill()
+        }
+
+        // Draw organic highlight shapes (after block-quote bars so they don't obscure the bar)
+        if let ctx = NSGraphicsContext.current?.cgContext {
+            drawHighlightShapes(forGlyphRange: glyphsToShow, at: origin,
+                                textStorage: textStorage, textContainer: textContainer,
+                                safeCharRange: safeCharRange, context: ctx)
+        }
+    }
+
+    // MARK: - Organic Highlight Shape Drawing
+
+    /// 8 pre-parsed CGPaths from the Figma highlight vector designs.
+    /// Each path is defined in a 279x42 viewBox and scaled to the target rect at draw time.
+    private static let highlightPaths: [CGPath] = {
+        let pathData: [String] = [
+            // Vector 1
+            "M6.02194 31.1884L2 21.2754L38.1974 16.3188L104.559 9.15942L270.464 2L277 4.75362V21.2754L270.464 36.6957L224.212 40H107.576H92.4936L75.4004 36.6957L64.34 31.1884L60.8208 36.6957H48.755L38.1974 31.1884L32.1645 36.6957L6.02194 31.1884Z",
+            // Vector 2
+            "M2 28.9367V12.5823L27.8691 10.6582H64.4233L94.7914 13.5443L136.969 9.6962H210.078L272.501 2L277 2.96203V12.5823L274.751 22.2025L272.501 29.8987L237.072 34.7089L211.202 37.5949L171.836 34.7089L99.8528 40L86.9182 37.5949H68.9223L58.2372 36.6329H51.4888L39.1166 37.5949L30.681 34.7089L7.06135 36.6329L2 28.9367Z",
+            // Vector 3
+            "M6.47154 35.7183L2 27.1549L2.55894 14.8451L9.26626 5.21127L19.3272 10.0282L76.3394 5.74648L103.728 10.0282L143.413 7.88732L213.839 11.0986L240.669 10.0282L272.528 2L277 7.88732L273.646 16.4507L271.411 25.5493L269.734 31.9718L240.669 38.9296L214.398 39.4648L185.333 38.9296L166.888 25.5493L138.941 21.8028L101.492 27.1549L84.7236 22.8732L65.7195 31.9718L62.3659 34.6479L55.6585 34.1127L48.3923 38.9296L36.0955 40H16.5325L6.47154 35.7183Z",
+            // Vector 4
+            "M14.6368 15.0625L6.814 17.4375L2 15.0625L4.407 9.71875L14.6368 8.53125H40.512L47.1313 13.875L96.4748 5.5625L101.289 9.71875L113.926 7.34375L129.571 10.9062L144.615 7.34375L174.101 8.53125L181.923 2L224.046 7.34375H251.726H270.982L275.195 15.0625V22.7812L277 30.5V37.0312L267.974 38.2188L224.046 34.0625H201.781L185.534 31.6875L178.915 38.2188L161.464 40L144.615 37.0312L129.571 40L116.934 38.2188L102.492 40L94.6696 30.5L88.0503 19.2188L73.0066 22.7812L62.7768 25.1562L59.1663 28.7188H53.1488L44.1225 25.1562L38.7068 21L30.884 13.875L22.4595 15.0625H14.6368Z",
+            // Vector 5
+            "M8.15212 29.2162L4.46085 19.973L2 13.2973L4.46085 8.67568L14.9195 5.08108L33.9911 2H45.0649H54.2931L74.5951 8.67568L98.5884 5.08108L104.74 3.54054L115.814 5.08108H132.425H145.345L168.107 3.54054L177.951 2L189.025 12.2703L208.096 9.7027L229.013 6.62162H257.313L273.924 7.64865L277 15.3514L273.924 19.973V25.1081V30.7568V34.8649L226.553 33.3243L203.174 36.9189L185.949 40L182.872 33.3243L171.183 26.6486L150.266 29.2162L132.425 30.7568L121.351 29.2162H108.432H96.1275L85.0537 30.7568L74.5951 33.3243L69.0582 30.7568L59.83 26.6486H54.2931L47.5257 29.2162H38.2975H30.2998H19.226H8.15212Z",
+            // Vector 6
+            "M7.12422 37.4382L3.13872 26.764L2 16.9438L13.3872 17.7978L31.0373 19.9326L46.9793 16.9438H60.6439L76.0166 14.382L90.8199 12.2472L113.594 9.68539L123.843 8.83146L135.23 7.55056L148.894 6.69663L156.865 5.8427H172.238H182.487L191.596 6.69663L209.246 4.5618L228.605 2H254.795H273.014L277 6.69663V10.5393V14.809V19.5056V22.9213L226.327 21.2135L204.692 24.2022L188.749 26.764L181.348 25.9101L172.238 26.764H152.88L136.938 27.618L124.981 29.3258L107.331 31.4607H95.9441L85.6956 32.7416L76.0166 34.8764L69.7536 36.1573L60.6439 37.4382L52.6729 38.7191L42.4244 39.573L34.4534 40L27.6211 39.573H18.5114L7.12422 37.4382Z",
+            // Vector 7
+            "M6.52055 40L3.50685 26.359L2 14.1795L10.2877 10.2821H21.589L42.6849 6.87179H60.7671L81.1096 6.38462H90.9041H109.74L125.562 6.87179L138.37 7.35897L157.205 8.33333L171.521 7.35897L187.342 6.38462L200.904 5.41026L212.959 6.38462L238.575 3.94872L274.74 2L277 6.38462L274.74 11.7436L273.986 15.641V18.0769L272.479 26.359L253.644 27.3333L241.589 30.2564L229.534 31.2308H203.918L182.822 32.2051L167 34.1538L148.164 32.6923H133.096H115.014H102.959H88.6438H75.0822H63.0274H52.4795L41.9315 34.1538L33.6438 32.6923L19.3288 37.5641L6.52055 40Z",
+            // Vector 8
+            "M10.2201 37.7647L4.24185 31.0588L2 21.5588L13.9565 18.7647L29.6495 17.6471H44.5951L58.7935 13.7353L84.2011 4.23529L103.63 2.55882L113.345 4.23529L128.291 6.47059L140.995 8.14706H157.435L167.897 9.26471L185.084 8.14706H197.788H209.745L234.405 5.35294L274.011 2V9.26471V13.7353V18.7647L277 21.5588L274.011 32.1765L249.351 31.0588H234.405L222.448 34.4118L200.03 36.6471L179.106 37.7647L164.908 39.4412L140.995 36.6471L126.796 35.5294L105.872 34.4118H90.9266H79.7174L67.7609 37.7647L60.288 38.3235H49.8261L39.3641 40L31.144 38.3235L20.6821 39.4412L10.2201 37.7647Z",
+        ]
+        return pathData.compactMap { TypingAnimationLayoutManager.parseSVGPath($0) }
+    }()
+
+    /// Figma viewBox dimensions for the highlight vector shapes.
+    private static let highlightViewBoxWidth: CGFloat = 279
+    private static let highlightViewBoxHeight: CGFloat = 42
+
+    /// Parses a subset of SVG path `d` data (M, L, H, V, Z — absolute only) into a CGPath.
+    private static func parseSVGPath(_ d: String) -> CGPath? {
+        let path = CGMutablePath()
+        let chars = Array(d)
+        var pos = 0
+        var cmd: Character = "M"
+        var cx: CGFloat = 0, cy: CGFloat = 0
+
+        func skipSeparators() {
+            while pos < chars.count && (chars[pos] == " " || chars[pos] == ",") { pos += 1 }
+        }
+
+        func readNumber() -> CGFloat? {
+            skipSeparators()
+            guard pos < chars.count else { return nil }
+            var s = ""
+            if chars[pos] == "-" { s.append(chars[pos]); pos += 1 }
+            while pos < chars.count && (chars[pos].isNumber || chars[pos] == ".") {
+                s.append(chars[pos]); pos += 1
+            }
+            guard let v = Double(s) else { return nil }
+            return CGFloat(v)
+        }
+
+        while pos < chars.count {
+            skipSeparators()
+            guard pos < chars.count else { break }
+
+            if chars[pos].isLetter {
+                cmd = chars[pos]; pos += 1
+                if cmd == "Z" || cmd == "z" {
+                    path.closeSubpath(); continue
+                }
+            }
+
+            switch cmd {
+            case "M":
+                guard let x = readNumber(), let y = readNumber() else { break }
+                path.move(to: CGPoint(x: x, y: y))
+                cx = x; cy = y; cmd = "L"
+            case "L":
+                guard let x = readNumber(), let y = readNumber() else { break }
+                path.addLine(to: CGPoint(x: x, y: y))
+                cx = x; cy = y
+            case "H":
+                guard let x = readNumber() else { break }
+                path.addLine(to: CGPoint(x: x, y: cy)); cx = x
+            case "V":
+                guard let y = readNumber() else { break }
+                path.addLine(to: CGPoint(x: cx, y: y)); cy = y
+            default: pos += 1
+            }
+        }
+
+        return path.isEmpty ? nil : path.copy()
+    }
+
+    private func drawHighlightShapes(
+        forGlyphRange glyphsToShow: NSRange,
+        at origin: NSPoint,
+        textStorage: NSTextStorage,
+        textContainer: NSTextContainer,
+        safeCharRange: NSRange,
+        context: CGContext
+    ) {
+        let totalGlyphs = numberOfGlyphs
+        let paths = Self.highlightPaths
+        guard !paths.isEmpty else { return }
+
+        textStorage.enumerateAttribute(.highlightColor, in: safeCharRange, options: []) { colorValue, attrCharRange, _ in
+            guard let hex = colorValue as? String else { return }
+
+            guard let variant = textStorage.attribute(
+                .highlightVariant, at: attrCharRange.location, effectiveRange: nil
+            ) as? Int else { return }
+
+            let pathIndex = max(0, min(paths.count - 1, variant))
+            let shapePath = paths[pathIndex]
+
+            let hlGlyphRange = self.glyphRange(forCharacterRange: attrCharRange, actualCharacterRange: nil)
+            guard hlGlyphRange.location != NSNotFound else { return }
+            let clampedGlyphs = NSIntersectionRange(hlGlyphRange, glyphsToShow)
+            guard clampedGlyphs.length > 0,
+                  NSMaxRange(clampedGlyphs) <= totalGlyphs else { return }
+
+            let tintColor = TextFormattingManager.nsColorFromHex(hex).withAlphaComponent(0.45)
+
+            self.enumerateLineFragments(forGlyphRange: clampedGlyphs) { lineRect, _, _, lineGlyphRange, _ in
+                let lineHighlight = NSIntersectionRange(lineGlyphRange, clampedGlyphs)
+                guard lineHighlight.length > 0 else { return }
+
+                let segmentRect = self.boundingRect(forGlyphRange: lineHighlight, in: textContainer)
+                guard segmentRect.width > 2 else { return }
+
+                // ~10% vertical overflow matches the Figma inset (-5.26% top+bottom)
+                let vOverflow = lineRect.height * 0.1
+                let drawRect = CGRect(
+                    x: origin.x + segmentRect.origin.x,
+                    y: origin.y + lineRect.origin.y - vOverflow * 0.5,
+                    width: segmentRect.width,
+                    height: lineRect.height + vOverflow
+                )
+
+                // Scale the 279x42 path to fit the target draw rect
+                var xform = CGAffineTransform.identity
+                xform = xform.translatedBy(x: drawRect.origin.x, y: drawRect.origin.y)
+                xform = xform.scaledBy(
+                    x: drawRect.width / Self.highlightViewBoxWidth,
+                    y: drawRect.height / Self.highlightViewBoxHeight
+                )
+
+                context.saveGState()
+                if let scaled = shapePath.copy(using: &xform) {
+                    context.addPath(scaled)
+                    context.setFillColor(tintColor.cgColor)
+                    context.fillPath()
+                }
+                context.restoreGState()
+            }
         }
     }
 }
@@ -791,40 +961,29 @@ struct FileLinkPillView: View {
     let displayName: String
     let colorScheme: ColorScheme
 
-    private var pillColor: Color {
-        colorScheme == .dark
-            ? Color(red: 0.839, green: 0.827, blue: 0.820)  // stone/300 #d6d3d1
-            : Color(red: 0.161, green: 0.145, blue: 0.141)  // stone/800 #292524
-    }
-
-    private var contentColor: Color {
-        colorScheme == .dark
-            ? Color(red: 0.102, green: 0.102, blue: 0.102)  // #1a1a1a
-            : .white
-    }
-
     var body: some View {
         HStack(spacing: 4) {
             Image("IconFileLink")
                 .renderingMode(.template)
                 .resizable()
                 .scaledToFit()
-                .frame(width: 16, height: 16)
-                .foregroundStyle(contentColor)
+                .frame(width: 14, height: 14)
+
             Text(displayName.isEmpty ? "Untitled" : displayName)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(contentColor)
+                .font(.system(size: 11, weight: .medium))
+                .tracking(-0.2)
                 .lineLimit(1)
-            Image("arrow-up-right")
+
+            Image("IconArrowRightUpCircle")
                 .renderingMode(.template)
                 .resizable()
                 .scaledToFit()
-                .frame(width: 16, height: 16)
-                .foregroundStyle(contentColor)
+                .frame(width: 14, height: 14)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(pillColor, in: Capsule(style: .continuous))
+        .foregroundColor(Color("PrimaryTextColor"))
+        .padding(4)
+        .background(Color("BlockContainerColor"), in: Capsule())
+        .environment(\.colorScheme, colorScheme == .dark ? .light : .dark)
         .fixedSize()
         .onHover { inside in
             if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }
@@ -1074,17 +1233,32 @@ final class InlineImageOverlayView: NSView {
 }
 
 /// Attachment type that captures metadata for non-image files.
+enum FileViewMode: String, Codable {
+    case tag      // Capsule pill (current behavior)
+    case medium   // 400px min-width preview, left-aligned
+    case full     // Full note-width preview
+}
+
 final class NoteFileAttachment: NSTextAttachment {
-    let storedFilename: String
-    let originalFilename: String
+    var storedFilename: String
+    var originalFilename: String
     let typeIdentifier: String
     let displayLabel: String
+    var viewMode: FileViewMode
 
-    init(storedFilename: String, originalFilename: String, typeIdentifier: String, displayLabel: String) {
+    // Preserved from original FileLinkAttachment for tag reversion
+    var originalFileLinkPath: String?
+    var originalFileLinkDisplayName: String?
+    var originalFileLinkBookmark: String?
+    var cachedImageAspectRatio: CGFloat? // width/height, nil for non-images
+    var cachedPdfPageAspectRatio: CGFloat? // width/height of first page, nil for non-PDFs
+
+    init(storedFilename: String, originalFilename: String, typeIdentifier: String, displayLabel: String, viewMode: FileViewMode = .tag) {
         self.storedFilename = storedFilename
         self.originalFilename = originalFilename
         self.typeIdentifier = typeIdentifier
         self.displayLabel = displayLabel
+        self.viewMode = viewMode
         super.init(data: nil, ofType: nil)
     }
 
@@ -1118,7 +1292,6 @@ final class FileLinkAttachment: NSTextAttachment {
 struct TodoEditorRepresentable: NSViewRepresentable {
     @Binding var text: String
     let colorScheme: ColorScheme
-    let bottomInset: CGFloat
     let focusRequestID: UUID?
     let editorInstanceID: UUID?
     var readOnly: Bool = false
@@ -1368,6 +1541,18 @@ struct TodoEditorRepresentable: NSViewRepresentable {
 
         // Debounce timer for fixInconsistentFonts — prevents running on every keystroke
         private var fixFontsWorkItem: DispatchWorkItem?
+        // Accumulated edited range across debounce intervals for scoped font fixing
+        private var pendingFontFixRange: NSRange?
+
+        // Cache for ImageRenderer-rasterized pill images (notelinks, webclips, filelinks).
+        // Keyed by "<type>|<id>|<colorScheme>" to avoid redundant synchronous renders.
+        // Invalidated on color scheme change and rerenderPillAttachments().
+        private let pillImageCache: NSCache<NSString, NSImage> = {
+            let cache = NSCache<NSString, NSImage>()
+            cache.countLimit = 100
+            cache.totalCostLimit = 20 * 1024 * 1024 // 20 MB advisory limit
+            return cache
+        }()
 
         // Typing animation state
         fileprivate weak var typingAnimationManager: TypingAnimationLayoutManager?
@@ -1378,15 +1563,18 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             let originalFilename: String
             let typeIdentifier: String
             let displayLabel: String
+            var viewMode: FileViewMode = .tag
         }
 
         // MARK: - Inline image overlay tracking
+        private var imageLoadTasks: [String: Task<Void, Never>] = [:]
         private var imageOverlays: [ObjectIdentifier: InlineImageOverlayView] = [:]
         private var tableOverlays: [ObjectIdentifier: NoteTableOverlayView] = [:]
         private var calloutOverlays: [ObjectIdentifier: CalloutOverlayView] = [:]
         private var codeBlockOverlays: [ObjectIdentifier: CodeBlockOverlayView] = [:]
         private var tabsOverlays: [ObjectIdentifier: TabsContainerOverlayView] = [:]
         private var cardSectionOverlays: [ObjectIdentifier: CardSectionOverlayView] = [:]
+        private var filePreviewOverlays: [ObjectIdentifier: FilePreviewOverlayView] = [:]
 
         private weak var overlayHostView: NSView?
         /// True when applyInitialText ran but the view was not in the hierarchy
@@ -1395,6 +1583,9 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         var onNavigateToNote: ((UUID) -> Void)?
         var lastKnownTextViewWidth: CGFloat = 0
         /// True once the bounds-change observer on the clip view has been registered.
+        /// Note: these flags are never reset because NSViewRepresentable does not provide
+        /// a teardown hook for the Coordinator. If SwiftUI recreates the NSView while reusing
+        /// the Coordinator, re-registration would need a reset path (e.g. dismantleNSView).
         private var hasBoundsObserver = false
         /// True once the frame-change observer on the scroll view has been registered.
         private var hasFrameObserver = false
@@ -1423,7 +1614,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 self.updateCodeBlockOverlays(in: tv)
                 self.updateTabsOverlays(in: tv)
                 self.updateCardSectionOverlays(in: tv)
-
+                self.updateFilePreviewOverlays(in: tv)
             }
             pendingOverlayUpdate = work
             DispatchQueue.main.async(execute: work)
@@ -1585,7 +1776,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             ThemeManager.currentBodyFontSize() * 1.5
         }
         private static let todoLineHeight: CGFloat = 24
-        private static let checkboxIconSize: CGFloat = 34
+        private static let checkboxIconSize: CGFloat = 26
         private static let checkboxAttachmentWidth: CGFloat = 30
         private static let baseBaselineOffset: CGFloat = 0.0
         private static let todoBaselineOffset: CGFloat = {
@@ -1665,35 +1856,45 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         }
 
         private func makeNotelinkAttachment(noteID: String, noteTitle: String) -> NSMutableAttributedString {
-            let pillView = NotelinkPillView(title: noteTitle, colorScheme: currentColorScheme)
-                .environment(\.colorScheme, currentColorScheme)
-            let renderer = ImageRenderer(content: pillView)
             let displayScale = NSScreen.main?.backingScaleFactor ?? 2.0
-            renderer.scale = displayScale
-            renderer.isOpaque = false
+            let cacheKey = "notelink|\(noteTitle)|\(currentColorScheme)|\(displayScale)" as NSString
 
             let attachment = NotelinkAttachment(noteID: noteID, noteTitle: noteTitle)
 
-            guard let cgImage = renderer.cgImage else {
-                let fallback = NSMutableAttributedString(string: "@\(noteTitle)")
-                fallback.addAttributes([.notelinkID: noteID, .notelinkTitle: noteTitle],
-                                       range: NSRange(location: 0, length: fallback.length))
-                return fallback
+            let nsImage: NSImage
+            if let cached = pillImageCache.object(forKey: cacheKey) {
+                nsImage = cached
+            } else {
+                let pillView = NotelinkPillView(title: noteTitle, colorScheme: currentColorScheme)
+                    .environment(\.colorScheme, currentColorScheme)
+                let renderer = ImageRenderer(content: pillView)
+                renderer.scale = displayScale
+                renderer.isOpaque = false
+
+                guard let cgImage = renderer.cgImage else {
+                    let fallback = NSMutableAttributedString(string: "@\(noteTitle)")
+                    fallback.addAttributes([.notelinkID: noteID, .notelinkTitle: noteTitle],
+                                           range: NSRange(location: 0, length: fallback.length))
+                    return fallback
+                }
+
+                let pixelWidth = CGFloat(cgImage.width)
+                let pixelHeight = CGFloat(cgImage.height)
+                let displaySize = CGSize(width: pixelWidth / displayScale, height: pixelHeight / displayScale)
+
+                let img = NSImage(size: displaySize)
+                img.addRepresentation(NSBitmapImageRep(cgImage: cgImage))
+                pillImageCache.setObject(img, forKey: cacheKey)
+                nsImage = img
             }
 
-            let pixelWidth = CGFloat(cgImage.width)
-            let pixelHeight = CGFloat(cgImage.height)
-            let displaySize = CGSize(width: pixelWidth / displayScale, height: pixelHeight / displayScale)
-
-            let nsImage = NSImage(size: displaySize)
-            nsImage.addRepresentation(NSBitmapImageRep(cgImage: cgImage))
-
             attachment.image = nsImage
+            let pillSize = nsImage.size
             attachment.bounds = CGRect(
                 x: 0,
-                y: Self.imageTagVerticalOffset(for: displaySize.height),
-                width: displaySize.width,
-                height: displaySize.height
+                y: Self.imageTagVerticalOffset(for: pillSize.height),
+                width: pillSize.width,
+                height: pillSize.height
             )
 
             let attributed = NSMutableAttributedString(attachment: attachment)
@@ -1850,6 +2051,9 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 .webClipDescription, value: fallbackExcerpt, range: attachmentRange)
             attributed.addAttribute(
                 .webClipDomain, value: resolvedDomain, range: attachmentRange)
+            // Store the full URL separately so it survives AppKit stripping the .link attribute
+            attributed.addAttribute(
+                .webClipFullURL, value: linkValue, range: attachmentRange)
 
             // Apply special paragraph style for web clips to prevent overlap
             attributed.addAttribute(
@@ -1965,39 +2169,74 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 )
             }
 
-            let tagView = FileAttachmentTagView(label: metadata.displayLabel)
-                .environment(\.colorScheme, currentColorScheme)
-            let renderer = ImageRenderer(content: tagView)
-            let scale = NSScreen.main?.backingScaleFactor ?? 2.0
-            renderer.scale = scale
-            renderer.isOpaque = false
-
-            guard let cgImage = renderer.cgImage else {
-                return fallbackAttributedString()
-            }
-
-            let displaySize = CGSize(
-                width: CGFloat(cgImage.width) / scale,
-                height: CGFloat(cgImage.height) / scale
-            )
-
-            let renderedImage = NSImage(size: displaySize)
-            renderedImage.addRepresentation(NSBitmapImageRep(cgImage: cgImage))
-
             let attachment = NoteFileAttachment(
                 storedFilename: metadata.storedFilename,
                 originalFilename: metadata.originalFilename,
                 typeIdentifier: metadata.typeIdentifier,
-                displayLabel: metadata.displayLabel
+                displayLabel: metadata.displayLabel,
+                viewMode: metadata.viewMode
             )
-            attachment.image = renderedImage
-            attachment.attachmentCell = NSTextAttachmentCell(imageCell: renderedImage)
-            attachment.bounds = CGRect(
-                x: 0,
-                y: Self.imageTagVerticalOffset(for: displaySize.height),
-                width: displaySize.width,
-                height: displaySize.height
-            )
+
+            // Cache aspect ratios for accurate height reservation
+            let category = FileCategory.classify(metadata.typeIdentifier)
+            if category == .image {
+                attachment.cachedImageAspectRatio = FileAttachmentStorageManager.imageAspectRatio(
+                    for: metadata.storedFilename)
+            } else if category == .pdf {
+                attachment.cachedPdfPageAspectRatio = FileAttachmentStorageManager.pdfPageAspectRatio(
+                    for: metadata.storedFilename)
+            }
+
+            if metadata.viewMode == .tag {
+                // Tag mode: render as capsule pill bitmap (original behavior)
+                let tagView = FileAttachmentTagView(label: metadata.displayLabel)
+                    .environment(\.colorScheme, currentColorScheme)
+                let renderer = ImageRenderer(content: tagView)
+                let scale = NSScreen.main?.backingScaleFactor ?? 2.0
+                renderer.scale = scale
+                renderer.isOpaque = false
+
+                guard let cgImage = renderer.cgImage else {
+                    return fallbackAttributedString()
+                }
+
+                let displaySize = CGSize(
+                    width: CGFloat(cgImage.width) / scale,
+                    height: CGFloat(cgImage.height) / scale
+                )
+
+                let renderedImage = NSImage(size: displaySize)
+                renderedImage.addRepresentation(NSBitmapImageRep(cgImage: cgImage))
+
+                attachment.image = renderedImage
+                attachment.attachmentCell = NSTextAttachmentCell(imageCell: renderedImage)
+                attachment.bounds = CGRect(
+                    x: 0,
+                    y: Self.imageTagVerticalOffset(for: displaySize.height),
+                    width: displaySize.width,
+                    height: displaySize.height
+                )
+            } else {
+                // Extracted mode: reserve space for overlay view
+                var containerWidth = textView?.textContainer?.containerSize.width ?? 400
+                if containerWidth < 1 { containerWidth = 400 }
+                let previewWidth: CGFloat = metadata.viewMode == .full
+                    ? containerWidth
+                    : min(400, containerWidth)
+                let info = FilePreviewOverlayView.FileAttachmentInfo(
+                    storedFilename: metadata.storedFilename,
+                    originalFilename: metadata.originalFilename,
+                    typeIdentifier: metadata.typeIdentifier,
+                    displayLabel: metadata.displayLabel,
+                    imageAspectRatio: attachment.cachedImageAspectRatio,
+                    pdfPageAspectRatio: attachment.cachedPdfPageAspectRatio
+                )
+                let previewHeight = FilePreviewOverlayView.heightForData(
+                    info, viewMode: metadata.viewMode, width: previewWidth)
+                let cellSize = CGSize(width: previewWidth, height: previewHeight)
+                attachment.attachmentCell = CalloutSizeAttachmentCell(size: cellSize)
+                attachment.bounds = CGRect(origin: .zero, size: cellSize)
+            }
 
             let attributed = NSMutableAttributedString(attachment: attachment)
             let attachmentRange = NSRange(location: 0, length: attributed.length)
@@ -2021,6 +2260,19 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 value: metadata.displayLabel,
                 range: attachmentRange
             )
+            attributed.addAttribute(
+                .fileViewMode,
+                value: metadata.viewMode.rawValue,
+                range: attachmentRange
+            )
+
+            if metadata.viewMode != .tag {
+                let blockStyle = NSMutableParagraphStyle()
+                blockStyle.alignment = .left
+                blockStyle.paragraphSpacing = 8
+                blockStyle.paragraphSpacingBefore = 8
+                attributed.addAttribute(.paragraphStyle, value: blockStyle, range: attachmentRange)
+            }
 
             return attributed
         }
@@ -2047,30 +2299,59 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             let charIdx = layoutManager.characterIndexForGlyph(at: gi)
             guard charIdx < textStorage.length else { return false }
 
-            // Check for any link type
-            let isNotelink = textStorage.attribute(.attachment, at: charIdx, effectiveRange: nil) is NotelinkAttachment
+            // Check for any hoverable link or attachment type.
+            // Cache the attachment lookup — it's used for both type
+            // checking and tight bounding-rect computation below.
+            let attachment = textStorage.attribute(.attachment, at: charIdx, effectiveRange: nil)
+            let isNotelink = attachment is NotelinkAttachment
                 || textStorage.attribute(.notelinkID, at: charIdx, effectiveRange: nil) != nil
             let isWebclip = textStorage.attribute(.webClipTitle, at: charIdx, effectiveRange: nil) != nil
             let isPlainLink = textStorage.attribute(.plainLinkURL, at: charIdx, effectiveRange: nil) != nil
-            let isFileLink = textStorage.attribute(.attachment, at: charIdx, effectiveRange: nil) is FileLinkAttachment
+            let isFileLink = attachment is FileLinkAttachment
                 || textStorage.attribute(.fileLinkPath, at: charIdx, effectiveRange: nil) != nil
+            let isStoredFile: Bool
+            if let nfa = attachment as? NoteFileAttachment {
+                isStoredFile = nfa.viewMode == .tag
+            } else if textStorage.attribute(.fileStoredFilename, at: charIdx, effectiveRange: nil) != nil {
+                let rawMode = textStorage.attribute(.fileViewMode, at: charIdx, effectiveRange: nil) as? String
+                isStoredFile = rawMode == nil || FileViewMode(rawValue: rawMode!) == .tag
+            } else {
+                isStoredFile = false
+            }
 
-            guard isNotelink || isWebclip || isPlainLink || isFileLink else {
+            guard isNotelink || isWebclip || isPlainLink || isFileLink || isStoredFile else {
                 if currentHoveredCharIndex != nil { endAttachmentHover() }
                 return false
             }
 
-            // Compute bounding rect and verify the point is actually inside
-            // the glyph — glyphIndex(for:in:) returns the *nearest* glyph,
-            // not the one containing the point, so hovering in whitespace
-            // between two attachment pills can snap to either one.
-            let glyphRange = NSRange(location: gi, length: 1)
-            let rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
-            let adjustedRect = CGRect(
-                x: rect.origin.x + textView.textContainerOrigin.x,
-                y: rect.origin.y + textView.textContainerOrigin.y,
-                width: rect.width,
-                height: rect.height)
+            // Compute a tight bounding rect and verify the point is
+            // actually inside the visual bounds of the element.
+            //
+            // For attachment characters we use the attachment's own
+            // width and the line-fragment-used rect (which excludes
+            // paragraph spacing) instead of boundingRect(forGlyphRange:)
+            // — that API returns the full container width and includes
+            // paragraphSpacing, causing false-positive triggers in the
+            // whitespace beside and between pills.
+            let adjustedRect: CGRect
+            if let att = attachment as? NSTextAttachment, att.bounds.width > 0 {
+                let lineFragRect = layoutManager.lineFragmentRect(forGlyphAt: gi, effectiveRange: nil)
+                let loc = layoutManager.location(forGlyphAt: gi)
+                let usedRect = layoutManager.lineFragmentUsedRect(forGlyphAt: gi, effectiveRange: nil)
+                adjustedRect = CGRect(
+                    x: lineFragRect.origin.x + loc.x + textView.textContainerOrigin.x,
+                    y: usedRect.origin.y + textView.textContainerOrigin.y,
+                    width: att.bounds.width,
+                    height: usedRect.height)
+            } else {
+                let glyphRange = NSRange(location: gi, length: 1)
+                let rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+                adjustedRect = CGRect(
+                    x: rect.origin.x + textView.textContainerOrigin.x,
+                    y: rect.origin.y + textView.textContainerOrigin.y,
+                    width: rect.width,
+                    height: rect.height)
+            }
 
             guard adjustedRect.contains(point) else {
                 if currentHoveredCharIndex != nil { endAttachmentHover() }
@@ -2084,6 +2365,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             var userInfo: [String: Any] = [
                 "rect": NSValue(rect: adjustedRect),
                 "charIndex": charIdx,
+                "isFileAttachment": isStoredFile || isFileLink,
             ]
             if let eid = editorInstanceID { userInfo["editorInstanceID"] = eid }
             NotificationCenter.default.post(name: .linkHoverDetected, object: nil, userInfo: userInfo)
@@ -2154,6 +2436,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         }
 
         deinit {
+            imageLoadTasks.values.forEach { $0.cancel() }
+            imageLoadTasks.removeAll()
             nonisolated(unsafe) let manager = typingAnimationManager
             let imgOverlays = imageOverlays.values.map { $0 }
             let tblOverlays = tableOverlays.values.map { $0 }
@@ -2881,6 +3165,17 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 }
             }
 
+            let fileExtractTrigger = NotificationCenter.default.addObserver(
+                forName: .fileExtractTriggered, object: nil, queue: .main
+            ) { [weak self] notification in
+                guard let charIndex = notification.userInfo?["charIndex"] as? Int else { return }
+                if let nid = notification.userInfo?["editorInstanceID"] as? UUID,
+                   let myID = self?.editorInstanceID, nid != myID { return }
+                Task { @MainActor [weak self] in
+                    self?.extractFileAtCharIndex(charIndex)
+                }
+            }
+
             observers = [
                 windowKey,
                 insertTodo, insertLink, convertToWebClip, insertFileLink, insertVoiceTranscript, insertImage, applyTool, applyCommandMenuTool,
@@ -2893,6 +3188,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 applyColor, removeColor, applyHighlight, removeHighlight, setHighlightRange,
                 applyFontSize, applyFontFamily,
                 settingsObserver, syncMenuState, printNote, quickLookTrigger, quickLookHoverTrigger,
+                fileExtractTrigger,
             ]
         }
 
@@ -2963,6 +3259,136 @@ struct TodoEditorRepresentable: NSViewRepresentable {
 
             textView.quickLookPreviewURL = previewURL
             QLPreviewPanel.shared()?.makeKeyAndOrderFront(nil)
+        }
+
+        /// Extracts a file attachment from tag mode into an inline preview.
+        @MainActor
+        private func extractFileAtCharIndex(_ charIndex: Int) {
+            guard let textView = self.textView,
+                  let textStorage = textView.textStorage,
+                  let layoutManager = textView.layoutManager,
+                  charIndex < textStorage.length else { return }
+
+            var effectiveRange = NSRange(location: 0, length: 0)
+            let att = textStorage.attribute(.attachment, at: charIndex, effectiveRange: &effectiveRange)
+
+            if let fileAttachment = att as? NoteFileAttachment, fileAttachment.viewMode == .tag {
+                // Stored file: switch view mode directly
+                extractStoredFile(fileAttachment, range: effectiveRange, textView: textView,
+                                  textStorage: textStorage, layoutManager: layoutManager)
+            } else if let fileLinkAtt = att as? FileLinkAttachment {
+                // File link: import into storage first, then extract
+                extractFileLink(fileLinkAtt, range: effectiveRange, textView: textView,
+                                textStorage: textStorage, layoutManager: layoutManager)
+            }
+        }
+
+        @MainActor
+        private func extractStoredFile(_ attachment: NoteFileAttachment, range: NSRange,
+                                       textView: NSTextView, textStorage: NSTextStorage,
+                                       layoutManager: NSLayoutManager) {
+            // Preserve original file link data for tag reversion
+            let origPath = attachment.originalFileLinkPath
+            let origDisplayName = attachment.originalFileLinkDisplayName
+            let origBookmark = attachment.originalFileLinkBookmark
+
+            // Build a completely new attachment with correct cell sizing.
+            // In-place mutation doesn't work: the layout manager caches the
+            // old tag-cell metrics and won't re-query after property changes.
+            // Replacement via replaceCharacters forces a full re-typeset --
+            // the same pattern code blocks and extractFileLink use.
+            let metadata = FileAttachmentMetadata(
+                storedFilename: attachment.storedFilename,
+                originalFilename: attachment.originalFilename,
+                typeIdentifier: attachment.typeIdentifier,
+                displayLabel: attachment.displayLabel,
+                viewMode: .medium
+            )
+            let newAttStr = makeFileAttachment(metadata: metadata)
+
+            if textView.shouldChangeText(in: range, replacementString: nil) {
+                isUpdating = true
+                textStorage.beginEditing()
+                textStorage.replaceCharacters(in: range, with: newAttStr)
+                textStorage.endEditing()
+                textView.didChangeText()
+                isUpdating = false
+            }
+
+            // Restore original file link data on the new NoteFileAttachment
+            let insertedRange = NSRange(location: range.location, length: newAttStr.length)
+            if insertedRange.location + insertedRange.length <= textStorage.length {
+                textStorage.enumerateAttribute(.attachment, in: insertedRange, options: []) { val, _, stop in
+                    if let fileAtt = val as? NoteFileAttachment {
+                        fileAtt.originalFileLinkPath = origPath
+                        fileAtt.originalFileLinkDisplayName = origDisplayName
+                        fileAtt.originalFileLinkBookmark = origBookmark
+                        stop.pointee = true
+                    }
+                }
+            }
+
+            syncText()
+            updateFilePreviewOverlays(in: textView)
+        }
+
+        @MainActor
+        private func extractFileLink(_ fileLinkAtt: FileLinkAttachment, range: NSRange,
+                                     textView: NSTextView, textStorage: NSTextStorage,
+                                     layoutManager: NSLayoutManager) {
+            // Preserve original file link data for tag reversion
+            let origPath = fileLinkAtt.filePath
+            let origDisplayName = fileLinkAtt.displayName
+            let origBookmark = fileLinkAtt.bookmarkBase64
+
+            // Resolve the file URL (handle security-scoped bookmark)
+            guard let resolvedURL = resolveFileLinkURL(
+                path: origPath, bookmark: origBookmark
+            ) else { return }
+
+            // Import the file into JotFiles storage asynchronously
+            Task { @MainActor in
+                let accessed = resolvedURL.startAccessingSecurityScopedResource()
+                defer { if accessed { resolvedURL.stopAccessingSecurityScopedResource() } }
+
+                guard let storedFile = await FileAttachmentStorageManager.shared.saveFile(from: resolvedURL) else { return }
+
+                let metadata = FileAttachmentMetadata(
+                    storedFilename: storedFile.storedFilename,
+                    originalFilename: storedFile.originalFilename,
+                    typeIdentifier: storedFile.typeIdentifier,
+                    displayLabel: AttachmentMarkup.displayLabel(for: storedFile),
+                    viewMode: .medium
+                )
+
+                let newAttStr = self.makeFileAttachment(metadata: metadata)
+                if textView.shouldChangeText(in: range, replacementString: nil) {
+                    self.isUpdating = true
+                    textStorage.beginEditing()
+                    textStorage.replaceCharacters(in: range, with: newAttStr)
+                    textStorage.endEditing()
+                    textView.didChangeText()
+                    self.isUpdating = false
+                }
+
+                // Set original file link data on the new NoteFileAttachment for tag reversion
+                let insertedRange = NSRange(location: range.location, length: newAttStr.length)
+                if insertedRange.location + insertedRange.length <= textStorage.length {
+                    textStorage.enumerateAttribute(.attachment, in: insertedRange, options: []) { val, _, stop in
+                        if let fileAtt = val as? NoteFileAttachment {
+                            fileAtt.originalFileLinkPath = origPath
+                            fileAtt.originalFileLinkDisplayName = origDisplayName
+                            fileAtt.originalFileLinkBookmark = origBookmark
+                            stop.pointee = true
+                        }
+                    }
+                }
+
+                self.syncText()
+                if let tv = self.textView {
+                    self.updateFilePreviewOverlays(in: tv)
+                }
+            }
         }
 
         /// Examines text attributes at the given character index and returns a Quick Look-compatible file URL.
@@ -3830,7 +4256,10 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             }
 
             let action: AttachmentAction?
-            if let fileLinkAttachment = attachment as? FileLinkAttachment {
+            if let fileAtt = attachment as? NoteFileAttachment, fileAtt.viewMode != .tag {
+                // Extracted file preview -- overlay handles interaction, don't open on click
+                action = nil
+            } else if let fileLinkAttachment = attachment as? FileLinkAttachment {
                 action = .fileLink(path: fileLinkAttachment.filePath, bookmark: fileLinkAttachment.bookmarkBase64)
             } else if let filePath = attributes[.fileLinkPath] as? String {
                 let bookmark = (attributes[.fileLinkBookmark] as? String) ?? ""
@@ -4000,6 +4429,9 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         /// Re-renders all notelink and filelink pill images to match the current
         /// color scheme. Called after appearance changes; safe to call at any time.
         private func rerenderPillAttachments() {
+            // Invalidate cached pill images since appearance changed
+            pillImageCache.removeAllObjects()
+
             guard let textView = textView,
                   let textStorage = textView.textStorage,
                   textStorage.length > 0 else { return }
@@ -4025,6 +4457,16 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     let displayName = (attrs[.fileLinkDisplayName] as? String) ?? URL(fileURLWithPath: filePath).lastPathComponent
                     let bookmark = (attrs[.fileLinkBookmark] as? String) ?? ""
                     let newPill = makeFileLinkAttachment(filePath: filePath, displayName: displayName, bookmarkBase64: bookmark)
+                    pillRanges.append((range: charRange, replacement: newPill))
+                } else if let fileAtt = value as? NoteFileAttachment, fileAtt.viewMode == .tag {
+                    let meta = FileAttachmentMetadata(
+                        storedFilename: fileAtt.storedFilename,
+                        originalFilename: fileAtt.originalFilename,
+                        typeIdentifier: fileAtt.typeIdentifier,
+                        displayLabel: fileAtt.originalFilename,
+                        viewMode: .tag
+                    )
+                    let newPill = makeFileAttachment(metadata: meta)
                     pillRanges.append((range: charRange, replacement: newPill))
                 }
             }
@@ -4143,11 +4585,23 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             }
 
             // Inherit typing attributes immediately; debounce font family correction
-            // to avoid running fixInconsistentFonts on every keystroke
+            // to avoid running fixInconsistentFonts on every keystroke.
+            // Accumulate edited ranges across debounce intervals so the eventual fix
+            // is scoped to only the paragraphs that changed during the debounce window.
             self.fixFontsWorkItem?.cancel()
+            if let editedRange = textView.textStorage?.editedRange,
+               editedRange.location != NSNotFound {
+                if let existing = pendingFontFixRange {
+                    pendingFontFixRange = NSUnionRange(existing, editedRange)
+                } else {
+                    pendingFontFixRange = editedRange
+                }
+            }
             let fontFixWork = DispatchWorkItem { [weak self] in
                 guard let self = self, !self.isUpdating else { return }
-                self.fixInconsistentFonts()
+                let range = self.pendingFontFixRange
+                self.pendingFontFixRange = nil
+                self.fixInconsistentFonts(in: range)
             }
             self.fixFontsWorkItem = fontFixWork
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: fontFixWork)
@@ -4205,7 +4659,10 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             NotificationCenter.default.post(name: .urlPasteDismiss, object: dismissPayload)
             NotificationCenter.default.post(name: .codePasteDismiss, object: nil)
 
-            syncText()
+            // Pass the text storage's edited range so styleTodoParagraphs can scope
+            // its work to just the affected paragraphs instead of the full document.
+            let edited = textView.textStorage?.editedRange
+            syncText(editedRange: edited)
         }
 
         func textView(
@@ -4920,8 +5377,9 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             }
 
             replaceSelection(with: composed)
-            styleTodoParagraphs()
-            syncText()
+            let insertRange = NSRange(location: selectedRange.location, length: composed.length)
+            styleTodoParagraphs(editedRange: insertRange)
+            syncText(editedRange: insertRange)
         }
 
         private func insertWebClip(url: String) {
@@ -5589,10 +6047,10 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             }
         }
 
-        private func syncText() {
+        private func syncText(editedRange: NSRange? = nil) {
             guard let textView = textView, !readOnly else { return }
             isUpdating = true
-            styleTodoParagraphs()
+            styleTodoParagraphs(editedRange: editedRange)
             lastSerialized = serialize()
             textBinding.wrappedValue = lastSerialized
             isUpdating = false
@@ -5715,17 +6173,22 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                         // Get URL on main actor first
                         guard let url = ImageStorageManager.shared.getImageURL(for: filename) else { return }
 
-                        Task.detached(priority: .userInitiated) {
+                        // Cancel any in-flight load for the same filename before starting a new one.
+                        imageLoadTasks[filename]?.cancel()
+                        let loadTask = Task.detached(priority: .userInitiated) { [weak self] in
+                            guard !Task.isCancelled else { return }
                             guard let img = NSImage(contentsOf: url) else { return }
                             await MainActor.run { [weak self, weak overlay] in
-                                guard let self = self else { return }
+                                guard let self = self, !Task.isCancelled else { return }
                                 Self.inlineImageCache.setObject(img, forKey: cacheKey, cost: Int(img.size.width * img.size.height * 4))
                                 overlay?.image = img
+                                self.imageLoadTasks.removeValue(forKey: filename)
                                 if let tv = self.textView {
                                     self.updateImageOverlays(in: tv)
                                 }
                             }
                         }
+                        imageLoadTasks[filename] = loadTask
                     }
 
                     hostView.addSubview(overlay)
@@ -6531,6 +6994,241 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             }
         }
 
+        // MARK: - File Preview Overlays
+
+        func updateFilePreviewOverlays(in textView: NSTextView) {
+            guard let textStorage = textView.textStorage,
+                  let layoutManager = textView.layoutManager,
+                  let textContainer = textView.textContainer else { return }
+
+            let hostView: NSView = textView
+            var seenIDs = Set<ObjectIdentifier>()
+            let fullRange = NSRange(location: 0, length: textStorage.length)
+            guard fullRange.length > 0 else {
+                filePreviewOverlays.values.forEach { $0.removeFromSuperview() }
+                filePreviewOverlays.removeAll()
+                return
+            }
+
+            textStorage.enumerateAttribute(.attachment, in: fullRange, options: []) { val, range, _ in
+                guard let attachment = val as? NoteFileAttachment,
+                      attachment.viewMode != .tag else { return }
+                let id = ObjectIdentifier(attachment)
+                seenIDs.insert(id)
+
+                // Lazily compute aspect ratio if not cached yet
+                let attCategory = FileCategory.classify(attachment.typeIdentifier)
+                if attCategory == .image, attachment.cachedImageAspectRatio == nil {
+                    attachment.cachedImageAspectRatio = FileAttachmentStorageManager.imageAspectRatio(
+                        for: attachment.storedFilename)
+                } else if attCategory == .pdf, attachment.cachedPdfPageAspectRatio == nil {
+                    attachment.cachedPdfPageAspectRatio = FileAttachmentStorageManager.pdfPageAspectRatio(
+                        for: attachment.storedFilename)
+                }
+
+                let containerW = max(textContainer.containerSize.width, 100)
+                let targetWidth: CGFloat = attachment.viewMode == .full
+                    ? containerW
+                    : min(400, containerW)
+                let targetHeight = FilePreviewOverlayView.heightForData(
+                    FilePreviewOverlayView.FileAttachmentInfo(
+                        storedFilename: attachment.storedFilename,
+                        originalFilename: attachment.originalFilename,
+                        typeIdentifier: attachment.typeIdentifier,
+                        displayLabel: attachment.displayLabel,
+                        imageAspectRatio: attachment.cachedImageAspectRatio,
+                        pdfPageAspectRatio: attachment.cachedPdfPageAspectRatio
+                    ),
+                    viewMode: attachment.viewMode,
+                    width: targetWidth
+                )
+
+                let needsSizeUpdate = abs(attachment.bounds.width - targetWidth) > 1
+                    || abs(attachment.bounds.height - targetHeight) > 1
+                if needsSizeUpdate {
+                    let newSize = CGSize(width: targetWidth, height: targetHeight)
+                    attachment.image = nil // Ensure no stale tag pill image
+                    attachment.attachmentCell = CalloutSizeAttachmentCell(size: newSize)
+                    attachment.bounds = CGRect(origin: .zero, size: newSize)
+                    textStorage.beginEditing()
+                    textStorage.addAttribute(.fileViewMode, value: attachment.viewMode.rawValue, range: range)
+                    textStorage.endEditing()
+                    layoutManager.invalidateGlyphs(forCharacterRange: range, changeInLength: 0, actualCharacterRange: nil)
+                    layoutManager.invalidateLayout(forCharacterRange: range, actualCharacterRange: nil)
+                }
+
+                let glyphRange = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+                if glyphRange.length > 0 { layoutManager.ensureLayout(forGlyphRange: glyphRange) }
+                guard glyphRange.length > 0 else { return }
+                let glyphRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+
+                let overlayRect = CGRect(
+                    x: glyphRect.origin.x + textView.textContainerOrigin.x,
+                    y: glyphRect.origin.y + textView.textContainerOrigin.y,
+                    width: attachment.bounds.width,
+                    height: attachment.bounds.height
+                )
+
+                let overlay: FilePreviewOverlayView
+                if let existing = filePreviewOverlays[id] {
+                    overlay = existing
+                    let modeChanged = overlay.viewMode != attachment.viewMode
+                    let widthChanged = abs(overlay.currentContainerWidth - attachment.bounds.width) > 1
+                    overlay.storedFilename = attachment.storedFilename
+                    overlay.originalFilename = attachment.originalFilename
+                    overlay.viewMode = attachment.viewMode
+                    overlay.currentContainerWidth = attachment.bounds.width
+                    if modeChanged || widthChanged {
+                        overlay.rebuildHostingView()
+                    }
+                } else {
+                    overlay = FilePreviewOverlayView(
+                        storedFilename: attachment.storedFilename,
+                        originalFilename: attachment.originalFilename,
+                        typeIdentifier: attachment.typeIdentifier,
+                        displayLabel: attachment.displayLabel,
+                        viewMode: attachment.viewMode,
+                        containerWidth: attachment.bounds.width
+                    )
+                    overlay.parentTextView = textView
+
+                    overlay.onViewModeChanged = { [weak self, weak textStorage, weak layoutManager, weak attachment] newMode in
+                        guard let self = self, let ts = textStorage, let lm = layoutManager, let att = attachment else { return }
+                        att.viewMode = newMode
+
+                        if newMode == .tag {
+                            // Revert to tag: restore the original pill style
+                            let tagAttStr: NSMutableAttributedString
+                            if let linkPath = att.originalFileLinkPath,
+                               let linkName = att.originalFileLinkDisplayName {
+                                // Was originally a FileLinkAttachment -- restore as file link pill
+                                tagAttStr = self.makeFileLinkAttachment(
+                                    filePath: linkPath,
+                                    displayName: linkName,
+                                    bookmarkBase64: att.originalFileLinkBookmark ?? ""
+                                )
+                            } else {
+                                // Was originally a stored file -- restore as file tag
+                                let tagMeta = FileAttachmentMetadata(
+                                    storedFilename: att.storedFilename,
+                                    originalFilename: att.originalFilename,
+                                    typeIdentifier: att.typeIdentifier,
+                                    displayLabel: att.originalFilename,
+                                    viewMode: .tag
+                                )
+                                tagAttStr = self.makeFileAttachment(metadata: tagMeta)
+                            }
+                            let fr = NSRange(location: 0, length: ts.length)
+                            ts.enumerateAttribute(.attachment, in: fr, options: []) { val, charRange, stop in
+                                if val as AnyObject === att {
+                                    if let tv = self.textView, tv.shouldChangeText(in: charRange, replacementString: nil) {
+                                        ts.replaceCharacters(in: charRange, with: tagAttStr)
+                                        // Reset paragraph style to inline (remove block-level spacing)
+                                        let baseStyle = NSMutableParagraphStyle()
+                                        baseStyle.alignment = .natural
+                                        let newRange = NSRange(location: charRange.location, length: tagAttStr.length)
+                                        if newRange.location + newRange.length <= ts.length {
+                                            ts.addAttribute(.paragraphStyle, value: baseStyle, range: newRange)
+                                        }
+                                        tv.didChangeText()
+                                    }
+                                    stop.pointee = true
+                                }
+                            }
+                        } else {
+                            // Switch between medium/full: resize
+                            let cw = max(self.textView?.textContainer?.containerSize.width ?? 400, 100)
+                            let newWidth: CGFloat = newMode == .full ? cw : min(400, cw)
+                            let newHeight = FilePreviewOverlayView.heightForData(
+                                FilePreviewOverlayView.FileAttachmentInfo(
+                                    storedFilename: att.storedFilename,
+                                    originalFilename: att.originalFilename,
+                                    typeIdentifier: att.typeIdentifier,
+                                    displayLabel: att.displayLabel,
+                                    imageAspectRatio: att.cachedImageAspectRatio,
+                                    pdfPageAspectRatio: att.cachedPdfPageAspectRatio
+                                ),
+                                viewMode: newMode,
+                                width: newWidth
+                            )
+                            let newSize = CGSize(width: newWidth, height: newHeight)
+                            att.image = nil // Ensure no stale tag pill image
+                            att.attachmentCell = CalloutSizeAttachmentCell(size: newSize)
+                            att.bounds = CGRect(origin: .zero, size: newSize)
+                            let fr = NSRange(location: 0, length: ts.length)
+                            ts.enumerateAttribute(.attachment, in: fr, options: []) { val, charRange, stop in
+                                if val as AnyObject === att {
+                                    ts.beginEditing()
+                                    ts.addAttribute(.fileViewMode, value: newMode.rawValue, range: charRange)
+                                    ts.endEditing()
+                                    lm.invalidateGlyphs(forCharacterRange: charRange, changeInLength: 0, actualCharacterRange: nil)
+                                    lm.invalidateLayout(forCharacterRange: charRange, actualCharacterRange: nil)
+                                    stop.pointee = true
+                                }
+                            }
+                        }
+                        self.syncText()
+                        self.scheduleOverlayUpdate()
+                    }
+
+                    overlay.onDelete = { [weak self, weak textStorage, weak textView, weak attachment] in
+                        guard let self = self, let ts = textStorage,
+                              let tv = textView, let att = attachment else { return }
+                        let fr = NSRange(location: 0, length: ts.length)
+                        ts.enumerateAttribute(.attachment, in: fr, options: []) { val, charRange, stop in
+                            if val as AnyObject === att {
+                                var deleteStart = charRange.location
+                                var deleteEnd = charRange.location + charRange.length
+                                let nsString = ts.string as NSString
+                                if deleteStart > 0 {
+                                    let prev = nsString.character(at: deleteStart - 1)
+                                    if let scalar = Unicode.Scalar(prev),
+                                       CharacterSet.newlines.contains(scalar) { deleteStart -= 1 }
+                                }
+                                if deleteEnd < nsString.length {
+                                    let next = nsString.character(at: deleteEnd)
+                                    if let scalar = Unicode.Scalar(next),
+                                       CharacterSet.newlines.contains(scalar) { deleteEnd += 1 }
+                                }
+                                let deleteRange = NSRange(location: deleteStart,
+                                                         length: deleteEnd - deleteStart)
+                                if tv.shouldChangeText(in: deleteRange, replacementString: "") {
+                                    ts.replaceCharacters(in: deleteRange, with: "")
+                                    tv.didChangeText()
+                                }
+                                stop.pointee = true
+                            }
+                        }
+                        self.syncText()
+                    }
+
+                    overlay.onRename = { [weak self, weak textStorage, weak attachment] newName in
+                        guard let self = self, let ts = textStorage, let att = attachment else { return }
+                        att.originalFilename = newName
+                        let fr = NSRange(location: 0, length: ts.length)
+                        ts.enumerateAttribute(.attachment, in: fr, options: []) { val, charRange, stop in
+                            if val as AnyObject === att {
+                                ts.addAttribute(.fileOriginalFilename, value: newName, range: charRange)
+                                stop.pointee = true
+                            }
+                        }
+                        self.syncText()
+                    }
+
+                    hostView.addSubview(overlay)
+                    filePreviewOverlays[id] = overlay
+                }
+
+                overlay.frame = overlayRect.integral
+            }
+
+            let filePreviewToRemove = filePreviewOverlays.keys.filter { !seenIDs.contains($0) }
+            for key in filePreviewToRemove {
+                filePreviewOverlays[key]?.removeFromSuperview()
+                filePreviewOverlays.removeValue(forKey: key)
+            }
+        }
+
         private func updateImageRatio(
             _ newRatio: CGFloat,
             attachment: NoteImageAttachment,
@@ -6589,8 +7287,10 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             }
         }
 
-        /// Fixes any text that has inconsistent font formatting (e.g., from Writing Tools)
-        private func fixInconsistentFonts() {
+        /// Fixes any text that has inconsistent font formatting (e.g., from Writing Tools).
+        /// When `scopeRange` is provided, only the affected paragraphs are scanned.
+        /// Pass `nil` for full-document passes (initial load, editor settings change).
+        private func fixInconsistentFonts(in scopeRange: NSRange? = nil) {
             guard let textView = textView,
                 let textStorage = textView.textStorage
             else { return }
@@ -6599,6 +7299,18 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             guard let expectedFont = expectedAttributes[.font] as? NSFont,
                 let expectedColor = expectedAttributes[.foregroundColor] as? NSColor
             else { return }
+
+            // Determine working range: scoped to affected paragraphs or full document
+            let workingRange: NSRange
+            if let scope = scopeRange, scope.location != NSNotFound, scope.location < textStorage.length {
+                let nsString = textStorage.string as NSString
+                let start = nsString.paragraphRange(for: NSRange(location: scope.location, length: 0)).location
+                let endLoc = min(NSMaxRange(scope), textStorage.length)
+                let endPara = nsString.paragraphRange(for: NSRange(location: max(endLoc, start), length: 0))
+                workingRange = NSRange(location: start, length: NSMaxRange(endPara) - start)
+            } else {
+                workingRange = NSRange(location: 0, length: textStorage.length)
+            }
 
             // Suppress textDidChange during font corrections to prevent
             // re-scheduling this function in an infinite 300ms loop
@@ -6609,7 +7321,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             var fixups: [(range: NSRange, attrs: [NSAttributedString.Key: Any])] = []
 
             textStorage.enumerateAttributes(
-                in: NSRange(location: 0, length: textStorage.length)
+                in: workingRange
             ) { attributes, range, _ in
                 // Attachment characters (U+FFFC) render through their NSTextAttachmentCell,
                 // not through text attributes. Rewriting their attributes with setAttributes
@@ -6685,15 +7397,30 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             }
         }
 
-        private func styleTodoParagraphs() {
+        /// Style paragraphs for todo checkboxes, lists, block quotes, images, tables, etc.
+        /// When `editedRange` is provided, only the affected paragraphs are re-styled (O(1) for
+        /// single-character edits). Pass `nil` for full-document passes (initial load, font change).
+        private func styleTodoParagraphs(editedRange: NSRange? = nil) {
             guard let textStorage = textView?.textStorage else { return }
             let fullRange = NSRange(location: 0, length: textStorage.length)
+            // Determine the working range: either the edited paragraph(s) or the full document
+            let workingRange: NSRange
+            if let edited = editedRange, edited.location != NSNotFound, edited.location < textStorage.length {
+                // Expand to paragraph boundaries so we always style complete paragraphs
+                let nsString = textStorage.string as NSString
+                let start = nsString.paragraphRange(for: NSRange(location: edited.location, length: 0)).location
+                let endLoc = min(NSMaxRange(edited), textStorage.length)
+                let endPara = nsString.paragraphRange(for: NSRange(location: max(endLoc, start), length: 0))
+                workingRange = NSRange(location: start, length: NSMaxRange(endPara) - start)
+            } else {
+                workingRange = fullRange
+            }
             textStorage.beginEditing()
             // Do NOT blanket-remove .paragraphStyle — heading and alignment styles live there.
-            textStorage.removeAttribute(.baselineOffset, range: fullRange)
+            textStorage.removeAttribute(.baselineOffset, range: workingRange)
 
-            var paragraphRange = NSRange(location: 0, length: 0)
-            while paragraphRange.location < textStorage.length {
+            var paragraphRange = NSRange(location: workingRange.location, length: 0)
+            while paragraphRange.location < NSMaxRange(workingRange) {
                 let substringRange = (textStorage.string as NSString).paragraphRange(
                     for: NSRange(location: paragraphRange.location, length: 0))
                 if substringRange.length == 0 { break }
@@ -6709,6 +7436,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     let nlRange = NSRange(location: lastCharIndex, length: 1)
                     textStorage.removeAttribute(.backgroundColor, range: nlRange)
                     textStorage.removeAttribute(.highlightColor, range: nlRange)
+                    textStorage.removeAttribute(.highlightVariant, range: nlRange)
                 }
 
                 var isTodoParagraph = false
@@ -6742,12 +7470,13 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                             isTableParagraph = true
                             stop.pointee = true
                         }
-                        // Other block-level attachments (image, callout, code block)
+                        // Other block-level attachments (image, callout, code block, file preview)
                         else if attachment is NoteImageAttachment
                                 || attachment is NoteCalloutAttachment
                                 || attachment is NoteCodeBlockAttachment
                                 || attachment is NoteTabsAttachment
-                                || attachment is NoteCardSectionAttachment {
+                                || attachment is NoteCardSectionAttachment
+                                || (attachment is NoteFileAttachment && (attachment as! NoteFileAttachment).viewMode != .tag) {
                             isImageParagraph = true
                             stop.pointee = true
                         }
@@ -6875,7 +7604,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             // Suppress spell check red underlines on attachment characters (U+FFFC).
             // Without this, the spell checker treats words adjacent to inline attachments
             // (checkboxes, images, webclips) as misspelled due to the invisible U+FFFC boundary.
-            textStorage.enumerateAttribute(.attachment, in: fullRange, options: []) { value, range, _ in
+            textStorage.enumerateAttribute(.attachment, in: workingRange, options: []) { value, range, _ in
                 if value != nil {
                     textStorage.addAttribute(.spellingState, value: 0, range: range)
                 }
@@ -6986,7 +7715,13 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     let originalNameRaw = (attributes[.fileOriginalFilename] as? String) ?? storedFilename
                     let typeIdentifier = Self.sanitizedWebClipComponent(typeIdentifierRaw)
                     let originalName = Self.sanitizedWebClipComponent(originalNameRaw)
-                    output.append("[[file|\(typeIdentifier)|\(storedFilename)|\(originalName)]]")
+                    let viewModeRaw = (attributes[.fileViewMode] as? String) ?? FileViewMode.tag.rawValue
+                    let viewMode = FileViewMode(rawValue: viewModeRaw) ?? .tag
+                    if viewMode == .tag {
+                        output.append("[[file|\(typeIdentifier)|\(storedFilename)|\(originalName)]]")
+                    } else {
+                        output.append("[[file|\(typeIdentifier)|\(storedFilename)|\(originalName)|\(viewMode.rawValue)]]")
+                    }
                 } else if let tableAttachment = attributes[.attachment] as? NoteTableAttachment {
                     output.append(tableAttachment.tableData.serialize())
                 } else if let calloutAttachment = attributes[.attachment] as? NoteCalloutAttachment {
@@ -7014,7 +7749,9 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     let description = Self.cleanedWebClipComponent(attributes[.webClipDescription])
                     let domain = Self.cleanedWebClipComponent(attributes[.webClipDomain])
                     if title.isEmpty { title = domain }
-                    let url = Self.linkURLString(from: attributes)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? domain
+                    let url = Self.linkURLString(from: attributes)?.trimmingCharacters(in: .whitespacesAndNewlines)
+                        ?? (attributes[.webClipFullURL] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+                        ?? domain
                     output.append("[[webclip|\(title)|\(description)|\(url)]]")
                 } else if let attachment = attributes[.attachment] as? NSTextAttachment,
                     !(attachment.attachmentCell is TodoCheckboxAttachmentCell)
@@ -7064,6 +7801,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     let font = attributes[.font] as? NSFont
                     let isBlockQuote = attributes[.blockQuote] as? Bool == true
                     let highlightHex = attributes[.highlightColor] as? String
+                    let highlightVariant = attributes[.highlightVariant] as? Int
                     let heading = font.flatMap { Self.headingLevel(for: $0) }
 
                     var runBold = false
@@ -7128,7 +7866,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                         openTags += "[[color|\(hex)]]"; closeTags = "[[/color]]" + closeTags
                     }
                     if let hlHex = highlightHex {
-                        openTags += "[[hl|\(hlHex)]]"; closeTags = "[[/hl]]" + closeTags
+                        let variantSuffix = highlightVariant.map { "|\($0)" } ?? ""
+                        openTags += "[[hl|\(hlHex)\(variantSuffix)]]"; closeTags = "[[/hl]]" + closeTags
                     }
 
                     output.append(openTags)
@@ -7171,6 +7910,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             var fmtAlignment: NSTextAlignment = .left
             var fmtBlockQuote = false
             var fmtHighlightHex: String? = nil
+            var fmtHighlightVariant: Int? = nil
 
             // Buffer for accumulating plain text characters with the same attributes.
             // Flushed as a single NSAttributedString when formatting changes or a tag is hit.
@@ -7192,8 +7932,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 }
                 if let hlHex = fmtHighlightHex {
                     attrs[.highlightColor] = hlHex
-                    let hlColor = TextFormattingManager.nsColorFromHex(hlHex).withAlphaComponent(0.35)
-                    attrs[.backgroundColor] = hlColor
+                    attrs[.highlightVariant] = fmtHighlightVariant ?? Int.random(in: 0..<8)
                 }
                 result.append(NSAttributedString(string: textBuffer, attributes: attrs))
                 textBuffer = ""
@@ -7259,6 +7998,16 @@ struct TodoEditorRepresentable: NSViewRepresentable {
 
                             index = endIndex
                             lastWasWebClip = true
+                            continue
+                        } else {
+                            // Regex failed — preserve raw markup as corruptedBlock for lossless round-trip
+                            let baseAttributes = Self.baseTypingAttributes(for: currentColorScheme)
+                            var attrs = baseAttributes
+                            attrs[.corruptedBlock] = webclipText
+                            attrs[.backgroundColor] = NSColor.systemRed.withAlphaComponent(0.1)
+                            result.append(NSAttributedString(string: "[Corrupted webclip block]", attributes: attrs))
+                            index = endIndex
+                            lastWasWebClip = false
                             continue
                         }
                     }
@@ -7347,9 +8096,11 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                             let rawType = Self.string(from: match, at: 1, in: fileText)
                             let storedFilename = Self.string(from: match, at: 2, in: fileText)
                             let rawOriginal = Self.string(from: match, at: 3, in: fileText)
+                            let rawViewMode = Self.string(from: match, at: 4, in: fileText)
 
                             let typeIdentifier = rawType.isEmpty ? "public.data" : rawType
                             let originalName = rawOriginal.isEmpty ? storedFilename : rawOriginal
+                            let viewMode = FileViewMode(rawValue: rawViewMode) ?? .tag
 
                             let storedFile = FileAttachmentStorageManager.StoredFile(
                                 storedFilename: storedFilename,
@@ -7361,7 +8112,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                                 storedFilename: storedFile.storedFilename,
                                 originalFilename: storedFile.originalFilename,
                                 typeIdentifier: storedFile.typeIdentifier,
-                                displayLabel: AttachmentMarkup.displayLabel(for: storedFile)
+                                displayLabel: originalName,
+                                viewMode: viewMode
                             )
 
                             let baseAttributes = Self.baseTypingAttributes(
@@ -7409,6 +8161,17 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                             )
                         {
                             let filename = Self.string(from: match, at: 1, in: imageText)
+                            // Guard against empty filename (e.g. [[image|||]]) -- treat as corrupted
+                            guard !filename.isEmpty else {
+                                let baseAttributes = Self.baseTypingAttributes(for: currentColorScheme)
+                                var attrs = baseAttributes
+                                attrs[.corruptedBlock] = imageText
+                                attrs[.backgroundColor] = NSColor.systemRed.withAlphaComponent(0.1)
+                                result.append(NSAttributedString(string: "[Corrupted image block]", attributes: attrs))
+                                index = endIndex
+                                lastWasWebClip = false
+                                continue
+                            }
                             let ratioString = Self.string(from: match, at: 2, in: imageText)
                             let widthRatio = Double(ratioString).map { CGFloat($0) } ?? 1.0
 
@@ -7441,6 +8204,16 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                                     string: "\n", attributes: baseAttributes))
                             }
 
+                            index = endIndex
+                            lastWasWebClip = false
+                            continue
+                        } else {
+                            // Regex failed — preserve raw markup as corruptedBlock for lossless round-trip
+                            let baseAttributes = Self.baseTypingAttributes(for: currentColorScheme)
+                            var attrs = baseAttributes
+                            attrs[.corruptedBlock] = imageText
+                            attrs[.backgroundColor] = NSColor.systemRed.withAlphaComponent(0.1)
+                            result.append(NSAttributedString(string: "[Corrupted image block]", attributes: attrs))
                             index = endIndex
                             lastWasWebClip = false
                             continue
@@ -7785,13 +8558,21 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     let prefixLen = "[[hl|".count
                     let afterPrefix = text.index(index, offsetBy: prefixLen)
                     if let closeBracket = text[afterPrefix...].range(of: "]]") {
-                        fmtHighlightHex = String(text[afterPrefix..<closeBracket.lowerBound])
+                        let tagContent = String(text[afterPrefix..<closeBracket.lowerBound])
+                        if let pipeIdx = tagContent.firstIndex(of: "|") {
+                            fmtHighlightHex = String(tagContent[tagContent.startIndex..<pipeIdx])
+                            let afterPipe = tagContent.index(after: pipeIdx)
+                            fmtHighlightVariant = Int(tagContent[afterPipe...])
+                        } else {
+                            fmtHighlightHex = tagContent
+                            fmtHighlightVariant = nil
+                        }
                         index = closeBracket.upperBound
                         continue
                     }
                 } else if text[index...].hasPrefix("[[/hl]]") {
                     flushBuffer()
-                    fmtHighlightHex = nil
+                    fmtHighlightHex = nil; fmtHighlightVariant = nil
                     index = text.index(index, offsetBy: 7)
                     continue
                 } else if text[index...].hasPrefix("[[h1]]") {
@@ -7932,10 +8713,10 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             style.lineHeightMultiple = spacing.multiplier
             style.minimumLineHeight = scaledHeight
             style.maximumLineHeight = scaledHeight
-            style.paragraphSpacing = 10
+            style.paragraphSpacing = 4
             style.firstLineHeadIndent = 0
             // Indent wrapped lines to align with text after checkbox
-            // checkboxAttachmentWidth (28) + approximate width of 2 spaces (~14pt at body size)
+            // checkboxAttachmentWidth (30) + approximate width of 2 spaces (~8pt at body size)
             style.headIndent = checkboxAttachmentWidth + 8
             return style
         }
@@ -8097,6 +8878,9 @@ final class InlineNSTextView: NSTextView, QLPreviewPanelDataSource, QLPreviewPan
 
     /// When true, mouseMoved sets arrow cursor instead of allowing NSTextView's I-beam.
     /// Set by ContentView when any full-screen panel overlay (settings, search, trash) is open.
+    /// NOTE: This is a static var which means all editor instances share the same flag.
+    /// If multiple editors exist simultaneously, this flag would incorrectly apply to all of them.
+    /// A future improvement would be to make this an instance var propagated via notification.
     static var isPanelOverlayActive = false
 
     weak var actionDelegate: TodoEditorRepresentable.Coordinator?
@@ -8546,6 +9330,12 @@ final class InlineNSTextView: NSTextView, QLPreviewPanelDataSource, QLPreviewPan
         super.viewDidMoveToWindow()
         window?.acceptsMouseMovedEvents = true
         registerForDraggedTypes([.fileURL])
+        // When removed from the window hierarchy, stop the typing animation timer
+        // to prevent a 60Hz timer from leaking if the text view is deallocated
+        // while animations are still in flight.
+        if window == nil {
+            (layoutManager as? TypingAnimationLayoutManager)?.clearAllAnimations()
+        }
     }
 
     override func updateTrackingAreas() {
@@ -9001,7 +9791,7 @@ final class InlineNSTextView: NSTextView, QLPreviewPanelDataSource, QLPreviewPan
             } else {
                 let filterText = readCommandFilterText()
                 NotificationCenter.default.post(
-                    name: Notification.Name("CommandMenuFilterUpdate"), object: filterText, userInfo: eidInfo)
+                    name: .commandMenuFilterUpdate, object: filterText, userInfo: eidInfo)
             }
             return
 
@@ -9111,7 +9901,7 @@ final class InlineNSTextView: NSTextView, QLPreviewPanelDataSource, QLPreviewPan
             super.insertText(string, replacementRange: replacementRange)
             let filterText = readCommandFilterText()
             NotificationCenter.default.post(
-                name: Notification.Name("CommandMenuFilterUpdate"), object: filterText, userInfo: eidInfo)
+                name: .commandMenuFilterUpdate, object: filterText, userInfo: eidInfo)
             return
         }
 
@@ -9430,7 +10220,7 @@ final class InlineNSTextView: NSTextView, QLPreviewPanelDataSource, QLPreviewPan
 
 private final class TodoCheckboxAttachmentCell: NSTextAttachmentCell {
     var isChecked: Bool
-    private let size = NSSize(width: 30, height: 34)
+    private let size = NSSize(width: 30, height: 26)
     private let checkSize: CGFloat = 18
     private let cornerRadius: CGFloat = 9  // checkSize / 2 → fully circular
     private let borderWidth: CGFloat = 1.5
@@ -9678,14 +10468,17 @@ extension Notification.Name {
     static let linkHoverDetected = Notification.Name("linkHoverDetected")
     static let linkHoverDismiss = Notification.Name("linkHoverDismiss")
     static let linkHoverQuickLookTriggered = Notification.Name("linkHoverQuickLookTriggered")
+    static let fileExtractTriggered = Notification.Name("fileExtractTriggered")
 
     // Command menu notifications
     static let showCommandMenu = Notification.Name("ShowCommandMenu")
     static let hideCommandMenu = Notification.Name("HideCommandMenu")
     static let commandMenuNavigateUp = Notification.Name("CommandMenuNavigateUp")
     static let commandMenuNavigateDown = Notification.Name("CommandMenuNavigateDown")
+    static let commandMenuFilterUpdate = Notification.Name("CommandMenuFilterUpdate")
     static let commandMenuSelect = Notification.Name("CommandMenuSelect")
     static let applyCommandMenuTool = Notification.Name("ApplyCommandMenuTool")
+    static let insertWebLink = Notification.Name("InsertWebLink")
 
     // URL paste option menu notifications
     static let urlPasteDetected = Notification.Name("URLPasteDetected")

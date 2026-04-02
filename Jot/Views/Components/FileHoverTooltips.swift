@@ -1,0 +1,56 @@
+//
+//  FileHoverTooltips.swift
+//  Jot
+//
+//  Side-by-side glass pill tooltips shown above file attachments on hover.
+//  Composes the existing Quick Look pill with a new Extract pill.
+//
+
+import SwiftUI
+
+struct FileHoverTooltips: View {
+    var onQuickLook: () -> Void
+    var onExtract: () -> Void
+
+    var body: some View {
+        HStack(spacing: 4) {
+            LinkQuickLookTooltip()
+                .onTapGesture { onQuickLook() }
+
+            ExtractTooltipPill()
+                .onTapGesture { onExtract() }
+        }
+    }
+}
+
+struct ExtractTooltipPill: View {
+    var body: some View {
+        HStack(spacing: 6) {
+            Image("IconExtract")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 16, height: 16)
+
+            Text("Extract")
+                .font(FontManager.heading(size: 11, weight: .medium))
+                .lineLimit(1)
+                .fixedSize()
+        }
+        .foregroundStyle(Color("PrimaryTextColor"))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .liquidGlassTooltip(shape: RoundedRectangle(cornerRadius: 999, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: 999, style: .continuous))
+        .onContinuousHover { phase in
+            switch phase {
+            case .active:
+                NSCursor.pointingHand.set()
+            case .ended:
+                break
+            @unknown default:
+                break
+            }
+        }
+    }
+}

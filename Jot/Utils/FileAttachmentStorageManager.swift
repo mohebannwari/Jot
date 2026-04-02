@@ -6,7 +6,9 @@
 //
 
 import Foundation
+import ImageIO
 import os
+import PDFKit
 
 #if canImport(UniformTypeIdentifiers)
 import UniformTypeIdentifiers
@@ -73,6 +75,27 @@ public final class FileAttachmentStorageManager {
             return nil
         }
         return fileURL
+    }
+
+    /// Returns width/height aspect ratio of the first PDF page.
+    static func pdfPageAspectRatio(for storedFilename: String) -> CGFloat? {
+        guard let url = shared.fileURL(for: storedFilename) else { return nil }
+        guard let doc = PDFDocument(url: url),
+              let page = doc.page(at: 0) else { return nil }
+        let box = page.bounds(for: .mediaBox)
+        guard box.width > 0, box.height > 0 else { return nil }
+        return box.width / box.height
+    }
+
+    /// Returns width/height aspect ratio by reading image headers only (no full decode).
+    static func imageAspectRatio(for storedFilename: String) -> CGFloat? {
+        guard let url = shared.fileURL(for: storedFilename) else { return nil }
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        guard let props = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let w = props[kCGImagePropertyPixelWidth] as? CGFloat,
+              let h = props[kCGImagePropertyPixelHeight] as? CGFloat,
+              w > 0, h > 0 else { return nil }
+        return w / h
     }
 
     public func deleteFile(named storedFilename: String) {
