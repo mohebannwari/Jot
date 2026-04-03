@@ -8,13 +8,11 @@ final class AppIntentTests: XCTestCase {
 
     override func setUp() async throws {
         try await super.setUp()
-        manager = try SimpleSwiftDataManager()
-        try manager.clearAllData()
+        manager = try SimpleSwiftDataManager(inMemoryForTesting: true)
         SimpleSwiftDataManager.shared = manager
     }
 
     override func tearDown() async throws {
-        try? manager.clearAllData()
         SimpleSwiftDataManager.shared = nil
         manager = nil
         try await super.tearDown()

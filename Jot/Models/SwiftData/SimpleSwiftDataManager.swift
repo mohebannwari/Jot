@@ -47,6 +47,19 @@ final class SimpleSwiftDataManager: ObservableObject {
     private let batchSize = 50
     private let maxLoadLimit = 500
 
+    /// Creates a manager backed by an in-memory store for use in unit tests only.
+    /// Never call this in production code.
+    init(inMemoryForTesting: Bool) throws {
+        precondition(inMemoryForTesting, "Use init() for production; this overload is tests-only")
+        let schema = Schema([NoteEntity.self, FolderEntity.self, NoteVersionEntity.self])
+        let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+        self.modelContainer = try ModelContainer(for: schema, configurations: [configuration])
+        self.modelContext = ModelContext(modelContainer)
+        modelContext.autosaveEnabled = false
+        hasLoadedInitialNotes = true
+        hasCompletedMigrationCheck = true
+    }
+
     init() throws {
         // Setup SwiftData container
         let schema = Schema([NoteEntity.self, FolderEntity.self, NoteVersionEntity.self])
@@ -514,6 +527,33 @@ final class SimpleSwiftDataManager: ObservableObject {
 
         } catch {
             logger.error("Failed to update note: \(error)")
+        }
+    }
+
+    /// Update only the tags field on a note, leaving content and all other fields untouched.
+    /// Prevents stale-content overwrites when tags are edited while the editor has unsaved changes.
+    func updateTags(id: UUID, tags: [String]) {
+        do {
+            let predicate = #Predicate<NoteEntity> { $0.id == id }
+            let descriptor = FetchDescriptor(predicate: predicate)
+            let entities = try modelContext.fetch(descriptor)
+
+            guard let noteEntity = entities.first else {
+                logger.warning("Note with ID \(id) not found for tag update")
+                return
+            }
+
+            noteEntity.tags = tags
+            try modelContext.save()
+
+            if let index = notes.firstIndex(where: { $0.id == id }) {
+                notes[index].tags = tags
+                updateNoteInDerivedCollections(notes[index])
+            }
+
+            logger.info("Updated tags for note: \(id)")
+        } catch {
+            logger.error("Failed to update tags: \(error)")
         }
     }
 
