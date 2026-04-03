@@ -460,7 +460,7 @@ struct NoteDetailView: View {
                 Spacer()
                 Rectangle()
                     .fill(Color.clear)
-                    .frame(height: 120)
+                    .frame(height: 160)
                     .background(
                         headerMaterialBase
                             .mask(footerMaskGradient)
@@ -476,7 +476,7 @@ struct NoteDetailView: View {
                     // Gradient fade — extends into the safe area (title bar zone)
                     Rectangle()
                         .fill(Color.clear)
-                        .frame(height: 120)
+                        .frame(height: 160)
                         .background(
                             headerMaterialBase
                                 .mask(headerMaskGradient)
@@ -1377,8 +1377,7 @@ struct NoteDetailView: View {
     }
 
     private var headerMaskGradient: LinearGradient {
-        // Eased gradient: 20 stops along a smoothstep curve (3t^2 - 2t^3)
-        // eliminates visible banding from hand-picked linear stops.
+        // Standard smoothstep (3t^2 - 2t^3) -- progressive fade.
         let steps = 20
         let stops: [Gradient.Stop] = (0...steps).map { i in
             let t = Double(i) / Double(steps)

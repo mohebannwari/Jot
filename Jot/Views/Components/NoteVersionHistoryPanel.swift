@@ -60,10 +60,10 @@ struct NoteVersionHistoryPanel: View {
                 }
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundColor(Color("SettingsPlaceholderTextColor"))
-                    .frame(width: 15, height: 15)
-                    .thinLiquidGlass(in: Circle())
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundColor(Color("SecondaryTextColor"))
+                    .frame(width: 22, height: 22)
+                    .background(Color("SurfaceTranslucentColor"), in: Circle())
             }
             .buttonStyle(.plain)
             .macPointingHandCursor()
@@ -99,7 +99,6 @@ struct NoteVersionHistoryPanel: View {
                 }
                 .padding(.vertical, 4)
             }
-            .scrollClipDisabled()
         }
     }
 

@@ -139,101 +139,76 @@ struct NoteMetadataSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Header: flipped sidebar icon with title below
-            VStack(alignment: .leading, spacing: 6) {
+            // Header: title with close button
+            HStack {
+                Text("Properties")
+                    .font(FontManager.heading(size: 14, weight: .semibold))
+                    .tracking(-0.3)
+                    .foregroundColor(Color("PrimaryTextColor"))
+
+                Spacer()
+
                 Button { onDismiss?() } label: {
-                    Image("IconSidebarLeftArrow")
-                        .renderingMode(.template)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 15, height: 15)
-                        .scaleEffect(x: -1, y: 1)
+                    Image(systemName: "xmark")
+                        .font(.system(size: 9, weight: .bold))
                         .foregroundColor(Color("SecondaryTextColor"))
-                        .padding(4)
-                        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .frame(width: 22, height: 22)
+                        .background(Color("SurfaceTranslucentColor"), in: Circle())
                 }
                 .buttonStyle(.plain)
                 .macPointingHandCursor()
-                .hoverContainer(cornerRadius: 8)
-                .padding(.leading, -4) // Align icon content with text below
-
-                Text("Properties")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(Color("PrimaryTextColor"))
             }
             .padding(.horizontal, 16)
-            .padding(.top, 12)
+            .padding(.top, 8)
             .padding(.bottom, 12)
 
-            // Scrollable property rows with bottom fade
-            ZStack(alignment: .bottom) {
-                ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: -4) {
-                        // Created
-                        propertyRow(label: "Created") {
-                            Text(Self.absoluteFormatter.string(from: note.createdAt))
-                                .font(.system(size: 12, weight: .medium))
-                                .tracking(-0.3)
-                                .foregroundColor(Color("PrimaryTextColor"))
-                        }
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: -4) {
+                    // Created
+                    propertyRow(label: "Created") {
+                        Text(Self.absoluteFormatter.string(from: note.createdAt))
+                            .font(.system(size: 12, weight: .medium))
+                            .tracking(-0.3)
+                            .foregroundColor(Color("PrimaryTextColor"))
+                    }
 
-                        // Tags
-                        propertyRow(label: "Tags") {
-                            tagsValue
-                        }
+                    // Tags
+                    propertyRow(label: "Tags") {
+                        tagsValue
+                    }
 
-                        // Todos
-                        propertyRow(label: "Todos") {
-                            VStack(alignment: .leading, spacing: 8) {
-                                todosCounterPill
+                    // Todos
+                    propertyRow(label: "Todos") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            todosCounterPill
 
-                                if isTodoExpanded {
-                                    expandedTodoList
-                                }
-                            }
-                        }
-
-                        // Links
-                        propertyRow(label: "Links") {
-                            linksValue
-                        }
-
-                        // Attachments
-                        propertyRow(label: "Attachments") {
-                            attachmentsValue
-                        }
-
-                        // Referenced By (backlinks)
-                        if !backlinks.isEmpty {
-                            propertyRow(label: "Referenced By") {
-                                referencedByValue
+                            if isTodoExpanded {
+                                expandedTodoList
                             }
                         }
                     }
-                    .padding(.bottom, 60)
-                }
 
-                // Bottom fade gradient
-                Rectangle()
-                    .fill(Color("DetailPaneSurfaceColor"))
-                    .frame(height: 80)
-                    .mask(Self.bottomFadeGradient)
-                    .allowsHitTesting(false)
+                    // Links
+                    propertyRow(label: "Links") {
+                        linksValue
+                    }
+
+                    // Attachments
+                    propertyRow(label: "Attachments") {
+                        attachmentsValue
+                    }
+
+                    // Referenced By (backlinks)
+                    if !backlinks.isEmpty {
+                        propertyRow(label: "Referenced By") {
+                            referencedByValue
+                        }
+                    }
+                }
+                .padding(.bottom, 16)
             }
         }
     }
-
-    // MARK: - Bottom Fade
-
-    private static let bottomFadeGradient: LinearGradient = {
-        let steps = 20
-        let stops: [Gradient.Stop] = (0...steps).map { i in
-            let t = Double(i) / Double(steps)
-            let eased = 3 * t * t - 2 * t * t * t
-            return .init(color: Color.white.opacity(eased), location: t)
-        }
-        return LinearGradient(gradient: Gradient(stops: stops), startPoint: .top, endPoint: .bottom)
-    }()
 
     // MARK: - Row Builder
 

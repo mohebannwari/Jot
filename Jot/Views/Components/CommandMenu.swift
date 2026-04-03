@@ -57,22 +57,24 @@ struct CommandMenu: View {
                     VStack(spacing: 0) {
                         Spacer().frame(height: 4)
                         ForEach(Array(tools.enumerated()), id: \.element.rawValue) { index, tool in
-                            CommandMenuItem(
-                                tool: tool,
-                                isSelected: index == selectedIndex
-                            )
-                            .id(index)
-                            .opacity(isRevealed ? 1 : 0)
-                            .offset(y: isRevealed ? 0 : 8)
-                            .scaleEffect(isRevealed ? 1 : 0.92, anchor: .top)
-                            .animation(
-                                .bouncy(duration: 0.4).delay(Double(index) * 0.04),
-                                value: isRevealed
-                            )
-                            .contentShape(Rectangle())
-                            .onTapGesture {
+                            Button {
                                 onSelect?(tool)
+                            } label: {
+                                CommandMenuItem(
+                                    tool: tool,
+                                    isSelected: index == selectedIndex
+                                )
+                                .id(index)
+                                .opacity(isRevealed ? 1 : 0)
+                                .offset(y: isRevealed ? 0 : 8)
+                                .scaleEffect(isRevealed ? 1 : 0.92, anchor: .top)
+                                .animation(
+                                    .bouncy(duration: 0.4).delay(Double(index) * 0.04),
+                                    value: isRevealed
+                                )
+                                .contentShape(Rectangle())
                             }
+                            .buttonStyle(.plain)
                         }
                         Spacer().frame(height: 4)
                     }

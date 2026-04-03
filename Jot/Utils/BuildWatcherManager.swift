@@ -26,12 +26,29 @@ final class BuildWatcherManager: ObservableObject {
 
     // MARK: - Lifecycle
 
+    /// Modern Debug app bundles often load code from a sibling `*.debug.dylib`
+    /// while `Bundle.main.executableURL` points at a small launcher stub.
+    /// Watching the dylib catches incremental rebuilds that do not replace the stub.
+    static func watchedBinaryURL(for executableURL: URL) -> URL {
+        let debugDylibURL = executableURL
+            .deletingLastPathComponent()
+            .appendingPathComponent(executableURL.deletingPathExtension().lastPathComponent + ".debug.dylib")
+
+        if FileManager.default.fileExists(atPath: debugDylibURL.path) {
+            return debugDylibURL
+        }
+
+        return executableURL
+    }
+
     func startWatching() {
         guard watchSource == nil else { return }
         guard let execURL = Bundle.main.executableURL,
               FileManager.default.fileExists(atPath: execURL.path) else { return }
 
-        let fd = open(execURL.path, O_EVTONLY)
+        let watchedURL = Self.watchedBinaryURL(for: execURL)
+
+        let fd = open(watchedURL.path, O_EVTONLY)
         guard fd >= 0 else { return }
 
         let source = DispatchSource.makeFileSystemObjectSource(
