@@ -1268,7 +1268,7 @@ struct ContentView: View {
         }
         .overlay(alignment: .topTrailing) {
             if !shouldShowSplitLayout && !(isPropertiesPanelVisible && propertiesPanelPane == .primary) {
-                propertiesPanelButton(editorInstanceID: primaryEditorID)
+                PropertiesPanelButton(editorInstanceID: primaryEditorID)
                     .padding(.top, splitControlsTopPadding)
                     .padding(.trailing, 8)
             }
@@ -3453,49 +3453,12 @@ struct ContentView: View {
 
             // Properties panel toggle — hidden when panel is open for this pane
             if !(isPropertiesPanelVisible && propertiesPanelPane == (isPrimaryPane ? .primary : .secondary)) {
-                propertiesPanelButton(editorInstanceID: isPrimaryPane ? primaryEditorID : splitEditorID)
+                PropertiesPanelButton(editorInstanceID: isPrimaryPane ? primaryEditorID : splitEditorID)
             }
         }
     }
 
     // MARK: - Properties Panel
-
-    @State private var isPropertiesButtonHovered = false
-
-    private func propertiesPanelButton(editorInstanceID: UUID?) -> some View {
-        Button {
-            NotificationCenter.default.post(name: .togglePropertiesPanel, object: editorInstanceID)
-        } label: {
-            Image("IconSidebarLeftArrow")
-                .renderingMode(.template)
-                .resizable()
-                .scaledToFit()
-                .foregroundColor(Color("SecondaryTextColor"))
-                .frame(width: 15, height: 15)
-                .padding(4)
-                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .macPointingHandCursor()
-        .hoverContainer(cornerRadius: 8)
-        .overlay(alignment: .bottomTrailing) {
-            if isPropertiesButtonHovered {
-                Text("Properties")
-                    .font(FontManager.heading(size: 11, weight: .medium))
-                    .foregroundColor(Color("PrimaryTextColor"))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .fixedSize()
-                    .tooltipGlass()
-                    .offset(y: 34)
-                    .allowsHitTesting(false)
-                    .transition(.scale(scale: 0.9, anchor: .top).combined(with: .opacity))
-                    .zIndex(10000)
-            }
-        }
-        .animation(.easeOut(duration: 0.15), value: isPropertiesButtonHovered)
-        .onHover { isPropertiesButtonHovered = $0 }
-    }
 
     private static let propertiesPanelAnimation: Animation = .spring(response: 0.3, dampingFraction: 0.82)
     private static let propertiesPanelWidth: CGFloat = 340
@@ -5756,6 +5719,50 @@ private struct DevThemeButton: View {
                     .onChanged { _ in isPressed = true }
                     .onEnded { _ in isPressed = false }
             )
+    }
+}
+
+// MARK: - Properties Panel Toggle Button
+
+/// Standalone view with its own hover state to avoid shared-state tooltip bugs in split view.
+struct PropertiesPanelButton: View {
+    let editorInstanceID: UUID?
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Button {
+            NotificationCenter.default.post(name: .togglePropertiesPanel, object: editorInstanceID)
+        } label: {
+            Image("IconSidebarLeftArrow")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .foregroundColor(Color("SecondaryTextColor"))
+                .frame(width: 15, height: 15)
+                .padding(4)
+                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .macPointingHandCursor()
+        .hoverContainer(cornerRadius: 8)
+        .overlay(alignment: .bottomTrailing) {
+            if isHovered {
+                Text("Properties")
+                    .font(FontManager.heading(size: 11, weight: .medium))
+                    .foregroundColor(Color("PrimaryTextColor"))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .fixedSize()
+                    .tooltipGlass()
+                    .offset(y: 34)
+                    .allowsHitTesting(false)
+                    .transition(.scale(scale: 0.9, anchor: .top).combined(with: .opacity))
+                    .zIndex(10000)
+            }
+        }
+        .animation(.easeOut(duration: 0.15), value: isHovered)
+        .onHover { isHovered = $0 }
     }
 }
 
