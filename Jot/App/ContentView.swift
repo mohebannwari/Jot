@@ -153,6 +153,39 @@ struct WindowTransparencyView: NSViewRepresentable {
     func updateNSView(_ nsView: NSView, context: Context) {}
 }
 
+/// Floating sidebar background: Liquid Glass on macOS 26+, backdrop blur + tinted surface on older.
+private struct FloatingSidebarBackgroundModifier: ViewModifier {
+    let cornerRadius: CGFloat
+    private let shape = RoundedRectangle(cornerRadius: 24, style: .continuous)
+
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, iOS 26.0, *) {
+            content
+                .glassEffect(.regular.interactive(true),
+                             in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                .shadow(color: .black.opacity(0.04), radius: 9.5, x: 0, y: 9)
+                .shadow(color: .black.opacity(0.02), radius: 17.5, x: 0, y: 35)
+                .shadow(color: .black.opacity(0.01), radius: 23.5, x: 0, y: 78)
+        } else {
+            content
+                .background {
+                    ZStack {
+                        BackdropBlurView(material: .popover, blendingMode: .withinWindow)
+                        Color("DetailPaneSurfaceColor")
+                            .opacity(0.60)
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                }
+                .overlay(
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .stroke(Color("BorderSubtleColor"), lineWidth: 1)
+                )
+                .shadow(color: .black.opacity(0.08), radius: 12, x: 0, y: 6)
+                .shadow(color: .black.opacity(0.03), radius: 24, x: 0, y: 20)
+        }
+    }
+}
+
 enum SidebarSectionFilter: String, CaseIterable, Identifiable {
     case all
     case pinned
@@ -210,7 +243,7 @@ struct ContentView: View {
     @State private var showAllNotesFolderIDs: Set<UUID> = []
     @State private var sidebarSectionFilter: SidebarSectionFilter = .all
     @State private var highlightedFolderID: UUID?
-    @State private var sidebarWidth: CGFloat = 276
+    @State private var sidebarWidth: CGFloat = 240
     @State private var sidebarDragStartWidth: CGFloat?
     @State private var detailFocusRequestID = UUID()
     @State private var hasAppliedInitialLaunchSelection = false
@@ -219,6 +252,8 @@ struct ContentView: View {
     @State private var isVersionHistoryVisible = false
     @State private var versionHistoryPane: SplitPickerPane = .primary
     @State private var previewingVersion: NoteVersion?
+    @State private var isPropertiesPanelVisible = false
+    @State private var propertiesPanelPane: SplitPickerPane = .primary
 
     @State private var isCreateFolderAlertPresented = false
     @State private var pendingFolderCreationIntent: FolderCreationIntent = .standalone
@@ -278,12 +313,12 @@ struct ContentView: View {
     // Window corner radius from JotApp containerShape
     private let windowCornerRadius: CGFloat = 16
     private let windowContentPadding: CGFloat = 8
-    private let sidebarDesignColumnWidth: CGFloat = 276
+    private let sidebarDesignColumnWidth: CGFloat = 240
     private let sidebarMenuTop: CGFloat = 30
     private let sidebarNotesTop: CGFloat = 146
     private let sidebarSectionSpacing: CGFloat = 12
     private let sidebarChromeSpacing: CGFloat = 12
-    private let sidebarMinWidth: CGFloat = 276
+    private let sidebarMinWidth: CGFloat = 240
     private let sidebarMaxWidth: CGFloat = 560
     private let minimumDetailWidth: CGFloat = 520
     private let sidebarResizeHandleWidth: CGFloat = 24
@@ -363,12 +398,12 @@ struct ContentView: View {
         }
     }
     private let detailToggleToContentExtraSpacingWhenSidebarHidden: CGFloat = 16
-    private let sidebarIconSize: CGFloat = 16
+    private let sidebarIconSize: CGFloat = 15
     private let sidebarTopIconSpacingCollapsed: CGFloat = 2
     private let sidebarTopBarButtonSize: CGFloat = 26
     private let sidebarTopBarTrafficLightGap: CGFloat = 12
     private let sidebarRowHoverInset: CGFloat = 0
-    private let floatingSidebarWidth: CGFloat = 276
+    private let floatingSidebarWidth: CGFloat = 240
     private let floatingSidebarCornerRadius: CGFloat = 24
     private let floatingSidebarEdgeInset: CGFloat = 8
     private let floatingSidebarHoverTriggerWidth: CGFloat = 20
@@ -506,10 +541,8 @@ struct ContentView: View {
     private func navigateToNote(_ noteID: UUID) {
         guard let target = notesManager.notes.first(where: { $0.id == noteID }) else { return }
         discardPreviousNoteIfEmpty(switching: target)
-        withAnimation(.jotSpring) {
-            selectedNote = target
-            selectedNoteIDs = [target.id]
-        }
+        selectedNote = target
+        selectedNoteIDs = [target.id]
     }
 
     /// Find all notes that contain a `[[notelink|targetID|...]]` reference to the given note.
@@ -624,6 +657,18 @@ struct ContentView: View {
                     }
                 }
             }
+            .onReceive(NotificationCenter.default.publisher(for: .togglePropertiesPanel)) { notification in
+                guard selectedNote != nil else { return }
+                let requestedPane: SplitPickerPane = (notification.object as? UUID) == splitEditorID ? .secondary : .primary
+                withAnimation(Self.propertiesPanelAnimation) {
+                    if isPropertiesPanelVisible && propertiesPanelPane == requestedPane {
+                        isPropertiesPanelVisible = false
+                    } else {
+                        propertiesPanelPane = requestedPane
+                        isPropertiesPanelVisible = true
+                    }
+                }
+            }
             .onReceive(NotificationCenter.default.publisher(for: .createNewNote)) { _ in
                 createAndOpenNewNote()
             }
@@ -682,8 +727,8 @@ struct ContentView: View {
             } else {
                 ZStack {
                     BackdropBlurView(material: .hudWindow, blendingMode: .behindWindow)
-                    Color(colorScheme == .dark ? .black : .white)
-                        .opacity(0.10)
+                    Color("DetailPaneSurfaceColor")
+                        .opacity(0.95)
                 }
                 .ignoresSafeArea()
             }
@@ -1070,6 +1115,12 @@ struct ContentView: View {
                         .fill(settingsBg)
                 )
                 .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                .overlay {
+                    if colorScheme == .dark && cornerRadius > 0 {
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                            .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                    }
+                }
                 .splitPaneShadow(isActive: true, cornerRadius: cornerRadius, backgroundColor: settingsBg, colorScheme: .light)
                 .padding(.leading, sidebarDetailGap)
         } else if let note = selectedNote {
@@ -1178,28 +1229,50 @@ struct ContentView: View {
     }
 
     private func singleNotePane(note: Note, width: CGFloat, cornerRadius: CGFloat) -> some View {
-        detailPane(note: note)
-            .geometryGroup()
-            .frame(width: width)
-            .frame(maxHeight: .infinity)
-            .background(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).fill(detailBg))
-            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            .splitPaneShadow(isActive: !shouldShowSplitLayout, cornerRadius: cornerRadius, backgroundColor: detailBg, colorScheme: .light)
-            .onPreferenceChange(BottomOverlayActivePreferenceKey.self) { primaryBottomOverlayActive = $0 }
-            .onPreferenceChange(BottomInputOverlayActivePreferenceKey.self) { primaryBottomInputOverlayActive = $0 }
-            .onPreferenceChange(ToolbarExpandedPreferenceKey.self) { primaryToolbarExpanded = $0 }
-            .overlay(alignment: .bottomTrailing) {
-                if AppleIntelligenceService.shared.isAvailable && !isVersionHistoryVisible {
-                    AIToolsOverlay(state: $aiToolsState, editorInstanceID: primaryEditorID).padding(.trailing, 14).padding(.bottom, 14)
-                }
+        HStack(spacing: 0) {
+            detailPane(note: note)
+                .frame(maxWidth: .infinity)
+
+            propertiesPanelSlot(
+                isVisible: isPropertiesPanelVisible && propertiesPanelPane == .primary,
+                note: note,
+                editorInstanceID: primaryEditorID
+            )
+        }
+        .geometryGroup()
+        .frame(width: width)
+        .frame(maxHeight: .infinity)
+        .background(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).fill(detailBg))
+        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .overlay {
+            if colorScheme == .dark && cornerRadius > 0 {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(Color.white.opacity(0.10), lineWidth: 1)
             }
-            .overlay(alignment: .bottomLeading) {
-                if !(primaryBottomOverlayActive || (primaryBottomInputOverlayActive && width < 620)) {
-                    NoteToolsBar(note: note, editorInstanceID: primaryEditorID, paneWidth: width, aiToolsExpanded: aiToolsState == .expanded)
-                        .padding(.leading, 14).padding(.bottom, 14)
-                        .transition(.opacity)
-                }
+        }
+        .splitPaneShadow(isActive: !shouldShowSplitLayout, cornerRadius: cornerRadius, backgroundColor: detailBg, colorScheme: .light)
+        .onPreferenceChange(BottomOverlayActivePreferenceKey.self) { primaryBottomOverlayActive = $0 }
+        .onPreferenceChange(BottomInputOverlayActivePreferenceKey.self) { primaryBottomInputOverlayActive = $0 }
+        .onPreferenceChange(ToolbarExpandedPreferenceKey.self) { primaryToolbarExpanded = $0 }
+        .overlay(alignment: .bottomTrailing) {
+            if AppleIntelligenceService.shared.isAvailable && !isVersionHistoryVisible {
+                AIToolsOverlay(state: $aiToolsState, editorInstanceID: primaryEditorID).padding(.trailing, 14).padding(.bottom, 14)
             }
+        }
+        .overlay(alignment: .bottomLeading) {
+            if !(primaryBottomOverlayActive || (primaryBottomInputOverlayActive && width < 620)) {
+                NoteToolsBar(note: note, editorInstanceID: primaryEditorID, paneWidth: width, aiToolsExpanded: aiToolsState == .expanded)
+                    .padding(.leading, 14).padding(.bottom, 14)
+                    .transition(.opacity)
+            }
+        }
+        .overlay(alignment: .topTrailing) {
+            if !shouldShowSplitLayout && !(isPropertiesPanelVisible && propertiesPanelPane == .primary) {
+                propertiesPanelButton(editorInstanceID: primaryEditorID)
+                    .padding(.top, splitControlsTopPadding)
+                    .padding(.trailing, 8)
+            }
+        }
     }
 
     @ViewBuilder
@@ -1371,39 +1444,54 @@ struct ContentView: View {
         let isLeftPane = (position == .left)
         let isSplitLocked = note.isLocked && !authManager.isUnlocked(note.id)
 
-        ZStack {
-            NoteDetailView(
+        HStack(spacing: 0) {
+            ZStack {
+                NoteDetailView(
+                    note: note,
+                    editorInstanceID: splitEditorID,
+                    focusRequestID: splitFocusRequestID,
+                    contentTopInsetAdjustment: detailToggleToContentExtraSpacingWhenSidebarHidden,
+                    stickyHeaderTopPadding: splitControlsTopPadding,
+                    onSave: { saveSplitNote($0) },
+                    availableNotes: notePickerItems(excluding: note.id),
+                    onNavigateToNote: navigateToNote,
+                    backlinks: backlinks(for: note.id),
+                    isSidebarAnimating: isSidebarAnimating
+                )
+                .blur(radius: isSplitLocked ? 20 : 0)
+                .allowsHitTesting(!isSplitLocked)
+                .opacity(previewingVersion != nil && versionHistoryPane == .secondary ? 0 : 1)
+
+                if isSplitLocked {
+                    noteLockOverlay(for: note)
+                }
+
+                // Version preview overlay
+                if let version = previewingVersion, versionHistoryPane == .secondary {
+                    versionPreviewPane(version: version)
+                        .transition(.opacity)
+                }
+            }
+            .animation(.easeInOut(duration: 0.15), value: previewingVersion?.id)
+            .frame(maxWidth: .infinity)
+
+            propertiesPanelSlot(
+                isVisible: isPropertiesPanelVisible && propertiesPanelPane == .secondary,
                 note: note,
-                editorInstanceID: splitEditorID,
-                focusRequestID: splitFocusRequestID,
-                contentTopInsetAdjustment: detailToggleToContentExtraSpacingWhenSidebarHidden,
-                stickyHeaderTopPadding: splitControlsTopPadding,
-                onSave: { saveSplitNote($0) },
-                availableNotes: notePickerItems(excluding: note.id),
-                onNavigateToNote: navigateToNote,
-                backlinks: backlinks(for: note.id),
-                isSidebarAnimating: isSidebarAnimating
+                editorInstanceID: splitEditorID
             )
-            .blur(radius: isSplitLocked ? 20 : 0)
-            .allowsHitTesting(!isSplitLocked)
-            .opacity(previewingVersion != nil && versionHistoryPane == .secondary ? 0 : 1)
-
-            if isSplitLocked {
-                noteLockOverlay(for: note)
-            }
-
-            // Version preview overlay
-            if let version = previewingVersion, versionHistoryPane == .secondary {
-                versionPreviewPane(version: version)
-                    .transition(.opacity)
-            }
         }
-        .animation(.easeInOut(duration: 0.15), value: previewingVersion?.id)
         .geometryGroup()
         .frame(width: width)
         .frame(maxHeight: .infinity)
         .background(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).fill(detailBg))
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .overlay {
+            if colorScheme == .dark && cornerRadius > 0 {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(Color.white.opacity(0.10), lineWidth: 1)
+            }
+        }
         .onPreferenceChange(BottomOverlayActivePreferenceKey.self) { splitBottomOverlayActive = $0 }
         .onPreferenceChange(BottomInputOverlayActivePreferenceKey.self) { splitBottomInputOverlayActive = $0 }
         .onPreferenceChange(ToolbarExpandedPreferenceKey.self) { splitToolbarExpanded = $0 }
@@ -2140,6 +2228,7 @@ struct ContentView: View {
                         .foregroundColor(Color("SecondaryTextColor"))
                         .opacity(hoveredSidebarMenuLabel == label ? 1 : 0)
                         .animation(.easeInOut(duration: 0.15), value: hoveredSidebarMenuLabel == label)
+                        .padding(.trailing, 4)
                 }
             }
             .padding(.leading, sidebarItemLeadingPadding)
@@ -2270,7 +2359,7 @@ struct ContentView: View {
                                     .resizable()
                                     .scaledToFit()
                                     .foregroundColor(folder.folderColor)
-                                    .frame(width: 16, height: 16)
+                                    .frame(width: 15, height: 15)
 
                                 Text(folder.name)
                                     .font(FontManager.heading(size: 15, weight: .medium))
@@ -2547,14 +2636,6 @@ struct ContentView: View {
             .keyboardShortcut("f", modifiers: [.command])
             .opacity(0.001)
 
-            // Cmd+H -> find & replace in note
-            Button(action: { presentInNoteSearchAndReplace() }) {
-                Color.clear.frame(width: 1, height: 1)
-            }
-            .buttonStyle(.plain)
-            .keyboardShortcut("h", modifiers: [.command])
-            .opacity(0.001)
-
             // Cmd+Shift+F -> global search
             Button(action: presentSearch) {
                 Color.clear.frame(width: 1, height: 1)
@@ -2770,10 +2851,9 @@ struct ContentView: View {
                 isSearchPresented = false
             }
         }
-        .liquidGlass(in: RoundedRectangle(cornerRadius: floatingSidebarCornerRadius, style: .continuous))
-        .shadow(color: .black.opacity(0.04), radius: 9.5, x: 0, y: 9)
-        .shadow(color: .black.opacity(0.02), radius: 17.5, x: 0, y: 35)
-        .shadow(color: .black.opacity(0.01), radius: 23.5, x: 0, y: 78)
+        .modifier(FloatingSidebarBackgroundModifier(
+            cornerRadius: floatingSidebarCornerRadius
+        ))
         .onHover { hovering in
             handleFloatingSidebarHover(hovering)
         }
@@ -2873,6 +2953,9 @@ struct ContentView: View {
         }
         .animation(.easeInOut(duration: 0.15), value: previewingVersion?.id)
         .onChange(of: note.id) { _, _ in
+            if propertiesPanelPane == .primary {
+                isPropertiesPanelVisible = false
+            }
             if versionHistoryPane == .primary {
                 isVersionHistoryVisible = false
                 previewingVersion = nil
@@ -3120,7 +3203,7 @@ struct ContentView: View {
                                     .resizable()
                                     .scaledToFit()
                                     .foregroundColor(Color("SecondaryTextColor"))
-                                    .frame(width: 16, height: 16)
+                                    .frame(width: 15, height: 15)
                                     .padding(4)
                                     .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                                     .hoverContainer(cornerRadius: 8)
@@ -3321,7 +3404,7 @@ struct ContentView: View {
                     .resizable()
                     .scaledToFit()
                     .foregroundColor(Color("SecondaryTextColor"))
-                    .frame(width: 16, height: 16)
+                    .frame(width: 15, height: 15)
                     .padding(4)
                     .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
@@ -3339,7 +3422,7 @@ struct ContentView: View {
                     .resizable()
                     .scaledToFit()
                     .foregroundColor(Color("SecondaryTextColor"))
-                    .frame(width: 16, height: 16)
+                    .frame(width: 15, height: 15)
                     .padding(4)
                     .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
@@ -3359,7 +3442,7 @@ struct ContentView: View {
                     .resizable()
                     .scaledToFit()
                     .foregroundColor(Color("SecondaryTextColor"))
-                    .frame(width: 16, height: 16)
+                    .frame(width: 15, height: 15)
                     .padding(4)
                     .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
@@ -3367,7 +3450,98 @@ struct ContentView: View {
             .macPointingHandCursor()
             .help(isLeftPane ? "Close left split" : "Close right split")
             .hoverContainer(cornerRadius: 8)
+
+            // Properties panel toggle — hidden when panel is open for this pane
+            if !(isPropertiesPanelVisible && propertiesPanelPane == (isPrimaryPane ? .primary : .secondary)) {
+                propertiesPanelButton(editorInstanceID: isPrimaryPane ? primaryEditorID : splitEditorID)
+            }
         }
+    }
+
+    // MARK: - Properties Panel
+
+    @State private var isPropertiesButtonHovered = false
+
+    private func propertiesPanelButton(editorInstanceID: UUID?) -> some View {
+        Button {
+            NotificationCenter.default.post(name: .togglePropertiesPanel, object: editorInstanceID)
+        } label: {
+            Image("IconSidebarLeftArrow")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .foregroundColor(Color("SecondaryTextColor"))
+                .frame(width: 15, height: 15)
+                .padding(4)
+                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .macPointingHandCursor()
+        .hoverContainer(cornerRadius: 8)
+        .overlay(alignment: .bottomTrailing) {
+            if isPropertiesButtonHovered {
+                Text("Properties")
+                    .font(FontManager.heading(size: 11, weight: .medium))
+                    .foregroundColor(Color("PrimaryTextColor"))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .fixedSize()
+                    .tooltipGlass()
+                    .offset(y: 34)
+                    .allowsHitTesting(false)
+                    .transition(.scale(scale: 0.9, anchor: .top).combined(with: .opacity))
+                    .zIndex(10000)
+            }
+        }
+        .animation(.easeOut(duration: 0.15), value: isPropertiesButtonHovered)
+        .onHover { isPropertiesButtonHovered = $0 }
+    }
+
+    private static let propertiesPanelAnimation: Animation = .spring(response: 0.3, dampingFraction: 0.82)
+    private static let propertiesPanelWidth: CGFloat = 340
+
+    /// Always-present panel slot that avoids view insertion/removal.
+    /// Width, scale, and opacity animate smoothly without HStack relayout jank.
+    @ViewBuilder
+    private func propertiesPanelSlot(isVisible: Bool, note: Note, editorInstanceID: UUID?) -> some View {
+        Divider()
+            .opacity(isVisible ? 1 : 0)
+
+        propertiesPanelContent(for: note, editorInstanceID: editorInstanceID)
+            .frame(width: Self.propertiesPanelWidth)
+            .frame(width: isVisible ? Self.propertiesPanelWidth : 0, alignment: .leading)
+            .clipped()
+            .blur(radius: isVisible ? 0 : 6)
+            .scaleEffect(
+                x: isVisible ? 1 : 0.78,
+                y: isVisible ? 1 : 0.88,
+                anchor: .trailing
+            )
+            .opacity(isVisible ? 1 : 0)
+            .allowsHitTesting(isVisible)
+    }
+
+    private func propertiesPanelContent(for note: Note, editorInstanceID: UUID?) -> some View {
+        NoteMetadataSection(
+            note: note,
+            backlinks: backlinks(for: note.id),
+            onUpdateTags: { newTags in
+                notesManager.updateTags(id: note.id, tags: newTags)
+            },
+            onToggleTodo: { lineIndex in
+                NotificationCenter.default.post(
+                    name: .propertiesPanelToggleTodo,
+                    object: editorInstanceID,
+                    userInfo: ["lineIndex": lineIndex]
+                )
+            },
+            onNavigateToNote: navigateToNote,
+            onDismiss: {
+                withAnimation(Self.propertiesPanelAnimation) {
+                    isPropertiesPanelVisible = false
+                }
+            }
+        )
     }
 
     // MARK: - Split Picker Overlay
@@ -4409,7 +4583,7 @@ struct NotesSection: View {
                     leadingIconAssetName: note.isLocked
                         ? "IconLock"
                         : (splitNoteIDs.contains(note.id) ? "IconArrowSplitUp" : nil),
-                    leadingIconSize: splitNoteIDs.contains(note.id) ? 14 : 16,
+                    leadingIconSize: splitNoteIDs.contains(note.id) ? 14 : 15,
                     hoverLeadingIconAssetName: note.isLocked ? "IconUnlocked" : nil,
                     persistentLeadingIconBg: false,
                     leadingIconBgColor: .clear,
@@ -4502,7 +4676,7 @@ private struct SplitPickerOverlayCard: View {
                     .resizable()
                     .scaledToFit()
                     .foregroundColor(Color("SecondaryTextColor"))
-                    .frame(width: 16, height: 16)
+                    .frame(width: 15, height: 15)
                 TextField("Search", text: $searchQuery)
                     .font(.system(size: 11, weight: .medium))
                     .tracking(-0.2)
@@ -4539,7 +4713,7 @@ private struct SplitPickerOverlayRow: View {
                     .resizable()
                     .scaledToFit()
                     .foregroundColor(Color("SecondaryTextColor"))
-                    .frame(width: 16, height: 16)
+                    .frame(width: 15, height: 15)
                 Text(note.title.isEmpty ? "Untitled" : note.title)
                     .font(.system(size: 15, weight: .medium))
                     .foregroundColor(.primary)
@@ -4573,7 +4747,7 @@ struct NoteListCard: View {
     var isInsideFolder: Bool = false
     var forceLightText: Bool = false
     var leadingIconAssetName: String? = nil
-    var leadingIconSize: CGFloat = 16
+    var leadingIconSize: CGFloat = 15
     var hoverLeadingIconAssetName: String? = nil
     var showLeadingIconOnHoverOnly: Bool = false
     var persistentLeadingIconBg: Bool = false
@@ -4668,7 +4842,7 @@ struct NoteListCard: View {
                                     .renderingMode(.template)
                                     .resizable()
                                     .scaledToFit()
-                                    .frame(width: 16, height: 16)
+                                    .frame(width: 15, height: 15)
                             }
                         } else {
                             Label {
@@ -5040,7 +5214,7 @@ struct PinnedNotesSection: View {
                 Image(isExpanded ? "IconChevronTopSmall" : "IconChevronDownSmall")
                     .resizable()
                     .renderingMode(.template)
-                    .frame(width: 16, height: 16)
+                    .frame(width: 15, height: 15)
                     .foregroundColor(Color("SecondaryTextColor"))
             }
             .padding(.horizontal, 8)
@@ -5095,7 +5269,7 @@ struct PinnedNotesSection: View {
                         .resizable()
                         .scaledToFit()
                         .foregroundColor(Color("SecondaryTextColor"))
-                        .frame(width: 16, height: 16)
+                        .frame(width: 15, height: 15)
 
                     NoteListCard(
                         note: peekNote,
@@ -5185,7 +5359,7 @@ struct LockedNotesSection: View {
                 Image(isExpanded ? "IconChevronTopSmall" : "IconChevronDownSmall")
                     .resizable()
                     .renderingMode(.template)
-                    .frame(width: 16, height: 16)
+                    .frame(width: 15, height: 15)
                     .foregroundColor(Color("SecondaryTextColor"))
             }
             .padding(.horizontal, 8)
@@ -5240,7 +5414,7 @@ struct LockedNotesSection: View {
                         .resizable()
                         .scaledToFit()
                         .foregroundColor(Color("SecondaryTextColor"))
-                        .frame(width: 16, height: 16)
+                        .frame(width: 15, height: 15)
 
                     NoteListCard(
                         note: peekNote,

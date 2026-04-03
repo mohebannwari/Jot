@@ -39,8 +39,8 @@ final class CodeBlockOverlayView: NSView {
     private let pillLeftOffset:     CGFloat = 18
     private let chipIconGap:        CGFloat = 5
     private let chipChevGap:        CGFloat = 3
-    private let iconSize:           CGFloat = 16
-    private let chevronSize:        CGFloat = 16
+    private let iconSize:           CGFloat = 15
+    private let chevronSize:        CGFloat = 15
 
     /// Pill height = pillPadding(4) + iconSize(18) + pillPadding(4) = 26px
     private var pillHeight: CGFloat { pillPadding * 2 + iconSize }
@@ -308,14 +308,14 @@ final class CodeBlockOverlayView: NSView {
     private func updateAppearance() {
         let dark = isDarkMode
 
-        // Block background -- stone-950 dark, stone-100 light (callout .note tokens)
+        // Block background -- stone-950 dark, pure white light
         blockView.layer?.backgroundColor = dark
             ? NSColor(srgbRed: 12/255, green: 10/255, blue: 9/255, alpha: 1).cgColor      // #0C0A09
-            : NSColor(srgbRed: 245/255, green: 245/255, blue: 244/255, alpha: 1).cgColor  // #F5F5F4
+            : NSColor.white.cgColor                                                        // #FFFFFF
 
-        // Chip pill -- stone-800 light, stone-700 dark, white contents
+        // Chip pill -- stone-800 in both modes (matches tabs container fill)
         chipView.layer?.backgroundColor = dark
-            ? NSColor(srgbRed: 68/255, green: 64/255, blue: 60/255, alpha: 1).cgColor     // #44403C
+            ? NSColor(srgbRed: 41/255, green: 37/255, blue: 36/255, alpha: 1).cgColor     // #292524
             : NSColor(srgbRed: 41/255, green: 37/255, blue: 36/255, alpha: 1).cgColor     // #292524
 
         langLabel.attributedStringValue = NSAttributedString(

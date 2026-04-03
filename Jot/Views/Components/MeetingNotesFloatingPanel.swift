@@ -109,7 +109,7 @@ struct MeetingNotesFloatingPanel: View {
                 Image(isExpanded ? "IconChevronDownSmall" : "IconChevronTopSmall")
                     .resizable()
                     .renderingMode(.template)
-                    .frame(width: 16, height: 16)
+                    .frame(width: 15, height: 15)
                     .foregroundColor(Color("SecondaryTextColor"))
                     .padding(6)
                     .contentShape(Rectangle())
@@ -167,7 +167,7 @@ struct MeetingNotesFloatingPanel: View {
                     .resizable()
                     .scaledToFit()
                     .foregroundColor(Color("SecondaryTextColor"))
-                    .frame(width: 16, height: 16)
+                    .frame(width: 15, height: 15)
                     .padding(6)
                     .contentShape(Rectangle())
             }

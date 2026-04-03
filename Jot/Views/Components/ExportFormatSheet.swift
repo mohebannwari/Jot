@@ -76,7 +76,7 @@ struct ExportFormatSheet: View {
                         .resizable()
                         .scaledToFit()
                         .foregroundColor(.white)
-                        .frame(width: 16, height: 16)
+                        .frame(width: 15, height: 15)
                         .frame(width: 40, height: 40)
                         .background(Color.black)
                         .clipShape(Circle())
@@ -217,7 +217,7 @@ private struct FormatPillButton: View {
                     .resizable()
                     .scaledToFit()
                     .foregroundColor(isSelected ? Color("ButtonPrimaryTextColor") : Color("IconSecondaryColor"))
-                    .frame(width: 16, height: 16)
+                    .frame(width: 15, height: 15)
 
                 Text(format.rawValue)
                     .font(FontManager.heading(size: 13, weight: .medium))

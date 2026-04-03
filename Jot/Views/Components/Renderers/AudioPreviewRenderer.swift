@@ -53,7 +53,7 @@ struct AudioPreviewRenderer: View {
         .padding(.vertical, 12)
         .frame(width: containerWidth, height: contentHeight)
         .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(Color("SurfaceElevatedColor"))
         )
         .shadow(color: .black.opacity(0.1), radius: 5, x: 0, y: 5)
@@ -105,13 +105,13 @@ struct AudioPreviewRenderer: View {
 
     @ViewBuilder
     private func placeholder(_ message: String) -> some View {
-        RoundedRectangle(cornerRadius: 20, style: .continuous)
+        RoundedRectangle(cornerRadius: 10, style: .continuous)
             .fill(Color("SurfaceElevatedColor"))
             .frame(height: contentHeight)
             .overlay {
                 HStack(spacing: 8) {
                     Image(systemName: "waveform")
-                        .font(.system(size: 16, weight: .medium))
+                        .font(.system(size: 15, weight: .medium))
                         .foregroundStyle(Color("SecondaryTextColor"))
                     Text(message)
                         .font(.system(size: 11, weight: .medium))

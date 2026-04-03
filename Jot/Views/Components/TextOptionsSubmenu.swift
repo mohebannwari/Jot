@@ -100,7 +100,7 @@ struct SubmenuRowButton: View {
                         .renderingMode(.template)
                         .resizable()
                         .scaledToFit()
-                        .frame(width: 16, height: 16)
+                        .frame(width: 15, height: 15)
                         .foregroundColor(isActive ? Color("AccentColor") : Color("IconSecondaryColor"))
                 }
                 Text(label)

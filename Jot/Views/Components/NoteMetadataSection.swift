@@ -2,17 +2,21 @@
 //  NoteMetadataSection.swift
 //  Jot
 //
-//  Collapsible Notion-style metadata panel shown below the note title.
+//  Side-panel properties view showing note metadata (created date, tags,
+//  todos, links, attachments, backlinks). Displayed as a slide-in panel
+//  in the detail pane, separated by a vertical divider.
 //
 
 import SwiftUI
 
 struct NoteMetadataSection: View {
     let note: Note
+    var backlinks: [BacklinkItem] = []
     var onUpdateTags: (([String]) -> Void)?
     var onToggleTodo: ((Int) -> Void)?
+    var onNavigateToNote: ((UUID) -> Void)?
+    var onDismiss: (() -> Void)?
 
-    @State private var isExpanded = false
     @State private var isTodoExpanded = false
     @State private var isAddingTag = false
     @State private var newTagText = ""
@@ -46,7 +50,7 @@ struct NoteMetadataSection: View {
     }
 
     private struct ParsedLink: Identifiable {
-        var id: String { url }
+        let id: Int
         let url: String
         let domain: String
         let isWebClip: Bool
@@ -61,7 +65,7 @@ struct NoteMetadataSection: View {
                 let inner = parts[i].components(separatedBy: "]]").first ?? ""
                 let fields = inner.components(separatedBy: "|")
                 if fields.count >= 3 {
-                    results.append(ParsedLink(url: fields[2], domain: cleanDomain(fields[2]), isWebClip: true))
+                    results.append(ParsedLink(id: results.count, url: fields[2], domain: cleanDomain(fields[2]), isWebClip: true))
                 }
             }
         }
@@ -71,7 +75,7 @@ struct NoteMetadataSection: View {
             for i in 1..<parts.count {
                 let url = parts[i].components(separatedBy: "]]").first ?? ""
                 if !url.isEmpty {
-                    results.append(ParsedLink(url: url, domain: cleanDomain(url), isWebClip: false))
+                    results.append(ParsedLink(id: results.count, url: url, domain: cleanDomain(url), isWebClip: false))
                 }
             }
         }
@@ -80,7 +84,7 @@ struct NoteMetadataSection: View {
     }
 
     private struct ParsedAttachment: Identifiable {
-        var id: String { originalName }
+        let id: Int
         let originalName: String
         let displayLabel: String
     }
@@ -94,7 +98,7 @@ struct NoteMetadataSection: View {
                 let inner = parts[i].components(separatedBy: "]]").first ?? ""
                 let fields = inner.components(separatedBy: "|")
                 if fields.count >= 3 {
-                    results.append(ParsedAttachment(originalName: fields[2], displayLabel: fields[2]))
+                    results.append(ParsedAttachment(id: results.count, originalName: fields[2], displayLabel: fields[2]))
                 }
             }
         }
@@ -103,7 +107,7 @@ struct NoteMetadataSection: View {
             let parts = note.content.components(separatedBy: "[[image|||")
             for i in 1..<parts.count {
                 let filename = parts[i].components(separatedBy: "]]").first ?? "image"
-                results.append(ParsedAttachment(originalName: filename, displayLabel: filename))
+                results.append(ParsedAttachment(id: results.count, originalName: filename, displayLabel: filename))
             }
         }
 
@@ -120,6 +124,9 @@ struct NoteMetadataSection: View {
             .components(separatedBy: "/").first ?? urlString
     }
 
+    /// Matches tabs container fill in dark mode (#292524); same as BlockContainerColor in light mode
+    private var todoContainerColor: Color { Color("TodoContainerColor") }
+
     // MARK: - Date Formatting
 
     private static let absoluteFormatter: DateFormatter = {
@@ -131,104 +138,102 @@ struct NoteMetadataSection: View {
     // MARK: - Body
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            propertiesToggleButton
-
-            if isExpanded {
-                expandedSection
-                    .transition(.opacity.combined(with: .offset(y: -8)))
-            }
-        }
-        .frame(maxWidth: 400, alignment: .leading)
-    }
-
-    // MARK: - Toggle Button
-
-    private var propertiesToggleButton: some View {
-        HStack {
-            Button {
-                withAnimation(.jotSpring) { isExpanded.toggle() }
-            } label: {
-                HStack(spacing: 6) {
-                    Image("IconNoteProperties")
-                        .renderingMode(.template)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 12, height: 12)
-
-                    Text("Properties")
-                        .font(.system(size: 11, weight: .medium))
-                        .tracking(-0.2)
-
-                    Image("IconChevronRightMedium")
-                        .renderingMode(.template)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 12, height: 12)
-                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                }
-                .foregroundColor(Color("SecondaryTextColor"))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .overlay {
-                    Capsule()
-                        .stroke(
-                            style: StrokeStyle(lineWidth: 1.6, dash: [4, 3])
-                        )
-                        .foregroundColor(Color(nsColor: .separatorColor))
-                }
-                .contentShape(Capsule())
-            }
-            .buttonStyle(.plain)
-            .macPointingHandCursor()
-
-            Spacer()
-        }
-    }
-
-    // MARK: - Expanded Section
-
-    private var expandedSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Created
-            propertyRow(label: "Created") {
-                Text(Self.absoluteFormatter.string(from: note.createdAt))
-                    .font(.system(size: 12, weight: .medium))
-                    .tracking(-0.3)
+            // Header: flipped sidebar icon with title below
+            VStack(alignment: .leading, spacing: 6) {
+                Button { onDismiss?() } label: {
+                    Image("IconSidebarLeftArrow")
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 15, height: 15)
+                        .scaleEffect(x: -1, y: 1)
+                        .foregroundColor(Color("SecondaryTextColor"))
+                        .padding(4)
+                        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .macPointingHandCursor()
+                .hoverContainer(cornerRadius: 8)
+                .padding(.leading, -4) // Align icon content with text below
+
+                Text("Properties")
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(Color("PrimaryTextColor"))
             }
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .padding(.bottom, 12)
 
-            // Tags
-            propertyRow(label: "Tags") {
-                tagsValue
-            }
+            // Scrollable property rows with bottom fade
+            ZStack(alignment: .bottom) {
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: -4) {
+                        // Created
+                        propertyRow(label: "Created") {
+                            Text(Self.absoluteFormatter.string(from: note.createdAt))
+                                .font(.system(size: 12, weight: .medium))
+                                .tracking(-0.3)
+                                .foregroundColor(Color("PrimaryTextColor"))
+                        }
 
-            // Todos
-            propertyRow(label: "Todos") {
-                VStack(alignment: .leading, spacing: 8) {
-                    todosCounterPill
+                        // Tags
+                        propertyRow(label: "Tags") {
+                            tagsValue
+                        }
 
-                    if isTodoExpanded {
-                        expandedTodoList
+                        // Todos
+                        propertyRow(label: "Todos") {
+                            VStack(alignment: .leading, spacing: 8) {
+                                todosCounterPill
+
+                                if isTodoExpanded {
+                                    expandedTodoList
+                                }
+                            }
+                        }
+
+                        // Links
+                        propertyRow(label: "Links") {
+                            linksValue
+                        }
+
+                        // Attachments
+                        propertyRow(label: "Attachments") {
+                            attachmentsValue
+                        }
+
+                        // Referenced By (backlinks)
+                        if !backlinks.isEmpty {
+                            propertyRow(label: "Referenced By") {
+                                referencedByValue
+                            }
+                        }
                     }
+                    .padding(.bottom, 60)
                 }
-            }
 
-            // Links
-            propertyRow(label: "Links") {
-                linksValue
-            }
-
-            // Attachments
-            propertyRow(label: "Attachments") {
-                attachmentsValue
+                // Bottom fade gradient
+                Rectangle()
+                    .fill(Color("DetailPaneSurfaceColor"))
+                    .frame(height: 80)
+                    .mask(Self.bottomFadeGradient)
+                    .allowsHitTesting(false)
             }
         }
-        .padding(2)
-        .compositingGroup()
-        .thinLiquidGlass(in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 
+    // MARK: - Bottom Fade
+
+    private static let bottomFadeGradient: LinearGradient = {
+        let steps = 20
+        let stops: [Gradient.Stop] = (0...steps).map { i in
+            let t = Double(i) / Double(steps)
+            let eased = 3 * t * t - 2 * t * t * t
+            return .init(color: Color.white.opacity(eased), location: t)
+        }
+        return LinearGradient(gradient: Gradient(stops: stops), startPoint: .top, endPoint: .bottom)
+    }()
 
     // MARK: - Row Builder
 
@@ -243,16 +248,14 @@ struct NoteMetadataSection: View {
                 .font(.system(size: 12, weight: .medium))
                 .tracking(-0.3)
                 .foregroundColor(Color("SecondaryTextColor"))
-                .padding(.leading, 12)
                 .padding(.vertical, 8)
-                .frame(width: 120, alignment: .leading)
+                .frame(width: 100, alignment: .leading)
 
             // Value column — flex
             value()
-                .padding(.horizontal, 12)
                 .padding(.vertical, 8)
         }
-        .padding(.horizontal, 2)
+        .padding(.horizontal, 16)
         .padding(.vertical, 2)
     }
 
@@ -282,7 +285,7 @@ struct NoteMetadataSection: View {
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
-                .background(Color("BlockContainerColor"), in: Capsule())
+                .background(todoContainerColor, in: Capsule())
             }
 
             // Add tag: inline field or plus button
@@ -293,7 +296,7 @@ struct NoteMetadataSection: View {
                     .frame(width: 80)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(Color("BlockContainerColor"), in: Capsule())
+                    .background(todoContainerColor, in: Capsule())
                     .focused($tagFieldFocused)
                     .onSubmit { commitTag() }
                     .onKeyPress(.escape) {
@@ -377,7 +380,7 @@ struct NoteMetadataSection: View {
                 .padding(.leading, 4)
                 .padding(.trailing, 2)
                 .padding(.vertical, 4)
-                .background(Color("BlockContainerColor"), in: Capsule())
+                .background(todoContainerColor, in: Capsule())
                 .contentShape(Capsule())
             }
             .buttonStyle(.plain)
@@ -393,17 +396,15 @@ struct NoteMetadataSection: View {
                 Button {
                     onToggleTodo?(todo.id)
                 } label: {
-                    HStack(spacing: 4) {
+                    HStack(alignment: .center, spacing: 6) {
                         todoCheckbox(isCompleted: todo.isCompleted)
-                            .frame(width: 18, height: 18)
+                            .frame(width: 16, height: 16)
 
                         Text(todo.text)
                             .font(.system(size: 11, weight: .medium))
-                            .tracking(-0.2)
                             .foregroundColor(Color("PrimaryTextColor"))
                             .strikethrough(todo.isCompleted, color: Color("PrimaryTextColor").opacity(0.5))
                             .opacity(todo.isCompleted ? 0.5 : 1)
-                            .lineLimit(1)
                     }
                 }
                 .buttonStyle(.plain)
@@ -412,7 +413,7 @@ struct NoteMetadataSection: View {
         }
         .padding(8)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color("BlockContainerColor"), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(todoContainerColor, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .compositingGroup()
         .transition(
             .asymmetric(
@@ -431,7 +432,7 @@ struct NoteMetadataSection: View {
 
         return ZStack {
             Circle()
-                .stroke(Color.black.opacity(0.4), lineWidth: 3.5)
+                .stroke(Color("TodoProgressColor").opacity(colorScheme == .dark ? 0.2 : 0.35), lineWidth: 3.5)
 
             Circle()
                 .trim(from: 0, to: fraction)
@@ -507,7 +508,7 @@ struct NoteMetadataSection: View {
                                 .scaledToFit()
                                 .frame(width: 14, height: 14)
                         }
-                        .foregroundColor(.white)
+                        .foregroundColor(.white) // LinkPillColor is always dark blue -- white text is forced-appearance by design
                         .padding(4)
                         .background(Color("LinkPillColor"), in: Capsule())
                     }
@@ -546,11 +547,43 @@ struct NoteMetadataSection: View {
                             .scaledToFit()
                             .frame(width: 14, height: 14)
                     }
-                    .foregroundColor(Color("PrimaryTextColor"))
+                    .foregroundColor(Color("ButtonPrimaryTextColor"))
                     .padding(4)
-                    .background(Color("BlockContainerColor"), in: Capsule())
-                    .environment(\.colorScheme, colorScheme == .dark ? .light : .dark)
+                    .background(Color("ButtonPrimaryBgColor"), in: Capsule())
                 }
+            }
+        }
+    }
+
+    // MARK: - Referenced By (Backlinks)
+
+    @ViewBuilder
+    private var referencedByValue: some View {
+        FlowLayout(spacing: 4) {
+            ForEach(backlinks) { backlink in
+                Button {
+                    onNavigateToNote?(backlink.id)
+                } label: {
+                    HStack(spacing: 4) {
+                        Image("IconArrowLeftUpCircle")
+                            .renderingMode(.template)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 14, height: 14)
+
+                        Text(backlink.title)
+                            .font(.system(size: 11, weight: .medium))
+                            .tracking(-0.2)
+                            .lineLimit(1)
+                    }
+                    .foregroundColor(.black)
+                    .padding(.leading, 4)
+                    .padding(.trailing, 8)
+                    .padding(.vertical, 4)
+                    .background(Color("NotelinkPillBgColor"), in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .macPointingHandCursor()
             }
         }
     }

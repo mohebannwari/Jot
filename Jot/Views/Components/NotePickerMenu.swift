@@ -134,7 +134,7 @@ struct NotePickerMenuItem: View {
                 .renderingMode(.template)
                 .resizable()
                 .scaledToFit()
-                .frame(width: 16, height: 16)
+                .frame(width: 15, height: 15)
                 .foregroundStyle(isHighlighted ? highlightedForegroundColor.opacity(0.7) : .secondary)
 
             Text(note.title.isEmpty ? "Untitled" : note.title)

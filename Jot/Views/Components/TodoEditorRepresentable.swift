@@ -937,23 +937,30 @@ struct NotelinkPillView: View {
     let title: String
     let colorScheme: ColorScheme
 
-    private var pillColor: Color {
-        colorScheme == .dark
-            ? Color(red: 0.792, green: 0.541, blue: 0.016)  // Yellow 600 #ca8a04
-            : Color(red: 0.918, green: 0.702, blue: 0.031)  // Yellow 500 #eab308
-    }
-
     var body: some View {
-        Text("@\(title.isEmpty ? "Untitled" : title)")
-            .font(.system(size: 13, weight: .medium))
-            .foregroundStyle(.black)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(pillColor, in: Capsule(style: .continuous))
-            .fixedSize()
-            .onHover { inside in
-                if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }
-            }
+        HStack(spacing: 4) {
+            Text("@")
+                .font(.system(size: 12, weight: .semibold))
+                .tracking(-0.2)
+
+            Text(title.isEmpty ? "Untitled" : title)
+                .font(.system(size: 11, weight: .medium))
+                .tracking(-0.2)
+                .lineLimit(1)
+
+            Image("IconArrowRightUpCircle")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 14, height: 14)
+        }
+        .foregroundColor(.black)
+        .padding(4)
+        .background(Color("NotelinkPillBgColor"), in: Capsule())
+        .fixedSize()
+        .onHover { inside in
+            if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+        }
     }
 }
 
@@ -2589,11 +2596,19 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 guard let tool = EditTool(rawValue: raw) else { return }
                 Task { @MainActor [weak self] in
                     guard let self = self, let textView = self.textView else { return }
-                    // Skip if a card text view (or other non-main text view) is the first responder.
-                    // The card overlay handles its own formatting.
-                    if let firstResp = textView.window?.firstResponder as? NSTextView,
-                       firstResp !== textView {
-                        return
+
+                    let isBlockInsertion = [EditTool.table, .callout, .codeBlock, .tabs, .cards].contains(tool)
+
+                    // For inline formatting, skip if another NSTextView has focus
+                    // (overlay text views handle their own formatting).
+                    // For block insertions, always target the main editor -- restore focus if needed.
+                    if !isBlockInsertion {
+                        if let firstResp = textView.window?.firstResponder as? NSTextView,
+                           firstResp !== textView {
+                            return
+                        }
+                    } else {
+                        textView.window?.makeFirstResponder(textView)
                     }
                     // Suppress typing animation and disable CA/NS animations
                     // so toolbar-initiated formatting applies instantly.

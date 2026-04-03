@@ -19,6 +19,10 @@ struct UpdatePanelView: View {
     @State private var isPreparingRelaunch = false
 
     private let cornerRadius: CGFloat = 22
+    // SettingsThemeAuto is 2528×1684 px — keep this ratio locked so the image
+    // never stretches when the panel width changes between the regular sidebar
+    // (240 pt) and the floating sidebar (224 pt, due to 8 pt horizontal padding).
+    private let imageAspectRatio: CGFloat = 2528.0 / 1684.0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -46,38 +50,61 @@ struct UpdatePanelView: View {
     // Figma (downloading): image w=265.90% h=278.34% left=-20.25% top=-178.16%
     // Gradient: absolute inset-0, transparent -> bg/secondary
 
+    // Gradient endpoint must match the panel's outer container background exactly.
+    // SettingsOptionCardColor dark (#0C0A09) provides the near-black needed for
+    // the image-to-surface fade; .white is used directly in light mode to avoid
+    // dynamic color resolution overhead inside the gradient (matches original).
     private var surfaceColor: Color {
-        colorScheme == .dark
-            ? Color(red: 0.047, green: 0.039, blue: 0.035)
-            : .white
+        colorScheme == .dark ? Color("SettingsOptionCardColor") : .white
     }
 
     private func bgImageLayout(_ size: CGSize) -> (w: CGFloat, h: CGFloat, x: CGFloat, y: CGFloat) {
+        // Anchor everything to panel WIDTH so the image scales uniformly and
+        // never distorts when the panel is narrower in the floating sidebar.
+        // y-offsets are pre-computed from the 240 pt Figma design:
+        //   relaunch:    original y = 179 * -1.4537 = -260 pt → -260/240 = -1.084 × w
+        //   downloading: original y = 153 * -1.7816 = -273 pt → -273/240 = -1.136 × w
         let w = size.width
         let h = size.height
+        var imgW: CGFloat
+        var x: CGFloat
+        var designedY: CGFloat
+
         if isPreparingRelaunch {
-            return (w * 2.659, h * 2.7834, w * -0.2025, h * -1.7816)
+            imgW = w * 2.659
+            x = w * -0.2025
+            designedY = w * -1.136
         } else {
-            return (w * 2.7458, h * 2.4537, w * -0.2342, h * -1.4537)
+            imgW = w * 2.7458
+            x = w * -0.2342
+            designedY = w * -1.084
         }
+
+        let imgH = imgW / imageAspectRatio
+        // Ensure image bottom edge reaches container bottom
+        let y = max(designedY, h - imgH)
+        return (imgW, imgH, x, y)
     }
 
     private var backgroundLayer: some View {
-        GeometryReader { geo in
-            let img = bgImageLayout(geo.size)
-            Image("SettingsThemeAuto")
-                .resizable()
-                .frame(width: img.w, height: img.h)
-                .offset(x: img.x, y: img.y)
-        }
-        .clipped()
-        .overlay {
-            LinearGradient(
-                colors: [surfaceColor.opacity(0), surfaceColor],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-        }
+        surfaceColor
+            .overlay {
+                GeometryReader { geo in
+                    let img = bgImageLayout(geo.size)
+                    Image("SettingsThemeAuto")
+                        .resizable()
+                        .frame(width: img.w, height: img.h)
+                        .offset(x: img.x, y: img.y)
+                }
+                .clipped()
+            }
+            .overlay {
+                LinearGradient(
+                    colors: [surfaceColor.opacity(0), surfaceColor],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            }
     }
 
     // MARK: - Icon
@@ -327,7 +354,7 @@ private struct ShimmerButton: View {
                 .background(Color("ButtonPrimaryBgColor"))
                 .overlay { shimmerOverlay }
                 .clipShape(Capsule())
-                .shadow(color: .white, radius: 8, x: 0, y: 0)
+                .shadow(color: Color("ButtonPrimaryBgColor").opacity(0.3), radius: 8, x: 0, y: 0)
         }
         .buttonStyle(.plain)
         .onAppear {

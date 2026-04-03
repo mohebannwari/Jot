@@ -918,7 +918,7 @@ struct URLPasteOptionMenu: View {
                     .renderingMode(.template)
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 16, height: 16)
+                    .frame(width: 15, height: 15)
                     .foregroundStyle(iconColor(for: index))
 
                 Text(label)
@@ -1024,7 +1024,7 @@ struct CodePasteOptionMenu: View {
                     .renderingMode(.template)
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 16, height: 16)
+                    .frame(width: 15, height: 15)
                     .foregroundStyle(iconColor(for: index))
 
                 Text(label)

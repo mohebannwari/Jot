@@ -14,7 +14,7 @@ struct LinkQuickLookTooltip: View {
                 .renderingMode(.template)
                 .resizable()
                 .scaledToFit()
-                .frame(width: 16, height: 16)
+                .frame(width: 15, height: 15)
 
             Text("Quick Look")
                 .font(FontManager.heading(size: 11, weight: .medium))
@@ -31,7 +31,7 @@ struct LinkQuickLookTooltip: View {
             case .active:
                 NSCursor.pointingHand.set()
             case .ended:
-                break
+                NSCursor.arrow.set()
             @unknown default:
                 break
             }

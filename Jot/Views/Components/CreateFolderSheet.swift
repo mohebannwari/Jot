@@ -79,7 +79,7 @@ struct CreateFolderSheet: View {
                         .resizable()
                         .scaledToFit()
                         .foregroundColor(Color("SecondaryTextColor"))
-                        .frame(width: 16, height: 16)
+                        .frame(width: 15, height: 15)
                 }
                 .buttonStyle(.plain)
                 .subtleHoverScale(1.06)
@@ -100,7 +100,7 @@ struct CreateFolderSheet: View {
                     .resizable()
                     .scaledToFit()
                     .foregroundColor(Color("IconSecondaryColor"))
-                    .frame(width: 16, height: 16)
+                    .frame(width: 15, height: 15)
 
                 Text("Choose folder color")
                     .font(FontManager.heading(size: 13, weight: .medium))

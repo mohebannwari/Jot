@@ -80,7 +80,7 @@ struct AIResultPanel: View {
                     .resizable()
                     .scaledToFit()
                     .foregroundColor(Color("SecondaryTextColor"))
-                    .frame(width: 16, height: 16)
+                    .frame(width: 15, height: 15)
             }
 
             Button(action: onDismiss) {
@@ -89,7 +89,7 @@ struct AIResultPanel: View {
                     .resizable()
                     .scaledToFit()
                     .foregroundColor(Color("SecondaryTextColor"))
-                    .frame(width: 16, height: 16)
+                    .frame(width: 15, height: 15)
             }
             .buttonStyle(.plain)
             .macPointingHandCursor()

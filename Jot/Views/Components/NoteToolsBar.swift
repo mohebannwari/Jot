@@ -20,7 +20,7 @@ struct NoteToolsBar: View {
 
     @State private var isExpanded = false
 
-    private let iconSize: CGFloat = 16
+    private let iconSize: CGFloat = 15
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {

@@ -85,6 +85,10 @@ struct PDFPreviewRenderer: View {
 
     // MARK: - Loading
 
+    /// Maximum number of pages to pre-render as thumbnails.
+    /// Only the first batch is loaded; the preview scroll shows enough to convey content.
+    private static let maxPrerenderedPages = 20
+
     private func loadPages() async {
         guard let url = FileAttachmentStorageManager.shared.fileURL(for: storedFilename) else {
             loadFailed = true
@@ -96,10 +100,11 @@ struct PDFPreviewRenderer: View {
             return
         }
 
+        let pageLimit = min(document.pageCount, Self.maxPrerenderedPages)
         var images: [NSImage] = []
-        images.reserveCapacity(document.pageCount)
+        images.reserveCapacity(pageLimit)
 
-        for index in 0..<document.pageCount {
+        for index in 0..<pageLimit {
             guard let page = document.page(at: index) else { continue }
 
             let pageRect = page.bounds(for: .mediaBox)

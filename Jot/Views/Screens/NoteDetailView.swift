@@ -297,33 +297,6 @@ struct NoteDetailView: View {
                     }
                 )
 
-            // Metadata section — collapsible properties panel
-            NoteMetadataSection(
-                note: note,
-                onUpdateTags: { newTags in
-                    notesManager.updateTags(id: note.id, tags: newTags)
-                },
-                onToggleTodo: { lineIndex in
-                    var lines = editedContent.components(separatedBy: "\n")
-                    guard lineIndex < lines.count else { return }
-                    let line = lines[lineIndex]
-                    let trimmed = line.trimmingCharacters(in: .whitespaces)
-                    if trimmed.hasPrefix("[x]") {
-                        lines[lineIndex] = line.replacingOccurrences(of: "[x]", with: "[ ]", range: line.range(of: "[x]"))
-                    } else if trimmed.hasPrefix("[ ]") {
-                        lines[lineIndex] = line.replacingOccurrences(of: "[ ]", with: "[x]", range: line.range(of: "[ ]"))
-                    }
-                    editedContent = lines.joined(separator: "\n")
-                    scheduleAutosave()
-                }
-            )
-
-            // Backlinks section — directly under title
-            if !backlinks.isEmpty {
-                backlinksSection
-                    .padding(.top, 4)
-            }
-
             // Meeting notes panel — fixed position above AI panels
             if savedIsMeetingNote && !savedMeetingSessions.isEmpty {
                 MeetingNoteDetailPanel(
@@ -392,6 +365,13 @@ struct NoteDetailView: View {
                 )
                 .transition(.opacity.combined(with: .offset(y: -8)))
             }
+
+            // Separator between header section and editor body
+            Rectangle()
+                .fill(Color("BorderSubtleColor"))
+                .frame(height: 1)
+                .padding(.top, 10)
+                .padding(.bottom, -6)
 
             TodoRichTextEditor(
                 text: $editedContent,
@@ -485,7 +465,6 @@ struct NoteDetailView: View {
                         headerMaterialBase
                             .mask(footerMaskGradient)
                     )
-                    .blur(radius: 0.1)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .allowsHitTesting(false)
@@ -504,7 +483,6 @@ struct NoteDetailView: View {
                                 .ignoresSafeArea(edges: .top)
                         )
                         .ignoresSafeArea(edges: .top)
-                        .blur(radius: 0.1)
 
                     // Title — lives in normal content space (same as overlay icons)
                     HStack {
@@ -778,6 +756,9 @@ struct NoteDetailView: View {
     // Search results + menu/picker observers — split to reduce type-checker pressure
     private var noteContentEvents2: some View {
         noteContentEvents
+        .onReceive(NotificationCenter.default.publisher(for: .propertiesPanelToggleTodo)) { notification in
+            handlePropertiesPanelToggleTodo(notification)
+        }
         .onReceive(NotificationCenter.default.publisher(for: .searchOnPageResults)) { notification in
             if let nid = notification.userInfo?["editorInstanceID"] as? UUID,
                nid != editorInstanceID { return }
@@ -1313,6 +1294,22 @@ struct NoteDetailView: View {
         }
     }
 
+    private func handlePropertiesPanelToggleTodo(_ notification: Notification) {
+        guard let targetID = notification.object as? UUID, targetID == editorInstanceID,
+              let lineIndex = notification.userInfo?["lineIndex"] as? Int else { return }
+        var lines = editedContent.components(separatedBy: "\n")
+        guard lineIndex < lines.count else { return }
+        let line = lines[lineIndex]
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        if trimmed.hasPrefix("[x]") {
+            lines[lineIndex] = line.replacingOccurrences(of: "[x]", with: "[ ]", range: line.range(of: "[x]"))
+        } else if trimmed.hasPrefix("[ ]") {
+            lines[lineIndex] = line.replacingOccurrences(of: "[ ]", with: "[x]", range: line.range(of: "[ ]"))
+        }
+        editedContent = lines.joined(separator: "\n")
+        scheduleAutosave()
+    }
+
     private func handleNoteToolsBarNotification(_ notification: Notification) {
         if let notifID = notification.userInfo?["editorInstanceID"] as? UUID {
             guard notifID == self.editorInstanceID else { return }
@@ -1380,33 +1377,25 @@ struct NoteDetailView: View {
     }
 
     private var headerMaskGradient: LinearGradient {
-        LinearGradient(
-            gradient: Gradient(stops: [
-                .init(color: Color.white, location: 0.0),
-                .init(color: Color.white, location: 0.28),
-                .init(color: Color.white.opacity(0.85), location: 0.45),
-                .init(color: Color.white.opacity(0.45), location: 0.65),
-                .init(color: Color.white.opacity(0.18), location: 0.82),
-                .init(color: Color.clear, location: 1.0),
-            ]),
-            startPoint: .top,
-            endPoint: .bottom
-        )
+        // Eased gradient: 20 stops along a smoothstep curve (3t^2 - 2t^3)
+        // eliminates visible banding from hand-picked linear stops.
+        let steps = 20
+        let stops: [Gradient.Stop] = (0...steps).map { i in
+            let t = Double(i) / Double(steps)
+            let eased = 1.0 - (3 * t * t - 2 * t * t * t)
+            return .init(color: Color.white.opacity(eased), location: t)
+        }
+        return LinearGradient(gradient: Gradient(stops: stops), startPoint: .top, endPoint: .bottom)
     }
 
     private var footerMaskGradient: LinearGradient {
-        LinearGradient(
-            gradient: Gradient(stops: [
-                .init(color: Color.clear, location: 0.0),
-                .init(color: Color.white.opacity(0.18), location: 0.18),
-                .init(color: Color.white.opacity(0.45), location: 0.32),
-                .init(color: Color.white.opacity(0.8), location: 0.55),
-                .init(color: Color.white.opacity(0.96), location: 0.8),
-                .init(color: Color.white, location: 1.0),
-            ]),
-            startPoint: .top,
-            endPoint: .bottom
-        )
+        let steps = 20
+        let stops: [Gradient.Stop] = (0...steps).map { i in
+            let t = Double(i) / Double(steps)
+            let eased = 3 * t * t - 2 * t * t * t
+            return .init(color: Color.white.opacity(eased), location: t)
+        }
+        return LinearGradient(gradient: Gradient(stops: stops), startPoint: .top, endPoint: .bottom)
     }
 
     // MARK: - Bottom Overlay
@@ -1536,7 +1525,7 @@ struct NoteDetailView: View {
                     .resizable()
                     .scaledToFit()
                     .foregroundColor(Color("SecondaryTextColor"))
-                    .frame(width: 16, height: 16)
+                    .frame(width: 15, height: 15)
             }
             .buttonStyle(.plain)
         }
@@ -1582,7 +1571,7 @@ struct NoteDetailView: View {
                         Image("IconChevronTopSmall")
                             .renderingMode(.template)
                             .resizable().scaledToFit()
-                            .frame(width: 16, height: 16)
+                            .frame(width: 15, height: 15)
                     }
                     .foregroundColor(Color("SecondaryTextColor"))
                     .buttonStyle(.plain)
@@ -1593,7 +1582,7 @@ struct NoteDetailView: View {
                         Image("IconChevronDownSmall")
                             .renderingMode(.template)
                             .resizable().scaledToFit()
-                            .frame(width: 16, height: 16)
+                            .frame(width: 15, height: 15)
                     }
                     .foregroundColor(Color("SecondaryTextColor"))
                     .buttonStyle(.plain)
@@ -1670,7 +1659,7 @@ struct NoteDetailView: View {
                 .renderingMode(.template)
                 .resizable()
                 .scaledToFit()
-                .frame(width: 16, height: 16)
+                .frame(width: 15, height: 15)
                 .foregroundColor(Color("SecondaryTextColor"))
 
             TextField("Enter URL", text: $linkInputText)
@@ -1735,7 +1724,7 @@ struct NoteDetailView: View {
                             .renderingMode(.template)
                             .resizable()
                             .scaledToFit()
-                            .frame(width: 16, height: 16)
+                            .frame(width: 15, height: 15)
                             .foregroundColor(Color("SecondaryTextColor"))
                     }
                     .buttonStyle(.plain)
@@ -1746,7 +1735,7 @@ struct NoteDetailView: View {
                             .renderingMode(.template)
                             .resizable()
                             .scaledToFit()
-                            .frame(width: 16, height: 16)
+                            .frame(width: 15, height: 15)
                             .foregroundColor(Color("SecondaryTextColor"))
                     }
                     .buttonStyle(.plain)
@@ -1764,64 +1753,6 @@ struct NoteDetailView: View {
         }
     }
 
-    // MARK: - Backlinks
-
-    private var backlinkContainerBg: Color {
-        colorScheme == .dark
-            ? Color("DetailPaneColor")
-            : .white
-    }
-
-    private var backlinkBorderColor: Color {
-        Color("BorderSubtleColor")
-    }
-
-    private var backlinkPillBg: Color {
-        Color("DetailPaneSurfaceColor")
-    }
-
-    @ViewBuilder
-    private var backlinksSection: some View {
-        FlowLayout(spacing: 5) {
-            ForEach(backlinks) { backlink in
-                Button {
-                    onNavigateToNote?(backlink.id)
-                } label: {
-                    HStack(spacing: 0) {
-                        Image("IconNoteText")
-                            .renderingMode(.template)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 16, height: 16)
-
-                        Text(backlink.title)
-                            .font(.system(size: 12, weight: .medium))
-                            .lineLimit(1)
-                            .padding(.horizontal, 4)
-
-                        Image("arrow-up-right")
-                            .renderingMode(.template)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 16, height: 16)
-                    }
-                    .foregroundStyle(.primary)
-                    .padding(4)
-                    .background(backlinkContainerBg, in: Capsule(style: .continuous))
-                    .overlay(
-                        Capsule(style: .continuous)
-                            .strokeBorder(backlinkBorderColor, lineWidth: 1)
-                    )
-                }
-                .buttonStyle(.plain)
-                .onHover { inside in
-                    if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }
-                }
-            }
-        }
-        .frame(maxWidth: 400, alignment: .leading)
-        .transition(.opacity)
-    }
 
     // MARK: - AI Block Persistence
 

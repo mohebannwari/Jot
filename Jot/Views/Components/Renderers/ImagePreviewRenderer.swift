@@ -25,7 +25,7 @@ struct ImagePreviewRenderer: View {
                     .resizable()
                     .aspectRatio(contentMode: .fit)
                     .frame(width: containerWidth, height: height)
-                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             } else {
                 placeholder("Loading image...")
             }
@@ -39,7 +39,7 @@ struct ImagePreviewRenderer: View {
 
     @ViewBuilder
     private func placeholder(_ message: String) -> some View {
-        RoundedRectangle(cornerRadius: 20, style: .continuous)
+        RoundedRectangle(cornerRadius: 10, style: .continuous)
             .fill(Color("SurfaceElevatedColor"))
             .frame(maxWidth: containerWidth)
             .frame(height: 200)

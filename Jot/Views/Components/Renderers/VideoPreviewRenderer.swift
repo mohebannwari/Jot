@@ -46,7 +46,7 @@ struct VideoPreviewRenderer: View {
     private func videoPlayer(player: AVPlayer) -> some View {
         VideoPlayer(player: player)
             .frame(width: containerWidth, height: contentHeight)
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .shadow(color: .black.opacity(0.1), radius: 5, x: 0, y: 5)
             .overlay(alignment: .topTrailing) {
                 Button {
@@ -68,10 +68,10 @@ struct VideoPreviewRenderer: View {
             .resizable()
             .aspectRatio(contentMode: .fill)
             .frame(width: containerWidth, height: contentHeight)
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .shadow(color: .black.opacity(0.1), radius: 5, x: 0, y: 5)
             .overlay {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(.black.opacity(0.25))
             }
             .overlay {
@@ -87,18 +87,18 @@ struct VideoPreviewRenderer: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("Play video")
             }
-            .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     @ViewBuilder
     private func placeholder(_ message: String) -> some View {
-        RoundedRectangle(cornerRadius: 20, style: .continuous)
+        RoundedRectangle(cornerRadius: 10, style: .continuous)
             .fill(Color("SurfaceElevatedColor"))
             .frame(width: containerWidth, height: contentHeight)
             .overlay {
                 HStack(spacing: 8) {
                     Image(systemName: "play.rectangle")
-                        .font(.system(size: 16, weight: .medium))
+                        .font(.system(size: 15, weight: .medium))
                         .foregroundStyle(Color("SecondaryTextColor"))
                     Text(message)
                         .font(.system(size: 11, weight: .medium))

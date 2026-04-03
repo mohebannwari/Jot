@@ -162,10 +162,10 @@ extension View {
 // MARK: - Context Menu Icon Helper
 
 /// macOS `.contextMenu` renders via NSMenu which ignores SwiftUI `.frame()`.
-/// This creates an Image with explicit NSImage.size so NSMenu respects 16×16.
+/// This creates an Image with explicit NSImage.size so NSMenu respects 15×15.
 #if os(macOS)
 extension Image {
-    static func menuIcon(_ name: String, size: CGFloat = 16) -> Image {
+    static func menuIcon(_ name: String, size: CGFloat = 15) -> Image {
         let img = NSImage(named: name) ?? NSImage()
         img.isTemplate = true
         img.size = NSSize(width: size, height: size)
@@ -544,6 +544,8 @@ extension Notification.Name {
     static let openNoteFromSpotlight = Notification.Name("openNoteFromSpotlight")
     static let printCurrentNote = Notification.Name("printCurrentNote")
     static let toggleVersionHistory = Notification.Name("toggleVersionHistory")
+    static let togglePropertiesPanel = Notification.Name("togglePropertiesPanel")
+    static let propertiesPanelToggleTodo = Notification.Name("propertiesPanelToggleTodo")
     static let checkForUpdates = Notification.Name("checkForUpdates")
 }
 

@@ -42,7 +42,6 @@ public final class Transcriber: Transcribing {
         // Use async/await with proper task cancellation
         return await withTaskCancellationHandler {
             await withCheckedContinuation { (continuation: CheckedContinuation<String?, Never>) in
-                // Use actor to safely manage state
                 actor RecognitionState {
                     var task: SFSpeechRecognitionTask?
                     var hasResumed = false
@@ -57,9 +56,7 @@ public final class Transcriber: Transcribing {
                     }
 
                     func tryResume(with result: String?, continuation: CheckedContinuation<String?, Never>) {
-                        guard !hasResumed else {
-                            return
-                        }
+                        guard !hasResumed else { return }
                         hasResumed = true
                         continuation.resume(returning: result)
                     }
@@ -67,7 +64,6 @@ public final class Transcriber: Transcribing {
 
                 let state = RecognitionState()
 
-                // Start recognition task
                 let recognitionTask = recognizer.recognitionTask(with: request) { result, error in
                     Task {
                         if let error = error {
@@ -75,20 +71,16 @@ public final class Transcriber: Transcribing {
                             await state.tryResume(with: nil, continuation: continuation)
                             return
                         }
-
                         if let result = result, result.isFinal {
                             await state.tryResume(with: result.bestTranscription.formattedString, continuation: continuation)
                         }
                     }
                 }
 
-                // Store the task for cancellation
+                // Store task and timeout in a single sequential Task --
+                // eliminates race between setTask and timeout/error paths.
                 Task {
                     await state.setTask(recognitionTask)
-                }
-
-                // Timeout handler
-                Task {
                     try? await Task.sleep(for: .seconds(30))
                     Logger(subsystem: "com.jot", category: "Transcriber").error("transcribe: Timeout after 30 seconds")
                     await state.cancelTask()
@@ -96,6 +88,8 @@ public final class Transcriber: Transcribing {
                 }
             }
         } onCancel: {
+            // SFSpeechURLRecognitionRequest has no endAudio; cancelling is handled
+            // by the recognition task in the timeout path.
         }
     }
 }

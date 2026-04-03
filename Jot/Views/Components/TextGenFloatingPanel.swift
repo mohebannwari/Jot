@@ -61,7 +61,7 @@ struct TextGenFloatingPanel: View {
                     .resizable()
                     .scaledToFit()
                     .foregroundColor(Color("SecondaryTextColor"))
-                    .frame(width: 16, height: 16)
+                    .frame(width: 15, height: 15)
 
                 Text(AITool.textGenerate.aiDisplayName.uppercased())
                     .font(FontManager.metadata(size: 11, weight: .semibold))
@@ -77,7 +77,7 @@ struct TextGenFloatingPanel: View {
                     .resizable()
                     .scaledToFit()
                     .foregroundColor(Color("SecondaryTextColor"))
-                    .frame(width: 16, height: 16)
+                    .frame(width: 15, height: 15)
             }
             .buttonStyle(.plain)
             .macPointingHandCursor()
