@@ -95,7 +95,10 @@ public final class FileAttachmentStorageManager {
               let w = props[kCGImagePropertyPixelWidth] as? CGFloat,
               let h = props[kCGImagePropertyPixelHeight] as? CGFloat,
               w > 0, h > 0 else { return nil }
-        return w / h
+        // EXIF orientations 5-8 rotate the image 90/270 degrees, swapping width and height
+        let orientation = props[kCGImagePropertyOrientation] as? Int ?? 1
+        let needsSwap = orientation >= 5 && orientation <= 8
+        return needsSwap ? (h / w) : (w / h)
     }
 
     public func deleteFile(named storedFilename: String) {

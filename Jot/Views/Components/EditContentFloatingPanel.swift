@@ -62,7 +62,7 @@ struct EditContentFloatingPanel: View {
                     .resizable()
                     .scaledToFit()
                     .foregroundColor(Color("SecondaryTextColor"))
-                    .frame(width: 16, height: 16)
+                    .frame(width: 15, height: 15)
 
                 Text(AITool.editContent.aiDisplayName.uppercased())
                     .font(FontManager.metadata(size: 11, weight: .semibold))
@@ -78,7 +78,7 @@ struct EditContentFloatingPanel: View {
                     .resizable()
                     .scaledToFit()
                     .foregroundColor(Color("SecondaryTextColor"))
-                    .frame(width: 16, height: 16)
+                    .frame(width: 15, height: 15)
             }
             .buttonStyle(.plain)
             .macPointingHandCursor()

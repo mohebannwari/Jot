@@ -117,7 +117,7 @@ struct FilePreviewContent: View {
                 if let icon = appIcon {
                     Image(nsImage: icon)
                         .resizable()
-                        .frame(width: 16, height: 16)
+                        .frame(width: 15, height: 15)
                 }
                 Text("Open in \(appName)")
                     .font(.system(size: 11, weight: .medium))

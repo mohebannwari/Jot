@@ -354,7 +354,7 @@ struct SettingsPage: View {
                                                 .renderingMode(.template)
                                                 .resizable()
                                                 .scaledToFit()
-                                                .frame(width: 16, height: 16)
+                                                .frame(width: 15, height: 15)
                                                 .foregroundColor(Color("PrimaryTextColor"))
                                                 .padding(4)
                                                 .background(
@@ -377,7 +377,7 @@ struct SettingsPage: View {
                                                 .renderingMode(.template)
                                                 .resizable()
                                                 .scaledToFit()
-                                                .frame(width: 16, height: 16)
+                                                .frame(width: 15, height: 15)
                                                 .foregroundColor(Color("PrimaryTextColor"))
                                                 .padding(4)
                                                 .background(
@@ -427,7 +427,7 @@ struct SettingsPage: View {
                             ZStack {
                                 Circle()
                                     .fill(colorScheme == .dark ? Color(white: 0.22) : Color(white: 0.88))
-                                    .frame(width: 16, height: 16)
+                                    .frame(width: 15, height: 15)
                                 Text("?")
                                     .font(.system(size: 12, weight: .semibold))
                                     .foregroundColor(Color("SettingsPlaceholderTextColor"))
@@ -514,11 +514,11 @@ struct SettingsPage: View {
                 ZStack {
                     Circle()
                         .fill(isOn.wrappedValue ? Color("ButtonPrimaryBgColor") : (colorScheme == .dark ? Color(white: 0.18) : Color.white))
-                        .frame(width: 16, height: 16)
+                        .frame(width: 15, height: 15)
 
                     Circle()
                         .strokeBorder(isOn.wrappedValue ? Color.clear : (colorScheme == .dark ? Color(white: 0.35) : Color(white: 0.72)), lineWidth: 1)
-                        .frame(width: 16, height: 16)
+                        .frame(width: 15, height: 15)
 
                     if isOn.wrappedValue {
                         Image(systemName: "checkmark")
@@ -994,7 +994,7 @@ struct SettingsPage: View {
                 .resizable()
                 .scaledToFit()
                 .foregroundColor(Color("SettingsIconSecondaryColor"))
-                .frame(width: 16, height: 16)
+                .frame(width: 15, height: 15)
                 .padding(4)
                 .background(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -1028,7 +1028,7 @@ struct SettingsPage: View {
                     .resizable()
                     .scaledToFit()
                     .foregroundColor(isSelected ? type.selectedText(for: colorScheme) : Color("SettingsIconSecondaryColor"))
-                    .frame(width: 16, height: 16)
+                    .frame(width: 15, height: 15)
 
                 Text(type.rawValue)
                     .font(FontManager.heading(size: 15, weight: .medium))
@@ -1097,7 +1097,7 @@ struct SettingsPage: View {
                     .resizable()
                     .scaledToFit()
                     .foregroundColor(.white)
-                    .frame(width: 16, height: 16)
+                    .frame(width: 15, height: 15)
                     .scaleEffect(celebrateScale)
                     .rotationEffect(.degrees(celebrateRotation))
 

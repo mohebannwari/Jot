@@ -48,7 +48,7 @@ struct TextPreviewRenderer: View {
                 .frame(maxWidth: containerWidth)
                 .frame(maxHeight: maxHeight)
                 .background(Color("SurfaceElevatedColor"))
-                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .shadow(color: .black.opacity(0.1), radius: 5, x: 0, y: 5)
             } else {
                 placeholder("Loading file...")
@@ -63,7 +63,7 @@ struct TextPreviewRenderer: View {
 
     @ViewBuilder
     private func placeholder(_ message: String) -> some View {
-        RoundedRectangle(cornerRadius: 20, style: .continuous)
+        RoundedRectangle(cornerRadius: 10, style: .continuous)
             .fill(Color("SurfaceElevatedColor"))
             .frame(maxWidth: containerWidth)
             .frame(height: maxHeight)
@@ -83,13 +83,20 @@ struct TextPreviewRenderer: View {
             return
         }
 
-        // Try UTF-8 first, fall back to lossy ASCII decoding.
-        if let text = try? String(contentsOf: url, encoding: .utf8) {
-            content = text
-        } else if let data = try? Data(contentsOf: url),
-                  let text = String(data: data, encoding: .ascii) {
-            content = text
-        } else {
+        // Read only the first 64KB for the preview -- full file load is unnecessary
+        // for a 200pt scroll view and avoids memory pressure on large files.
+        let maxPreviewBytes = 64 * 1024
+        do {
+            let handle = try FileHandle(forReadingFrom: url)
+            defer { handle.closeFile() }
+            let data = handle.readData(ofLength: maxPreviewBytes)
+            if let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .ascii) {
+                let fileSize = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
+                content = fileSize > maxPreviewBytes ? text + "\n\n[truncated]" : text
+            } else {
+                loadFailed = true
+            }
+        } catch {
             loadFailed = true
         }
     }

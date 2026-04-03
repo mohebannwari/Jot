@@ -39,13 +39,13 @@ struct ThumbnailPreviewRenderer: View {
             .resizable()
             .aspectRatio(contentMode: .fit)
             .frame(maxWidth: containerWidth, maxHeight: contentHeight)
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .shadow(color: .black.opacity(0.1), radius: 5, x: 0, y: 5)
     }
 
     private var fallbackIcon: some View {
         let icon = fileTypeIcon
-        return RoundedRectangle(cornerRadius: 20, style: .continuous)
+        return RoundedRectangle(cornerRadius: 10, style: .continuous)
             .fill(Color("SurfaceElevatedColor"))
             .frame(height: 120)
             .overlay {
@@ -67,7 +67,7 @@ struct ThumbnailPreviewRenderer: View {
 
     @ViewBuilder
     private func placeholder(_ message: String) -> some View {
-        RoundedRectangle(cornerRadius: 20, style: .continuous)
+        RoundedRectangle(cornerRadius: 10, style: .continuous)
             .fill(Color("SurfaceElevatedColor"))
             .frame(height: contentHeight)
             .overlay {

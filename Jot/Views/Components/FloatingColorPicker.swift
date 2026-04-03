@@ -95,7 +95,7 @@ struct FloatingColorPicker: View {
                 } else {
                     Circle()
                         .fill(colorScheme == .dark ? Color.white : Color.black)
-                        .frame(width: 16, height: 16)
+                        .frame(width: 15, height: 15)
                         .overlay(
                             Image(systemName: "plus")
                                 .font(.system(size: 9, weight: .bold))
@@ -105,7 +105,7 @@ struct FloatingColorPicker: View {
             }
         }
         .buttonStyle(.plain)
-        .frame(width: 16, height: 16)
+        .frame(width: 15, height: 15)
         .contentShape(Circle())
         .subtleHoverScale(1.06)
         .scaleEffect(circlesVisible ? 1.0 : 0.6)
@@ -124,17 +124,17 @@ struct FloatingColorPicker: View {
             ZStack {
                 Circle()
                     .fill(Color.red.opacity(colorScheme == .dark ? 0.2 : 0.12))
-                    .frame(width: 16, height: 16)
+                    .frame(width: 15, height: 15)
                 Image("delete")
                     .renderingMode(.template)
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 16, height: 16)
+                    .frame(width: 15, height: 15)
                     .foregroundColor(.red)
             }
         }
         .buttonStyle(.plain)
-        .frame(width: 16, height: 16)
+        .frame(width: 15, height: 15)
         .contentShape(Circle())
         .subtleHoverScale(1.06)
         .scaleEffect(circlesVisible ? 1.0 : 0.6)

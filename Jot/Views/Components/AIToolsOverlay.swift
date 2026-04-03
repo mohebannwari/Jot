@@ -25,7 +25,7 @@ struct AIToolsOverlay: View {
 
     private let pillPadding: CGFloat = 8
     private let edgeInset: CGFloat = 0
-    private let iconSize: CGFloat = 16
+    private let iconSize: CGFloat = 15
     private let toolBarHPadding: CGFloat = 12
     private let toolBarVPadding: CGFloat = 8
     private let toolBarGap: CGFloat = 18
@@ -77,7 +77,7 @@ struct AIToolsOverlay: View {
         Button {
             state = .expanded
         } label: {
-            toolIcon("IconAppleIntelligenceIcon", size: 16)
+            toolIcon("IconAppleIntelligenceIcon", size: 15)
                 .padding(4)
                 .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
@@ -166,7 +166,7 @@ struct AIToolsOverlay: View {
                         .resizable()
                         .scaledToFit()
                         .foregroundColor(Color("SecondaryTextColor"))
-                        .frame(width: 16, height: 16)
+                        .frame(width: 15, height: 15)
                     Text("Generate Text")
                         .font(FontManager.heading(size: 11, weight: .semibold))
                         .foregroundColor(Color("PrimaryTextColor"))

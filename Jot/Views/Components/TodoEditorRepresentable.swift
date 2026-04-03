@@ -937,23 +937,30 @@ struct NotelinkPillView: View {
     let title: String
     let colorScheme: ColorScheme
 
-    private var pillColor: Color {
-        colorScheme == .dark
-            ? Color(red: 0.792, green: 0.541, blue: 0.016)  // Yellow 600 #ca8a04
-            : Color(red: 0.918, green: 0.702, blue: 0.031)  // Yellow 500 #eab308
-    }
-
     var body: some View {
-        Text("@\(title.isEmpty ? "Untitled" : title)")
-            .font(.system(size: 13, weight: .medium))
-            .foregroundStyle(.black)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(pillColor, in: Capsule(style: .continuous))
-            .fixedSize()
-            .onHover { inside in
-                if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }
-            }
+        HStack(spacing: 4) {
+            Text("@")
+                .font(.system(size: 12, weight: .semibold))
+                .tracking(-0.2)
+
+            Text(title.isEmpty ? "Untitled" : title)
+                .font(.system(size: 11, weight: .medium))
+                .tracking(-0.2)
+                .lineLimit(1)
+
+            Image("IconArrowRightUpCircle")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 14, height: 14)
+        }
+        .foregroundColor(.black)
+        .padding(4)
+        .background(Color("NotelinkPillBgColor"), in: Capsule())
+        .fixedSize()
+        .onHover { inside in
+            if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+        }
     }
 }
 
@@ -1296,6 +1303,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
     let editorInstanceID: UUID?
     var readOnly: Bool = false
     var onNavigateToNote: ((UUID) -> Void)?
+    var fetchNote: ((UUID) -> Note?)?
     private let unlimitedDimension = CGFloat.greatestFiniteMagnitude
 
     func makeNSView(context: Context) -> InlineNSTextView {
@@ -1422,6 +1430,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
 
         // Sync navigate callback
         context.coordinator.onNavigateToNote = onNavigateToNote
+        context.coordinator.fetchNote = fetchNote
 
         // Only update text if it has actually changed
         context.coordinator.updateIfNeeded(with: text)
@@ -1581,6 +1590,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         /// yet (no enclosingScrollView), so overlay creation was deferred.
         private var needsDeferredOverlaySetup = false
         var onNavigateToNote: ((UUID) -> Void)?
+        var fetchNote: ((UUID) -> Note?)?
         var lastKnownTextViewWidth: CGFloat = 0
         /// True once the bounds-change observer on the clip view has been registered.
         /// Note: these flags are never reset because NSViewRepresentable does not provide
@@ -2433,6 +2443,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             tabsOverlays.removeAll()
             cardSectionOverlays.values.forEach { $0.removeFromSuperview() }
             cardSectionOverlays.removeAll()
+            filePreviewOverlays.values.forEach { $0.removeFromSuperview() }
+            filePreviewOverlays.removeAll()
         }
 
         deinit {
@@ -2445,6 +2457,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             let codeOverlays = codeBlockOverlays.values.map { $0 }
             let tabOverlays = tabsOverlays.values.map { $0 }
             let cardOverlays = cardSectionOverlays.values.map { $0 }
+            let fileOverlays = filePreviewOverlays.values.map { $0 }
             observers.forEach { NotificationCenter.default.removeObserver($0) }
             observers.removeAll()
             Task { @MainActor in
@@ -2455,6 +2468,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 codeOverlays.forEach { $0.removeFromSuperview() }
                 tabOverlays.forEach { $0.removeFromSuperview() }
                 cardOverlays.forEach { $0.removeFromSuperview() }
+                fileOverlays.forEach { $0.removeFromSuperview() }
             }
         }
 
@@ -2476,6 +2490,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 imageOverlays.removeAll()
                 tableOverlays.values.forEach { $0.removeFromSuperview() }
                 tableOverlays.removeAll()
+                filePreviewOverlays.values.forEach { $0.removeFromSuperview() }
+                filePreviewOverlays.removeAll()
                 overlayHostView = newHost
             }
             // Register as layout manager delegate for overlay position tracking
@@ -2580,11 +2596,19 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 guard let tool = EditTool(rawValue: raw) else { return }
                 Task { @MainActor [weak self] in
                     guard let self = self, let textView = self.textView else { return }
-                    // Skip if a card text view (or other non-main text view) is the first responder.
-                    // The card overlay handles its own formatting.
-                    if let firstResp = textView.window?.firstResponder as? NSTextView,
-                       firstResp !== textView {
-                        return
+
+                    let isBlockInsertion = [EditTool.table, .callout, .codeBlock, .tabs, .cards].contains(tool)
+
+                    // For inline formatting, skip if another NSTextView has focus
+                    // (overlay text views handle their own formatting).
+                    // For block insertions, always target the main editor -- restore focus if needed.
+                    if !isBlockInsertion {
+                        if let firstResp = textView.window?.firstResponder as? NSTextView,
+                           firstResp !== textView {
+                            return
+                        }
+                    } else {
+                        textView.window?.makeFirstResponder(textView)
                     }
                     // Suppress typing animation and disable CA/NS animations
                     // so toolbar-initiated formatting applies instantly.
@@ -3391,6 +3415,20 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             }
         }
 
+        /// Serializes the given note to a styled HTML temp file and returns its URL for QLPreviewPanel.
+        @MainActor
+        private func generateNotePreviewHTML(for note: Note) -> URL? {
+            let html = NotePreviewHTMLGenerator.generate(note: note)
+            let tempURL = URL(fileURLWithPath: NSTemporaryDirectory())
+                .appendingPathComponent("jot_note_preview_\(note.id.uuidString).html")
+            do {
+                try html.write(to: tempURL, atomically: true, encoding: .utf8)
+                return tempURL
+            } catch {
+                return nil
+            }
+        }
+
         /// Examines text attributes at the given character index and returns a Quick Look-compatible file URL.
         /// For web URLs, creates a temporary `.webloc` file so QLPreviewPanel can render the page.
         @MainActor
@@ -3410,6 +3448,13 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             if let storedFilename = attrs[.fileStoredFilename] as? String,
                let fileURL = FileAttachmentStorageManager.shared.fileURL(for: storedFilename) {
                 return fileURL
+            }
+
+            // Note mention — serialize note content to a temp HTML file
+            if let idStr = attrs[.notelinkID] as? String,
+               let noteID = UUID(uuidString: idStr),
+               let note = fetchNote?(noteID) {
+                return generateNotePreviewHTML(for: note)
             }
 
             // 3. Web clip URL
@@ -4701,7 +4746,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                             || value is NoteTableAttachment
                             || value is NoteTabsAttachment
                             || value is NoteCardSectionAttachment
-                            || value is NoteDividerAttachment {
+                            || value is NoteDividerAttachment
+                            || (value is NoteFileAttachment && (value as! NoteFileAttachment).viewMode != .tag) {
                             hasBlockAttachment = true
                             stop.pointee = true
                         }

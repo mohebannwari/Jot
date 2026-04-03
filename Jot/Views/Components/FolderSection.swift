@@ -101,7 +101,7 @@ struct FolderSection: View {
                 Image(isExpanded ? "IconChevronTopSmall" : "IconChevronDownSmall")
                     .resizable()
                     .renderingMode(.template)
-                    .frame(width: 16, height: 16)
+                    .frame(width: 15, height: 15)
                     .foregroundColor(Color("SecondaryTextColor"))
             }
             .padding(.horizontal, 8)
@@ -174,14 +174,14 @@ struct FolderSection: View {
                             .resizable()
                             .scaledToFit()
                             .foregroundColor(Color("SecondaryTextColor"))
-                            .frame(width: 16, height: 16)
+                            .frame(width: 15, height: 15)
 
                         Image("IconFolder1")
                             .renderingMode(.template)
                             .resizable()
                             .scaledToFit()
                             .foregroundColor(peekFolder.folderColor)
-                            .frame(width: 16, height: 16)
+                            .frame(width: 15, height: 15)
 
                         Text(peekFolder.name)
                             .font(FontManager.heading(size: 15, weight: .medium))
@@ -274,7 +274,7 @@ struct FolderSection: View {
                 .resizable()
                 .scaledToFit()
                 .foregroundColor(folder.folderColor)
-                .frame(width: 16, height: 16)
+                .frame(width: 15, height: 15)
 
             if isRenamingThisFolder {
                 TextField("Folder Name", text: $renamingName)
@@ -372,7 +372,7 @@ struct FolderSection: View {
                         .resizable()
                         .scaledToFit()
                         .foregroundColor(Color("SecondaryTextColor"))
-                        .frame(width: 16, height: 16)
+                        .frame(width: 15, height: 15)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -490,7 +490,7 @@ struct FolderSection: View {
                             leadingIconAssetName: note.isLocked
                                 ? "IconLock"
                                 : (splitNoteIDs.contains(note.id) ? "IconArrowSplitUp" : nil),
-                            leadingIconSize: splitNoteIDs.contains(note.id) ? 14 : 16,
+                            leadingIconSize: splitNoteIDs.contains(note.id) ? 14 : 15,
                             hoverLeadingIconAssetName: note.isLocked ? "IconUnlocked" : nil,
                             persistentLeadingIconBg: false,
                             leadingIconBgColor: .clear,

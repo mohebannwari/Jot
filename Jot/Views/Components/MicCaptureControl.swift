@@ -101,7 +101,7 @@ public struct MicCaptureControl: View {
 // inner circle:   26 / 2 = 13    →  17 - 4 = 13 ✓ concentric
 //
 private enum MicGeometry {
-    static let iconSize: CGFloat = 16
+    static let iconSize: CGFloat = 15
     static let buttonInset: CGFloat = 4
     static let buttonDiameter: CGFloat = iconSize + buttonInset * 2   // 26
     static let capsuleInset: CGFloat = 4
@@ -158,7 +158,7 @@ private extension MicCaptureControl {
                 spacing: 3,
                 color: Color("SecondaryTextColor")
             )
-            .frame(width: 16, height: 16)
+            .frame(width: 15, height: 15)
             .frame(width: MicGeometry.buttonDiameter, height: MicGeometry.buttonDiameter)
             .padding(.trailing, 4)
         }
@@ -219,7 +219,7 @@ private extension MicCaptureControl {
                     ProgressView()
                         .progressViewStyle(CircularProgressViewStyle(tint: .white))
                         .scaleEffect(0.8)
-                        .frame(width: 16, height: 16)
+                        .frame(width: 15, height: 15)
                         .frame(width: MicGeometry.buttonDiameter, height: MicGeometry.buttonDiameter)
                 } else {
                     Image("IconArrowUpCircle")
@@ -270,7 +270,7 @@ private extension MicCaptureControl {
     func errorBanner(message: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(FontManager.icon(size: 16, weight: .semibold))
+                .font(FontManager.icon(size: 15, weight: .semibold))
                 .foregroundStyle(.orange)
 
             Text(message)

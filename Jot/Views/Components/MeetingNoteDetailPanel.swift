@@ -17,6 +17,7 @@ struct MeetingNoteDetailPanel: View {
     var onDismiss: (() -> Void)?
 
     @Environment(\.colorScheme) private var colorScheme
+    @State private var isExpanded = true
 
     private let panelRadius: CGFloat = 22
 
@@ -24,28 +25,31 @@ struct MeetingNoteDetailPanel: View {
         VStack(alignment: .leading, spacing: 0) {
             panelHeader
 
-            let reversed = Array(sessions.reversed())
-            ForEach(Array(reversed.enumerated()), id: \.element.id) { index, session in
-                if index > 0 {
-                    HandDrawnDividerLine(seed: index)
-                        .stroke(Color("PrimaryTextColor").opacity(0.2), lineWidth: 0.9)
-                        .frame(height: 1)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 2)
-                }
-                SessionAccordion(
-                    session: session,
-                    defaultExpanded: index == 0,
-                    onNotesChanged: { newNotes in
-                        onNotesChanged?(session.id, newNotes)
-                    },
-                    onSummaryChanged: { newSummary in
-                        onSummaryChanged?(session.id, newSummary)
+            if isExpanded {
+                let reversed = Array(sessions.reversed())
+                ForEach(Array(reversed.enumerated()), id: \.element.id) { index, session in
+                    if index > 0 {
+                        HandDrawnDividerLine(seed: index)
+                            .stroke(Color("PrimaryTextColor").opacity(0.2), lineWidth: 0.9)
+                            .frame(height: 1)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 2)
                     }
-                )
+                    SessionAccordion(
+                        session: session,
+                        defaultExpanded: index == 0,
+                        onNotesChanged: { newNotes in
+                            onNotesChanged?(session.id, newNotes)
+                        },
+                        onSummaryChanged: { newSummary in
+                            onSummaryChanged?(session.id, newSummary)
+                        }
+                    )
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .compositingGroup()
         .background {
             if #available(macOS 26.0, iOS 26.0, *) {
                 Color.clear
@@ -55,13 +59,12 @@ struct MeetingNoteDetailPanel: View {
             }
         }
         .modifier(AIGlassModifier(cornerRadius: panelRadius))
-        .clipShape(RoundedRectangle(cornerRadius: panelRadius, style: .continuous))
     }
 
     // MARK: - Panel Header
 
     private var panelHeader: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             Image("IconMeetingNotes")
                 .renderingMode(.template)
                 .resizable()
@@ -69,9 +72,10 @@ struct MeetingNoteDetailPanel: View {
                 .foregroundColor(Color("SecondaryTextColor"))
                 .frame(width: 14, height: 14)
 
-            Text("Meeting Notes")
-                .font(FontManager.heading(size: 13, weight: .semibold))
-                .foregroundColor(Color("PrimaryTextColor"))
+            Text("MEETING NOTES")
+                .font(FontManager.metadata(size: 11, weight: .semibold))
+                .foregroundColor(Color("SecondaryTextColor"))
+                .kerning(0.5)
 
             if sessions.count > 1 {
                 let pillColor = colorScheme == .dark
@@ -90,6 +94,13 @@ struct MeetingNoteDetailPanel: View {
 
             Spacer()
 
+            Image(isExpanded ? "IconChevronTopSmall" : "IconChevronDownSmall")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .foregroundColor(Color("SecondaryTextColor"))
+                .frame(width: 15, height: 15)
+
             if let onDismiss {
                 Button(action: onDismiss) {
                     Image("IconXMark")
@@ -97,7 +108,7 @@ struct MeetingNoteDetailPanel: View {
                         .resizable()
                         .scaledToFit()
                         .foregroundColor(Color("SecondaryTextColor"))
-                        .frame(width: 16, height: 16)
+                        .frame(width: 15, height: 15)
                 }
                 .buttonStyle(.plain)
                 .macPointingHandCursor()
@@ -105,8 +116,12 @@ struct MeetingNoteDetailPanel: View {
             }
         }
         .padding(.horizontal, 14)
-        .padding(.top, 12)
-        .padding(.bottom, 4)
+        .padding(.vertical, 12)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            withAnimation(.jotSpring) { isExpanded.toggle() }
+        }
+        .macPointingHandCursor()
     }
 
     // MARK: - Colors
@@ -176,7 +191,7 @@ private struct SessionAccordion: View {
             Image(isExpanded ? "IconChevronTopSmall" : "IconChevronDownSmall")
                 .resizable()
                 .renderingMode(.template)
-                .frame(width: 16, height: 16)
+                .frame(width: 15, height: 15)
                 .foregroundColor(Color("SecondaryTextColor"))
         }
         .padding(.horizontal, 14)

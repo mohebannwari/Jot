@@ -24,9 +24,9 @@ public struct ImagePickerControl: View {
             openImagePanel()
         } label: {
             Image(systemName: "photo.on.rectangle.angled")
-                .font(FontManager.icon(size: 16, weight: .medium))
+                .font(FontManager.icon(size: 15, weight: .medium))
                 .foregroundStyle(Color("PrimaryTextColor"))
-                .frame(width: 16, height: 16)
+                .frame(width: 15, height: 15)
         }
         .buttonStyle(.plain)
         .frame(width: 44, height: 44)

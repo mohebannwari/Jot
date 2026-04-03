@@ -19,6 +19,7 @@ struct TodoRichTextEditor: View {
     @Environment(\.colorScheme) private var colorScheme
     var availableNotes: [NotePickerItem] = []
     var onNavigateToNote: ((UUID) -> Void)?
+    var fetchNote: ((UUID) -> Note?)?
 
     init(
         text: Binding<String>,
@@ -27,7 +28,8 @@ struct TodoRichTextEditor: View {
         onToolbarAction: ((EditTool) -> Void)? = nil,
         onCommandMenuSelection: ((EditTool) -> Void)? = nil,
         availableNotes: [NotePickerItem] = [],
-        onNavigateToNote: ((UUID) -> Void)? = nil
+        onNavigateToNote: ((UUID) -> Void)? = nil,
+        fetchNote: ((UUID) -> Note?)? = nil
     ) {
         self._text = text
         self.focusRequestID = focusRequestID
@@ -36,6 +38,7 @@ struct TodoRichTextEditor: View {
         self.onCommandMenuSelection = onCommandMenuSelection
         self.availableNotes = availableNotes
         self.onNavigateToNote = onNavigateToNote
+        self.fetchNote = fetchNote
     }
 
 
@@ -75,6 +78,7 @@ struct TodoRichTextEditor: View {
     // Quick Look hover tooltip state
     @State private var showQuickLookTooltip = false
     @State private var quickLookTooltipPosition: CGPoint = .zero
+    @State private var quickLookTooltipCenterX: CGFloat = 0  // attachment midX for geometry-based recentering
     @State private var quickLookTooltipCharIndex: Int = 0
     @State private var quickLookHideTask: Task<Void, Never>? = nil
     @State private var hoveredIsStoredFile = false
@@ -124,7 +128,8 @@ struct TodoRichTextEditor: View {
                     colorScheme: colorScheme,
                     focusRequestID: focusRequestID,
                     editorInstanceID: editorInstanceID,
-                    onNavigateToNote: onNavigateToNote
+                    onNavigateToNote: onNavigateToNote,
+                    fetchNote: fetchNote
                 )
         }
         .frame(maxWidth: .infinity)  // Natural height based on content
@@ -291,6 +296,22 @@ struct TodoRichTextEditor: View {
                             showQuickLookTooltip = false
                         }
                         .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                }
+            }
+            .background {
+                // Measure the actual rendered width and re-center using the stored
+                // attachment midX. This corrects the hardcoded estimate used during
+                // the initial position calculation in the hover handler.
+                GeometryReader { geo in
+                    Color.clear
+                        .onChange(of: quickLookTooltipCenterX) { _, centerX in
+                            guard geo.size.width > 0 else { return }
+                            quickLookTooltipPosition.x = max(4, centerX - geo.size.width / 2)
+                        }
+                        .onChange(of: hoveredIsStoredFile) { _, _ in
+                            guard geo.size.width > 0, quickLookTooltipCenterX > 0 else { return }
+                            quickLookTooltipPosition.x = max(4, quickLookTooltipCenterX - geo.size.width / 2)
+                        }
                 }
             }
             .scaleEffect(showQuickLookTooltip ? 1 : 0.9, anchor: .bottom)
@@ -579,13 +600,16 @@ struct TodoRichTextEditor: View {
 
             // Position tooltip centered above the link; if there isn't
             // enough room, flip it below so it won't overlap adjacent pills.
-            let tooltipWidth: CGFloat = isFile ? 280 : 144  // wider for dual pills
+            // Geometry measurement in the overlay refines x-centering once the
+            // actual HStack width is known (see onChange(of: quickLookTooltipCenterX)).
+            let tooltipWidth: CGFloat = isFile ? 200 : 100  // rough estimate -- geometry corrects this
             let pillHeight: CGFloat = 36  // 16 icon + 10*2 padding
             let gap: CGFloat = 6
             let x = rect.midX - tooltipWidth / 2
             let yAbove = rect.minY - pillHeight - gap
             let y = yAbove >= 0 ? yAbove : rect.maxY + gap
 
+            quickLookTooltipCenterX = rect.midX  // store for geometry-based recentering
             quickLookTooltipPosition = CGPoint(x: max(4, x), y: y)
             quickLookTooltipCharIndex = charIndex
 
@@ -894,7 +918,7 @@ struct URLPasteOptionMenu: View {
                     .renderingMode(.template)
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 16, height: 16)
+                    .frame(width: 15, height: 15)
                     .foregroundStyle(iconColor(for: index))
 
                 Text(label)
@@ -1000,7 +1024,7 @@ struct CodePasteOptionMenu: View {
                     .renderingMode(.template)
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 16, height: 16)
+                    .frame(width: 15, height: 15)
                     .foregroundStyle(iconColor(for: index))
 
                 Text(label)

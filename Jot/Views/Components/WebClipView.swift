@@ -44,7 +44,7 @@ struct WebClipView: View {
                     .scaledToFit()
                     .frame(width: 14, height: 14)
             }
-            .foregroundColor(.white)
+            .foregroundColor(.white) // LinkPillColor is always dark blue -- white text is forced-appearance by design
             .padding(4)
             .background(Color("LinkPillColor"), in: Capsule())
         }
