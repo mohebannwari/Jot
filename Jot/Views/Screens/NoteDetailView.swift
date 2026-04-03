@@ -301,9 +301,7 @@ struct NoteDetailView: View {
             NoteMetadataSection(
                 note: note,
                 onUpdateTags: { newTags in
-                    var updated = note
-                    updated.tags = newTags
-                    notesManager.updateNote(updated)
+                    notesManager.updateTags(id: note.id, tags: newTags)
                 },
                 onToggleTodo: { lineIndex in
                     var lines = editedContent.components(separatedBy: "\n")
@@ -402,7 +400,8 @@ struct NoteDetailView: View {
                 onToolbarAction: handleEditToolAction,
                 onCommandMenuSelection: { performAuxiliaryToolAction($0) },
                 availableNotes: availableNotes,
-                onNavigateToNote: onNavigateToNote
+                onNavigateToNote: onNavigateToNote,
+                fetchNote: { uuid in notesManager.notes.first(where: { $0.id == uuid }) }
             )
             .id(editorIdentity)
             .frame(maxWidth: .infinity, alignment: .leading)
