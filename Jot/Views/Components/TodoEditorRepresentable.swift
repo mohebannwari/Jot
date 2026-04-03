@@ -3400,6 +3400,20 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             }
         }
 
+        /// Serializes the given note to a styled HTML temp file and returns its URL for QLPreviewPanel.
+        @MainActor
+        private func generateNotePreviewHTML(for note: Note) -> URL? {
+            let html = NotePreviewHTMLGenerator.generate(note: note)
+            let tempURL = URL(fileURLWithPath: NSTemporaryDirectory())
+                .appendingPathComponent("jot_note_preview_\(note.id.uuidString).html")
+            do {
+                try html.write(to: tempURL, atomically: true, encoding: .utf8)
+                return tempURL
+            } catch {
+                return nil
+            }
+        }
+
         /// Examines text attributes at the given character index and returns a Quick Look-compatible file URL.
         /// For web URLs, creates a temporary `.webloc` file so QLPreviewPanel can render the page.
         @MainActor
@@ -3419,6 +3433,13 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             if let storedFilename = attrs[.fileStoredFilename] as? String,
                let fileURL = FileAttachmentStorageManager.shared.fileURL(for: storedFilename) {
                 return fileURL
+            }
+
+            // Note mention — serialize note content to a temp HTML file
+            if let idStr = attrs[.notelinkID] as? String,
+               let noteID = UUID(uuidString: idStr),
+               let note = fetchNote?(noteID) {
+                return generateNotePreviewHTML(for: note)
             }
 
             // 3. Web clip URL
