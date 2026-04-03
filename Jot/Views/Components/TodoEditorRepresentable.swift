@@ -1296,6 +1296,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
     let editorInstanceID: UUID?
     var readOnly: Bool = false
     var onNavigateToNote: ((UUID) -> Void)?
+    var fetchNote: ((UUID) -> Note?)?
     private let unlimitedDimension = CGFloat.greatestFiniteMagnitude
 
     func makeNSView(context: Context) -> InlineNSTextView {
@@ -1422,6 +1423,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
 
         // Sync navigate callback
         context.coordinator.onNavigateToNote = onNavigateToNote
+        context.coordinator.fetchNote = fetchNote
 
         // Only update text if it has actually changed
         context.coordinator.updateIfNeeded(with: text)
@@ -1581,6 +1583,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         /// yet (no enclosingScrollView), so overlay creation was deferred.
         private var needsDeferredOverlaySetup = false
         var onNavigateToNote: ((UUID) -> Void)?
+        var fetchNote: ((UUID) -> Note?)?
         var lastKnownTextViewWidth: CGFloat = 0
         /// True once the bounds-change observer on the clip view has been registered.
         /// Note: these flags are never reset because NSViewRepresentable does not provide
@@ -2433,6 +2436,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             tabsOverlays.removeAll()
             cardSectionOverlays.values.forEach { $0.removeFromSuperview() }
             cardSectionOverlays.removeAll()
+            filePreviewOverlays.values.forEach { $0.removeFromSuperview() }
+            filePreviewOverlays.removeAll()
         }
 
         deinit {
@@ -2445,6 +2450,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             let codeOverlays = codeBlockOverlays.values.map { $0 }
             let tabOverlays = tabsOverlays.values.map { $0 }
             let cardOverlays = cardSectionOverlays.values.map { $0 }
+            let fileOverlays = filePreviewOverlays.values.map { $0 }
             observers.forEach { NotificationCenter.default.removeObserver($0) }
             observers.removeAll()
             Task { @MainActor in
@@ -2455,6 +2461,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 codeOverlays.forEach { $0.removeFromSuperview() }
                 tabOverlays.forEach { $0.removeFromSuperview() }
                 cardOverlays.forEach { $0.removeFromSuperview() }
+                fileOverlays.forEach { $0.removeFromSuperview() }
             }
         }
 
@@ -2476,6 +2483,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 imageOverlays.removeAll()
                 tableOverlays.values.forEach { $0.removeFromSuperview() }
                 tableOverlays.removeAll()
+                filePreviewOverlays.values.forEach { $0.removeFromSuperview() }
+                filePreviewOverlays.removeAll()
                 overlayHostView = newHost
             }
             // Register as layout manager delegate for overlay position tracking
@@ -4701,7 +4710,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                             || value is NoteTableAttachment
                             || value is NoteTabsAttachment
                             || value is NoteCardSectionAttachment
-                            || value is NoteDividerAttachment {
+                            || value is NoteDividerAttachment
+                            || (value is NoteFileAttachment && (value as! NoteFileAttachment).viewMode != .tag) {
                             hasBlockAttachment = true
                             stop.pointee = true
                         }
