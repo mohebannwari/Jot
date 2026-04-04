@@ -3,22 +3,24 @@
 //  Jot
 //
 //  Overlay NSView rendering a callout block inside the text editor.
-//  Structure: single rounded block with a floating capsule pill straddling the
-//  top edge at left: 18px. Pill contains type icon, label, and chevron dropdown.
-//  Figma source: node 2448:7886
+//  Structure: asymmetric rounded body (Figma node 2704:5189) plus a full-height
+//  left accent rail (2704:5191) with type icon, label, and chevron.
+//  Supersedes prior floating top capsule (legacy Figma 2448:7886).
 //
 
 import AppKit
+import QuartzCore
 
 final class CalloutOverlayView: NSView {
 
     static let minWidth: CGFloat = 400
-    /// Height of a single line at the callout's body font size (15pt regular).
-    /// Cached to avoid allocating NSFont on every layout pass.
+
+    /// Single line height at Label-2 / 15pt Medium (Figma 2704:5190).
     private static let singleLineHeight: CGFloat = {
-        let font = NSFont.systemFont(ofSize: 15, weight: .regular)
+        let font = NSFont.systemFont(ofSize: 15, weight: .medium)
         return ceil(font.ascender - font.descender + font.leading)
     }()
+
     /// Set by the coordinator so drag-resize respects the actual container.
     var currentContainerWidth: CGFloat = 0
     private static let handleWidth: CGFloat = 12
@@ -35,27 +37,30 @@ final class CalloutOverlayView: NSView {
     var onDeleteCallout: (() -> Void)?
     var onWidthChanged: ((CGFloat) -> Void)?
 
-    // -- Figma Design Tokens (node 2448:7886) --------------------------------
-    private let blockRadius:        CGFloat = 16   // var(--2xl, 16px)
-    private let blockPaddingTop:    CGFloat = 24   // clears pill
-    private let blockPaddingBottom: CGFloat = 16   // var(--base, 16px)
-    private let blockPaddingH:      CGFloat = 16   // var(--base, 16px)
-    private let pillPadding:        CGFloat = 4    // var(--xs2, 4px)
-    private let pillLeftOffset:     CGFloat = 18   // Figma: left: 18px
-    private let chipIconGap:        CGFloat = 5
-    private let chipChevGap:        CGFloat = 3
-    private let iconSize:           CGFloat = 15
-    private let chevronSize:        CGFloat = 15   // was 14 -- updated per Figma
+    // -- Figma node 2704:5188 geometry ----------------------------------------
+    /// Main body padding (2704:5189): 16 on all sides; text starts after rail + this gap.
+    private let blockPadding: CGFloat = 16
+    /// Space between accent rail trailing edge and body text (content inset).
+    private let contentGapAfterRail: CGFloat = 16
 
-    /// Pill height = pillPadding(4) + iconSize(18) + pillPadding(4) = 26px
-    private var pillHeight: CGFloat { pillPadding * 2 + iconSize }
-    /// Half the pill extends above the block's top edge.
-    private var pillOverflow: CGFloat { pillHeight / 2 }
+    /// Body corner radii — topLeading, topTrailing, bottomTrailing, bottomLeading (layer / CG coords).
+    private let bodyRadii = _CornerRadii(topLeading: 4, topTrailing: 16, bottomTrailing: 16, bottomLeading: 16)
+    /// Accent rail corner radii (2704:5191).
+    private let railRadii = _CornerRadii(topLeading: 16, topTrailing: 32, bottomTrailing: 32, bottomLeading: 4)
+
+    private let railPaddingLeading: CGFloat = 12   // sm
+    private let railPaddingTrailing: CGFloat = 4   // xs2
+    private let railPaddingVertical: CGFloat = 4   // xs2
+    private let labelHorizontalPadding: CGFloat = 4 // Text Label wrapper px in Figma
+    private let iconSize: CGFloat = 18
+    private let chevronSize: CGFloat = 18
 
     // -- Subviews -------------------------------------------------------------
-    private let blockView  = NSView()
-    private let chipView   = _ChipButton()
-    private let iconView   = NSImageView()
+    private let blockView = NSView()
+    private let blockMaskLayer = CAShapeLayer()
+    private let accentRailView = _AccentRailButton()
+    private let railMaskLayer = CAShapeLayer()
+    private let iconView = NSImageView()
     private let chipLabel: NSTextField = {
         let tf = NSTextField(labelWithString: "")
         tf.isBordered = false
@@ -86,7 +91,7 @@ final class CalloutOverlayView: NSView {
         tf.lineBreakMode = .byWordWrapping
         tf.usesSingleLineMode = false
         tf.maximumNumberOfLines = 0
-        tf.font = .systemFont(ofSize: 15, weight: .regular)
+        tf.font = .systemFont(ofSize: 15, weight: .medium)
         tf.textColor = .labelColor
         return tf
     }()
@@ -108,27 +113,29 @@ final class CalloutOverlayView: NSView {
 
     private func buildView() {
         wantsLayer = true
-        layer?.masksToBounds = false  // pill must extend above block bounds
+        layer?.masksToBounds = false
 
-        // Block -- single rounded background for content
         blockView.wantsLayer = true
-        blockView.layer?.cornerRadius = blockRadius
-        blockView.layer?.cornerCurve = .continuous
         blockView.layer?.masksToBounds = true
+        blockView.layer?.cornerRadius = 0
+        blockMaskLayer.fillColor = NSColor.black.cgColor
+        blockView.layer?.mask = blockMaskLayer
         addSubview(blockView)
 
         blockView.addSubview(textField)
         textField.delegate = self
 
-        // Chip pill -- floats as sibling of blockView, straddles top edge
-        chipView.wantsLayer = true
-        chipView.onActivate = { [weak self] in self?.showTypePicker() }
-        addSubview(chipView)
-        chipView.addSubview(iconView)
-        chipView.addSubview(chipLabel)
-        chipView.addSubview(chevronView)
+        accentRailView.wantsLayer = true
+        accentRailView.layer?.masksToBounds = true
+        accentRailView.layer?.cornerRadius = 0
+        railMaskLayer.fillColor = NSColor.black.cgColor
+        accentRailView.layer?.mask = railMaskLayer
+        accentRailView.onActivate = { [weak self] in self?.showTypePicker() }
+        addSubview(accentRailView)
+        accentRailView.addSubview(iconView)
+        accentRailView.addSubview(chipLabel)
+        accentRailView.addSubview(chevronView)
 
-        // Resize handle
         resizeHandle.onDrag = { [weak self] newWidth in
             self?.handleResize(to: newWidth)
         }
@@ -151,11 +158,8 @@ final class CalloutOverlayView: NSView {
         let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         let colors = calloutData.type.viewColors
 
-        // Block background -- /950 dark, /50 light
         blockView.layer?.backgroundColor = isDark ? colors.blockDark.cgColor : colors.blockLight.cgColor
-
-        // Chip pill -- mode-dependent accent, white contents
-        chipView.layer?.backgroundColor = isDark ? colors.pillDark.cgColor : colors.pillLight.cgColor
+        accentRailView.layer?.backgroundColor = isDark ? colors.pillDark.cgColor : colors.pillLight.cgColor
 
         chipLabel.attributedStringValue = NSAttributedString(
             string: calloutData.type.rawValue.capitalized,
@@ -175,22 +179,22 @@ final class CalloutOverlayView: NSView {
 
         chevronView.contentTintColor = .white
 
-        // Text color -- full opacity
-        textField.textColor = isDark ? .white : NSColor(srgbRed: 26/255, green: 26/255, blue: 26/255, alpha: 1)
+        textField.font = .systemFont(ofSize: 15, weight: .medium)
+        // Semantic secondary / placeholder — catalog tokens adapt light & dark (AGENTS.md).
+        let bodyColor = NSColor(named: "SecondaryTextColor") ?? .secondaryLabelColor
+        textField.textColor = bodyColor
 
-        // Placeholder -- 70% opacity
-        let placeholderColor: NSColor = isDark
-            ? .white.withAlphaComponent(0.7)
-            : NSColor(srgbRed: 26/255, green: 26/255, blue: 26/255, alpha: 0.7)
+        let placeholderColor = NSColor(named: "SettingsPlaceholderTextColor") ?? .placeholderTextColor
         textField.placeholderAttributedString = NSAttributedString(
             string: "Type callout content...",
             attributes: [
-                .font: NSFont.systemFont(ofSize: 15, weight: .regular),
+                .font: NSFont.systemFont(ofSize: 15, weight: .medium),
                 .foregroundColor: placeholderColor,
-                .kern: NSNumber(value: 0)
+                .kern: NSNumber(value: -0.5)
             ]
         )
 
+        _ = isDark // appearance-driven redraw if we add type-specific text colors later
         needsLayout = true
     }
 
@@ -208,67 +212,55 @@ final class CalloutOverlayView: NSView {
     override func layout() {
         super.layout()
 
-        let pO = pillOverflow  // 13px
+        let H = bounds.height
+        let W = bounds.width
 
-        // Block fills width, offset down by pill overflow
-        let blockH = max(bounds.height - pO, 50)
-        blockView.frame = CGRect(x: 0, y: pO, width: bounds.width, height: blockH)
-
-        // Dynamic corner radius: 16 for single-line, 22 for multiline
-        let contentH = blockH - blockPaddingTop - blockPaddingBottom
-        let dynamicRadius = contentH > Self.singleLineHeight + 4 ? 22 : blockRadius
-        blockView.layer?.cornerRadius = dynamicRadius
-
-        // Text field inside block
-        let tfW = max(bounds.width - blockPaddingH * 2, 40)
-        let tfH = max(blockH - blockPaddingTop - blockPaddingBottom, 20)
-        // blockView is non-flipped (y=0 at bottom), so y=blockPaddingBottom
-        // gives 16px from bottom, leaving 24px at the top to clear the pill
-        textField.frame = CGRect(x: blockPaddingH, y: blockPaddingBottom, width: tfW, height: tfH)
-
-        // Chip pill -- straddles blockView's top edge
         chipLabel.sizeToFit()
         let labelW = ceil(chipLabel.frame.width) + 1
         let labelH = ceil(chipLabel.frame.height)
-        let chipW = pillPadding + iconSize + chipIconGap + labelW + chipChevGap + chevronSize + pillPadding
-        let chipH = pillHeight  // 26px
-        chipView.frame = CGRect(x: pillLeftOffset, y: 0, width: chipW, height: chipH)
-        chipView.layer?.cornerRadius = chipH / 2  // capsule
+        let railW = Self.railWidth(labelWidth: labelW)
 
-        // Icon inside chip
-        let iconOffY = (chipH - iconSize) / 2
-        iconView.frame = CGRect(x: pillPadding, y: iconOffY, width: iconSize, height: iconSize)
-
-        // Label inside chip
-        let labelOffY = (chipH - labelH) / 2
-        chipLabel.frame = CGRect(
-            x: pillPadding + iconSize + chipIconGap,
-            y: labelOffY,
-            width: labelW,
-            height: labelH
+        blockView.frame = CGRect(x: 0, y: 0, width: W, height: H)
+        blockMaskLayer.frame = blockView.bounds
+        blockMaskLayer.path = Self.cgPathUnevenRoundedRect(
+            bounds: blockView.bounds,
+            radii: bodyRadii
         )
 
-        // Chevron inside chip
-        let chevOffY = (chipH - chevronSize) / 2
-        chevronView.frame = CGRect(
-            x: pillPadding + iconSize + chipIconGap + labelW + chipChevGap,
-            y: chevOffY,
-            width: chevronSize,
-            height: chevronSize
+        let textLeading = railW + contentGapAfterRail
+        let tfW = max(W - textLeading - blockPadding, 40)
+        let tfH = max(H - blockPadding * 2, 20)
+        textField.frame = CGRect(x: textLeading, y: blockPadding, width: tfW, height: tfH)
+
+        accentRailView.frame = CGRect(x: 0, y: 0, width: railW, height: H)
+        railMaskLayer.frame = accentRailView.bounds
+        railMaskLayer.path = Self.cgPathUnevenRoundedRect(
+            bounds: accentRailView.bounds,
+            radii: railRadii
         )
 
-        // Resize handle -- straddles right edge
+        let rowH = iconSize
+        let iconY = (H - rowH) / 2
+        iconView.frame = CGRect(x: railPaddingLeading, y: iconY, width: iconSize, height: iconSize)
+
+        let labelX = railPaddingLeading + iconSize + labelHorizontalPadding
+        let labelY = (H - labelH) / 2
+        chipLabel.frame = CGRect(x: labelX, y: labelY, width: labelW, height: labelH)
+
+        let chevX = labelX + labelW + labelHorizontalPadding
+        let chevY = (H - chevronSize) / 2
+        chevronView.frame = CGRect(x: chevX, y: chevY, width: chevronSize, height: chevronSize)
+
         resizeHandle.frame = CGRect(
-            x: bounds.width - Self.handleWidth / 2,
+            x: W - Self.handleWidth / 2,
             y: 0,
             width: Self.handleWidth,
-            height: bounds.height
+            height: H
         )
     }
 
     // MARK: - Cursor
 
-    /// Returns the resize cursor if the window point falls on the resize handle, nil otherwise.
     func cursorForPoint(_ windowPoint: CGPoint) -> NSCursor? {
         let local = convert(windowPoint, from: nil)
         guard resizeHandle.frame.contains(local) else { return nil }
@@ -278,24 +270,43 @@ final class CalloutOverlayView: NSView {
     // MARK: - Height Calculation
 
     static func heightForData(_ data: CalloutData, width: CGFloat) -> CGFloat {
-        let pillOverflow: CGFloat = 13     // half of 26px pill
-        let topPad: CGFloat = 24           // block top padding (clears pill)
-        let bottomPad: CGFloat = 16        // block bottom padding
-        let hPad: CGFloat = 16             // horizontal padding
-        let cellInset: CGFloat = 4         // NSTextFieldCell internal padding
-        let tw = max(width - hPad * 2, 40)
+        let vPad: CGFloat = 16
+        let trailPad: CGFloat = 16
+        let rw = railWidthForType(data.type)
+        let textLeading = rw + 16
+        let tw = max(width - textLeading - trailPad, 40)
+        let cellInset: CGFloat = 4
         let text = data.content.isEmpty ? "A" : data.content
-        let rect = NSAttributedString(
-            string: text,
-            attributes: [.font: NSFont.systemFont(ofSize: 15, weight: .regular)]
-        ).boundingRect(
+        let bodyAttrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 15, weight: .medium),
+            .kern: -0.5
+        ]
+        let rect = NSAttributedString(string: text, attributes: bodyAttrs).boundingRect(
             with: CGSize(width: tw, height: .greatestFiniteMagnitude),
             options: [.usesLineFragmentOrigin, .usesFontLeading]
         )
-        return pillOverflow + topPad + max(ceil(rect.height) + cellInset, 20) + bottomPad
+        return vPad + max(ceil(rect.height) + cellInset, 20) + vPad
     }
 
-    // MARK: - Cursor
+    /// Width of the left rail for a given type label string width.
+    private static func railWidth(labelWidth: CGFloat) -> CGFloat {
+        railPaddingLeading + 18 + labelHorizontalPaddingStatic + labelWidth
+            + labelHorizontalPaddingStatic + 18 + railPaddingTrailingStatic
+    }
+
+    private static let labelHorizontalPaddingStatic: CGFloat = 4
+    private static let railPaddingLeading: CGFloat = 12
+    private static let railPaddingTrailingStatic: CGFloat = 4
+
+    private static func railWidthForType(_ type: CalloutData.CalloutType) -> CGFloat {
+        let label = type.rawValue.capitalized
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 11, weight: .medium),
+            .kern: -0.2
+        ]
+        let w = ceil((label as NSString).size(withAttributes: attrs).width) + 1
+        return railWidth(labelWidth: w)
+    }
 
     override func resetCursorRects() {
         addCursorRect(bounds, cursor: .arrow)
@@ -316,7 +327,7 @@ final class CalloutOverlayView: NSView {
             if type == calloutData.type { item.state = .on }
             menu.addItem(item)
         }
-        let anchorPoint = CGPoint(x: chipView.frame.origin.x, y: chipView.frame.maxY)
+        let anchorPoint = CGPoint(x: accentRailView.frame.midX, y: accentRailView.frame.maxY)
         menu.popUp(positioning: nil, at: anchorPoint, in: self)
     }
 
@@ -358,6 +369,64 @@ final class CalloutOverlayView: NSView {
 
     @objc private func deleteCallout() {
         onDeleteCallout?()
+    }
+
+    // MARK: - Uneven rounded rect (CG, origin bottom-left, y increasing upward)
+
+    private struct _CornerRadii {
+        var topLeading: CGFloat
+        var topTrailing: CGFloat
+        var bottomTrailing: CGFloat
+        var bottomLeading: CGFloat
+    }
+
+    /// Rounded rectangle path for `bounds` using standard Core Graphics coordinates (layer space).
+    private static func cgPathUnevenRoundedRect(bounds b: CGRect, radii r: _CornerRadii) -> CGPath {
+        let x = b.minX
+        let y = b.minY
+        let w = b.width
+        let h = b.height
+        let tl = min(r.topLeading, w / 2, h / 2)
+        let tr = min(r.topTrailing, w / 2, h / 2)
+        let br = min(r.bottomTrailing, w / 2, h / 2)
+        let bl = min(r.bottomLeading, w / 2, h / 2)
+
+        let path = CGMutablePath()
+        path.move(to: CGPoint(x: x + bl, y: y))
+        path.addLine(to: CGPoint(x: x + w - br, y: y))
+        path.addArc(
+            center: CGPoint(x: x + w - br, y: y + br),
+            radius: br,
+            startAngle: -.pi / 2,
+            endAngle: 0,
+            clockwise: false
+        )
+        path.addLine(to: CGPoint(x: x + w, y: y + h - tr))
+        path.addArc(
+            center: CGPoint(x: x + w - tr, y: y + h - tr),
+            radius: tr,
+            startAngle: 0,
+            endAngle: .pi / 2,
+            clockwise: false
+        )
+        path.addLine(to: CGPoint(x: x + tl, y: y + h))
+        path.addArc(
+            center: CGPoint(x: x + tl, y: y + h - tl),
+            radius: tl,
+            startAngle: .pi / 2,
+            endAngle: .pi,
+            clockwise: false
+        )
+        path.addLine(to: CGPoint(x: x, y: y + bl))
+        path.addArc(
+            center: CGPoint(x: x + bl, y: y + bl),
+            radius: bl,
+            startAngle: .pi,
+            endAngle: -.pi / 2,
+            clockwise: false
+        )
+        path.closeSubpath()
+        return path
     }
 }
 
@@ -427,9 +496,9 @@ private final class _CalloutResizeHandle: NSView {
     override func mouseUp(with event: NSEvent) { }
 }
 
-// MARK: - Chip Button (type picker trigger)
+// MARK: - Accent rail (type picker)
 
-private final class _ChipButton: NSView {
+private final class _AccentRailButton: NSView {
 
     var onActivate: (() -> Void)?
 
@@ -437,7 +506,6 @@ private final class _ChipButton: NSView {
         super.init(frame: frame)
         wantsLayer = true
         layer?.masksToBounds = true
-        layer?.cornerCurve = .continuous
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -454,12 +522,11 @@ private final class _ChipButton: NSView {
 // MARK: - Per-Type View Colors
 
 private struct CalloutTypeColors {
-    let blockLight: NSColor  // /50 or /100 shade
-    let blockDark:  NSColor  // /950 shade
-    let pillLight:  NSColor  // pill bg in light mode
-    let pillDark:   NSColor  // pill bg in dark mode
+    let blockLight: NSColor
+    let blockDark:  NSColor
+    let pillLight:  NSColor
+    let pillDark:   NSColor
 
-    /// Convenience for types that use the same pill color in both modes.
     init(blockLight: NSColor, blockDark: NSColor, pillColor: NSColor) {
         self.blockLight = blockLight
         self.blockDark  = blockDark
@@ -480,34 +547,34 @@ private extension CalloutData.CalloutType {
         switch self {
         case .info:
             return CalloutTypeColors(
-                blockLight: NSColor(hex: "#BFDBFE"),   // blue-200
-                blockDark:  NSColor(hex: "#172554"),   // blue-950
-                pillColor:  NSColor(hex: "#2563EB")    // blue-600
+                blockLight: NSColor(hex: "#BFDBFE"),
+                blockDark:  NSColor(hex: "#172554"),
+                pillColor:  NSColor(hex: "#2563EB")
             )
         case .warning:
             return CalloutTypeColors(
-                blockLight: NSColor(hex: "#FEF08A"),   // yellow-200
-                blockDark:  NSColor(hex: "#422006"),   // yellow-950
-                pillColor:  NSColor(hex: "#CA8A04")    // yellow-600
+                blockLight: NSColor(hex: "#FEF08A"),
+                blockDark:  NSColor(hex: "#422006"),
+                pillColor:  NSColor(hex: "#CA8A04")
             )
         case .tip:
             return CalloutTypeColors(
-                blockLight: NSColor(hex: "#BBF7D0"),   // green-200
-                blockDark:  NSColor(hex: "#052E16"),   // green-950
-                pillColor:  NSColor(hex: "#16A34A")    // green-600
+                blockLight: NSColor(hex: "#BBF7D0"),
+                blockDark:  NSColor(hex: "#052E16"),
+                pillColor:  NSColor(hex: "#16A34A")
             )
         case .note:
             return CalloutTypeColors(
-                blockLight: NSColor(hex: "#E9D5FF"),   // purple-200
-                blockDark:  NSColor(hex: "#3B0764"),   // purple-950
-                pillLight:  NSColor(hex: "#6B21A8"),    // purple-800
-                pillDark:   NSColor(hex: "#7E22CE")     // purple-700
+                blockLight: NSColor(hex: "#E9D5FF"),
+                blockDark:  NSColor(hex: "#3B0764"),
+                pillLight:  NSColor(hex: "#6B21A8"),
+                pillDark:   NSColor(hex: "#7E22CE")
             )
         case .important:
             return CalloutTypeColors(
-                blockLight: NSColor(hex: "#FECACA"),   // red-200
-                blockDark:  NSColor(hex: "#450A0A"),   // red-950
-                pillColor:  NSColor(hex: "#DC2626")    // red-600
+                blockLight: NSColor(hex: "#FECACA"),
+                blockDark:  NSColor(hex: "#450A0A"),
+                pillColor:  NSColor(hex: "#DC2626")
             )
         }
     }
