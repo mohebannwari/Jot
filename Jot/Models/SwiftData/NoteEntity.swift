@@ -30,8 +30,8 @@ final class NoteEntity {
     // MARK: - Performance Optimized Properties
     @Transient
     var contentPreview: String {
-        let stripped = content.replacingOccurrences(
-            of: #"\[\[/?[^\]]*\]\]"#, with: "", options: .regularExpression)
+        let stripped = Self.contentStripRegex.stringByReplacingMatches(
+            in: content, range: NSRange(content.startIndex..., in: content), withTemplate: "")
         return stripped.count <= 150 ? stripped : String(stripped.prefix(150)) + "..."
     }
 
@@ -68,6 +68,13 @@ final class NoteEntity {
         formatter.timeStyle = .short
         return formatter
     }()
+
+    // MARK: - Shared Static Resources
+    private static let contentStripRegex = try! NSRegularExpression(pattern: #"\[\[/?[^\]]*\]\]"#)
+    private static let webClipRegex = try! NSRegularExpression(
+        pattern: #"\[\[webclip\|([^|]*)\|([^|]*)\|([^\]]*)\]\]"#
+    )
+    private static let decoder = JSONDecoder()
 
     // MARK: - Initialization
     init(
@@ -155,12 +162,8 @@ final class NoteEntity {
     private func extractWebClipData() {
         // Extract webclip data from legacy content format
         // Format: [[webclip|title|description|url]]
-        let pattern = #"\[\[webclip\|([^|]*)\|([^|]*)\|([^\]]*)\]\]"#
-
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return }
-
         let range = NSRange(content.startIndex..<content.endIndex, in: content)
-        if let match = regex.firstMatch(in: content, range: range) {
+        if let match = Self.webClipRegex.firstMatch(in: content, range: range) {
             if match.numberOfRanges >= 4 {
                 let titleRange = match.range(at: 1)
                 let descRange = match.range(at: 2)
@@ -197,11 +200,11 @@ final class NoteEntity {
         note.date = modifiedAt
         note.createdAt = createdAt
         if let data = stickersData {
-            note.stickers = (try? JSONDecoder().decode([Sticker].self, from: data)) ?? []
+            note.stickers = (try? Self.decoder.decode([Sticker].self, from: data)) ?? []
         }
         // Decode sessions, or migrate from legacy flat fields
         if let data = meetingSessionsData,
-           let sessions = try? JSONDecoder().decode([MeetingSession].self, from: data) {
+           let sessions = try? Self.decoder.decode([MeetingSession].self, from: data) {
             note.meetingSessions = sessions
         } else if isMeetingNote && !meetingSummary.isEmpty {
             // Legacy migration: synthesize a single session from flat fields

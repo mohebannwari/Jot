@@ -143,6 +143,9 @@ final class ThemeManager: ObservableObject {
     @Published var currentBodyFontStyle: BodyFontStyle {
         didSet {
             userDefaults.set(currentBodyFontStyle.rawValue, forKey: Self.bodyFontStyleDefaultsKey)
+            FontManager.invalidateFontCache()
+            RichTextSerializer.invalidateCaches()
+            notifyEditorSettingsChanged()
         }
     }
 
@@ -351,6 +354,9 @@ final class ThemeManager: ObservableObject {
     }
 
     private func notifyEditorSettingsChanged() {
+        // Bust caches before notifying — font size and line spacing both affect serializer output.
+        FontManager.invalidateFontCache()
+        RichTextSerializer.invalidateCaches()
         NotificationCenter.default.post(name: Self.editorSettingsChangedNotification, object: nil)
     }
 

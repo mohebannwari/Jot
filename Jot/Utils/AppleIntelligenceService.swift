@@ -148,6 +148,15 @@ final class AppleIntelligenceService {
 
     private init() {}
 
+    // MARK: - Task Cancellation
+
+    private var currentAITask: Task<Void, Error>?
+
+    func cancelCurrentOperation() {
+        currentAITask?.cancel()
+        currentAITask = nil
+    }
+
     var isAvailable: Bool {
         #if canImport(FoundationModels)
         guard #available(macOS 26.0, *) else { return false }
@@ -187,58 +196,82 @@ final class AppleIntelligenceService {
 
     // MARK: - Markup Stripping
 
+    // Pre-compiled regex patterns for stripMarkupForAI — compiled once at class load time,
+    // not on every call. Patterns that span newlines use .dotMatchesLineSeparators so that
+    // `.*?` and similar quantifiers cross line boundaries (matching the original [\s\S]*? intent).
+    private static let aiBlockRegex = try! NSRegularExpression(
+        pattern: #"\[\[ai-block\]\].*?\[\[/ai-block\]\]"#,
+        options: .dotMatchesLineSeparators)
+    private static let tableRegex = try! NSRegularExpression(
+        pattern: #"\[\[table\|[^\]]*\]\][\s\S]*?\[\[/table\]\]"#,
+        options: .dotMatchesLineSeparators)
+    private static let calloutOpenRegex = try! NSRegularExpression(
+        pattern: #"\[\[callout\|[^\]]*\]\]"#)
+    private static let codeblockOpenRegex = try! NSRegularExpression(
+        pattern: #"\[\[codeblock\|[^\]]*\]\]"#)
+    private static let webclipRegex = try! NSRegularExpression(
+        pattern: #"\[\[webclip\|([^|]*)\|[^|]*\|([^\]]*)\]\]"#)
+    private static let notelinkRegex = try! NSRegularExpression(
+        pattern: #"\[\[notelink\|[^|]*\|([^\]]*)\]\]"#)
+    private static let linkRegex = try! NSRegularExpression(
+        pattern: #"\[\[link\|([^\]]*)\]\]"#)
+    private static let fileRegex = try! NSRegularExpression(
+        pattern: #"\[\[file\|[^|]*\|[^|]*\|([^\]]*)\]\]"#)
+    private static let fileLinkRegex = try! NSRegularExpression(
+        pattern: #"\[\[filelink\|[^|]*\|([^|]*)\|[^\]]*\]\]"#)
+    private static let imageRegex = try! NSRegularExpression(
+        pattern: #"\[\[image\|\|\|[^\]]*\]\]"#)
+    private static let orderedListRegex = try! NSRegularExpression(
+        pattern: #"\[\[ol\|(\d+)\]\]"#)
+    private static let alignRegex = try! NSRegularExpression(
+        pattern: #"\[\[align:(center|right|justify)\]\]"#)
+    private static let colorRegex = try! NSRegularExpression(
+        pattern: #"\[\[color\|[0-9a-fA-F]{6}\]\]"#)
+    private static let highlightRegex = try! NSRegularExpression(
+        pattern: #"\[\[hl\|[0-9a-fA-F]{6}\]\]"#)
+    private static let multiNewlineRegex = try! NSRegularExpression(
+        pattern: #"\n{3,}"#)
+
+    /// Replaces all matches of `regex` in `string` with `template` in-place.
+    private static func replaceMatches(
+        of regex: NSRegularExpression, in string: inout String, with template: String
+    ) {
+        string = regex.stringByReplacingMatches(
+            in: string, range: NSRange(string.startIndex..., in: string), withTemplate: template)
+    }
+
     /// Strips all custom serialization markup from `editedContent`, returning
     /// clean plain text suitable for Foundation Model input.
     static func stripMarkupForAI(_ serialized: String) -> String {
         var s = serialized
 
         // 1. Remove AI blocks entirely
-        s = s.replacingOccurrences(
-            of: #"\[\[ai-block\]\].*?\[\[/ai-block\]\]"#,
-            with: "", options: .regularExpression)
+        Self.replaceMatches(of: Self.aiBlockRegex, in: &s, with: "")
 
         // 2. Complex embedded objects
         // Tables → placeholder
-        s = s.replacingOccurrences(
-            of: #"\[\[table\|[^\]]*\]\][\s\S]*?\[\[/table\]\]"#,
-            with: "[Table]", options: .regularExpression)
+        Self.replaceMatches(of: Self.tableRegex, in: &s, with: "[Table]")
         // Callouts → keep content
-        s = s.replacingOccurrences(
-            of: #"\[\[callout\|[^\]]*\]\]"#, with: "", options: .regularExpression)
+        Self.replaceMatches(of: Self.calloutOpenRegex, in: &s, with: "")
         s = s.replacingOccurrences(of: "[[/callout]]", with: "")
         // Code blocks → keep code content
-        s = s.replacingOccurrences(
-            of: #"\[\[codeblock\|[^\]]*\]\]"#, with: "", options: .regularExpression)
+        Self.replaceMatches(of: Self.codeblockOpenRegex, in: &s, with: "")
         s = s.replacingOccurrences(of: "[[/codeblock]]", with: "")
         // Web clips → "TITLE (URL)"
-        s = s.replacingOccurrences(
-            of: #"\[\[webclip\|([^|]*)\|[^|]*\|([^\]]*)\]\]"#,
-            with: "$1 ($2)", options: .regularExpression)
+        Self.replaceMatches(of: Self.webclipRegex, in: &s, with: "$1 ($2)")
         // Note links → title
-        s = s.replacingOccurrences(
-            of: #"\[\[notelink\|[^|]*\|([^\]]*)\]\]"#,
-            with: "$1", options: .regularExpression)
+        Self.replaceMatches(of: Self.notelinkRegex, in: &s, with: "$1")
         // Links → URL
-        s = s.replacingOccurrences(
-            of: #"\[\[link\|([^\]]*)\]\]"#,
-            with: "$1", options: .regularExpression)
+        Self.replaceMatches(of: Self.linkRegex, in: &s, with: "$1")
         // Files → "[File: ORIGINAL]"
-        s = s.replacingOccurrences(
-            of: #"\[\[file\|[^|]*\|[^|]*\|([^\]]*)\]\]"#,
-            with: "[File: $1]", options: .regularExpression)
+        Self.replaceMatches(of: Self.fileRegex, in: &s, with: "[File: $1]")
         // File links → "[File: NAME]"
-        s = s.replacingOccurrences(
-            of: #"\[\[filelink\|[^|]*\|([^|]*)\|[^\]]*\]\]"#,
-            with: "[File: $1]", options: .regularExpression)
+        Self.replaceMatches(of: Self.fileLinkRegex, in: &s, with: "[File: $1]")
         // Images → remove entirely
-        s = s.replacingOccurrences(
-            of: #"\[\[image\|\|\|[^\]]*\]\]"#,
-            with: "", options: .regularExpression)
+        Self.replaceMatches(of: Self.imageRegex, in: &s, with: "")
 
         // 3. Ordered lists → "N. "
-        s = s.replacingOccurrences(
-            of: #"\[\[ol\|(\d+)\]\]"#,
-            with: "$1. ", options: .regularExpression)
+        Self.replaceMatches(of: Self.orderedListRegex, in: &s, with: "$1. ")
 
         // 4. Paired formatting tags — keep inner text
         let pairedTags = [
@@ -251,41 +284,55 @@ final class AppleIntelligenceService {
             s = s.replacingOccurrences(of: "[[/\(tag)]]", with: "")
         }
         // Alignment tags
-        s = s.replacingOccurrences(
-            of: #"\[\[align:(center|right|justify)\]\]"#,
-            with: "", options: .regularExpression)
+        Self.replaceMatches(of: Self.alignRegex, in: &s, with: "")
         s = s.replacingOccurrences(of: "[[/align]]", with: "")
 
         // 5. Parameterized tags: color, highlight
-        s = s.replacingOccurrences(
-            of: #"\[\[color\|[0-9a-fA-F]{6}\]\]"#,
-            with: "", options: .regularExpression)
+        Self.replaceMatches(of: Self.colorRegex, in: &s, with: "")
         s = s.replacingOccurrences(of: "[[/color]]", with: "")
-        s = s.replacingOccurrences(
-            of: #"\[\[hl\|[0-9a-fA-F]{6}\]\]"#,
-            with: "", options: .regularExpression)
+        Self.replaceMatches(of: Self.highlightRegex, in: &s, with: "")
         s = s.replacingOccurrences(of: "[[/hl]]", with: "")
 
         // 6. Collapse multiple blank lines
-        s = s.replacingOccurrences(
-            of: #"\n{3,}"#,
-            with: "\n\n", options: .regularExpression)
+        Self.replaceMatches(of: Self.multiNewlineRegex, in: &s, with: "\n\n")
 
         return s.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     #if canImport(FoundationModels)
+
+    // MARK: - Session Cache
+
+    private var sessionCache: [String: Any] = [:]
+
+    @available(macOS 26.0, *)
+    private func cachedSession(instructions: String) -> LanguageModelSession {
+        if let existing = sessionCache[instructions] as? LanguageModelSession {
+            return existing
+        }
+        let session = LanguageModelSession(instructions: instructions)
+        sessionCache[instructions] = session
+        return session
+    }
+
+    func clearSessionCache() {
+        guard #available(macOS 26.0, *) else { return }
+        sessionCache.removeAll()
+    }
+
     func summarize(text: String) async throws -> String {
         guard #available(macOS 26.0, *) else {
             throw AIServiceError.unavailable(unavailabilityReason)
         }
-        let session = LanguageModelSession(
+        currentAITask?.cancel()
+        let session = cachedSession(
             instructions: "You are a precise writing assistant. Summarize the user's note concisely and accurately. Only include information explicitly stated in the note. Do not add, infer, or embellish any details not present in the source text."
         )
         let response = try await session.respond(
             to: "Summarize only what is explicitly written in this note:\n\n\(text)",
             generating: SummaryResult.self
         )
+        try Task.checkCancellation()
         return response.content.text
     }
 
@@ -293,13 +340,15 @@ final class AppleIntelligenceService {
         guard #available(macOS 26.0, *) else {
             throw AIServiceError.unavailable(unavailabilityReason)
         }
-        let session = LanguageModelSession(
+        currentAITask?.cancel()
+        let session = cachedSession(
             instructions: "You are a precise writing assistant. Identify the 3-5 main themes or takeaways from the user's note. Consolidate related sub-points into single high-level key points. Do not list every individual line — synthesize related items together. Do not add topics not covered in the note."
         )
         let response = try await session.respond(
             to: "Identify the main themes of this note. Consolidate related items into 3-5 high-level key points:\n\n\(text)",
             generating: KeyPointsResult.self
         )
+        try Task.checkCancellation()
         return response.content.points
     }
 
@@ -307,13 +356,15 @@ final class AppleIntelligenceService {
         guard #available(macOS 26.0, *) else {
             throw AIServiceError.unavailable(unavailabilityReason)
         }
-        let session = LanguageModelSession(
+        currentAITask?.cancel()
+        let session = cachedSession(
             instructions: "You are a meticulous editor. Identify only genuine grammar, spelling, and clarity errors in the provided text. Every 'original' field must be an EXACT character-for-character substring found in the input text. Do not fabricate errors that do not exist. Do not suggest stylistic rewrites. Return an empty array if the text is error-free."
         )
         let response = try await session.respond(
             to: "Review this text and identify ONLY real errors. Each 'original' value must appear verbatim in the text below:\n\n\(text)",
             generating: ProofreadAnnotationsResult.self
         )
+        try Task.checkCancellation()
         return response.content.annotations.map {
             ProofreadAnnotation(original: $0.original, replacement: $0.replacement)
         }
@@ -323,6 +374,7 @@ final class AppleIntelligenceService {
         guard #available(macOS 26.0, *) else {
             throw AIServiceError.unavailable(unavailabilityReason)
         }
+        currentAITask?.cancel()
         let systemPrompt: String
         let userPrompt: String
         if isSelection {
@@ -336,11 +388,12 @@ final class AppleIntelligenceService {
             systemPrompt = "You are a skilled writing assistant. Apply the user's editing instruction precisely while preserving the note's overall structure and voice."
             userPrompt = "Apply this instruction to the note: \(instruction)\n\nNote:\n\(text)"
         }
-        let session = LanguageModelSession(instructions: systemPrompt)
+        let session = cachedSession(instructions: systemPrompt)
         let response = try await session.respond(
             to: userPrompt,
             generating: EditResult.self
         )
+        try Task.checkCancellation()
         return response.content.revisedText
     }
 
@@ -348,6 +401,7 @@ final class AppleIntelligenceService {
         guard #available(macOS 26.0, *) else {
             throw AIServiceError.unavailable(unavailabilityReason)
         }
+        currentAITask?.cancel()
         let systemPrompt: String
         let userPrompt: String
         if isSelection {
@@ -361,11 +415,12 @@ final class AppleIntelligenceService {
             systemPrompt = "You are a precise translator. Translate the user's text into the requested language accurately while preserving tone, meaning, and formatting."
             userPrompt = "Translate this text into \(language):\n\n\(text)"
         }
-        let session = LanguageModelSession(instructions: systemPrompt)
+        let session = cachedSession(instructions: systemPrompt)
         let response = try await session.respond(
             to: userPrompt,
             generating: TranslationResult.self
         )
+        try Task.checkCancellation()
         return response.content.translatedText
     }
 
@@ -373,6 +428,7 @@ final class AppleIntelligenceService {
         guard #available(macOS 26.0, *) else {
             throw AIServiceError.unavailable(unavailabilityReason)
         }
+        currentAITask?.cancel()
 
         // First attempt: expansion framing (the on-device model handles
         // "expand this idea" far better than "generate text about X")
@@ -407,8 +463,9 @@ final class AppleIntelligenceService {
         guard #available(macOS 26.0, *) else {
             throw AIServiceError.unavailable(unavailabilityReason)
         }
-        let session = LanguageModelSession(instructions: instruction)
+        let session = cachedSession(instructions: instruction)
         let response = try await session.respond(to: prompt, generating: TextGenerationResult.self)
+        try Task.checkCancellation()
         return response.content.generatedText
     }
 

@@ -24,6 +24,9 @@ struct NoteDetailView: View {
     var onNavigateToNote: ((UUID) -> Void)?
     var backlinks: [BacklinkItem] = []
     var isSidebarAnimating: Bool = false
+    var isPanelAnimating: Bool = false
+
+    private var isLayoutAnimating: Bool { isSidebarAnimating || isPanelAnimating }
 
     // MARK: - Environment
     @Environment(\.colorScheme) private var colorScheme
@@ -171,7 +174,8 @@ struct NoteDetailView: View {
         availableNotes: [NotePickerItem] = [],
         onNavigateToNote: ((UUID) -> Void)? = nil,
         backlinks: [BacklinkItem] = [],
-        isSidebarAnimating: Bool = false
+        isSidebarAnimating: Bool = false,
+        isPanelAnimating: Bool = false
     ) {
         self.note = note
         self.editorInstanceID = editorInstanceID
@@ -183,6 +187,7 @@ struct NoteDetailView: View {
         self.onNavigateToNote = onNavigateToNote
         self.backlinks = backlinks
         self.isSidebarAnimating = isSidebarAnimating
+        self.isPanelAnimating = isPanelAnimating
         self._editedTitle = State(initialValue: note.title)
         // Strip AI block from persisted content so the editor never sees AI tags.
         // AI results are restored into their own @State vars.
@@ -285,7 +290,7 @@ struct NoteDetailView: View {
                         Color.clear
                             .onChange(of: geo.frame(in: .named("scroll")).minY) {
                                 oldValue, newValue in
-                                guard !isSidebarAnimating else { return }
+                                guard !isLayoutAnimating else { return }
                                 titleOffset = newValue
                                 let shouldShow = newValue < 0
                                 if shouldShow != showStickyHeader {
@@ -429,7 +434,7 @@ struct NoteDetailView: View {
                 }
                 .padding(.top, contentTopInsetAdjustment)
                 .transaction { t in
-                    if isSidebarAnimating { t.animation = nil }
+                    if isLayoutAnimating { t.animation = nil }
                 }
                 .scrollDisabled(popupMenuActive)
                 .scrollClipDisabled()
@@ -439,7 +444,7 @@ struct NoteDetailView: View {
                     GeometryReader { geo in
                         Color.clear.onAppear { scrollViewHeight = geo.size.height }
                             .onChange(of: geo.size.height) { _, h in
-                                guard !isSidebarAnimating else { return }
+                                guard !isLayoutAnimating else { return }
                                 scrollViewHeight = h
                             }
                     }
@@ -460,10 +465,10 @@ struct NoteDetailView: View {
                 Spacer()
                 Rectangle()
                     .fill(Color.clear)
-                    .frame(height: 160)
+                    .frame(height: 180)
                     .background(
                         headerMaterialBase
-                            .mask(footerMaskGradient)
+                            .mask(Self.footerMaskGradient)
                     )
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -476,10 +481,10 @@ struct NoteDetailView: View {
                     // Gradient fade — extends into the safe area (title bar zone)
                     Rectangle()
                         .fill(Color.clear)
-                        .frame(height: 160)
+                        .frame(height: 180)
                         .background(
                             headerMaterialBase
-                                .mask(headerMaskGradient)
+                                .mask(Self.headerMaskGradient)
                                 .ignoresSafeArea(edges: .top)
                         )
                         .ignoresSafeArea(edges: .top)
@@ -816,31 +821,33 @@ struct NoteDetailView: View {
 
     @ViewBuilder
     private var editContentPanelOverlay: some View {
-        GeometryReader { geometry in
+        Group {
             if showEditContentPanel {
-                let horizontalInset: CGFloat = 16
-                let panelWidth = geometry.size.width - horizontalInset * 2
-                let bottomPadding: CGFloat = 52
+                GeometryReader { geometry in
+                    let horizontalInset: CGFloat = 16
+                    let panelWidth = geometry.size.width - horizontalInset * 2
+                    let bottomPadding: CGFloat = 52
 
-                VStack {
-                    Spacer()
-                    EditContentFloatingPanel(
-                        state: aiPanelState,
-                        onReplace: { applyEditContentReplacement() },
-                        onDismiss: {
-                            withAnimation(.jotSpring) {
-                                showEditContentPanel = false
-                                aiPanelState = .none
-                            }
-                        },
-                        onRedo: { redoEditContent() }
-                    )
-                    .frame(width: panelWidth)
-                    .padding(.bottom, bottomPadding)
+                    VStack {
+                        Spacer()
+                        EditContentFloatingPanel(
+                            state: aiPanelState,
+                            onReplace: { applyEditContentReplacement() },
+                            onDismiss: {
+                                withAnimation(.jotSpring) {
+                                    showEditContentPanel = false
+                                    aiPanelState = .none
+                                }
+                            },
+                            onRedo: { redoEditContent() }
+                        )
+                        .frame(width: panelWidth)
+                        .padding(.bottom, bottomPadding)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .zIndex(150)
                 }
-                .frame(maxWidth: .infinity)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-                .zIndex(150)
             }
         }
         .allowsHitTesting(showEditContentPanel)
@@ -848,32 +855,34 @@ struct NoteDetailView: View {
 
     @ViewBuilder
     private var translatePanelOverlay: some View {
-        GeometryReader { geometry in
+        Group {
             if showTranslatePanel {
-                let horizontalInset: CGFloat = 16
-                let panelWidth = geometry.size.width - horizontalInset * 2
-                let bottomPadding: CGFloat = 52
+                GeometryReader { geometry in
+                    let horizontalInset: CGFloat = 16
+                    let panelWidth = geometry.size.width - horizontalInset * 2
+                    let bottomPadding: CGFloat = 52
 
-                VStack {
-                    Spacer()
-                    TranslateFloatingPanel(
-                        state: aiPanelState,
-                        onReplace: { applyTranslateReplacement() },
-                        onCopy: { copyTranslation() },
-                        onDismiss: {
-                            withAnimation(.jotSpring) {
-                                showTranslatePanel = false
-                                aiPanelState = .none
-                            }
-                        },
-                        onRetranslate: { retranslate() }
-                    )
-                    .frame(width: panelWidth)
-                    .padding(.bottom, bottomPadding)
+                    VStack {
+                        Spacer()
+                        TranslateFloatingPanel(
+                            state: aiPanelState,
+                            onReplace: { applyTranslateReplacement() },
+                            onCopy: { copyTranslation() },
+                            onDismiss: {
+                                withAnimation(.jotSpring) {
+                                    showTranslatePanel = false
+                                    aiPanelState = .none
+                                }
+                            },
+                            onRetranslate: { retranslate() }
+                        )
+                        .frame(width: panelWidth)
+                        .padding(.bottom, bottomPadding)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .zIndex(150)
                 }
-                .frame(maxWidth: .infinity)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-                .zIndex(150)
             }
         }
         .allowsHitTesting(showTranslatePanel)
@@ -881,25 +890,27 @@ struct NoteDetailView: View {
 
     @ViewBuilder
     private var textGenFloatingOverlay: some View {
-        GeometryReader { geometry in
+        Group {
             if showTextGenPanel {
-                let horizontalInset: CGFloat = 16
-                let panelWidth = geometry.size.width - horizontalInset * 2
-                let bottomPadding: CGFloat = 52
+                GeometryReader { geometry in
+                    let horizontalInset: CGFloat = 16
+                    let panelWidth = geometry.size.width - horizontalInset * 2
+                    let bottomPadding: CGFloat = 52
 
-                VStack {
-                    Spacer()
-                    TextGenFloatingPanel(
-                        state: aiPanelState,
-                        onAccept: { acceptTextGeneration() },
-                        onDismiss: { dismissTextGeneration() }
-                    )
-                    .frame(width: panelWidth)
-                    .padding(.bottom, bottomPadding)
+                    VStack {
+                        Spacer()
+                        TextGenFloatingPanel(
+                            state: aiPanelState,
+                            onAccept: { acceptTextGeneration() },
+                            onDismiss: { dismissTextGeneration() }
+                        )
+                        .frame(width: panelWidth)
+                        .padding(.bottom, bottomPadding)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .zIndex(150)
                 }
-                .frame(maxWidth: .infinity)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-                .zIndex(150)
             }
         }
         .allowsHitTesting(showTextGenPanel)
@@ -907,31 +918,34 @@ struct NoteDetailView: View {
 
     @ViewBuilder
     private var meetingNotesFloatingOverlay: some View {
-        GeometryReader { geometry in
+        Group {
             if showMeetingPanel {
-                let bottomPadding: CGFloat = 52
+                GeometryReader { geometry in
+                    let bottomPadding: CGFloat = 52
 
-                VStack {
-                    Spacer()
-                    MeetingNotesFloatingPanel(
-                        transcriptionService: meetingTranscriptionService,
-                        recordingState: meetingRecordingState,
-                        duration: meetingAudioRecorder.duration,
-                        summaryResult: meetingSummaryResult,
-                        isSummaryLoading: isMeetingSummaryLoading,
-                        manualNotes: $meetingManualNotes,
-                        selectedTab: $meetingSelectedTab,
-                        onPause: { pauseMeetingRecording() },
-                        onResume: { resumeMeetingRecording() },
-                        onStop: { stopMeetingRecording() },
-                        onSave: { saveMeetingNote() },
-                        onDismiss: { dismissMeetingPanel() }
-                    )
-                    .padding(.bottom, bottomPadding)
+                    VStack {
+                        Spacer()
+                        MeetingNotesFloatingPanel(
+                            transcriptionService: meetingTranscriptionService,
+                            recordingState: meetingRecordingState,
+                            duration: meetingAudioRecorder.duration,
+                            audioLevels: meetingAudioRecorder.levels,
+                            summaryResult: meetingSummaryResult,
+                            isSummaryLoading: isMeetingSummaryLoading,
+                            manualNotes: $meetingManualNotes,
+                            selectedTab: $meetingSelectedTab,
+                            onPause: { pauseMeetingRecording() },
+                            onResume: { resumeMeetingRecording() },
+                            onStop: { stopMeetingRecording() },
+                            onSave: { saveMeetingNote() },
+                            onDismiss: { dismissMeetingPanel() }
+                        )
+                        .padding(.bottom, bottomPadding)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .zIndex(160)
                 }
-                .frame(maxWidth: .infinity)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-                .zIndex(160)
             }
         }
         .allowsHitTesting(showMeetingPanel)
@@ -939,209 +953,211 @@ struct NoteDetailView: View {
 
     @ViewBuilder
     private var floatingToolbarOverlay: some View {
-        GeometryReader { geometry in
+        Group {
             if showFloatingToolbar && !anyAIPanelVisible {
-                let parentFrame = geometry.frame(in: .global)
-                let localX = floatingToolbarOffset.x - parentFrame.minX
-                let localY = floatingToolbarOffset.y - parentFrame.minY
-                let toolbarWidth: CGFloat = measuredToolbarWidth
-                let toolbarHeight: CGFloat = measuredToolbarHeight
-                let paneWidth: CGFloat = geometry.size.width
-                let edgeInset: CGFloat = 12
-                // Clamp by left edge — immune to measuredToolbarWidth being stale
-                // because the left edge position doesn't depend on toolbar width.
-                let clampedLeft: CGFloat = {
-                    let maxLeft = max(edgeInset, paneWidth - toolbarWidth - edgeInset)
-                    return min(max(localX, edgeInset), maxLeft)
-                }()
-                let clampedCenterX: CGFloat = clampedLeft + toolbarWidth / 2
-                let centerY: CGFloat = localY + toolbarHeight / 2
-
-                FloatingEditToolbar(
-                    isBoldActive: toolbarIsBold,
-                    isItalicActive: toolbarIsItalic,
-                    isUnderlineActive: toolbarIsUnderline,
-                    isStrikethroughActive: toolbarIsStrikethrough,
-                    isHighlightActive: toolbarIsHighlight,
-                    currentHeadingLevel: toolbarHeadingLevel,
-                    currentFontSize: toolbarFontSize,
-                    currentFontFamily: toolbarFontFamily,
-                    currentTextColorHex: toolbarTextColorHex,
-                    isAIAvailable: AppleIntelligenceService.shared.isAvailable,
-                    activeSubmenu: $activeToolbarSubmenu,
-                    onToolAction: handleEditToolAction,
-                    onFontSizeSelected: { [editorInstanceID] size in
-                        NotificationCenter.default.post(
-                            name: .applyFontSize, object: nil,
-                            userInfo: ["size": size, "editorInstanceID": editorInstanceID]
-                        )
-                    },
-                    onFontFamilySelected: { [editorInstanceID] style in
-                        NotificationCenter.default.post(
-                            name: .applyFontFamily, object: nil,
-                            userInfo: ["style": style.rawValue, "editorInstanceID": editorInstanceID]
-                        )
-                    },
-                    onColorSelected: { [editorInstanceID] hex in
-                        NotificationCenter.default.post(
-                            name: .applyTextColor, object: nil,
-                            userInfo: ["hex": hex, "editorInstanceID": editorInstanceID]
-                        )
-                    },
-                    onColorRemoved: { [editorInstanceID] in
-                        NotificationCenter.default.post(
-                            name: .removeTextColor, object: nil,
-                            userInfo: ["editorInstanceID": editorInstanceID]
-                        )
-                    }
-                )
-                .onPreferenceChange(ToolbarWidthKey.self) { width in
-                    if abs(measuredToolbarWidth - width) > 1 {
-                        measuredToolbarWidth = width
-                    }
-                }
-                .onPreferenceChange(ToolbarHeightKey.self) { height in
-                    if abs(measuredToolbarHeight - height) > 1 {
-                        measuredToolbarHeight = height
-                    }
-                }
-                .onPreferenceChange(PillOffsetKey.self) { offsets in
-                    pillOffsets = offsets
-                }
-                .fixedSize()
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                .offset(x: clampedLeft, y: localY)
-                .opacity(measuredToolbarWidth > 0 ? 1 : 0)
-                .transition(.scale(scale: 0.9).combined(with: .opacity))
-                .zIndex(101)
-
-                // Submenus — below toolbar if space, above if clipped
-                if let submenu = activeToolbarSubmenu {
-                    let submenuGap: CGFloat = 8
-                    let submenuMaxWidth: CGFloat = {
-                        switch submenu {
-                        case .textOptions: return 170
-                        case .color: return 186
-                        case .fontFamily: return 140
-                        case .translate: return 200
-                        case .editContent: return 220
-                        default: return 120
-                        }
+                GeometryReader { geometry in
+                    let parentFrame = geometry.frame(in: .global)
+                    let localX = floatingToolbarOffset.x - parentFrame.minX
+                    let localY = floatingToolbarOffset.y - parentFrame.minY
+                    let toolbarWidth: CGFloat = measuredToolbarWidth
+                    let toolbarHeight: CGFloat = measuredToolbarHeight
+                    let paneWidth: CGFloat = geometry.size.width
+                    let edgeInset: CGFloat = 12
+                    // Clamp by left edge — immune to measuredToolbarWidth being stale
+                    // because the left edge position doesn't depend on toolbar width.
+                    let clampedLeft: CGFloat = {
+                        let maxLeft = max(edgeInset, paneWidth - toolbarWidth - edgeInset)
+                        return min(max(localX, edgeInset), maxLeft)
                     }()
-                    // Use measured height if available, otherwise estimate for initial layout
-                    let submenuH: CGFloat = measuredSubmenuHeight > 0 ? measuredSubmenuHeight : {
-                        switch submenu {
-                        case .textOptions: return 340.0
-                        case .fontSize: return 290.0
-                        case .fontFamily: return 95.0
-                        case .translate: return 100.0
-                        case .editContent: return 100.0
-                        default: return 36.0
-                        }
-                    }()
-                    let paneHeight = geometry.size.height
-                    let toolbarBottom = centerY + toolbarHeight / 2
-                    let toolbarTop = centerY - toolbarHeight / 2
-                    // Check if submenu fits below
-                    let fitsBelow = toolbarBottom + submenuGap + submenuH < paneHeight - 10
-                    let submenuTopY = fitsBelow
-                        ? toolbarBottom + submenuGap
-                        : max(4, toolbarTop - submenuGap - submenuH)
-                    let toolbarLeftEdge = clampedCenterX - toolbarWidth / 2
-                    let pillMidX = pillOffsets[submenu] ?? toolbarWidth / 2
-                    let submenuLeftX: CGFloat = min(max(toolbarLeftEdge + pillMidX - submenuMaxWidth / 2, edgeInset), paneWidth - submenuMaxWidth - edgeInset)
+                    let clampedCenterX: CGFloat = clampedLeft + toolbarWidth / 2
+                    let centerY: CGFloat = localY + toolbarHeight / 2
 
-                    Group {
-                        switch submenu {
-                        case .textOptions:
-                            TextOptionsSubmenu(
-                                isBoldActive: toolbarIsBold,
-                                isItalicActive: toolbarIsItalic,
-                                isUnderlineActive: toolbarIsUnderline,
-                                isStrikethroughActive: toolbarIsStrikethrough,
-                                onToolAction: handleEditToolAction,
-                                onDismiss: { withAnimation(.spring(duration: 0.2)) { activeToolbarSubmenu = nil } }
+                    FloatingEditToolbar(
+                        isBoldActive: toolbarIsBold,
+                        isItalicActive: toolbarIsItalic,
+                        isUnderlineActive: toolbarIsUnderline,
+                        isStrikethroughActive: toolbarIsStrikethrough,
+                        isHighlightActive: toolbarIsHighlight,
+                        currentHeadingLevel: toolbarHeadingLevel,
+                        currentFontSize: toolbarFontSize,
+                        currentFontFamily: toolbarFontFamily,
+                        currentTextColorHex: toolbarTextColorHex,
+                        isAIAvailable: AppleIntelligenceService.shared.isAvailable,
+                        activeSubmenu: $activeToolbarSubmenu,
+                        onToolAction: handleEditToolAction,
+                        onFontSizeSelected: { [editorInstanceID] size in
+                            NotificationCenter.default.post(
+                                name: .applyFontSize, object: nil,
+                                userInfo: ["size": size, "editorInstanceID": editorInstanceID]
                             )
-                        case .fontSize:
-                            FontSizeSubmenu(
-                                currentSize: toolbarFontSize,
-                                onSizeSelected: { [editorInstanceID] size in
-                                    NotificationCenter.default.post(
-                                        name: .applyFontSize, object: nil,
-                                        userInfo: ["size": size, "editorInstanceID": editorInstanceID]
-                                    )
-                                    toolbarFontSize = size
-                                },
-                                onDismiss: { withAnimation(.spring(duration: 0.2)) { activeToolbarSubmenu = nil } }
+                        },
+                        onFontFamilySelected: { [editorInstanceID] style in
+                            NotificationCenter.default.post(
+                                name: .applyFontFamily, object: nil,
+                                userInfo: ["style": style.rawValue, "editorInstanceID": editorInstanceID]
                             )
-                        case .fontFamily:
-                            FontFamilySubmenu(
-                                currentFamily: toolbarFontFamily,
-                                onFamilySelected: { [editorInstanceID] style in
-                                    NotificationCenter.default.post(
-                                        name: .applyFontFamily, object: nil,
-                                        userInfo: ["style": style.rawValue, "editorInstanceID": editorInstanceID]
-                                    )
-                                    toolbarFontFamily = style.rawValue
-                                },
-                                onDismiss: { withAnimation(.spring(duration: 0.2)) { activeToolbarSubmenu = nil } }
+                        },
+                        onColorSelected: { [editorInstanceID] hex in
+                            NotificationCenter.default.post(
+                                name: .applyTextColor, object: nil,
+                                userInfo: ["hex": hex, "editorInstanceID": editorInstanceID]
                             )
-                        case .color:
-                            FloatingColorPicker(
-                                onColorSelected: { [editorInstanceID] hex in
-                                    NotificationCenter.default.post(
-                                        name: .applyTextColor, object: nil,
-                                        userInfo: ["hex": hex, "editorInstanceID": editorInstanceID]
-                                    )
-                                    toolbarTextColorHex = hex
-                                },
-                                onRemove: { [editorInstanceID] in
-                                    NotificationCenter.default.post(
-                                        name: .removeTextColor, object: nil,
-                                        userInfo: ["editorInstanceID": editorInstanceID]
-                                    )
-                                    toolbarTextColorHex = nil
-                                    withAnimation(.spring(duration: 0.2)) { activeToolbarSubmenu = nil }
-                                }
-                            )
-                        case .translate:
-                            TranslateInputSubmenu(
-                                onSubmit: { [editorInstanceID] language in
-                                    NotificationCenter.default.post(
-                                        name: .aiTranslateSubmit, object: language,
-                                        userInfo: ["editorInstanceID": editorInstanceID as Any]
-                                    )
-                                    withAnimation(.spring(duration: 0.2)) { activeToolbarSubmenu = nil }
-                                },
-                                onDismiss: { withAnimation(.spring(duration: 0.2)) { activeToolbarSubmenu = nil } }
-                            )
-                        case .editContent:
-                            EditContentInputSubmenu(
-                                onSubmit: { [editorInstanceID] instruction in
-                                    NotificationCenter.default.post(
-                                        name: .aiEditSubmit, object: instruction,
-                                        userInfo: ["editorInstanceID": editorInstanceID as Any]
-                                    )
-                                    withAnimation(.spring(duration: 0.2)) { activeToolbarSubmenu = nil }
-                                },
-                                onDismiss: { withAnimation(.spring(duration: 0.2)) { activeToolbarSubmenu = nil } }
+                        },
+                        onColorRemoved: { [editorInstanceID] in
+                            NotificationCenter.default.post(
+                                name: .removeTextColor, object: nil,
+                                userInfo: ["editorInstanceID": editorInstanceID]
                             )
                         }
+                    )
+                    .onPreferenceChange(ToolbarWidthKey.self) { width in
+                        if abs(measuredToolbarWidth - width) > 1 {
+                            measuredToolbarWidth = width
+                        }
+                    }
+                    .onPreferenceChange(ToolbarHeightKey.self) { height in
+                        if abs(measuredToolbarHeight - height) > 1 {
+                            measuredToolbarHeight = height
+                        }
+                    }
+                    .onPreferenceChange(PillOffsetKey.self) { offsets in
+                        pillOffsets = offsets
                     }
                     .fixedSize()
-                    .background(GeometryReader { submenuGeo in
-                        Color.clear.onAppear {
-                            measuredSubmenuHeight = submenuGeo.size.height
-                        }
-                        .onChange(of: submenuGeo.size.height) { _, newH in
-                            measuredSubmenuHeight = newH
-                        }
-                    })
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .offset(x: submenuLeftX, y: submenuTopY)
-                    .zIndex(10000)
-                    .onChange(of: activeToolbarSubmenu) { _, _ in
-                        measuredSubmenuHeight = 0
+                    .offset(x: clampedLeft, y: localY)
+                    .opacity(measuredToolbarWidth > 0 ? 1 : 0)
+                    .transition(.scale(scale: 0.9).combined(with: .opacity))
+                    .zIndex(101)
+
+                    // Submenus — below toolbar if space, above if clipped
+                    if let submenu = activeToolbarSubmenu {
+                        let submenuGap: CGFloat = 8
+                        let submenuMaxWidth: CGFloat = {
+                            switch submenu {
+                            case .textOptions: return 170
+                            case .color: return 186
+                            case .fontFamily: return 140
+                            case .translate: return 200
+                            case .editContent: return 220
+                            default: return 120
+                            }
+                        }()
+                        // Use measured height if available, otherwise estimate for initial layout
+                        let submenuH: CGFloat = measuredSubmenuHeight > 0 ? measuredSubmenuHeight : {
+                            switch submenu {
+                            case .textOptions: return 340.0
+                            case .fontSize: return 290.0
+                            case .fontFamily: return 95.0
+                            case .translate: return 100.0
+                            case .editContent: return 100.0
+                            default: return 36.0
+                            }
+                        }()
+                        let paneHeight = geometry.size.height
+                        let toolbarBottom = centerY + toolbarHeight / 2
+                        let toolbarTop = centerY - toolbarHeight / 2
+                        // Check if submenu fits below
+                        let fitsBelow = toolbarBottom + submenuGap + submenuH < paneHeight - 10
+                        let submenuTopY = fitsBelow
+                            ? toolbarBottom + submenuGap
+                            : max(4, toolbarTop - submenuGap - submenuH)
+                        let toolbarLeftEdge = clampedCenterX - toolbarWidth / 2
+                        let pillMidX = pillOffsets[submenu] ?? toolbarWidth / 2
+                        let submenuLeftX: CGFloat = min(max(toolbarLeftEdge + pillMidX - submenuMaxWidth / 2, edgeInset), paneWidth - submenuMaxWidth - edgeInset)
+
+                        Group {
+                            switch submenu {
+                            case .textOptions:
+                                TextOptionsSubmenu(
+                                    isBoldActive: toolbarIsBold,
+                                    isItalicActive: toolbarIsItalic,
+                                    isUnderlineActive: toolbarIsUnderline,
+                                    isStrikethroughActive: toolbarIsStrikethrough,
+                                    onToolAction: handleEditToolAction,
+                                    onDismiss: { withAnimation(.spring(duration: 0.2)) { activeToolbarSubmenu = nil } }
+                                )
+                            case .fontSize:
+                                FontSizeSubmenu(
+                                    currentSize: toolbarFontSize,
+                                    onSizeSelected: { [editorInstanceID] size in
+                                        NotificationCenter.default.post(
+                                            name: .applyFontSize, object: nil,
+                                            userInfo: ["size": size, "editorInstanceID": editorInstanceID]
+                                        )
+                                        toolbarFontSize = size
+                                    },
+                                    onDismiss: { withAnimation(.spring(duration: 0.2)) { activeToolbarSubmenu = nil } }
+                                )
+                            case .fontFamily:
+                                FontFamilySubmenu(
+                                    currentFamily: toolbarFontFamily,
+                                    onFamilySelected: { [editorInstanceID] style in
+                                        NotificationCenter.default.post(
+                                            name: .applyFontFamily, object: nil,
+                                            userInfo: ["style": style.rawValue, "editorInstanceID": editorInstanceID]
+                                        )
+                                        toolbarFontFamily = style.rawValue
+                                    },
+                                    onDismiss: { withAnimation(.spring(duration: 0.2)) { activeToolbarSubmenu = nil } }
+                                )
+                            case .color:
+                                FloatingColorPicker(
+                                    onColorSelected: { [editorInstanceID] hex in
+                                        NotificationCenter.default.post(
+                                            name: .applyTextColor, object: nil,
+                                            userInfo: ["hex": hex, "editorInstanceID": editorInstanceID]
+                                        )
+                                        toolbarTextColorHex = hex
+                                    },
+                                    onRemove: { [editorInstanceID] in
+                                        NotificationCenter.default.post(
+                                            name: .removeTextColor, object: nil,
+                                            userInfo: ["editorInstanceID": editorInstanceID]
+                                        )
+                                        toolbarTextColorHex = nil
+                                        withAnimation(.spring(duration: 0.2)) { activeToolbarSubmenu = nil }
+                                    }
+                                )
+                            case .translate:
+                                TranslateInputSubmenu(
+                                    onSubmit: { [editorInstanceID] language in
+                                        NotificationCenter.default.post(
+                                            name: .aiTranslateSubmit, object: language,
+                                            userInfo: ["editorInstanceID": editorInstanceID as Any]
+                                        )
+                                        withAnimation(.spring(duration: 0.2)) { activeToolbarSubmenu = nil }
+                                    },
+                                    onDismiss: { withAnimation(.spring(duration: 0.2)) { activeToolbarSubmenu = nil } }
+                                )
+                            case .editContent:
+                                EditContentInputSubmenu(
+                                    onSubmit: { [editorInstanceID] instruction in
+                                        NotificationCenter.default.post(
+                                            name: .aiEditSubmit, object: instruction,
+                                            userInfo: ["editorInstanceID": editorInstanceID as Any]
+                                        )
+                                        withAnimation(.spring(duration: 0.2)) { activeToolbarSubmenu = nil }
+                                    },
+                                    onDismiss: { withAnimation(.spring(duration: 0.2)) { activeToolbarSubmenu = nil } }
+                                )
+                            }
+                        }
+                        .fixedSize()
+                        .background(GeometryReader { submenuGeo in
+                            Color.clear.onAppear {
+                                measuredSubmenuHeight = submenuGeo.size.height
+                            }
+                            .onChange(of: submenuGeo.size.height) { _, newH in
+                                measuredSubmenuHeight = newH
+                            }
+                        })
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        .offset(x: submenuLeftX, y: submenuTopY)
+                        .zIndex(10000)
+                        .onChange(of: activeToolbarSubmenu) { _, _ in
+                            measuredSubmenuHeight = 0
+                        }
                     }
                 }
             }
@@ -1149,7 +1165,7 @@ struct NoteDetailView: View {
         .onChange(of: activeToolbarSubmenu) { _, newValue in
             // Capture selection eagerly when an AI submenu opens,
             // eliminating the race between request-selection and submit.
-            // Must live on the GeometryReader (always in tree), not inside
+            // Must live on an always-in-tree element (Group), not inside
             // the conditional submenu block (which doesn't exist on first transition).
             if newValue == .translate || newValue == .editContent {
                 NotificationCenter.default.post(
@@ -1376,26 +1392,26 @@ struct NoteDetailView: View {
         Rectangle().fill(Color("DetailPaneSurfaceColor"))
     }
 
-    private var headerMaskGradient: LinearGradient {
-        // Standard smoothstep (3t^2 - 2t^3) -- progressive fade.
-        let steps = 20
+    private static let headerMaskGradient: LinearGradient = {
+        // Perlin smootherstep (6t^5 - 15t^4 + 10t^3) -- zero 1st+2nd derivatives at endpoints.
+        let steps = 40
         let stops: [Gradient.Stop] = (0...steps).map { i in
             let t = Double(i) / Double(steps)
-            let eased = 1.0 - (3 * t * t - 2 * t * t * t)
+            let eased = 1.0 - (t * t * t * (t * (t * 6 - 15) + 10))
             return .init(color: Color.white.opacity(eased), location: t)
         }
         return LinearGradient(gradient: Gradient(stops: stops), startPoint: .top, endPoint: .bottom)
-    }
+    }()
 
-    private var footerMaskGradient: LinearGradient {
-        let steps = 20
+    private static let footerMaskGradient: LinearGradient = {
+        let steps = 40
         let stops: [Gradient.Stop] = (0...steps).map { i in
             let t = Double(i) / Double(steps)
-            let eased = 3 * t * t - 2 * t * t * t
+            let eased = t * t * t * (t * (t * 6 - 15) + 10)
             return .init(color: Color.white.opacity(eased), location: t)
         }
         return LinearGradient(gradient: Gradient(stops: stops), startPoint: .top, endPoint: .bottom)
-    }
+    }()
 
     // MARK: - Bottom Overlay
 

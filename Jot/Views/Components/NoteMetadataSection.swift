@@ -23,7 +23,7 @@ struct NoteMetadataSection: View {
     @FocusState private var tagFieldFocused: Bool
     @Environment(\.colorScheme) private var colorScheme
 
-    // MARK: - Content-Derived Metadata
+    // MARK: - Content-Derived Metadata (cached, updated on content change)
 
     private struct ParsedTodo: Identifiable {
         let id: Int // line index in content
@@ -31,9 +31,13 @@ struct NoteMetadataSection: View {
         let isCompleted: Bool
     }
 
-    private var parsedTodos: [ParsedTodo] {
+    @State private var cachedTodos: [ParsedTodo] = []
+    @State private var cachedLinks: [ParsedLink] = []
+    @State private var cachedAttachments: [ParsedAttachment] = []
+
+    private static func parseTodos(from content: String) -> [ParsedTodo] {
         var results: [ParsedTodo] = []
-        let lines = note.content.components(separatedBy: "\n")
+        let lines = content.components(separatedBy: "\n")
         for (index, line) in lines.enumerated() {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if trimmed.hasPrefix("[x] ") {
@@ -56,11 +60,11 @@ struct NoteMetadataSection: View {
         let isWebClip: Bool
     }
 
-    private var parsedLinks: [ParsedLink] {
+    private static func parseLinks(from content: String, cleanDomain: (String) -> String) -> [ParsedLink] {
         var results: [ParsedLink] = []
 
-        if note.content.contains("[[webclip|") {
-            let parts = note.content.components(separatedBy: "[[webclip|")
+        if content.contains("[[webclip|") {
+            let parts = content.components(separatedBy: "[[webclip|")
             for i in 1..<parts.count {
                 let inner = parts[i].components(separatedBy: "]]").first ?? ""
                 let fields = inner.components(separatedBy: "|")
@@ -70,8 +74,8 @@ struct NoteMetadataSection: View {
             }
         }
 
-        if note.content.contains("[[link|") {
-            let parts = note.content.components(separatedBy: "[[link|")
+        if content.contains("[[link|") {
+            let parts = content.components(separatedBy: "[[link|")
             for i in 1..<parts.count {
                 let url = parts[i].components(separatedBy: "]]").first ?? ""
                 if !url.isEmpty {
@@ -89,11 +93,11 @@ struct NoteMetadataSection: View {
         let displayLabel: String
     }
 
-    private var parsedAttachments: [ParsedAttachment] {
+    private static func parseAttachments(from content: String) -> [ParsedAttachment] {
         var results: [ParsedAttachment] = []
 
-        if note.content.contains("[[file|") {
-            let parts = note.content.components(separatedBy: "[[file|")
+        if content.contains("[[file|") {
+            let parts = content.components(separatedBy: "[[file|")
             for i in 1..<parts.count {
                 let inner = parts[i].components(separatedBy: "]]").first ?? ""
                 let fields = inner.components(separatedBy: "|")
@@ -103,8 +107,8 @@ struct NoteMetadataSection: View {
             }
         }
 
-        if note.content.contains("[[image|||") {
-            let parts = note.content.components(separatedBy: "[[image|||")
+        if content.contains("[[image|||") {
+            let parts = content.components(separatedBy: "[[image|||")
             for i in 1..<parts.count {
                 let filename = parts[i].components(separatedBy: "]]").first ?? "image"
                 results.append(ParsedAttachment(id: results.count, originalName: filename, displayLabel: filename))
@@ -112,6 +116,12 @@ struct NoteMetadataSection: View {
         }
 
         return results
+    }
+
+    private func reparseContent() {
+        cachedTodos = Self.parseTodos(from: note.content)
+        cachedLinks = Self.parseLinks(from: note.content, cleanDomain: cleanDomain)
+        cachedAttachments = Self.parseAttachments(from: note.content)
     }
 
     // MARK: - Helpers
@@ -162,52 +172,66 @@ struct NoteMetadataSection: View {
             .padding(.top, 8)
             .padding(.bottom, 12)
 
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: -4) {
-                    // Created
-                    propertyRow(label: "Created") {
-                        Text(Self.absoluteFormatter.string(from: note.createdAt))
-                            .font(.system(size: 12, weight: .medium))
-                            .tracking(-0.3)
-                            .foregroundColor(Color("PrimaryTextColor"))
-                    }
+            ZStack(alignment: .bottom) {
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: -4) {
+                        // Created
+                        propertyRow(label: "Created") {
+                            Text(Self.absoluteFormatter.string(from: note.createdAt))
+                                .font(.system(size: 12, weight: .medium))
+                                .tracking(-0.3)
+                                .foregroundColor(Color("PrimaryTextColor"))
+                        }
 
-                    // Tags
-                    propertyRow(label: "Tags") {
-                        tagsValue
-                    }
+                        // Tags
+                        propertyRow(label: "Tags") {
+                            tagsValue
+                        }
 
-                    // Todos
-                    propertyRow(label: "Todos") {
-                        VStack(alignment: .leading, spacing: 8) {
-                            todosCounterPill
+                        // Todos
+                        propertyRow(label: "Todos") {
+                            VStack(alignment: .leading, spacing: 8) {
+                                todosCounterPill
 
-                            if isTodoExpanded {
-                                expandedTodoList
+                                if isTodoExpanded && !cachedTodos.isEmpty {
+                                    expandedTodoList
+                                }
+                            }
+                        }
+
+                        // Links
+                        propertyRow(label: "Links") {
+                            linksValue
+                        }
+
+                        // Attachments
+                        propertyRow(label: "Attachments") {
+                            attachmentsValue
+                        }
+
+                        // Referenced By (backlinks)
+                        if !backlinks.isEmpty {
+                            propertyRow(label: "Referenced By") {
+                                referencedByValue
                             }
                         }
                     }
-
-                    // Links
-                    propertyRow(label: "Links") {
-                        linksValue
-                    }
-
-                    // Attachments
-                    propertyRow(label: "Attachments") {
-                        attachmentsValue
-                    }
-
-                    // Referenced By (backlinks)
-                    if !backlinks.isEmpty {
-                        propertyRow(label: "Referenced By") {
-                            referencedByValue
-                        }
-                    }
+                    .padding(.bottom, 180)
                 }
-                .padding(.bottom, 16)
+
+                // Bottom content fade -- identical to NoteDetailView footer
+                Rectangle()
+                    .fill(Color.clear)
+                    .frame(height: 180)
+                    .background(
+                        Rectangle().fill(Color("DetailPaneSurfaceColor"))
+                            .mask(Self.bottomFadeGradient)
+                    )
+                    .allowsHitTesting(false)
             }
         }
+        .onAppear { reparseContent() }
+        .onChange(of: note.content) { reparseContent() }
     }
 
     // MARK: - Row Builder
@@ -324,7 +348,7 @@ struct NoteMetadataSection: View {
 
     @ViewBuilder
     private var todosCounterPill: some View {
-        let todos = parsedTodos
+        let todos = cachedTodos
         let completed = todos.filter(\.isCompleted).count
         let total = todos.count
 
@@ -365,7 +389,7 @@ struct NoteMetadataSection: View {
 
     @ViewBuilder
     private var expandedTodoList: some View {
-        let todos = parsedTodos
+        let todos = cachedTodos
         VStack(alignment: .leading, spacing: 8) {
             ForEach(todos) { todo in
                 Button {
@@ -452,7 +476,7 @@ struct NoteMetadataSection: View {
 
     @ViewBuilder
     private var linksValue: some View {
-        let links = parsedLinks
+        let links = cachedLinks
         if links.isEmpty {
             noneText
         } else {
@@ -475,6 +499,7 @@ struct NoteMetadataSection: View {
                                 .tracking(-0.3)
                                 .textCase(.lowercase)
                                 .lineLimit(1)
+                                .truncationMode(.tail)
                                 .padding(.horizontal, 4)
 
                             Image("IconArrowRightUpCircle")
@@ -498,7 +523,7 @@ struct NoteMetadataSection: View {
 
     @ViewBuilder
     private var attachmentsValue: some View {
-        let attachments = parsedAttachments
+        let attachments = cachedAttachments
         if attachments.isEmpty {
             noneText
         } else {
@@ -515,6 +540,8 @@ struct NoteMetadataSection: View {
                             .font(.system(size: 11, weight: .medium))
                             .tracking(-0.2)
                             .lineLimit(1)
+                            .truncationMode(.middle)
+                            .frame(maxWidth: 160)
 
                         Image("IconArrowRightUpCircle")
                             .renderingMode(.template)
@@ -550,6 +577,8 @@ struct NoteMetadataSection: View {
                             .font(.system(size: 11, weight: .medium))
                             .tracking(-0.2)
                             .lineLimit(1)
+                            .truncationMode(.tail)
+                            .frame(maxWidth: 180)
                     }
                     .foregroundColor(.black)
                     .padding(.leading, 4)
@@ -564,6 +593,17 @@ struct NoteMetadataSection: View {
     }
 
     // MARK: - Shared
+
+    private static let bottomFadeGradient: LinearGradient = {
+        // Perlin smootherstep (6t^5 - 15t^4 + 10t^3) -- matches NoteDetailView footer exactly.
+        let steps = 40
+        let stops: [Gradient.Stop] = (0...steps).map { i in
+            let t = Double(i) / Double(steps)
+            let eased = t * t * t * (t * (t * 6 - 15) + 10)
+            return .init(color: Color.white.opacity(eased), location: t)
+        }
+        return LinearGradient(gradient: Gradient(stops: stops), startPoint: .top, endPoint: .bottom)
+    }()
 
     private var noneText: some View {
         Text("None")

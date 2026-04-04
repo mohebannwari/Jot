@@ -59,11 +59,22 @@ struct ImagePreviewRenderer: View {
             return
         }
 
-        guard let loaded = NSImage(contentsOf: url), loaded.isValid else {
+        let maxPixelSize = Int((containerWidth > 0 ? containerWidth : 800) * 2)
+        let sourceOptions: [CFString: Any] = [kCGImageSourceShouldCache: false]
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, sourceOptions as CFDictionary) else {
             loadFailed = true
             return
         }
-
-        image = loaded
+        let downsampleOptions: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
+        ]
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, downsampleOptions as CFDictionary) else {
+            loadFailed = true
+            return
+        }
+        image = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
     }
 }

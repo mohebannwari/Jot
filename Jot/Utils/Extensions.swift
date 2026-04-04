@@ -484,6 +484,16 @@ extension String {
 
 // MARK: - Full Markup Stripping
 
+fileprivate enum MarkupRegex {
+    static let attachmentRegex = try! NSRegularExpression(
+        pattern: #"\[\[(image\|\|\||webclip\||file\||filelink\||notelink\||link\|)[^\]]*?\]\]"#
+    )
+    static let tagRegex = try! NSRegularExpression(
+        pattern: #"\[\[/?[a-z0-9:]+(?:\|[^\]]*?)?\]\]"#
+    )
+    static let newlineRegex = try! NSRegularExpression(pattern: #"\n{3,}"#)
+}
+
 extension String {
     /// Strips all rich-text serialization markup, returning plain readable text.
     /// Removes attachment tags, formatting wrappers (`[[b]]`, `[[/b]]`, etc.),
@@ -492,30 +502,20 @@ extension String {
         var result = self
 
         // 1. Remove self-closing attachment tags (binary blobs — vanish entirely)
-        if let attachmentRegex = try? NSRegularExpression(
-            pattern: #"\[\[(image\|\|\||webclip\||file\||filelink\||notelink\||link\|)[^\]]*?\]\]"#
-        ) {
-            result = attachmentRegex.stringByReplacingMatches(
-                in: result, range: NSRange(result.startIndex..., in: result), withTemplate: "")
-        }
+        result = MarkupRegex.attachmentRegex.stringByReplacingMatches(
+            in: result, range: NSRange(result.startIndex..., in: result), withTemplate: "")
 
         // 2. Strip all remaining [[tag]] and [[/tag]] wrappers
-        if let tagRegex = try? NSRegularExpression(
-            pattern: #"\[\[/?[a-z0-9:]+(?:\|[^\]]*?)?\]\]"#
-        ) {
-            result = tagRegex.stringByReplacingMatches(
-                in: result, range: NSRange(result.startIndex..., in: result), withTemplate: "")
-        }
+        result = MarkupRegex.tagRegex.stringByReplacingMatches(
+            in: result, range: NSRange(result.startIndex..., in: result), withTemplate: "")
 
         // 3. Remove checkbox markers
         result = result.replacingOccurrences(of: "[x]", with: "")
         result = result.replacingOccurrences(of: "[ ]", with: "")
 
         // 4. Collapse 3+ consecutive newlines to 2, trim
-        if let newlineRegex = try? NSRegularExpression(pattern: #"\n{3,}"#) {
-            result = newlineRegex.stringByReplacingMatches(
-                in: result, range: NSRange(result.startIndex..., in: result), withTemplate: "\n\n")
-        }
+        result = MarkupRegex.newlineRegex.stringByReplacingMatches(
+            in: result, range: NSRange(result.startIndex..., in: result), withTemplate: "\n\n")
 
         return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }

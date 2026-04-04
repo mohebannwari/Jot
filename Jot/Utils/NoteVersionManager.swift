@@ -12,8 +12,8 @@ final class NoteVersionManager {
     private let snapshotDebounceInterval: TimeInterval = 30
     private let maxVersionsPerNote = 50
 
-    /// Pending debounced snapshot work items keyed by noteID
-    private var pendingSnapshots: [UUID: DispatchWorkItem] = [:]
+    /// Pending debounced snapshot tasks keyed by noteID
+    private var pendingSnapshots: [UUID: Task<Void, Never>] = [:]
     /// Tracks the content hash of the last pending schedule to avoid re-scheduling for identical content
     private var lastScheduledContentHash: [UUID: Int] = [:]
 
@@ -41,21 +41,20 @@ final class NoteVersionManager {
         // Cancel existing pending snapshot for this note
         pendingSnapshots[noteID]?.cancel()
 
-        let workItem = DispatchWorkItem { [weak self] in
-            Task { @MainActor in
-                self?.takeSnapshot(noteID: noteID, title: title, content: content, in: context)
-                self?.pendingSnapshots.removeValue(forKey: noteID)
-            }
+        let task = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(self?.snapshotDebounceInterval ?? 30))
+            guard !Task.isCancelled else { return }
+            self?.takeSnapshot(noteID: noteID, title: title, content: content, in: context)
+            self?.pendingSnapshots.removeValue(forKey: noteID)
         }
 
-        pendingSnapshots[noteID] = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + snapshotDebounceInterval, execute: workItem)
+        pendingSnapshots[noteID] = task
     }
 
     /// Immediately fires any pending snapshot for the given note (e.g., on note switch).
     func flushPendingSnapshot(for noteID: UUID, in context: ModelContext) {
-        guard let workItem = pendingSnapshots.removeValue(forKey: noteID) else { return }
-        workItem.cancel()
+        guard let task = pendingSnapshots.removeValue(forKey: noteID) else { return }
+        task.cancel()
         lastScheduledContentHash.removeValue(forKey: noteID)
 
         // Fetch the current note content to snapshot
@@ -153,15 +152,16 @@ final class NoteVersionManager {
     private func enforceVersionCap(for noteID: UUID, limit: Int, in context: ModelContext) {
         let id = noteID
         let predicate = #Predicate<NoteVersionEntity> { $0.noteID == id }
-        let descriptor = FetchDescriptor<NoteVersionEntity>(
+        var descriptor = FetchDescriptor<NoteVersionEntity>(
             predicate: predicate,
             sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
         )
+        // Fetch only the excess rows beyond the cap, not all versions
+        descriptor.fetchOffset = limit
 
         do {
-            let all = try context.fetch(descriptor)
-            guard all.count > limit else { return }
-            let excess = all.dropFirst(limit)
+            let excess = try context.fetch(descriptor)
+            guard !excess.isEmpty else { return }
             for entity in excess {
                 context.delete(entity)
             }

@@ -42,6 +42,7 @@ final class SimpleSwiftDataManager: ObservableObject {
     private let modelContainer: ModelContainer
     private(set) var modelContext: ModelContext
     private let logger = Logger(subsystem: "com.jot.app", category: "SimpleSwiftDataManager")
+    private static let encoder = JSONEncoder()
 
     // MARK: - Performance Configuration
     private let batchSize = 50
@@ -463,7 +464,7 @@ final class SimpleSwiftDataManager: ObservableObject {
                 noteEntity.stickersData = nil
             } else {
                 do {
-                    noteEntity.stickersData = try JSONEncoder().encode(updatedNote.stickers)
+                    noteEntity.stickersData = try Self.encoder.encode(updatedNote.stickers)
                 } catch {
                     logger.error("Failed to encode stickers: \(error)")
                     stickerEncodingFailed = true
@@ -478,7 +479,7 @@ final class SimpleSwiftDataManager: ObservableObject {
             // Meeting notes
             noteEntity.isMeetingNote = updatedNote.isMeetingNote
             if !updatedNote.meetingSessions.isEmpty {
-                noteEntity.meetingSessionsData = try? JSONEncoder().encode(updatedNote.meetingSessions)
+                noteEntity.meetingSessionsData = try? Self.encoder.encode(updatedNote.meetingSessions)
                 noteEntity.meetingTranscript = ""
                 noteEntity.meetingSummary = ""
                 noteEntity.meetingDuration = 0
@@ -492,7 +493,8 @@ final class SimpleSwiftDataManager: ObservableObject {
                 noteEntity.meetingLanguage = updatedNote.meetingLanguage
                 noteEntity.meetingManualNotes = updatedNote.meetingManualNotes
             }
-            noteEntity.tags = updatedNote.tags
+            // Tags are managed by updateTags() -- preserve existing entity tags
+            // to prevent autosave from clobbering tags with a stale snapshot.
 
             try modelContext.save()
 
@@ -503,6 +505,7 @@ final class SimpleSwiftDataManager: ObservableObject {
                 localNote.isPinned = existing.isPinned
                 localNote.isLocked = existing.isLocked
                 localNote.folderID = existing.folderID
+                localNote.tags = existing.tags
                 // If sticker encoding failed, keep entity-consistent stickers in memory
                 if stickerEncodingFailed {
                     localNote.stickers = existing.stickers
@@ -622,10 +625,10 @@ final class SimpleSwiftDataManager: ObservableObject {
         guard !ids.isEmpty else { return 0 }
 
         do {
-            let predicate = #Predicate<NoteEntity> { $0.isArchived == true }
+            let idArray = Array(ids)
+            let predicate = #Predicate<NoteEntity> { $0.isArchived == true && idArray.contains($0.id) }
             let descriptor = FetchDescriptor<NoteEntity>(predicate: predicate)
-            let entities = try modelContext.fetch(descriptor)
-            let toUnarchive = entities.filter { ids.contains($0.id) }
+            let toUnarchive = try modelContext.fetch(descriptor)
 
             guard !toUnarchive.isEmpty else {
                 logger.warning("No matching archived notes found for batch unarchive")
@@ -711,10 +714,10 @@ final class SimpleSwiftDataManager: ObservableObject {
         guard !ids.isEmpty else { return 0 }
 
         do {
-            let predicate = #Predicate<NoteEntity> { $0.isDeleted == true }
+            let idArray = Array(ids)
+            let predicate = #Predicate<NoteEntity> { $0.isDeleted == true && idArray.contains($0.id) }
             let descriptor = FetchDescriptor<NoteEntity>(predicate: predicate)
-            let entities = try modelContext.fetch(descriptor)
-            let toRestore = entities.filter { ids.contains($0.id) }
+            let toRestore = try modelContext.fetch(descriptor)
 
             guard !toRestore.isEmpty else {
                 logger.warning("No matching deleted notes found for restore")
@@ -747,10 +750,10 @@ final class SimpleSwiftDataManager: ObservableObject {
         guard !ids.isEmpty else { return 0 }
 
         do {
-            let predicate = #Predicate<NoteEntity> { $0.isDeleted == true }
+            let idArray = Array(ids)
+            let predicate = #Predicate<NoteEntity> { $0.isDeleted == true && idArray.contains($0.id) }
             let descriptor = FetchDescriptor<NoteEntity>(predicate: predicate)
-            let entities = try modelContext.fetch(descriptor)
-            let toDelete = entities.filter { ids.contains($0.id) }
+            let toDelete = try modelContext.fetch(descriptor)
 
             guard !toDelete.isEmpty else {
                 logger.warning("No matching deleted notes found for permanent delete")
@@ -798,18 +801,18 @@ final class SimpleSwiftDataManager: ObservableObject {
     }
 
     /// Run image and file attachment cleanup against all remaining notes.
+    /// Uses lightweight content-only fetch to avoid hydrating full Note objects.
     private func triggerStorageCleanup() {
-        Task { @MainActor in
-            let allNotes: [Note]
-            do {
-                allNotes = try self.modelContext.fetch(FetchDescriptor<NoteEntity>()).map { $0.toNote() }
-            } catch {
-                self.logger.error("triggerStorageCleanup: failed to fetch notes — \(error)")
-                return
-            }
-            ImageStorageManager.shared.cleanupUnusedImages(referencedInNotes: allNotes)
-            FileAttachmentStorageManager.shared.cleanupUnusedFiles(referencedInNotes: allNotes)
+        // Capture content strings on the main actor, then clean up
+        let allNotes: [Note]
+        do {
+            allNotes = try self.modelContext.fetch(FetchDescriptor<NoteEntity>()).map { $0.toNote() }
+        } catch {
+            self.logger.error("triggerStorageCleanup: failed to fetch notes — \(error)")
+            return
         }
+        ImageStorageManager.shared.cleanupUnusedImages(referencedInNotes: allNotes)
+        FileAttachmentStorageManager.shared.cleanupUnusedFiles(referencedInNotes: allNotes)
     }
 
     func restoreAllFromTrash() {
@@ -1209,12 +1212,26 @@ final class SimpleSwiftDataManager: ObservableObject {
 
             try modelContext.save()
 
-            // Reload in-memory state — sort by modifiedAt descending for consistent sidebar order
-            self.notes = notes.filter { !$0.isArchived && !$0.isDeleted }.sorted { $0.date > $1.date }
-            self.archivedNotes = notes.filter { $0.isArchived && !$0.isDeleted }
-            self.deletedNotes = notes.filter { $0.isDeleted }
-            self.folders = folders.filter { !$0.isArchived }
-            self.archivedFolders = folders.filter { $0.isArchived }
+            // Reload in-memory state — single-pass partition for efficiency
+            var activeNotes: [Note] = []
+            var archived: [Note] = []
+            var deleted: [Note] = []
+            for note in notes {
+                if note.isDeleted { deleted.append(note) }
+                else if note.isArchived { archived.append(note) }
+                else { activeNotes.append(note) }
+            }
+            self.notes = activeNotes.sorted { $0.date > $1.date }
+            self.archivedNotes = archived
+            self.deletedNotes = deleted
+            var activeFolders: [Folder] = []
+            var archivedFoldersList: [Folder] = []
+            for folder in folders {
+                if folder.isArchived { archivedFoldersList.append(folder) }
+                else { activeFolders.append(folder) }
+            }
+            self.folders = activeFolders
+            self.archivedFolders = archivedFoldersList
 
             // Re-index in Spotlight
             for note in self.notes {
@@ -1257,7 +1274,8 @@ final class SimpleSwiftDataManager: ObservableObject {
             let predicate = #Predicate<NoteEntity> {
                 $0.isArchived == false && $0.isDeleted == false
             }
-            // Load all remaining notes in batches until exhausted
+            // Accumulate into a local array to avoid triggering recomputeDerivedNotes per batch
+            var accumulated: [Note] = []
             while true {
                 var descriptor = FetchDescriptor<NoteEntity>(
                     predicate: predicate,
@@ -1270,11 +1288,14 @@ final class SimpleSwiftDataManager: ObservableObject {
                 let newNotes = noteEntities.map { $0.toNote() }
 
                 guard !newNotes.isEmpty else { break }
-                notes.append(contentsOf: newNotes)
+                accumulated.append(contentsOf: newNotes)
                 logger.info("Loaded \(newNotes.count) additional notes (offset: \(currentOffset))")
 
                 if newNotes.count < self.batchSize { break }
                 currentOffset += newNotes.count
+            }
+            if !accumulated.isEmpty {
+                notes.append(contentsOf: accumulated)
             }
         } catch {
             logger.error("Failed to load more notes: \(error)")

@@ -328,8 +328,9 @@ final class BackupManager: ObservableObject {
         guard frequency != .manual else { return }
 
         // Check every hour if a backup is due
-        autoBackupTimer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { [weak self] _ in
+        autoBackupTimer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { [weak self, weak notesManager] _ in
             Task { @MainActor in
+                guard let notesManager else { return }
                 self?.autoBackupIfDue(notesManager: notesManager)
             }
         }

@@ -15,8 +15,12 @@ enum RichTextSerializer {
 
     // MARK: - Font helpers
 
+    private static var _cachedTextFont: NSFont?
     static var textFont: NSFont {
-        FontManager.bodyNS(size: ThemeManager.currentBodyFontSize(), weight: .regular)
+        if let cached = _cachedTextFont { return cached }
+        let font = FontManager.bodyNS(size: ThemeManager.currentBodyFontSize(), weight: .regular)
+        _cachedTextFont = font
+        return font
     }
 
     static var baseLineHeight: CGFloat {
@@ -25,7 +29,9 @@ enum RichTextSerializer {
 
     // MARK: - Paragraph styles
 
+    private static var _cachedBaseParagraphStyle: NSParagraphStyle?
     static func baseParagraphStyle() -> NSParagraphStyle {
+        if let cached = _cachedBaseParagraphStyle { return cached }
         let spacing = ThemeManager.currentLineSpacing()
         let scaledHeight = baseLineHeight * spacing.multiplier / 1.2
         let style = NSMutableParagraphStyle()
@@ -33,7 +39,15 @@ enum RichTextSerializer {
         style.minimumLineHeight = scaledHeight
         style.maximumLineHeight = scaledHeight + 4
         style.paragraphSpacing = 8
+        _cachedBaseParagraphStyle = style
         return style
+    }
+
+    /// Invalidate caches when font size, line spacing, or body font style changes.
+    /// Call from any settings-change handler that affects typography.
+    static func invalidateCaches() {
+        _cachedTextFont = nil
+        _cachedBaseParagraphStyle = nil
     }
 
     static func blockQuoteParagraphStyle() -> NSParagraphStyle {

@@ -802,11 +802,21 @@ class TextFormattingManager: ObservableObject {
 
             guard let textStorage = textView.textStorage else { return }
 
-            // Check for bold/italic across entire selection — report true only if ALL runs match
+            // Single pass: collect bold/italic/underline/strikethrough/highlight/alignment
+            // all at once instead of five separate enumeration passes.
             var allBold = true, allItalic = true
-            textStorage.enumerateAttribute(.font, in: selectedRange, options: []) {
-                value, _, _ in
-                if let font = value as? NSFont {
+            // Check for underline across entire selection — nil means "no attribute",
+            // which is the same as "not underlined". The nil-coalescing to 0 handles both.
+            var allUnderline = selectedRange.length > 0
+            // Check for strikethrough across entire selection
+            var allStrikethrough = selectedRange.length > 0
+            // Check for highlight — any highlighted run in selection activates the button
+            var foundHighlight = false
+            var foundAlignment: NSTextAlignment?
+
+            textStorage.enumerateAttributes(in: selectedRange, options: []) { attrs, _, stop in
+                // Bold/Italic
+                if let font = attrs[.font] as? NSFont {
                     let traits = NSFontManager.shared.traits(of: font)
                     if !traits.contains(.boldFontMask) { allBold = false }
                     if !traits.contains(.italicFontMask) { allItalic = false }
@@ -814,40 +824,25 @@ class TextFormattingManager: ObservableObject {
                     allBold = false
                     allItalic = false
                 }
+                // Underline
+                if (attrs[.underlineStyle] as? Int ?? 0) == 0 { allUnderline = false }
+                // Strikethrough
+                if (attrs[.strikethroughStyle] as? Int ?? 0) == 0 { allStrikethrough = false }
+                // Highlight
+                if (attrs[.highlightColor] as? String) != nil { foundHighlight = true }
+                // Alignment (take first found)
+                if foundAlignment == nil, let ps = attrs[.paragraphStyle] as? NSParagraphStyle {
+                    foundAlignment = ps.alignment
+                }
             }
+
             isBold = allBold
             isItalic = allItalic
-
-            // Check for underline across entire selection — nil means "no attribute",
-            // which is the same as "not underlined". The nil-coalescing to 0 handles both.
-            var allUnderline = selectedRange.length > 0
-            textStorage.enumerateAttributes(in: selectedRange, options: []) { attrs, _, _ in
-                if (attrs[.underlineStyle] as? Int ?? 0) == 0 { allUnderline = false }
-            }
             isUnderline = allUnderline
-
-            // Check for strikethrough across entire selection
-            var allStrikethrough = selectedRange.length > 0
-            textStorage.enumerateAttributes(in: selectedRange, options: []) { attrs, _, _ in
-                if (attrs[.strikethroughStyle] as? Int ?? 0) == 0 { allStrikethrough = false }
-            }
             isStrikethrough = allStrikethrough
-
-            // Check for highlight — any highlighted run in selection activates the button
-            var foundHighlight = false
-            textStorage.enumerateAttribute(.highlightColor, in: selectedRange, options: []) {
-                value, _, stop in
-                if (value as? String) != nil { foundHighlight = true; stop.pointee = true }
-            }
             isHighlight = foundHighlight
-
-            // Check alignment
-            textStorage.enumerateAttribute(.paragraphStyle, in: selectedRange, options: []) {
-                value, _, stop in
-                if let paragraphStyle = value as? NSParagraphStyle {
-                    currentAlignment = paragraphStyle.alignment
-                    stop.pointee = true
-                }
+            if let align = foundAlignment {
+                currentAlignment = align
             }
     }
 

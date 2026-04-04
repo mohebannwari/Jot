@@ -87,7 +87,7 @@ struct PDFPreviewRenderer: View {
 
     /// Maximum number of pages to pre-render as thumbnails.
     /// Only the first batch is loaded; the preview scroll shows enough to convey content.
-    private static let maxPrerenderedPages = 20
+    private static let maxPrerenderedPages = 3
 
     private func loadPages() async {
         guard let url = FileAttachmentStorageManager.shared.fileURL(for: storedFilename) else {

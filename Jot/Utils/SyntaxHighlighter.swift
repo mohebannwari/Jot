@@ -55,6 +55,25 @@ struct LanguageGrammar {
 
 enum SyntaxHighlighter {
 
+    // MARK: - Regex Cache
+
+    private static var regexCache: [String: NSRegularExpression] = [:]
+
+    private static let numberRegex = try! NSRegularExpression(
+        pattern: #"\b(?:0x[0-9a-fA-F]+|0b[01]+|0o[0-7]+|\d+\.?\d*(?:[eE][+-]?\d+)?)\b"#
+    )
+
+    private static func cachedRegex(
+        pattern: String,
+        options: NSRegularExpression.Options = []
+    ) -> NSRegularExpression? {
+        let key = "\(pattern)-\(options.rawValue)"
+        if let cached = regexCache[key] { return cached }
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: options) else { return nil }
+        regexCache[key] = regex
+        return regex
+    }
+
     // MARK: - Public API
 
     static func highlight(code: String, language: String, isDark: Bool) -> NSAttributedString {
@@ -89,7 +108,7 @@ enum SyntaxHighlighter {
             let pattern = "\\b(?:\(escaped))\\b"
             var options: NSRegularExpression.Options = []
             if grammar.caseInsensitiveKeywords { options.insert(.caseInsensitive) }
-            if let regex = try? NSRegularExpression(pattern: pattern, options: options) {
+            if let regex = cachedRegex(pattern: pattern, options: options) {
                 let fullRange = NSRange(code.startIndex..., in: code)
                 regex.enumerateMatches(in: code, range: fullRange) { match, _, _ in
                     guard let range = match?.range,
@@ -100,19 +119,16 @@ enum SyntaxHighlighter {
         }
 
         // Apply number colors (outside protected regions)
-        let numberPattern = #"\b(?:0x[0-9a-fA-F]+|0b[01]+|0o[0-7]+|\d+\.?\d*(?:[eE][+-]?\d+)?)\b"#
-        if let regex = try? NSRegularExpression(pattern: numberPattern) {
-            let fullRange = NSRange(code.startIndex..., in: code)
-            regex.enumerateMatches(in: code, range: fullRange) { match, _, _ in
-                guard let range = match?.range,
-                      !isInProtectedRange(range, protectedRanges: protectedRanges) else { return }
-                result.addAttribute(.foregroundColor, value: numberColor(isDark: isDark), range: range)
-            }
+        let numberFullRange = NSRange(code.startIndex..., in: code)
+        numberRegex.enumerateMatches(in: code, range: numberFullRange) { match, _, _ in
+            guard let range = match?.range,
+                  !isInProtectedRange(range, protectedRanges: protectedRanges) else { return }
+            result.addAttribute(.foregroundColor, value: numberColor(isDark: isDark), range: range)
         }
 
         // Apply type/class name colors (outside protected regions)
         if let typePattern = grammar.typePattern,
-           let regex = try? NSRegularExpression(pattern: typePattern) {
+           let regex = cachedRegex(pattern: typePattern) {
             let fullRange = NSRange(code.startIndex..., in: code)
             regex.enumerateMatches(in: code, range: fullRange) { match, _, _ in
                 guard let range = match?.range,

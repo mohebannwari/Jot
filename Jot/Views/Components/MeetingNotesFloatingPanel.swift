@@ -2,8 +2,9 @@
 //  MeetingNotesFloatingPanel.swift
 //  Jot
 //
-//  Accordion panel for AI Meeting Notes — starts as a compact recording pill,
-//  expands to show tabs for summary, transcript, and manual notes.
+//  Floating panel for AI Meeting Notes — tabs on top, content in middle,
+//  controls at bottom. Starts as a compact collapsed pill, expands to show
+//  Transcript/Notes tabs (and Summary tab after wrap-up).
 //
 
 import SwiftUI
@@ -12,6 +13,7 @@ struct MeetingNotesFloatingPanel: View {
     @ObservedObject var transcriptionService: MeetingTranscriptionService
     let recordingState: MeetingRecordingState
     let duration: TimeInterval
+    let audioLevels: [Float]
     let summaryResult: MeetingSummaryDisplayResult?
     let isSummaryLoading: Bool
     @Binding var manualNotes: String
@@ -25,163 +27,71 @@ struct MeetingNotesFloatingPanel: View {
 
     @Environment(\.colorScheme) private var colorScheme
     @State private var isExpanded = false
+    @State private var showStopConfirmation = false
+    @State private var showDismissConfirmation = false
 
-    private let panelWidth: CGFloat = 400
+    // Figma dimensions
+    private let panelWidth: CGFloat = 383
     private let panelRadius: CGFloat = 22
-    private let pillRadius: CGFloat = 100
+    private let expandedHeight: CGFloat = 299
+    private let contentRadius: CGFloat = 14
+    private let tabHeight: CGFloat = 34
+    private let buttonHeight: CGFloat = 34
+    private let squareButtonSize: CGFloat = 34
 
     private var isComplete: Bool { recordingState == .complete }
+    private var isProcessing: Bool { recordingState == .processing }
+
+    /// Tabs + content are visible when expanded or post-recording
+    private var showTabs: Bool { isExpanded || isProcessing || isComplete }
+
+    /// Summary tab only available after wrap-up (processing or complete)
+    private var visibleTabs: [MeetingTab] {
+        if isProcessing || isComplete {
+            return MeetingTab.allCases
+        }
+        return [.transcript, .notes]
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if isExpanded || isComplete {
+        VStack(spacing: 8) {
+            if showTabs {
                 tabBar
-                tabContent
+                contentBlock
             }
-            if !isComplete {
-                recordingBar
-            }
-            if isExpanded || isComplete {
-                footerButtons
-            }
+            controlsSection
         }
+        .padding(8)
         .frame(width: panelWidth)
+        .frame(height: showTabs ? expandedHeight : nil)
         .modifier(MeetingPanelBackgroundModifier(
-            cornerRadius: (isExpanded || isComplete) ? panelRadius : pillRadius,
-            panelBackground: panelBackground,
-            borderColor: borderColor
+            cornerRadius: panelRadius,
+            panelBackground: Color("SurfaceElevatedColor"),
+            borderColor: Color("BorderSubtleColor")
         ))
         .appleIntelligenceGlow(
-            cornerRadius: (isExpanded || isComplete) ? panelRadius : pillRadius,
+            cornerRadius: panelRadius,
             mode: isSummaryLoading ? .continuous : .oneShot
         )
-    }
-
-    // MARK: - Recording Bar (always visible)
-
-    private var recordingBar: some View {
-        HStack(spacing: 10) {
-            // Recording indicator dot
-            if recordingState == .recording {
-                Circle()
-                    .fill(Color.red)
-                    .frame(width: 8, height: 8)
-                    .modifier(PulsingModifier())
-            } else if recordingState == .paused {
-                Circle()
-                    .fill(Color.orange)
-                    .frame(width: 8, height: 8)
-            } else if recordingState == .processing {
-                BrailleLoader(pattern: .checkerboard, size: 10)
-            } else if recordingState == .complete {
-                Circle()
-                    .fill(Color.green)
-                    .frame(width: 8, height: 8)
-            }
-
-            // Status label
-            Text(statusLabel)
-                .font(FontManager.heading(size: 12, weight: .semibold))
-                .foregroundColor(Color("PrimaryTextColor"))
-                .shimmering(active: recordingState == .processing)
-
-            // Duration
-            Text(formattedDuration)
-                .font(FontManager.metadata(size: 12, weight: .medium))
-                .foregroundColor(Color("SecondaryTextColor"))
-                .monospacedDigit()
-
-            Spacer()
-
-            // Controls + cancel
-            actionButtons
-
-            Text("\u{2022}")
-                .font(.system(size: 10))
-                .foregroundColor(Color("SecondaryTextColor").opacity(0.4))
-
-            // Expand/collapse chevron
-            Button {
-                withAnimation(.jotSpring) {
-                    isExpanded.toggle()
-                }
-            } label: {
-                Image(isExpanded ? "IconChevronDownSmall" : "IconChevronTopSmall")
-                    .resizable()
-                    .renderingMode(.template)
-                    .frame(width: 15, height: 15)
-                    .foregroundColor(Color("SecondaryTextColor"))
-                    .padding(6)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .macPointingHandCursor()
-            .subtleHoverScale(1.1)
+        .alert("Stop Recording?", isPresented: $showStopConfirmation) {
+            Button("Stop", role: .destructive, action: onStop)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This will end the recording and generate a summary. This action cannot be undone.")
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-    }
-
-    private var actionButtons: some View {
-        HStack(spacing: 6) {
-            if recordingState == .recording {
-                Button(action: onPause) {
-                    Image(systemName: "pause.fill")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundColor(Color("SecondaryTextColor"))
-                        .padding(6)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .macPointingHandCursor()
-                .subtleHoverScale(1.1)
-            } else if recordingState == .paused {
-                Button(action: onResume) {
-                    Image(systemName: "play.fill")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundColor(Color("SecondaryTextColor"))
-                        .padding(6)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .macPointingHandCursor()
-                .subtleHoverScale(1.1)
-            }
-
-            if recordingState == .recording || recordingState == .paused {
-                Button(action: onStop) {
-                    Image(systemName: "stop.fill")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundColor(Color("SecondaryTextColor"))
-                        .padding(6)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .macPointingHandCursor()
-                .subtleHoverScale(1.1)
-            }
-
-            Button(action: onDismiss) {
-                Image("IconXMark")
-                    .renderingMode(.template)
-                    .resizable()
-                    .scaledToFit()
-                    .foregroundColor(Color("SecondaryTextColor"))
-                    .frame(width: 15, height: 15)
-                    .padding(6)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .macPointingHandCursor()
-            .subtleHoverScale(1.1)
+        .alert("Discard Recording?", isPresented: $showDismissConfirmation) {
+            Button("Discard", role: .destructive, action: onDismiss)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The current recording session and any transcript will be permanently lost.")
         }
     }
 
     // MARK: - Tab Bar
 
     private var tabBar: some View {
-        HStack(spacing: 2) {
-            ForEach(MeetingTab.allCases) { tab in
+        HStack(spacing: 4) {
+            ForEach(visibleTabs) { tab in
                 Button {
                     withAnimation(.easeInOut(duration: 0.2)) {
                         selectedTab = tab
@@ -190,41 +100,25 @@ struct MeetingNotesFloatingPanel: View {
                     Text(tab.label)
                         .font(FontManager.heading(size: 11, weight: selectedTab == tab ? .semibold : .medium))
                         .foregroundColor(selectedTab == tab ? Color("PrimaryTextColor") : Color("SecondaryTextColor"))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: tabHeight)
+                        .contentShape(Capsule())
                         .background(
                             selectedTab == tab
-                            ? Capsule().fill(tabSelectedBackground)
-                            : nil
+                                ? Capsule().fill(Color("ButtonSecondaryBgColor"))
+                                : nil
                         )
                 }
                 .buttonStyle(.plain)
                 .macPointingHandCursor()
             }
-
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 16)
-        .padding(.bottom, 8)
-    }
-
-    private var completeIndicator: some View {
-        HStack(spacing: 6) {
-            Circle()
-                .fill(Color.green)
-                .frame(width: 6, height: 6)
-            Text(formattedDuration)
-                .font(FontManager.metadata(size: 11, weight: .medium))
-                .foregroundColor(Color("SecondaryTextColor"))
-                .monospacedDigit()
         }
     }
 
-    // MARK: - Tab Content
+    // MARK: - Content Block
 
-    @ViewBuilder
-    private var tabContent: some View {
-        Group {
+    private var contentBlock: some View {
+        ZStack {
             switch selectedTab {
             case .summary:
                 summaryTabContent
@@ -234,8 +128,170 @@ struct MeetingNotesFloatingPanel: View {
                 notesTabContent
             }
         }
-        .frame(height: 260)
-        .padding(.horizontal, 16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color("SurfaceDefaultColor"))
+        .clipShape(RoundedRectangle(cornerRadius: contentRadius, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: contentRadius, style: .continuous)
+                .stroke(Color("BorderSubtleColor"), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.06), radius: 2, y: 1)
+        .shadow(color: .black.opacity(0.04), radius: 6, y: 3)
+    }
+
+    // MARK: - Controls Section
+
+    @ViewBuilder
+    private var controlsSection: some View {
+        switch recordingState {
+        case .idle:
+            EmptyView()
+
+        case .recording, .paused:
+            recordingControls
+
+        case .processing:
+            processingControls
+
+        case .complete:
+            completeControls
+        }
+    }
+
+    // MARK: - Recording / Paused Controls
+
+    private var recordingControls: some View {
+        let isPaused = recordingState == .paused
+
+        return VStack(spacing: 8) {
+            // Info bar: waveform + status + timer
+            HStack(spacing: 8) {
+                AudioWaveformIndicator(
+                    levels: audioLevels,
+                    isPaused: isPaused
+                )
+
+                Text(statusLabel)
+                    .font(FontManager.heading(size: 12, weight: .semibold))
+                    .foregroundColor(Color("PrimaryTextColor"))
+
+                Spacer()
+
+                Text(formattedDuration)
+                    .font(FontManager.metadata(size: 12, weight: .medium))
+                    .foregroundColor(Color("PrimaryTextColor"))
+                    .monospacedDigit()
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+
+            // Action buttons row
+            HStack(spacing: 4) {
+                // Pause or Resume (flex)
+                if isPaused {
+                    tintedActionButton(
+                        icon: "IconPlayCircle",
+                        iconSize: 15,
+                        tintColor: Color("MeetingResumeColor"),
+                        action: onResume
+                    )
+                } else {
+                    tintedActionButton(
+                        icon: "IconPause",
+                        iconSize: 15,
+                        tintColor: Color("MeetingPausedColor"),
+                        action: onPause
+                    )
+                }
+
+                // Stop (flex) — guarded with confirmation
+                tintedActionButton(
+                    icon: "StopCircle",
+                    iconSize: 15,
+                    tintColor: Color("MeetingRecordingColor"),
+                    action: { showStopConfirmation = true }
+                )
+
+                // Dismiss (square) — guarded with confirmation
+                squareButton(
+                    icon: "IconCrossMedium",
+                    iconSize: 10,
+                    action: { showDismissConfirmation = true }
+                )
+
+                // Expand / Minimize (square)
+                squareButton(
+                    icon: isExpanded ? "IconMinimize45" : "IconExpand45",
+                    iconSize: 10,
+                    action: {
+                        withAnimation(.jotSpring) {
+                            isExpanded.toggle()
+                        }
+                    }
+                )
+            }
+        }
+    }
+
+    // MARK: - Processing Controls (escape hatch via dismiss)
+
+    private var processingControls: some View {
+        HStack(spacing: 8) {
+            BrailleLoader(pattern: .checkerboard, size: 10)
+
+            Text(statusLabel)
+                .font(FontManager.heading(size: 12, weight: .semibold))
+                .foregroundColor(Color("PrimaryTextColor"))
+                .shimmering(active: true)
+
+            Spacer()
+
+            Text(formattedDuration)
+                .font(FontManager.metadata(size: 12, weight: .medium))
+                .foregroundColor(Color("PrimaryTextColor"))
+                .monospacedDigit()
+
+            // Escape hatch — dismiss during generation
+            squareButton(
+                icon: "IconCrossMedium",
+                iconSize: 10,
+                action: onDismiss
+            )
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+    }
+
+    // MARK: - Complete Controls
+
+    private var completeControls: some View {
+        HStack(spacing: 4) {
+            Button(action: onSave) {
+                Text("Save to note")
+                    .font(FontManager.heading(size: 11, weight: .medium))
+                    .foregroundColor(Color("ButtonPrimaryTextColor"))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: buttonHeight)
+                    .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .background(Color("ButtonPrimaryBgColor"), in: Capsule())
+            .macPointingHandCursor()
+            .subtleHoverScale(1.04)
+
+            Button(action: { showDismissConfirmation = true }) {
+                Text("Dismiss")
+                    .font(FontManager.heading(size: 11, weight: .medium))
+                    .foregroundColor(Color("PrimaryTextColor"))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: buttonHeight)
+                    .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .background(Color("ButtonSecondaryBgColor"), in: Capsule())
+            .macPointingHandCursor()
+            .subtleHoverScale(1.04)
+        }
     }
 
     // MARK: - Summary Tab
@@ -327,7 +383,7 @@ struct MeetingNotesFloatingPanel: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.bottom, 8)
+                .padding(12)
             }
         } else {
             VStack(spacing: 8) {
@@ -344,13 +400,13 @@ struct MeetingNotesFloatingPanel: View {
         VStack(alignment: .leading, spacing: 10) {
             ForEach(0..<5, id: \.self) { i in
                 Color("BorderSubtleColor").opacity(0.4)
-                    .frame(width: CGFloat([0.9, 1.0, 0.75, 0.85, 0.6][i]) * (panelWidth - 32), height: 14)
+                    .frame(width: CGFloat([0.9, 1.0, 0.75, 0.85, 0.6][i]) * (panelWidth - 48), height: 14)
                     .clipShape(Capsule())
                     .shimmering(active: true)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(.top, 4)
+        .padding(12)
     }
 
     // MARK: - Transcript Tab
@@ -371,8 +427,8 @@ struct MeetingNotesFloatingPanel: View {
                                 .font(FontManager.body(size: 13))
                                 .foregroundColor(
                                     segment.isFinal
-                                    ? Color("PrimaryTextColor")
-                                    : Color("SecondaryTextColor")
+                                        ? Color("PrimaryTextColor")
+                                        : Color("SecondaryTextColor")
                                 )
                                 .lineSpacing(2)
                                 .opacity(segment.isFinal ? 1.0 : 0.7)
@@ -381,16 +437,18 @@ struct MeetingNotesFloatingPanel: View {
                     }
 
                     if transcriptionService.segments.isEmpty {
-                        Text(recordingState == .idle
-                             ? "Transcript will appear here once recording starts."
-                             : "Listening...")
-                            .font(FontManager.body(size: 13))
-                            .foregroundColor(Color("TertiaryTextColor"))
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                        Text(
+                            recordingState == .idle
+                                ? "Transcript will appear here once recording starts."
+                                : "Listening..."
+                        )
+                        .font(FontManager.body(size: 13))
+                        .foregroundColor(Color("TertiaryTextColor"))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.bottom, 8)
+                .padding(12)
             }
             .onChange(of: transcriptionService.segments.count) { _, _ in
                 if let lastID = transcriptionService.segments.last?.id {
@@ -411,50 +469,64 @@ struct MeetingNotesFloatingPanel: View {
             .scrollContentBackground(.hidden)
             .scrollIndicators(.never)
             .padding(8)
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(textAreaBackground)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(borderColor, lineWidth: 1)
-            )
+            .overlay(alignment: .topLeading) {
+                if manualNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text("Add notes...")
+                        .font(FontManager.body(size: 13))
+                        .foregroundColor(Color("TertiaryTextColor"))
+                        .allowsHitTesting(false)
+                        .padding(.top, 9)
+                        .padding(.leading, 13)
+                }
+            }
     }
 
-    // MARK: - Footer
+    // MARK: - Reusable Button Components
 
-    @ViewBuilder
-    private var footerButtons: some View {
-        if recordingState == .complete {
-            HStack(spacing: 6) {
-                Button("Save to Note", action: onSave)
-                    .font(FontManager.heading(size: 12, weight: .semibold))
-                    .foregroundColor(Color("ButtonPrimaryTextColor"))
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .background(Color("ButtonPrimaryBgColor"), in: Capsule())
-                    .buttonStyle(.plain)
-                    .macPointingHandCursor()
-                    .subtleHoverScale(1.04)
-
-                Button("Dismiss", action: onDismiss)
-                    .font(FontManager.heading(size: 12, weight: .semibold))
-                    .foregroundColor(Color("PrimaryTextColor"))
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .background(Color("ButtonSecondaryBgColor"), in: Capsule())
-                    .buttonStyle(.plain)
-                    .macPointingHandCursor()
-                    .subtleHoverScale(1.04)
-
-                Spacer()
-
-                completeIndicator
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
-            .padding(.bottom, 16)
+    /// Full-width tinted capsule button with icon (pause, play, stop)
+    private func tintedActionButton(
+        icon: String,
+        iconSize: CGFloat,
+        tintColor: Color,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(icon)
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(width: iconSize, height: iconSize)
+                .foregroundColor(tintColor)
+                .frame(maxWidth: .infinity)
+                .frame(height: buttonHeight)
+                .contentShape(Capsule())
         }
+        .buttonStyle(.plain)
+        .background(tintColor.opacity(0.25), in: Capsule())
+        .macPointingHandCursor()
+        .subtleHoverScale(1.1)
+    }
+
+    /// Fixed-size secondary capsule button (X, expand/minimize)
+    private func squareButton(
+        icon: String,
+        iconSize: CGFloat,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(icon)
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(width: iconSize, height: iconSize)
+                .foregroundColor(Color("PrimaryTextColor"))
+                .frame(width: squareButtonSize, height: squareButtonSize)
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .background(Color("ButtonSecondaryBgColor"), in: Capsule())
+        .macPointingHandCursor()
+        .subtleHoverScale(1.1)
     }
 
     // MARK: - Helpers
@@ -464,7 +536,7 @@ struct MeetingNotesFloatingPanel: View {
         case .idle: return "Ready"
         case .recording: return "Recording"
         case .paused: return "Paused"
-        case .processing: return "Generating Summary"
+        case .processing: return "Generating summary"
         case .complete: return "Complete"
         }
     }
@@ -483,24 +555,6 @@ struct MeetingNotesFloatingPanel: View {
         let minutes = Int(timestamp) / 60
         let seconds = Int(timestamp) % 60
         return String(format: "%d:%02d", minutes, seconds)
-    }
-
-    // MARK: - Colors
-
-    private var panelBackground: Color {
-        Color("SurfaceElevatedColor")
-    }
-
-    private var tabSelectedBackground: Color {
-        Color("SurfaceTranslucentColor")
-    }
-
-    private var textAreaBackground: Color {
-        Color("SurfaceElevatedColor")
-    }
-
-    private var borderColor: Color {
-        Color("BorderSubtleColor")
     }
 }
 
@@ -536,18 +590,5 @@ private struct MeetingPanelBackgroundModifier: ViewModifier {
                 .shadow(color: .black.opacity(0.08), radius: 8, y: 4)
                 .shadow(color: .black.opacity(0.04), radius: 24, y: 8)
         }
-    }
-}
-
-// MARK: - Pulsing Animation
-
-private struct PulsingModifier: ViewModifier {
-    @State private var isPulsing = false
-
-    func body(content: Content) -> some View {
-        content
-            .opacity(isPulsing ? 0.3 : 1.0)
-            .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: isPulsing)
-            .onAppear { isPulsing = true }
     }
 }

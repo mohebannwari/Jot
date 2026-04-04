@@ -232,6 +232,7 @@ struct ContentView: View {
     @State private var selectionAnchorID: UUID?
     @State private var isSidebarVisible = true
     @State private var isSidebarAnimating = false
+    @State private var isPropertiesPanelAnimating = false
     @State private var isSearchPresented = false
     @State private var isSettingsPresented = false
     @State private var expandedFolderIDs: Set<UUID> = []
@@ -660,6 +661,7 @@ struct ContentView: View {
             .onReceive(NotificationCenter.default.publisher(for: .togglePropertiesPanel)) { notification in
                 guard selectedNote != nil else { return }
                 let requestedPane: SplitPickerPane = (notification.object as? UUID) == splitEditorID ? .secondary : .primary
+                isPropertiesPanelAnimating = true
                 withAnimation(Self.propertiesPanelAnimation) {
                     if isPropertiesPanelVisible && propertiesPanelPane == requestedPane {
                         isPropertiesPanelVisible = false
@@ -667,6 +669,9 @@ struct ContentView: View {
                         propertiesPanelPane = requestedPane
                         isPropertiesPanelVisible = true
                     }
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    isPropertiesPanelAnimating = false
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .createNewNote)) { _ in
@@ -1225,9 +1230,18 @@ struct ContentView: View {
     }
 
     private func singleNotePane(note: Note, width: CGFloat, cornerRadius: CGFloat) -> some View {
-        detailPane(note: note)
-            .geometryGroup()
-            .frame(width: width)
+        HStack(spacing: 0) {
+            detailPane(note: note)
+                .frame(maxWidth: .infinity)
+
+            propertiesPanelSlot(
+                isVisible: isPropertiesPanelVisible && propertiesPanelPane == .primary,
+                note: note,
+                editorInstanceID: primaryEditorID
+            )
+        }
+        .geometryGroup()
+        .frame(width: width)
             .frame(maxHeight: .infinity)
             .background(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).fill(detailBg))
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
@@ -1253,30 +1267,6 @@ struct ContentView: View {
                     .transition(.opacity)
             }
         }
-        .overlay(alignment: .trailing) {
-            if isPropertiesPanelVisible && propertiesPanelPane == .primary {
-                ZStack(alignment: .trailing) {
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            withAnimation(Self.propertiesPanelAnimation) {
-                                isPropertiesPanelVisible = false
-                            }
-                        }
-
-                    propertiesPanelContent(for: note, editorInstanceID: primaryEditorID)
-                        .frame(width: Self.propertiesPanelWidth)
-                        .frame(maxHeight: .infinity)
-                        .padding(.vertical, 8)
-                        .liquidGlass(in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-                        .shadow(color: .black.opacity(0.04), radius: 9.5, x: 0, y: 9)
-                        .padding(.trailing, 8)
-                        .padding(.vertical, 8)
-                }
-                .transition(Self.floatingPanelTransition)
-            }
-        }
-        .animation(Self.propertiesPanelAnimation, value: isPropertiesPanelVisible)
         .overlay(alignment: .trailing) {
             versionHistoryOverlay(for: note)
         }
@@ -1443,34 +1433,44 @@ struct ContentView: View {
         let isLeftPane = (position == .left)
         let isSplitLocked = note.isLocked && !authManager.isUnlocked(note.id)
 
-        ZStack {
-            NoteDetailView(
+        HStack(spacing: 0) {
+            ZStack {
+                NoteDetailView(
+                    note: note,
+                    editorInstanceID: splitEditorID,
+                    focusRequestID: splitFocusRequestID,
+                    contentTopInsetAdjustment: detailToggleToContentExtraSpacingWhenSidebarHidden,
+                    stickyHeaderTopPadding: splitControlsTopPadding,
+                    onSave: { saveSplitNote($0) },
+                    availableNotes: notePickerItems(excluding: note.id),
+                    onNavigateToNote: navigateToNote,
+                    backlinks: backlinks(for: note.id),
+                    isSidebarAnimating: isSidebarAnimating,
+                    isPanelAnimating: isPropertiesPanelAnimating
+                )
+                .blur(radius: isSplitLocked ? 20 : 0)
+                .allowsHitTesting(!isSplitLocked)
+                .opacity(previewingVersion != nil && versionHistoryPane == .secondary ? 0 : 1)
+
+                if isSplitLocked {
+                    noteLockOverlay(for: note)
+                }
+
+                // Version preview overlay
+                if let version = previewingVersion, versionHistoryPane == .secondary {
+                    versionPreviewPane(version: version)
+                        .transition(.opacity)
+                }
+            }
+            .animation(.easeInOut(duration: 0.15), value: previewingVersion?.id)
+            .frame(maxWidth: .infinity)
+
+            propertiesPanelSlot(
+                isVisible: isPropertiesPanelVisible && propertiesPanelPane == .secondary,
                 note: note,
-                editorInstanceID: splitEditorID,
-                focusRequestID: splitFocusRequestID,
-                contentTopInsetAdjustment: detailToggleToContentExtraSpacingWhenSidebarHidden,
-                stickyHeaderTopPadding: splitControlsTopPadding,
-                onSave: { saveSplitNote($0) },
-                availableNotes: notePickerItems(excluding: note.id),
-                onNavigateToNote: navigateToNote,
-                backlinks: backlinks(for: note.id),
-                isSidebarAnimating: isSidebarAnimating
+                editorInstanceID: splitEditorID
             )
-            .blur(radius: isSplitLocked ? 20 : 0)
-            .allowsHitTesting(!isSplitLocked)
-            .opacity(previewingVersion != nil && versionHistoryPane == .secondary ? 0 : 1)
-
-            if isSplitLocked {
-                noteLockOverlay(for: note)
-            }
-
-            // Version preview overlay
-            if let version = previewingVersion, versionHistoryPane == .secondary {
-                versionPreviewPane(version: version)
-                    .transition(.opacity)
-            }
         }
-        .animation(.easeInOut(duration: 0.15), value: previewingVersion?.id)
         .geometryGroup()
         .frame(width: width)
         .frame(maxHeight: .infinity)
@@ -1497,30 +1497,6 @@ struct ContentView: View {
                     .transition(.opacity)
             }
         }
-        .overlay(alignment: .trailing) {
-            if isPropertiesPanelVisible && propertiesPanelPane == .secondary {
-                ZStack(alignment: .trailing) {
-                    Color.clear
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            withAnimation(Self.propertiesPanelAnimation) {
-                                isPropertiesPanelVisible = false
-                            }
-                        }
-
-                    propertiesPanelContent(for: note, editorInstanceID: splitEditorID)
-                        .frame(width: Self.propertiesPanelWidth)
-                        .frame(maxHeight: .infinity)
-                        .padding(.vertical, 8)
-                        .liquidGlass(in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-                        .shadow(color: .black.opacity(0.04), radius: 9.5, x: 0, y: 9)
-                        .padding(.trailing, 8)
-                        .padding(.vertical, 8)
-                }
-                .transition(Self.floatingPanelTransition)
-            }
-        }
-        .animation(Self.propertiesPanelAnimation, value: isPropertiesPanelVisible)
         .overlay(alignment: .trailing) {
             versionHistoryOverlay(for: note, pane: .secondary)
         }
@@ -2625,20 +2601,15 @@ struct ContentView: View {
     @ViewBuilder
     private func appWindowTrashOverlay() -> some View {
         ZStack {
-            Color.black
-                .opacity(isTrashPresented ? 0.001 : 0)
-                .allowsHitTesting(isTrashPresented)
-                .onTapGesture {
-                    if isTrashPresented {
-                        isTrashPresented = false
-                    }
-                }
+            if isTrashPresented {
+                Color.black
+                    .opacity(0.001)
+                    .onTapGesture { isTrashPresented = false }
 
-            TrashSheet(isPresented: $isTrashPresented)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                .opacity(isTrashPresented ? 1 : 0)
-                .scaleEffect(isTrashPresented ? 1 : 0.95)
-                .allowsHitTesting(isTrashPresented)
+                TrashSheet(isPresented: $isTrashPresented)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
+            }
         }
         .clipShape(RoundedRectangle(cornerRadius: windowCornerRadius, style: .continuous))
         .animation(.easeInOut(duration: 0.18), value: isTrashPresented)
@@ -2900,15 +2871,16 @@ struct ContentView: View {
                         handleFloatingSidebarHover(hovering)
                     }
 
-                // The floating panel -- full height, 10px from bottom
-                floatingSidebarPanel
-                    .frame(height: availableHeight)
-                    .padding(.leading, floatingSidebarEdgeInset)
-                    .opacity(isFloatingSidebarVisible ? 1 : 0)
-                    .offset(x: isFloatingSidebarVisible ? 0 : -20)
-                    .allowsHitTesting(isFloatingSidebarVisible)
-                    .animation(.jotSpring, value: isFloatingSidebarVisible)
+                // The floating panel -- only in tree when visible
+                if isFloatingSidebarVisible {
+                    floatingSidebarPanel
+                        .frame(height: availableHeight)
+                        .padding(.leading, floatingSidebarEdgeInset)
+                        .transition(.opacity.combined(with: .offset(x: -20)))
+                        .allowsHitTesting(true)
+                }
             }
+            .animation(.jotSpring, value: isFloatingSidebarVisible)
             .padding(.top, topOffset)
         }
         .ignoresSafeArea()
@@ -2953,7 +2925,8 @@ struct ContentView: View {
                 availableNotes: notePickerItems(excluding: note.id),
                 onNavigateToNote: navigateToNote,
                 backlinks: backlinks(for: note.id),
-                isSidebarAnimating: isSidebarAnimating
+                isSidebarAnimating: isSidebarAnimating,
+                isPanelAnimating: isPropertiesPanelAnimating
             )
             .blur(radius: isNoteLocked ? 20 : 0)
             .allowsHitTesting(!isNoteLocked)
@@ -3482,17 +3455,17 @@ struct ContentView: View {
 
     // MARK: - Properties Panel
 
-    private static let propertiesPanelAnimation: Animation = .spring(response: 0.45, dampingFraction: 0.82)
+    private static let propertiesPanelAnimation: Animation = .spring(response: 0.35, dampingFraction: 0.88)
     private static let propertiesPanelWidth: CGFloat = 340
 
-    /// Slide + scale + blur transition for floating panels (properties, version history).
+    /// Slide + fade transition for floating panels (version history).
     private static let floatingPanelTransition: AnyTransition = .modifier(
         active: FloatingPanelTransitionModifier(active: true),
         identity: FloatingPanelTransitionModifier(active: false)
     ).combined(with: .move(edge: .trailing))
 
     /// Always-present panel slot that avoids view insertion/removal.
-    /// Width, scale, and opacity animate smoothly without HStack relayout jank.
+    /// Width and opacity animate smoothly without HStack relayout jank.
     @ViewBuilder
     private func propertiesPanelSlot(isVisible: Bool, note: Note, editorInstanceID: UUID?) -> some View {
         Divider()
@@ -3502,12 +3475,6 @@ struct ContentView: View {
             .frame(width: Self.propertiesPanelWidth)
             .frame(width: isVisible ? Self.propertiesPanelWidth : 0, alignment: .leading)
             .clipped()
-            .blur(radius: isVisible ? 0 : 6)
-            .scaleEffect(
-                x: isVisible ? 1 : 0.78,
-                y: isVisible ? 1 : 0.88,
-                anchor: .trailing
-            )
             .opacity(isVisible ? 1 : 0)
             .allowsHitTesting(isVisible)
     }
@@ -3528,8 +3495,12 @@ struct ContentView: View {
             },
             onNavigateToNote: navigateToNote,
             onDismiss: {
+                isPropertiesPanelAnimating = true
                 withAnimation(Self.propertiesPanelAnimation) {
                     isPropertiesPanelVisible = false
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    isPropertiesPanelAnimating = false
                 }
             }
         )
@@ -4961,7 +4932,6 @@ struct NoteListCard: View {
                         .padding(-2)
                 )
                 .compositingGroup()
-                .drawingGroup()
                 .animation(.jotHover, value: isLeadingIconHovered)
                 .contentShape(RoundedRectangle(cornerRadius: 8))
                 .onHover { isLeadingIconHovered = $0 }
@@ -5050,21 +5020,6 @@ struct NoteListCard: View {
         .onHover { hovering in
             isHovered = hovering
         }
-        .background(
-            GeometryReader { geo in
-                Color.clear
-                    .preference(
-                        key: NotePreviewAnchorKey.self,
-                        value: isHovered
-                            ? NotePreviewAnchorData(
-                                noteID: note.id,
-                                isLocked: note.isLocked,
-                                frame: geo.frame(in: .named("contentArea"))
-                              )
-                            : nil
-                    )
-            }
-        )
         .draggable(
             TransferablePayload(items: getDragItems?() ?? [NoteDragItem(noteID: note.id)])
         ) {
@@ -5792,8 +5747,6 @@ private struct FloatingPanelTransitionModifier: ViewModifier {
     let active: Bool
     func body(content: Content) -> some View {
         content
-            .scaleEffect(x: active ? 0.78 : 1, y: active ? 0.88 : 1, anchor: .trailing)
-            .blur(radius: active ? 6 : 0)
             .opacity(active ? 0 : 1)
     }
 }

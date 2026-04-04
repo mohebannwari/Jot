@@ -20,6 +20,15 @@ struct FontManager {
     // a main-actor-isolated property from a nonisolated context.
     private nonisolated static let bodyFontStyleKey = "AppBodyFontStyle"
 
+    // MARK: - Font Cache
+
+    private static var fontCache: [String: NSFont] = [:]
+
+    /// Call when body font style changes to clear stale cached fonts.
+    static func invalidateFontCache() {
+        fontCache.removeAll()
+    }
+
     nonisolated private static func currentBodyFontStyle(
         userDefaults: UserDefaults = .standard
     ) -> BodyFontStyle {
@@ -46,23 +55,29 @@ struct FontManager {
 
     /// NSFont version for AppKit components
     nonisolated static func bodyNS(size: CGFloat = 16, weight: Weight = .regular) -> NSFont {
+        let key = "body-\(size)-\(weight)"
+        if let cached = fontCache[key] { return cached }
+        let font: NSFont
         switch currentBodyFontStyle() {
         case .default:
             // Try Charter first, fall back to Georgia (similar serif), then system
             if let charter = NSFont(name: "Charter-\(weight.toCharterName())", size: size) {
-                return charter
+                font = charter
             } else if let charter = NSFont(name: "Charter", size: size) {
                 let descriptor = charter.fontDescriptor.withSymbolicTraits(weight.toNSSymbolicTraits())
-                return NSFont(descriptor: descriptor, size: size) ?? charter
+                font = NSFont(descriptor: descriptor, size: size) ?? charter
             } else if let georgia = NSFont(name: "Georgia", size: size) {
-                return georgia
+                font = georgia
+            } else {
+                font = NSFont.systemFont(ofSize: size, weight: weight.toNSWeight())
             }
-            return NSFont.systemFont(ofSize: size, weight: weight.toNSWeight())
         case .system:
-            return NSFont.systemFont(ofSize: size, weight: weight.toNSWeight())
+            font = NSFont.systemFont(ofSize: size, weight: weight.toNSWeight())
         case .mono:
-            return NSFont.monospacedSystemFont(ofSize: size, weight: weight.toNSWeight())
+            font = NSFont.monospacedSystemFont(ofSize: size, weight: weight.toNSWeight())
         }
+        fontCache[key] = font
+        return font
     }
     
     // MARK: - Heading Fonts (SF Pro Compact)
@@ -78,20 +93,26 @@ struct FontManager {
     /// Follows the user's body font style setting so headings stay visually coherent
     /// with the surrounding text (Charter → Charter bold, Mono → monospaced, System → SF Pro).
     nonisolated static func headingNS(size: CGFloat = 24, weight: Weight = .medium) -> NSFont {
+        let key = "heading-\(size)-\(weight)"
+        if let cached = fontCache[key] { return cached }
+        let font: NSFont
         switch currentBodyFontStyle() {
         case .default:
             if let charter = NSFont(name: "Charter-Bold", size: size) {
-                return charter
+                font = charter
             } else if let charter = NSFont(name: "Charter", size: size) {
                 let descriptor = charter.fontDescriptor.withSymbolicTraits(.bold)
-                return NSFont(descriptor: descriptor, size: size) ?? charter
+                font = NSFont(descriptor: descriptor, size: size) ?? charter
+            } else {
+                font = NSFont.systemFont(ofSize: size, weight: weight.toNSWeight())
             }
-            return NSFont.systemFont(ofSize: size, weight: weight.toNSWeight())
         case .system:
-            return NSFont.systemFont(ofSize: size, weight: weight.toNSWeight())
+            font = NSFont.systemFont(ofSize: size, weight: weight.toNSWeight())
         case .mono:
-            return NSFont.monospacedSystemFont(ofSize: size, weight: weight.toNSWeight())
+            font = NSFont.monospacedSystemFont(ofSize: size, weight: weight.toNSWeight())
         }
+        fontCache[key] = font
+        return font
     }
 
     // MARK: - Metadata Fonts (SF Mono)

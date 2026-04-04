@@ -22,6 +22,8 @@ final class SearchEngine: ObservableObject {
     // Data
     private var allNotes: [Note] = []
     private var allFolders: [Folder] = []
+    /// Cache stripped content to avoid re-stripping on every search keystroke
+    private var strippedContentCache: [UUID: (hash: Int, stripped: String)] = [:]
     
     // Internals
     private var cancellables = Set<AnyCancellable>()
@@ -51,6 +53,13 @@ final class SearchEngine: ObservableObject {
     
     func setNotes(_ notes: [Note]) {
         allNotes = notes
+        // Invalidate stale cache entries for notes that changed
+        for note in notes {
+            let hash = note.content.hashValue
+            if strippedContentCache[note.id]?.hash != hash {
+                strippedContentCache[note.id] = nil
+            }
+        }
         performSearch()
     }
 
@@ -104,7 +113,14 @@ final class SearchEngine: ObservableObject {
                 if matchType == .content { matchType = .tag }
             }
 
-            let stripped = note.content.strippingAllMarkup
+            let stripped: String
+            let contentHash = note.content.hashValue
+            if let cached = strippedContentCache[note.id], cached.hash == contentHash {
+                stripped = cached.stripped
+            } else {
+                stripped = note.content.strippingAllMarkup
+                strippedContentCache[note.id] = (hash: contentHash, stripped: stripped)
+            }
 
             if let r = stripped.range(of: trimmed, options: searchOptions) {
                 score += 10

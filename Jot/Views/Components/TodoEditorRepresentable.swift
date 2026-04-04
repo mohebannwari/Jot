@@ -1552,6 +1552,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         private var fixFontsWorkItem: DispatchWorkItem?
         // Accumulated edited range across debounce intervals for scoped font fixing
         private var pendingFontFixRange: NSRange?
+        // Debounce timer for serialize() — avoids O(n) attribute enumeration on every keystroke
+        private var serializeWorkItem: DispatchWorkItem?
 
         // Cache for ImageRenderer-rasterized pill images (notelinks, webclips, filelinks).
         // Keyed by "<type>|<id>|<colorScheme>" to avoid redundant synchronous renders.
@@ -1627,7 +1629,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 self.updateFilePreviewOverlays(in: tv)
             }
             pendingOverlayUpdate = work
-            DispatchQueue.main.async(execute: work)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: work)
         }
 
         private static let inlineImageCache: NSCache<NSString, NSImage> = {
@@ -1639,11 +1641,6 @@ struct TodoEditorRepresentable: NSViewRepresentable {
 
         // NSTextViewDelegate method to handle selection changes
         func textViewDidChangeSelection(_ notification: Notification) {
-            // Ensure layout stability when selection changes to prevent attachment shifting
-            if let textView = self.textView, let textContainer = textView.textContainer {
-                textView.layoutManager?.ensureLayout(for: textContainer)
-            }
-            
             // Post notification about selection change for floating toolbar
             guard let textView = self.textView else { return }
             let selectedRange = textView.selectedRange()
@@ -4016,17 +4013,22 @@ struct TodoEditorRepresentable: NSViewRepresentable {
 
             // Clear any previous temporary highlighting
             layoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: fullRange)
+            layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: fullRange)
 
-            // Dim non-matched text: explicit colors per mode to avoid dynamic color resolution issues
+            // Dim non-matched text with a single full-range pass
             let dimColor: NSColor = (currentColorScheme == .dark)
                 ? NSColor.white.withAlphaComponent(0.4)
                 : NSColor.black.withAlphaComponent(0.3)
             layoutManager.addTemporaryAttribute(.foregroundColor, value: dimColor, forCharacterRange: fullRange)
 
-            // Remove the dim overlay on matched ranges so original colors show through
+            // Highlight matched ranges: restore original foreground + add background
+            let matchBg: NSColor = (currentColorScheme == .dark)
+                ? NSColor.systemYellow.withAlphaComponent(0.25)
+                : NSColor.systemYellow.withAlphaComponent(0.35)
             for matchRange in ranges {
                 guard matchRange.location + matchRange.length <= storage.length else { continue }
                 layoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: matchRange)
+                layoutManager.addTemporaryAttribute(.backgroundColor, value: matchBg, forCharacterRange: matchRange)
             }
 
             // Scroll active match into view and play impulse
@@ -4047,8 +4049,9 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             searchImpulseView?.removeFromSuperview()
             searchImpulseView = nil
 
-            // Remove temporary dim overlay — original storage colors are untouched
+            // Remove temporary search overlays — original storage colors are untouched
             layoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: fullRange)
+            layoutManager.removeTemporaryAttribute(.backgroundColor, forCharacterRange: fullRange)
         }
 
         private func playMatchGlow(for range: NSRange) {
@@ -4606,6 +4609,20 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         func updateIfNeeded(with text: String) {
             guard !isUpdating, let textView = textView, let textStorage = textView.textStorage
             else { return }
+
+            // Flush any pending debounced serialization before switching notes.
+            // If the incoming text differs from lastSerialized the note is changing; synchronously
+            // drain the work item so the outgoing note's edits reach the binding before we
+            // overwrite lastSerialized with the incoming note's content.
+            if text != lastSerialized, let pending = serializeWorkItem {
+                pending.cancel()
+                serializeWorkItem = nil
+                let serialized = serialize()
+                if serialized != lastSerialized {
+                    lastSerialized = serialized
+                    textBinding.wrappedValue = serialized
+                }
+            }
 
             guard text != lastSerialized else { return }
 
@@ -6141,9 +6158,22 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             guard let textView = textView, !readOnly else { return }
             isUpdating = true
             styleTodoParagraphs(editedRange: editedRange)
-            lastSerialized = serialize()
-            textBinding.wrappedValue = lastSerialized
             isUpdating = false
+
+            // Debounce serialization to avoid O(n) attribute enumeration on every keystroke.
+            // styleTodoParagraphs runs synchronously above for visual correctness; only the
+            // binding update is deferred.
+            serializeWorkItem?.cancel()
+            let workItem = DispatchWorkItem { [weak self] in
+                guard let self, let _ = self.textView else { return }
+                let serialized = self.serialize()
+                if serialized != self.lastSerialized {
+                    self.lastSerialized = serialized
+                    self.textBinding.wrappedValue = serialized
+                }
+            }
+            serializeWorkItem = workItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: workItem)
 
             // Coalesce overlay updates through the shared debounce —
             // scheduleOverlayUpdate already cancels and reschedules correctly
@@ -6273,9 +6303,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                                 Self.inlineImageCache.setObject(img, forKey: cacheKey, cost: Int(img.size.width * img.size.height * 4))
                                 overlay?.image = img
                                 self.imageLoadTasks.removeValue(forKey: filename)
-                                if let tv = self.textView {
-                                    self.updateImageOverlays(in: tv)
-                                }
+                                self.scheduleOverlayUpdate()
                             }
                         }
                         imageLoadTasks[filename] = loadTask
@@ -7493,11 +7521,14 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         private func styleTodoParagraphs(editedRange: NSRange? = nil) {
             guard let textStorage = textView?.textStorage else { return }
             let fullRange = NSRange(location: 0, length: textStorage.length)
+            // Bridge cast once — reused for working-range expansion and the paragraph loop below.
+            // Safe to hoist: textStorage.string is only modified via addAttribute/removeAttribute
+            // inside this function, neither of which changes the string content itself.
+            let nsString = textStorage.string as NSString
             // Determine the working range: either the edited paragraph(s) or the full document
             let workingRange: NSRange
             if let edited = editedRange, edited.location != NSNotFound, edited.location < textStorage.length {
                 // Expand to paragraph boundaries so we always style complete paragraphs
-                let nsString = textStorage.string as NSString
                 let start = nsString.paragraphRange(for: NSRange(location: edited.location, length: 0)).location
                 let endLoc = min(NSMaxRange(edited), textStorage.length)
                 let endPara = nsString.paragraphRange(for: NSRange(location: max(endLoc, start), length: 0))
@@ -7511,7 +7542,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
 
             var paragraphRange = NSRange(location: workingRange.location, length: 0)
             while paragraphRange.location < NSMaxRange(workingRange) {
-                let substringRange = (textStorage.string as NSString).paragraphRange(
+                let substringRange = nsString.paragraphRange(
                     for: NSRange(location: paragraphRange.location, length: 0))
                 if substringRange.length == 0 { break }
                 defer { paragraphRange.location = NSMaxRange(substringRange) }
@@ -7521,7 +7552,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 let lastCharIndex = NSMaxRange(substringRange) - 1
                 if lastCharIndex >= 0,
                    lastCharIndex < textStorage.length,
-                   (textStorage.string as NSString).character(at: lastCharIndex) == 0x0A,
+                   nsString.character(at: lastCharIndex) == 0x0A,
                    textStorage.attribute(.highlightColor, at: lastCharIndex, effectiveRange: nil) != nil {
                     let nlRange = NSRange(location: lastCharIndex, length: 1)
                     textStorage.removeAttribute(.backgroundColor, range: nlRange)
@@ -7762,6 +7793,11 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             guard let storage = textView?.textStorage else { return "" }
             let fullRange = NSRange(location: 0, length: storage.length)
             var output = ""
+            // Pre-size the output buffer to reduce reallocations on large documents.
+            output.reserveCapacity(storage.length * 2)
+            // Bridge cast once outside the closure — each call to (storage.string as NSString)
+            // inside enumerateAttributes would re-bridge on every attribute run.
+            let storageNSString = storage.string as NSString
             storage.enumerateAttributes(in: fullRange, options: []) { attributes, range, _ in
                 // Corrupted block placeholders — re-emit original raw markup for lossless round-trip
                 if let rawMarkup = attributes[.corruptedBlock] as? String {
@@ -7789,7 +7825,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     let sanitizedURL = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
                     output.append("[[webclip|\(title)|\(description)|\(sanitizedURL)]]")
                 } else if let filePath = attributes[.fileLinkPath] as? String,
-                          (storage.string as NSString).substring(with: range).contains("\u{FFFC}") {
+                          storageNSString.substring(with: range).contains("\u{FFFC}") {
                     let displayName = (attributes[.fileLinkDisplayName] as? String) ?? URL(fileURLWithPath: filePath).lastPathComponent
                     let bookmark = (attributes[.fileLinkBookmark] as? String) ?? ""
                     let sanitizedPath = Self.sanitizedWebClipComponent(filePath)
@@ -7800,7 +7836,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                         output.append("[[filelink|\(sanitizedPath)|\(sanitizedName)|\(bookmark)]]")
                     }
                 } else if let storedFilename = attributes[.fileStoredFilename] as? String,
-                          (storage.string as NSString).substring(with: range).contains("\u{FFFC}") {
+                          storageNSString.substring(with: range).contains("\u{FFFC}") {
                     let typeIdentifierRaw = (attributes[.fileTypeIdentifier] as? String) ?? "public.data"
                     let originalNameRaw = (attributes[.fileOriginalFilename] as? String) ?? storedFilename
                     let typeIdentifier = Self.sanitizedWebClipComponent(typeIdentifierRaw)
@@ -7885,7 +7921,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                         return  // Skip the prefix text — it's reconstructed during deserialization
                     }
 
-                    let rangeText = (storage.string as NSString).substring(with: range)
+                    let rangeText = storageNSString.substring(with: range)
 
                     // Determine inline formatting for this run
                     let font = attributes[.font] as? NSFont

@@ -164,7 +164,6 @@ extension View {
                         .fill(.clear)
                         .glassEffect(.clear.interactive(false))
                         .background(.black.opacity(0.05))
-                        .blur(radius: 8.0, opaque: false)
                         .ignoresSafeArea(.all)
                 }
         } else {

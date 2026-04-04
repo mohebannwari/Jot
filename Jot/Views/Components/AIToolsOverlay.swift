@@ -190,6 +190,8 @@ struct AIToolsOverlay: View {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .stroke(colorScheme == .dark ? Color.white.opacity(0.06) : Color.black.opacity(0.08), lineWidth: 1)
                 )
+                .shadow(color: .black.opacity(0.06), radius: 2, y: 1)
+                .shadow(color: .black.opacity(0.04), radius: 6, y: 3)
                 .onKeyPress(.return) {
                     submitTextGen()
                     return .handled

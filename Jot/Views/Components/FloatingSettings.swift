@@ -177,7 +177,7 @@ struct SettingsPage: View {
             activeTab = tab
         } label: {
             Text(tab.title)
-                .font(FontManager.heading(size: 15, weight: .medium))
+                .font(FontManager.heading(size: 13, weight: .medium))
                 .tracking(-0.2)
                 .foregroundColor(isSelected
                     ? (colorScheme == .light ? Color.white : Color.black)
@@ -302,7 +302,7 @@ struct SettingsPage: View {
                         } label: {
                             settingsCapsuleRow {
                                 Text(themeManager.lockPasswordType.displayName)
-                                    .font(FontManager.heading(size: 15, weight: .medium))
+                                    .font(FontManager.heading(size: 13, weight: .medium))
                                     .tracking(-0.5)
                                     .foregroundColor(Color("PrimaryTextColor"))
 
@@ -322,7 +322,7 @@ struct SettingsPage: View {
                                 if isEditingPassword {
                                     SecureField("Password", text: $customPasswordInput)
                                         .textFieldStyle(.plain)
-                                        .font(FontManager.heading(size: 15, weight: .medium))
+                                        .font(FontManager.heading(size: 13, weight: .medium))
                                         .tracking(-0.5)
                                         .foregroundColor(Color("PrimaryTextColor"))
                                         .onSubmit {
@@ -334,7 +334,7 @@ struct SettingsPage: View {
                                         }
                                 } else {
                                     Text("\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}")
-                                        .font(FontManager.heading(size: 15, weight: .medium))
+                                        .font(FontManager.heading(size: 13, weight: .medium))
                                         .tracking(-0.5)
                                         .foregroundColor(Color("PrimaryTextColor"))
                                 }
@@ -399,7 +399,7 @@ struct SettingsPage: View {
                                     isEditingPassword = true
                                 } label: {
                                     Text("Change password")
-                                        .font(FontManager.heading(size: 15, weight: .medium))
+                                        .font(FontManager.heading(size: 13, weight: .medium))
                                         .tracking(-0.5)
                                         .foregroundColor(Color(red: 0x25/255, green: 0x63/255, blue: 0xeb/255))
                                 }
@@ -429,7 +429,7 @@ struct SettingsPage: View {
                                     .fill(colorScheme == .dark ? Color(white: 0.22) : Color(white: 0.88))
                                     .frame(width: 15, height: 15)
                                 Text("?")
-                                    .font(.system(size: 12, weight: .semibold))
+                                    .font(.system(size: 11, weight: .semibold))
                                     .foregroundColor(Color("SettingsPlaceholderTextColor"))
                             }
                         }
@@ -462,7 +462,7 @@ struct SettingsPage: View {
         } label: {
             settingsCapsuleRow {
                 Text("Sort notes by:")
-                    .font(FontManager.heading(size: 15, weight: .medium))
+                    .font(FontManager.heading(size: 13, weight: .medium))
                     .tracking(-0.5)
                     .foregroundColor(Color("SettingsPlaceholderTextColor"))
 
@@ -530,13 +530,13 @@ struct SettingsPage: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                        .font(FontManager.heading(size: 15, weight: .medium))
+                        .font(FontManager.heading(size: 13, weight: .medium))
                         .tracking(-0.2)
                         .foregroundColor(Color("SettingsPrimaryTextColor"))
 
                     if let subtitle {
                         Text(subtitle)
-                            .font(FontManager.heading(size: 12, weight: .regular))
+                            .font(FontManager.heading(size: 11, weight: .regular))
                             .foregroundColor(Color("SettingsPlaceholderTextColor"))
                     }
                 }
@@ -806,7 +806,7 @@ struct SettingsPage: View {
 
         return Button(action: action) {
             Text(label ?? "\(Int(size ?? 0))")
-                .font(FontManager.metadata(size: 13, weight: .medium))
+                .font(FontManager.metadata(size: 12, weight: .medium))
                 .foregroundColor(
                     isSelected
                         ? Color("ButtonPrimaryTextColor")
@@ -836,7 +836,7 @@ struct SettingsPage: View {
         let isCustomSelected = isActive && !isPresetSize
 
         return TextField("", text: $customFontSizeText)
-            .font(FontManager.metadata(size: 13, weight: .medium))
+            .font(FontManager.metadata(size: 12, weight: .medium))
             .foregroundColor(isCustomSelected ? Color("ButtonPrimaryTextColor") : Color("SettingsPrimaryTextColor"))
             .multilineTextAlignment(.center)
             .frame(width: 40, height: 32)
@@ -884,7 +884,7 @@ struct SettingsPage: View {
                     .foregroundColor(Color("SettingsPrimaryTextColor"))
 
                 Text("Version \(appVersion)")
-                    .font(FontManager.metadata(size: 12, weight: .medium))
+                    .font(FontManager.metadata(size: 11, weight: .medium))
                     .foregroundColor(Color("SettingsPlaceholderTextColor"))
             }
         }
@@ -925,7 +925,7 @@ struct SettingsPage: View {
 
             HStack {
                 Text(developerEmail)
-                    .font(FontManager.heading(size: 15, weight: .medium))
+                    .font(FontManager.heading(size: 13, weight: .medium))
                     .tracking(-0.2)
                     .foregroundColor(Color("SettingsPrimaryTextColor"))
 
@@ -1031,7 +1031,7 @@ struct SettingsPage: View {
                     .frame(width: 15, height: 15)
 
                 Text(type.rawValue)
-                    .font(FontManager.heading(size: 15, weight: .medium))
+                    .font(FontManager.heading(size: 13, weight: .medium))
                     .tracking(-0.2)
                     .foregroundColor(isSelected ? type.selectedText(for: colorScheme) : Color("SettingsPrimaryTextColor"))
             }
@@ -1102,7 +1102,7 @@ struct SettingsPage: View {
                     .rotationEffect(.degrees(celebrateRotation))
 
                 Text("Feedback received")
-                    .font(FontManager.heading(size: 15, weight: .medium))
+                    .font(FontManager.heading(size: 13, weight: .medium))
                     .tracking(-0.2)
                     .foregroundColor(.white)
                     .transition(.asymmetric(
@@ -1122,7 +1122,7 @@ struct SettingsPage: View {
                 sendFeedback()
             } label: {
                 Text("Send")
-                    .font(FontManager.heading(size: 15, weight: .medium))
+                    .font(FontManager.heading(size: 13, weight: .medium))
                     .tracking(-0.2)
                     .foregroundColor(Color("ButtonPrimaryTextColor"))
                     .padding(.horizontal, 12)
@@ -1190,14 +1190,14 @@ struct SettingsPage: View {
 
     private func sectionLabel(_ text: String) -> some View {
         Text(text)
-            .font(FontManager.heading(size: 12, weight: .medium))
+            .font(FontManager.heading(size: 11, weight: .medium))
             .tracking(0)
             .foregroundColor(Color("SettingsPlaceholderTextColor"))
     }
 
     private func settingsSelectionLabel(_ text: String, isSelected: Bool) -> some View {
         Text(text)
-            .font(FontManager.heading(size: 13, weight: .medium))
+            .font(FontManager.heading(size: 12, weight: .medium))
             .tracking(-0.1)
             .foregroundColor(isSelected ? Color("ButtonPrimaryTextColor") : Color("SettingsPrimaryTextColor"))
             .padding(.horizontal, 10)
