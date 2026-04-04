@@ -2231,7 +2231,7 @@ struct ContentView: View {
                 .scaleEffect(x: flipIcon ? -1 : 1, y: 1)
 
                 Text(label)
-                    .font(FontManager.heading(size: 15, weight: .medium))
+                    .font(FontManager.heading(size: 13, weight: .medium))
                     .foregroundColor(isActive
                         ? (colorScheme == .light ? Color.white : Color.black)
                         : Color("PrimaryTextColor"))
@@ -2242,7 +2242,7 @@ struct ContentView: View {
 
                 if let shortcut = shortcut {
                     Text(shortcut)
-                        .font(FontManager.heading(size: 12, weight: .regular))
+                        .font(FontManager.metadata(size: 11, weight: .medium))
                         .foregroundColor(Color("SecondaryTextColor"))
                         .opacity(hoveredSidebarMenuLabel == label ? 1 : 0)
                         .animation(.easeInOut(duration: 0.15), value: hoveredSidebarMenuLabel == label)
@@ -2282,7 +2282,7 @@ struct ContentView: View {
     private var sidebarNotesHeader: some View {
         HStack(spacing: 2) {
             Text(isShowingArchive ? "Archive" : "Notes")
-                .font(FontManager.heading(size: 13, weight: .medium))
+                .font(FontManager.heading(size: 11, weight: .medium))
                 .foregroundColor(Color("SecondaryTextColor"))
 
             Spacer(minLength: 0)
@@ -2358,7 +2358,7 @@ struct ContentView: View {
             } else {
                 if !notesManager.archivedFolders.isEmpty {
                     Text("Folders")
-                        .font(FontManager.heading(size: 13, weight: .medium))
+                        .font(FontManager.heading(size: 11, weight: .medium))
                         .foregroundColor(Color("SecondaryTextColor"))
                         .padding(.horizontal, sidebarItemLeadingPadding)
                         .padding(.top, 12)
@@ -2380,7 +2380,7 @@ struct ContentView: View {
                                     .frame(width: 15, height: 15)
 
                                 Text(folder.name)
-                                    .font(FontManager.heading(size: 15, weight: .medium))
+                                    .font(FontManager.heading(size: 13, weight: .medium))
                                     .foregroundColor(Color("PrimaryTextColor"))
                                     .tracking(-0.1)
                                     .lineLimit(1)
@@ -2511,7 +2511,7 @@ struct ContentView: View {
                 if !notesManager.archivedNotes.isEmpty {
                     if !notesManager.archivedFolders.isEmpty {
                         Text("Notes")
-                            .font(FontManager.heading(size: 13, weight: .medium))
+                            .font(FontManager.heading(size: 11, weight: .medium))
                             .foregroundColor(Color("SecondaryTextColor"))
                             .padding(.horizontal, sidebarItemLeadingPadding)
                             .padding(.top, 16)
@@ -3200,7 +3200,7 @@ struct ContentView: View {
                 // Header: "Active Split" label + add/cancel button
                 HStack {
                     Text("Active Split")
-                        .font(FontManager.heading(size: 13, weight: .medium))
+                        .font(FontManager.heading(size: 11, weight: .medium))
                         .foregroundColor(Color("SecondaryTextColor"))
                     Spacer()
                     Button {
@@ -3213,7 +3213,7 @@ struct ContentView: View {
                         Group {
                             if pendingSplitID != nil {
                                 Text("Cancel")
-                                    .font(FontManager.heading(size: 13, weight: .medium))
+                                    .font(FontManager.heading(size: 11, weight: .medium))
                                     .foregroundColor(.red)
                             } else {
                                 Image("IconPlusSmall")
@@ -3283,7 +3283,7 @@ struct ContentView: View {
                     .animation(.smooth(duration: 0.3), value: isActive)
 
                 Text(primaryTitle)
-                    .font(.system(size: 15, weight: .medium))
+                    .font(.system(size: 13, weight: .medium))
                     .tracking(-0.2)
                     .foregroundColor(textColor)
                     .lineLimit(1)
@@ -3302,7 +3302,7 @@ struct ContentView: View {
                     .shadow(color: .black.opacity(0.03), radius: 1, x: 0, y: 0)
 
                 Text(secondaryTitle)
-                    .font(.system(size: 15, weight: .medium))
+                    .font(.system(size: 13, weight: .medium))
                     .tracking(-0.2)
                     .foregroundColor(textColor)
                     .lineLimit(1)
@@ -4559,7 +4559,7 @@ struct NotesSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(title)
-                .font(FontManager.heading(size: 13, weight: .medium))
+                .font(FontManager.heading(size: 11, weight: .medium))
                 .foregroundColor(Color("SecondaryTextColor"))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 8)
@@ -4981,7 +4981,7 @@ struct NoteListCard: View {
 
             if isRenaming {
                 TextField("Note Title", text: $renamingTitle)
-                    .font(FontManager.heading(size: 15, weight: .medium))
+                    .font(FontManager.heading(size: 13, weight: .medium))
                     .foregroundColor(Color("PrimaryTextColor"))
                     .textFieldStyle(.plain)
                     .focused($isFieldFocused)
@@ -4993,7 +4993,7 @@ struct NoteListCard: View {
                     }
             } else {
                 Text(note.title)
-                    .font(FontManager.heading(size: 15, weight: .medium))
+                    .font(FontManager.heading(size: 13, weight: .medium))
                     .foregroundColor(isActiveNote
                         ? activeTextColor
                         : primaryTextColor)
@@ -5006,28 +5006,22 @@ struct NoteListCard: View {
                     }
             }
 
-            HStack(spacing: 6) {
-                Text(Self.compactDateString(from: note.date))
-                    .font(FontManager.metadata(size: 11, weight: .medium))
+            Menu {
+                noteContextMenuContent
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(FontManager.icon(size: 12, weight: .medium))
                     .foregroundColor(isActiveNote
-                        ? activeTextColor.opacity(0.7)
-                        : secondaryTextColor)
-
-                Menu {
-                    noteContextMenuContent
-                } label: {
-                    Image(systemName: "ellipsis")
-                        .font(FontManager.icon(size: 12, weight: .medium))
-                        .foregroundColor(isActiveNote
-                            ? activeTextColor.opacity(isEllipsisHovered ? 1.0 : 0.5)
-                            : secondaryTextColor.opacity(isEllipsisHovered ? 1.0 : 0.7))
-                        .frame(width: 12, height: 12)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .onHover { isEllipsisHovered = $0 }
+                        ? activeTextColor.opacity(isEllipsisHovered ? 1.0 : 0.7)
+                        : secondaryTextColor.opacity(isEllipsisHovered ? 1.0 : 0.7))
+                    .frame(width: 12, height: 12)
+                    .contentShape(Rectangle())
             }
-            .fixedSize()
+            .buttonStyle(.plain)
+            .onHover { isEllipsisHovered = $0 }
+            .opacity(isHovered ? 1 : 0)
+            .allowsHitTesting(isHovered)
+            .padding(.trailing, 2)
         }
         .animation(.jotHover, value: isHovered)
         .padding(8)
@@ -5076,7 +5070,7 @@ struct NoteListCard: View {
         ) {
             HStack {
                 Text(note.title)
-                    .font(FontManager.heading(size: 15, weight: .medium))
+                    .font(FontManager.heading(size: 13, weight: .medium))
                     .foregroundColor(Color("ButtonPrimaryTextColor"))
                     .tracking(-0.1)
                     .lineLimit(1)
@@ -5189,7 +5183,7 @@ struct PinnedNotesSection: View {
             // Header
             HStack(spacing: 8) {
                 Text("Pinned notes")
-                    .font(FontManager.heading(size: 13, weight: .medium))
+                    .font(FontManager.heading(size: 11, weight: .medium))
                     .foregroundColor(Color("SecondaryTextColor"))
 
                 Circle()
@@ -5334,7 +5328,7 @@ struct LockedNotesSection: View {
             // Header
             HStack(spacing: 8) {
                 Text("Locked notes")
-                    .font(FontManager.heading(size: 13, weight: .medium))
+                    .font(FontManager.heading(size: 11, weight: .medium))
                     .foregroundColor(Color("SecondaryTextColor"))
 
                 Circle()
@@ -5479,7 +5473,7 @@ struct PinnedNoteChip: View {
         .buttonStyle(.plain)
         .draggable(TransferablePayload(items: [NoteDragItem(noteID: note.id)])) {
             Text(note.title)
-                .font(FontManager.heading(size: 15, weight: .medium))
+                .font(FontManager.heading(size: 13, weight: .medium))
                 .foregroundColor(Color("ButtonPrimaryTextColor"))
                 .tracking(-0.1)
                 .lineLimit(1)
