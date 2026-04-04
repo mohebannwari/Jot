@@ -1,0 +1,84 @@
+<h2>Quick Look for Note Mentions</h2>
+<p class="subtitle">When you hover a <span style="background:#eab308;color:#1a1a1a;border-radius:999px;padding:2px 8px;font-size:12px;font-weight:600">@nmn</span> pill, the "Quick Look" tooltip appears. What should clicking it show?</p>
+
+<div style="margin-bottom:32px;padding:16px;background:rgba(255,255,255,0.06);border-radius:12px;border:1px solid rgba(255,255,255,0.1)">
+  <div class="label" style="margin-bottom:12px">Trigger (same across all options)</div>
+  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+    <span style="background:#eab308;color:#1a1a1a;border-radius:999px;padding:3px 10px;font-size:13px;font-weight:600">@Meeting Notes</span>
+    <span style="font-size:12px;opacity:0.5">← hover →</span>
+    <span style="background:rgba(255,255,255,0.12);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,0.15);border-radius:999px;padding:5px 12px;font-size:11px;font-weight:500;display:flex;align-items:center;gap:5px">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      Quick Look
+    </span>
+  </div>
+</div>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Native macOS Quick Look Panel</h3>
+      <p>Serialize the note to a temporary HTML file and open it in the standard macOS <code>QLPreviewPanel</code> — the same panel used for links. Identical UX to existing Quick Look, scrollable out of the box.</p>
+      <div style="margin-top:12px;background:rgba(0,0,0,0.3);border-radius:10px;padding:14px;font-size:12px;line-height:1.6">
+        <div style="background:#2a2a2e;border-radius:8px;padding:12px;border:1px solid rgba(255,255,255,0.08)">
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;opacity:0.6;font-size:10px">
+            <span>🔍 macOS Quick Look</span>
+          </div>
+          <div style="font-size:13px;font-weight:600;margin-bottom:6px">Meeting Notes</div>
+          <div style="font-size:11px;opacity:0.6;line-height:1.7">Today's agenda:<br>• Q2 planning review<br>• Budget allocation<br>• Team updates<br>...</div>
+        </div>
+      </div>
+      <div class="pros-cons" style="margin-top:10px">
+        <div class="pros"><h4>Pros</h4><ul><li>Zero new UI to build</li><li>Native scrolling</li><li>Same look as links</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Plain HTML only (no rich Jot styling)</li><li>Temp file I/O</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Custom Liquid Glass Panel</h3>
+      <p>A custom floating SwiftUI panel with Liquid Glass styling — shows the note's title, tags, and rich body content. Scrollable. Matches Jot's design language. Positioned near the mention.</p>
+      <div style="margin-top:12px;background:rgba(0,0,0,0.3);border-radius:10px;padding:14px;font-size:12px">
+        <div style="background:rgba(40,36,34,0.85);backdrop-filter:blur(24px);border-radius:14px;padding:16px;border:1px solid rgba(255,255,255,0.12);max-width:260px">
+          <div style="font-size:14px;font-weight:600;margin-bottom:4px">Meeting Notes</div>
+          <div style="display:flex;gap:5px;margin-bottom:10px">
+            <span style="background:#608DFA40;color:#608dfa;border-radius:999px;padding:1px 7px;font-size:9px">work</span>
+            <span style="background:#608DFA40;color:#608dfa;border-radius:999px;padding:1px 7px;font-size:9px">planning</span>
+          </div>
+          <div style="font-size:11px;opacity:0.7;line-height:1.7;overflow:hidden;max-height:72px">Today's agenda:<br>• Q2 planning review<br>• Budget allocation<br>• Team updates</div>
+          <div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.08);font-size:9px;opacity:0.4">Created Mar 28 · Scroll for more</div>
+        </div>
+      </div>
+      <div class="pros-cons" style="margin-top:10px">
+        <div class="pros"><h4>Pros</h4><ul><li>Full Jot styling + tags</li><li>No temp files</li><li>Contextual position</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Custom rich-text renderer needed</li><li>More code to maintain</li></ul></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Reuse NoteDetailView in a Popover</h3>
+      <p>Pop open a sheet or <code>NSPanel</code> that renders the existing <code>NoteDetailView</code> for the mentioned note — full fidelity, all existing features, native scroll. Essentially "open the note in a floating window".</p>
+      <div style="margin-top:12px;background:rgba(0,0,0,0.3);border-radius:10px;padding:14px;font-size:12px">
+        <div style="background:rgba(30,28,27,0.9);border-radius:12px;border:1px solid rgba(255,255,255,0.1);overflow:hidden;max-width:280px">
+          <div style="background:rgba(255,255,255,0.04);padding:8px 12px;border-bottom:1px solid rgba(255,255,255,0.06);font-size:10px;opacity:0.5;display:flex;justify-content:space-between"><span>Quick Look — Meeting Notes</span><span>✕</span></div>
+          <div style="padding:14px">
+            <div style="font-size:13px;font-weight:600;margin-bottom:6px">Meeting Notes</div>
+            <div style="display:flex;gap:4px;margin-bottom:10px">
+              <span style="background:#608DFA40;color:#608dfa;border-radius:999px;padding:1px 6px;font-size:9px">work</span>
+            </div>
+            <div style="font-size:11px;opacity:0.65;line-height:1.7">Today's agenda:<br>• Q2 planning review<br>• Budget allocation<br>• Team updates</div>
+          </div>
+        </div>
+      </div>
+      <div class="pros-cons" style="margin-top:10px">
+        <div class="pros"><h4>Pros</h4><ul><li>Full note rendering, no new renderer</li><li>Consistent with the actual note</li></ul></div>
+        <div class="cons"><h4>Cons</h4><ul><li>Heavier — loads entire NoteDetailView</li><li>May feel like a second editor window</li></ul></div>
+      </div>
+    </div>
+  </div>
+</div>

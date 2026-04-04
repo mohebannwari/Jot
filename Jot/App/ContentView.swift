@@ -1163,10 +1163,6 @@ struct ContentView: View {
                         }
 
                         singleNotePane(note: note, width: primW, cornerRadius: dragging ? splitRadius : cornerRadius)
-                            .overlay(alignment: .trailing) {
-                                versionHistoryOverlay(for: note)
-                            }
-                            .animation(.easeInOut(duration: 0.2), value: isVersionHistoryVisible)
 
                         if !dragging || dragSplitSide == .right {
                             placeholderRect
@@ -1229,21 +1225,12 @@ struct ContentView: View {
     }
 
     private func singleNotePane(note: Note, width: CGFloat, cornerRadius: CGFloat) -> some View {
-        HStack(spacing: 0) {
-            detailPane(note: note)
-                .frame(maxWidth: .infinity)
-
-            propertiesPanelSlot(
-                isVisible: isPropertiesPanelVisible && propertiesPanelPane == .primary,
-                note: note,
-                editorInstanceID: primaryEditorID
-            )
-        }
-        .geometryGroup()
-        .frame(width: width)
-        .frame(maxHeight: .infinity)
-        .background(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).fill(detailBg))
-        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        detailPane(note: note)
+            .geometryGroup()
+            .frame(width: width)
+            .frame(maxHeight: .infinity)
+            .background(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).fill(detailBg))
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .overlay {
             if colorScheme == .dark && cornerRadius > 0 {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
@@ -1266,8 +1253,36 @@ struct ContentView: View {
                     .transition(.opacity)
             }
         }
+        .overlay(alignment: .trailing) {
+            if isPropertiesPanelVisible && propertiesPanelPane == .primary {
+                ZStack(alignment: .trailing) {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            withAnimation(Self.propertiesPanelAnimation) {
+                                isPropertiesPanelVisible = false
+                            }
+                        }
+
+                    propertiesPanelContent(for: note, editorInstanceID: primaryEditorID)
+                        .frame(width: Self.propertiesPanelWidth)
+                        .frame(maxHeight: .infinity)
+                        .padding(.vertical, 8)
+                        .liquidGlass(in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                        .shadow(color: .black.opacity(0.04), radius: 9.5, x: 0, y: 9)
+                        .padding(.trailing, 8)
+                        .padding(.vertical, 8)
+                }
+                .transition(Self.floatingPanelTransition)
+            }
+        }
+        .animation(Self.propertiesPanelAnimation, value: isPropertiesPanelVisible)
+        .overlay(alignment: .trailing) {
+            versionHistoryOverlay(for: note)
+        }
+        .animation(Self.propertiesPanelAnimation, value: isVersionHistoryVisible)
         .overlay(alignment: .topTrailing) {
-            if !shouldShowSplitLayout && !(isPropertiesPanelVisible && propertiesPanelPane == .primary) {
+            if !shouldShowSplitLayout && !(isPropertiesPanelVisible && propertiesPanelPane == .primary) && !(isVersionHistoryVisible && versionHistoryPane == .primary) {
                 PropertiesPanelButton(editorInstanceID: primaryEditorID)
                     .padding(.top, splitControlsTopPadding)
                     .padding(.trailing, 8)
@@ -1283,7 +1298,7 @@ struct ContentView: View {
                 Color.clear
                     .contentShape(Rectangle())
                     .onTapGesture {
-                        withAnimation(.easeInOut(duration: 0.2)) {
+                        withAnimation(Self.propertiesPanelAnimation) {
                             previewingVersion = nil
                             isVersionHistoryVisible = false
                         }
@@ -1300,7 +1315,7 @@ struct ContentView: View {
                 .padding(.trailing, 8)
                 .padding(.vertical, 8)
             }
-            .transition(.move(edge: .trailing).combined(with: .opacity))
+            .transition(Self.floatingPanelTransition)
         }
     }
 
@@ -1337,10 +1352,6 @@ struct ContentView: View {
                         .overlay {
                             splitPickerOverlayView(for: .primary, primaryNote: primaryNote)
                         }
-                        .overlay(alignment: .trailing) {
-                            versionHistoryOverlay(for: primaryNote)
-                        }
-                        .animation(.easeInOut(duration: 0.2), value: isVersionHistoryVisible)
                 } else {
                     splitPickerPane(width: primW, cornerRadius: splitRadius, excludingNote: activeSecondaryNote, isPrimary: true)
                 }
@@ -1351,10 +1362,6 @@ struct ContentView: View {
                         .splitPaneDimming(isInactive: activeSplitPane != .secondary, cornerRadius: splitRadius, colorScheme: colorScheme)
                         .splitPaneShadow(isActive: activeSplitPane == .secondary, cornerRadius: splitRadius, backgroundColor: detailBg, colorScheme: colorScheme)
                         .zIndex(activeSplitPane == .secondary ? 1 : 0)
-                        .overlay(alignment: .trailing) {
-                            versionHistoryOverlay(for: secNote, pane: .secondary)
-                        }
-                        .animation(.easeInOut(duration: 0.2), value: isVersionHistoryVisible)
                 } else {
                     splitPickerPane(width: secW, cornerRadius: splitRadius, excludingNote: activePrimaryNote, isPrimary: false)
                 }
@@ -1367,10 +1374,6 @@ struct ContentView: View {
                         .splitPaneDimming(isInactive: activeSplitPane != .secondary, cornerRadius: splitRadius, colorScheme: colorScheme)
                         .splitPaneShadow(isActive: activeSplitPane == .secondary, cornerRadius: splitRadius, backgroundColor: detailBg, colorScheme: colorScheme)
                         .zIndex(activeSplitPane == .secondary ? 1 : 0)
-                        .overlay(alignment: .trailing) {
-                            versionHistoryOverlay(for: secNote, pane: .secondary)
-                        }
-                        .animation(.easeInOut(duration: 0.2), value: isVersionHistoryVisible)
                 } else {
                     splitPickerPane(width: secW, cornerRadius: splitRadius, excludingNote: activePrimaryNote, isPrimary: false)
                 }
@@ -1390,10 +1393,6 @@ struct ContentView: View {
                         .overlay {
                             splitPickerOverlayView(for: .primary, primaryNote: primaryNote)
                         }
-                        .overlay(alignment: .trailing) {
-                            versionHistoryOverlay(for: primaryNote)
-                        }
-                        .animation(.easeInOut(duration: 0.2), value: isVersionHistoryVisible)
                 } else {
                     splitPickerPane(width: primW, cornerRadius: splitRadius, excludingNote: activeSecondaryNote, isPrimary: true)
                 }
@@ -1444,43 +1443,34 @@ struct ContentView: View {
         let isLeftPane = (position == .left)
         let isSplitLocked = note.isLocked && !authManager.isUnlocked(note.id)
 
-        HStack(spacing: 0) {
-            ZStack {
-                NoteDetailView(
-                    note: note,
-                    editorInstanceID: splitEditorID,
-                    focusRequestID: splitFocusRequestID,
-                    contentTopInsetAdjustment: detailToggleToContentExtraSpacingWhenSidebarHidden,
-                    stickyHeaderTopPadding: splitControlsTopPadding,
-                    onSave: { saveSplitNote($0) },
-                    availableNotes: notePickerItems(excluding: note.id),
-                    onNavigateToNote: navigateToNote,
-                    backlinks: backlinks(for: note.id),
-                    isSidebarAnimating: isSidebarAnimating
-                )
-                .blur(radius: isSplitLocked ? 20 : 0)
-                .allowsHitTesting(!isSplitLocked)
-                .opacity(previewingVersion != nil && versionHistoryPane == .secondary ? 0 : 1)
-
-                if isSplitLocked {
-                    noteLockOverlay(for: note)
-                }
-
-                // Version preview overlay
-                if let version = previewingVersion, versionHistoryPane == .secondary {
-                    versionPreviewPane(version: version)
-                        .transition(.opacity)
-                }
-            }
-            .animation(.easeInOut(duration: 0.15), value: previewingVersion?.id)
-            .frame(maxWidth: .infinity)
-
-            propertiesPanelSlot(
-                isVisible: isPropertiesPanelVisible && propertiesPanelPane == .secondary,
+        ZStack {
+            NoteDetailView(
                 note: note,
-                editorInstanceID: splitEditorID
+                editorInstanceID: splitEditorID,
+                focusRequestID: splitFocusRequestID,
+                contentTopInsetAdjustment: detailToggleToContentExtraSpacingWhenSidebarHidden,
+                stickyHeaderTopPadding: splitControlsTopPadding,
+                onSave: { saveSplitNote($0) },
+                availableNotes: notePickerItems(excluding: note.id),
+                onNavigateToNote: navigateToNote,
+                backlinks: backlinks(for: note.id),
+                isSidebarAnimating: isSidebarAnimating
             )
+            .blur(radius: isSplitLocked ? 20 : 0)
+            .allowsHitTesting(!isSplitLocked)
+            .opacity(previewingVersion != nil && versionHistoryPane == .secondary ? 0 : 1)
+
+            if isSplitLocked {
+                noteLockOverlay(for: note)
+            }
+
+            // Version preview overlay
+            if let version = previewingVersion, versionHistoryPane == .secondary {
+                versionPreviewPane(version: version)
+                    .transition(.opacity)
+            }
         }
+        .animation(.easeInOut(duration: 0.15), value: previewingVersion?.id)
         .geometryGroup()
         .frame(width: width)
         .frame(maxHeight: .infinity)
@@ -1507,6 +1497,34 @@ struct ContentView: View {
                     .transition(.opacity)
             }
         }
+        .overlay(alignment: .trailing) {
+            if isPropertiesPanelVisible && propertiesPanelPane == .secondary {
+                ZStack(alignment: .trailing) {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            withAnimation(Self.propertiesPanelAnimation) {
+                                isPropertiesPanelVisible = false
+                            }
+                        }
+
+                    propertiesPanelContent(for: note, editorInstanceID: splitEditorID)
+                        .frame(width: Self.propertiesPanelWidth)
+                        .frame(maxHeight: .infinity)
+                        .padding(.vertical, 8)
+                        .liquidGlass(in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                        .shadow(color: .black.opacity(0.04), radius: 9.5, x: 0, y: 9)
+                        .padding(.trailing, 8)
+                        .padding(.vertical, 8)
+                }
+                .transition(Self.floatingPanelTransition)
+            }
+        }
+        .animation(Self.propertiesPanelAnimation, value: isPropertiesPanelVisible)
+        .overlay(alignment: .trailing) {
+            versionHistoryOverlay(for: note, pane: .secondary)
+        }
+        .animation(Self.propertiesPanelAnimation, value: isVersionHistoryVisible)
         .overlay(alignment: .topTrailing) {
             splitPaneControls(isLeftPane: isLeftPane, isPrimaryPane: false)
                 .padding(.top, splitControlsTopPadding).padding(.trailing, 8)
@@ -3391,68 +3409,72 @@ struct ContentView: View {
     // MARK: - Split Pane Controls
 
     private func splitPaneControls(isLeftPane: Bool, isPrimaryPane: Bool) -> some View {
-        HStack(spacing: 2) {
-            // Flashcards: toggle note picker overlay on this pane
-            Button {
-                let target: SplitPickerPane = isPrimaryPane ? .primary : .secondary
-                withAnimation(.jotSpring) {
-                    splitPickerOverlayPane = splitPickerOverlayPane == target ? nil : target
+        let pane: SplitPickerPane = isPrimaryPane ? .primary : .secondary
+        let panelOpenForThisPane = (isPropertiesPanelVisible && propertiesPanelPane == pane)
+            || (isVersionHistoryVisible && versionHistoryPane == pane)
+
+        return HStack(spacing: 2) {
+            if !panelOpenForThisPane {
+                // Flashcards: toggle note picker overlay on this pane
+                Button {
+                    let target: SplitPickerPane = isPrimaryPane ? .primary : .secondary
+                    withAnimation(.jotSpring) {
+                        splitPickerOverlayPane = splitPickerOverlayPane == target ? nil : target
+                    }
+                } label: {
+                    Image("IconFlashcards")
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
+                        .foregroundColor(Color("SecondaryTextColor"))
+                        .frame(width: 15, height: 15)
+                        .padding(4)
+                        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
-            } label: {
-                Image("IconFlashcards")
-                    .renderingMode(.template)
-                    .resizable()
-                    .scaledToFit()
-                    .foregroundColor(Color("SecondaryTextColor"))
-                    .frame(width: 15, height: 15)
-                    .padding(4)
-                    .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .macPointingHandCursor()
-            .help("Switch note")
-            .hoverContainer(cornerRadius: 8)
+                .buttonStyle(.plain)
+                .macPointingHandCursor()
+                .help("Switch note")
+                .hoverContainer(cornerRadius: 8)
 
-            // Move to other pane
-            Button {
-                withAnimation(.jotSpring) { moveSplitToOtherSide() }
-            } label: {
-                Image(isLeftPane ? "IconMoveToLeft" : "IconMoveToRight")
-                    .renderingMode(.template)
-                    .resizable()
-                    .scaledToFit()
-                    .foregroundColor(Color("SecondaryTextColor"))
-                    .frame(width: 15, height: 15)
-                    .padding(4)
-                    .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .macPointingHandCursor()
-            .help(isLeftPane ? "Move to right" : "Move to left")
-            .hoverContainer(cornerRadius: 8)
-
-            // Close this pane
-            Button {
-                withAnimation(.jotSpring) {
-                    if isLeftPane { closeLeftSplit() } else { closeRightSplit() }
+                // Move to other pane
+                Button {
+                    withAnimation(.jotSpring) { moveSplitToOtherSide() }
+                } label: {
+                    Image(isLeftPane ? "IconMoveToLeft" : "IconMoveToRight")
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
+                        .foregroundColor(Color("SecondaryTextColor"))
+                        .frame(width: 15, height: 15)
+                        .padding(4)
+                        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
-            } label: {
-                Image(isLeftPane ? "IconCloseLeftSplit" : "IconCloseRightSplit")
-                    .renderingMode(.template)
-                    .resizable()
-                    .scaledToFit()
-                    .foregroundColor(Color("SecondaryTextColor"))
-                    .frame(width: 15, height: 15)
-                    .padding(4)
-                    .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            }
-            .buttonStyle(.plain)
-            .macPointingHandCursor()
-            .help(isLeftPane ? "Close left split" : "Close right split")
-            .hoverContainer(cornerRadius: 8)
+                .buttonStyle(.plain)
+                .macPointingHandCursor()
+                .help(isLeftPane ? "Move to right" : "Move to left")
+                .hoverContainer(cornerRadius: 8)
 
-            // Properties panel toggle — hidden when panel is open for this pane
-            if !(isPropertiesPanelVisible && propertiesPanelPane == (isPrimaryPane ? .primary : .secondary)) {
+                // Close this pane
+                Button {
+                    withAnimation(.jotSpring) {
+                        if isLeftPane { closeLeftSplit() } else { closeRightSplit() }
+                    }
+                } label: {
+                    Image(isLeftPane ? "IconCloseLeftSplit" : "IconCloseRightSplit")
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
+                        .foregroundColor(Color("SecondaryTextColor"))
+                        .frame(width: 15, height: 15)
+                        .padding(4)
+                        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .macPointingHandCursor()
+                .help(isLeftPane ? "Close left split" : "Close right split")
+                .hoverContainer(cornerRadius: 8)
+
+                // Properties panel toggle
                 PropertiesPanelButton(editorInstanceID: isPrimaryPane ? primaryEditorID : splitEditorID)
             }
         }
@@ -3460,8 +3482,14 @@ struct ContentView: View {
 
     // MARK: - Properties Panel
 
-    private static let propertiesPanelAnimation: Animation = .spring(response: 0.3, dampingFraction: 0.82)
+    private static let propertiesPanelAnimation: Animation = .spring(response: 0.45, dampingFraction: 0.82)
     private static let propertiesPanelWidth: CGFloat = 340
+
+    /// Slide + scale + blur transition for floating panels (properties, version history).
+    private static let floatingPanelTransition: AnyTransition = .modifier(
+        active: FloatingPanelTransitionModifier(active: true),
+        identity: FloatingPanelTransitionModifier(active: false)
+    ).combined(with: .move(edge: .trailing))
 
     /// Always-present panel slot that avoids view insertion/removal.
     /// Width, scale, and opacity animate smoothly without HStack relayout jank.
@@ -5734,7 +5762,7 @@ struct PropertiesPanelButton: View {
         Button {
             NotificationCenter.default.post(name: .togglePropertiesPanel, object: editorInstanceID)
         } label: {
-            Image("IconSidebarLeftArrow")
+            Image("IconSidebarHiddenRightWide")
                 .renderingMode(.template)
                 .resizable()
                 .scaledToFit()
@@ -5763,6 +5791,16 @@ struct PropertiesPanelButton: View {
         }
         .animation(.easeOut(duration: 0.15), value: isHovered)
         .onHover { isHovered = $0 }
+    }
+}
+
+private struct FloatingPanelTransitionModifier: ViewModifier {
+    let active: Bool
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(x: active ? 0.78 : 1, y: active ? 0.88 : 1, anchor: .trailing)
+            .blur(radius: active ? 6 : 0)
+            .opacity(active ? 0 : 1)
     }
 }
 

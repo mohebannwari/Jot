@@ -1647,7 +1647,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             // Post notification about selection change for floating toolbar
             guard let textView = self.textView else { return }
             let selectedRange = textView.selectedRange()
-            
+
             // Only show floating toolbar if there's actual text selected (not just cursor)
             if selectedRange.length > 0 {
                 // Calculate selection rectangle in text view's local coordinate space (same as CommandMenu)
@@ -2594,7 +2594,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                    let myID = self?.editorInstanceID, nid != myID { return }
                 guard let raw = notification.userInfo?["tool"] as? String else { return }
                 guard let tool = EditTool(rawValue: raw) else { return }
-                Task { @MainActor [weak self] in
+                MainActor.assumeIsolated { [weak self] in
                     guard let self = self, let textView = self.textView else { return }
 
                     let isBlockInsertion = [EditTool.table, .callout, .codeBlock, .tabs, .cards].contains(tool)
@@ -2610,31 +2610,42 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     } else {
                         textView.window?.makeFirstResponder(textView)
                     }
-                    // Suppress typing animation and disable CA/NS animations
-                    // so toolbar-initiated formatting applies instantly.
-                    self.isUpdating = true
-                    NSAnimationContext.beginGrouping()
-                    NSAnimationContext.current.duration = 0
-                    CATransaction.begin()
-                    CATransaction.setDisableActions(true)
-                    if tool == .table {
-                        self.insertTable()
-                    } else if tool == .callout {
-                        self.insertCallout()
-                    } else if tool == .codeBlock {
-                        self.insertCodeBlock()
-                    } else if tool == .tabs {
-                        self.insertTabs()
-                    } else if tool == .cards {
-                        self.insertCardSection()
+
+                    if isBlockInsertion {
+                        // Block insertions run without CATransaction (setDisableActions
+                        // suppresses initial layer display for overlay NSViews).
+                        // isUpdating must be set so that updateIfNeeded (called from
+                        // updateNSView when SwiftUI sees the binding change) skips its
+                        // textStorage.setAttributedString replacement -- which would
+                        // destroy the just-inserted attachment and its overlay.
+                        self.isUpdating = true
+                        if tool == .table {
+                            self.insertTable()
+                        } else if tool == .callout {
+                            self.insertCallout()
+                        } else if tool == .codeBlock {
+                            self.insertCodeBlock()
+                        } else if tool == .tabs {
+                            self.insertTabs()
+                        } else if tool == .cards {
+                            self.insertCardSection()
+                        }
+                        self.isUpdating = false
                     } else {
+                        // Suppress typing animation and disable CA/NS animations
+                        // so toolbar-initiated inline formatting applies instantly.
+                        self.isUpdating = true
+                        NSAnimationContext.beginGrouping()
+                        NSAnimationContext.current.duration = 0
+                        CATransaction.begin()
+                        CATransaction.setDisableActions(true)
                         self.formatter.applyFormatting(to: textView, tool: tool)
                         self.styleTodoParagraphs()
+                        CATransaction.commit()
+                        NSAnimationContext.endGrouping()
+                        self.isUpdating = false
+                        self.syncText()
                     }
-                    CATransaction.commit()
-                    NSAnimationContext.endGrouping()
-                    self.isUpdating = false
-                    self.syncText()
                     // Re-broadcast formatting state so the floating toolbar updates
                     self.textViewDidChangeSelection(Notification(name: NSTextView.didChangeSelectionNotification, object: textView))
                 }
@@ -2664,31 +2675,47 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     if slashLocation >= 0 && slashLocation < textStorage.length && deleteLength > 0 {
                         let deleteRange = NSRange(location: slashLocation, length: deleteLength)
                         if textView.shouldChangeText(in: deleteRange, replacementString: "") {
+                            // Treat slash deletion as part of the same logical command-menu insert.
+                            // If we let textDidChange sync here, the binding is updated once for the
+                            // slash removal, then again for the actual insert, which causes extra
+                            // redraw churn during a single command pick.
+                            self.isUpdating = true
                             textStorage.replaceCharacters(in: deleteRange, with: "")
                             textView.didChangeText()
+                            self.isUpdating = false
                         }
                     }
 
                     // Apply the selected tool
-                    // Special handling for todo/table to use proper attachment instead of text
-                    if tool == .todo {
-                        self.insertTodo()
-                    } else if tool == .table {
-                        self.insertTable()
-                    } else if tool == .callout {
-                        self.insertCallout()
-                    } else if tool == .codeBlock {
-                        self.insertCodeBlock()
-                    } else if tool == .tabs {
-                        self.insertTabs()
-                    } else if tool == .cards {
-                        self.insertCardSection()
-                    } else {
-                        self.formatter.applyFormatting(to: textView, tool: tool)
-                    }
+                    // Some command-menu tools already call syncText() internally after they
+                    // finish their own atomic insert. Avoid a second sync from this wrapper.
+                    let toolPerformsOwnSync = [EditTool.todo, .table, .callout, .codeBlock, .tabs, .cards].contains(tool)
 
-                    // Sync the text back
-                    self.syncText()
+                    if toolPerformsOwnSync {
+                        self.isUpdating = true
+                        if tool == .todo {
+                            self.insertTodo()
+                        } else if tool == .table {
+                            self.insertTable()
+                        } else if tool == .callout {
+                            self.insertCallout()
+                        } else if tool == .codeBlock {
+                            self.insertCodeBlock()
+                        } else if tool == .tabs {
+                            self.insertTabs()
+                        } else if tool == .cards {
+                            self.insertCardSection()
+                        }
+                        self.isUpdating = false
+                    } else {
+                        // Match the toolbar inline-formatting path: keep the storage mutation
+                        // and the final binding sync in one controlled step.
+                        self.isUpdating = true
+                        self.formatter.applyFormatting(to: textView, tool: tool)
+                        self.styleTodoParagraphs()
+                        self.isUpdating = false
+                        self.syncText()
+                    }
                 }
             }
 
@@ -4714,12 +4741,29 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             _ textView: NSTextView, shouldChangeTextIn affectedCharRange: NSRange,
             replacementString: String?
         ) -> Bool {
+            // Reject bare newlines into an empty document. This prevents a
+            // leaked Return key (e.g. from the SwiftUI title field's responder
+            // chain transition) from injecting a blank first line.
+            if replacementString == "\n",
+               let storage = textView.textStorage, storage.length == 0 {
+                return false
+            }
+
             // Block-level attachments own their entire paragraph — no text beside them.
             // When the user tries to type on a line containing a block attachment,
             // redirect the insertion to a new line after the block.
             if let replacement = replacementString, !replacement.isEmpty,
                replacement != "\n",
                let storage = textView.textStorage, storage.length > 0 {
+                // Block inserts (toolbar, slash menu, paste) reach here with a replacement
+                // string that includes U+FFFC (NSTextAttachment.character). The redirect below
+                // is only for ordinary typing beside an existing block; it must not run for
+                // those programmatic inserts. Coordinator batch work also sets isUpdating.
+                if isUpdating { return true }
+                if replacement.unicodeScalars.contains(where: { $0.value == 0xFFFC }) {
+                    return true
+                }
+
                 let loc = max(0, min(storage.length - 1, affectedCharRange.location))
                 let paraRange = (storage.string as NSString).paragraphRange(
                     for: NSRange(location: loc, length: 0))
