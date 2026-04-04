@@ -1647,7 +1647,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             // Post notification about selection change for floating toolbar
             guard let textView = self.textView else { return }
             let selectedRange = textView.selectedRange()
-            
+
             // Only show floating toolbar if there's actual text selected (not just cursor)
             if selectedRange.length > 0 {
                 // Calculate selection rectangle in text view's local coordinate space (same as CommandMenu)
@@ -4741,12 +4741,29 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             _ textView: NSTextView, shouldChangeTextIn affectedCharRange: NSRange,
             replacementString: String?
         ) -> Bool {
+            // Reject bare newlines into an empty document. This prevents a
+            // leaked Return key (e.g. from the SwiftUI title field's responder
+            // chain transition) from injecting a blank first line.
+            if replacementString == "\n",
+               let storage = textView.textStorage, storage.length == 0 {
+                return false
+            }
+
             // Block-level attachments own their entire paragraph — no text beside them.
             // When the user tries to type on a line containing a block attachment,
             // redirect the insertion to a new line after the block.
             if let replacement = replacementString, !replacement.isEmpty,
                replacement != "\n",
                let storage = textView.textStorage, storage.length > 0 {
+                // Block inserts (toolbar, slash menu, paste) reach here with a replacement
+                // string that includes U+FFFC (NSTextAttachment.character). The redirect below
+                // is only for ordinary typing beside an existing block; it must not run for
+                // those programmatic inserts. Coordinator batch work also sets isUpdating.
+                if isUpdating { return true }
+                if replacement.unicodeScalars.contains(where: { $0.value == 0xFFFC }) {
+                    return true
+                }
+
                 let loc = max(0, min(storage.length - 1, affectedCharRange.location))
                 let paraRange = (storage.string as NSString).paragraphRange(
                     for: NSRange(location: loc, length: 0))

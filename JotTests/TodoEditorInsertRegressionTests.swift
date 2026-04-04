@@ -156,4 +156,156 @@ final class TodoEditorInsertRegressionTests: XCTestCase {
             "The divider insert should leave serialized editor content behind."
         )
     }
+
+    /// Regression: cursor on the newline after a callout used to trip `shouldChangeTextIn`'s
+    /// "typing beside block" path because the replacement string for a tabs insert contains
+    /// U+FFFC. That redirected the insert and fought `insertTabs`, producing the two-click /
+    /// invisible-block symptom (see debug run H6).
+    func testTabsInsertAfterCalloutAddsSingleSerializedBlockAndOverlay() {
+        let calloutMarkup = CalloutData.empty().serialize()
+        let harness = makeHarness(initialText: calloutMarkup + "\n")
+
+        NotificationCenter.default.post(
+            name: .applyEditTool,
+            object: nil,
+            userInfo: [
+                "editorInstanceID": harness.editorInstanceID,
+                "tool": EditTool.tabs.rawValue,
+            ]
+        )
+
+        pumpMainLoop()
+
+        let text = harness.currentText()
+        let tabsBlocks = text.components(separatedBy: "[[tabs|").count - 1
+        let calloutBlocks = text.components(separatedBy: "[[callout|").count - 1
+        XCTAssertEqual(calloutBlocks, 1, "Existing callout should remain a single block")
+        XCTAssertEqual(tabsBlocks, 1, "One toolbar action should insert exactly one tabs block")
+
+        let tabsOverlayViews = harness.textView.subviews.filter { $0 is TabsContainerOverlayView }
+        XCTAssertEqual(
+            tabsOverlayViews.count,
+            1,
+            "Tabs rely on an overlay view; the first insert must create it immediately."
+        )
+    }
+
+    func testTableOverlayRebuildsAfterLayoutInvalidation() {
+        let harness = makeHarness(initialText: "")
+
+        NotificationCenter.default.post(
+            name: .applyEditTool,
+            object: nil,
+            userInfo: [
+                "editorInstanceID": harness.editorInstanceID,
+                "tool": EditTool.table.rawValue,
+            ]
+        )
+
+        pumpMainLoop()
+
+        harness.coordinator.removeAllOverlays()
+        let fullRange = NSRange(location: 0, length: harness.textView.textStorage?.length ?? 0)
+        harness.textView.layoutManager?.invalidateLayout(forCharacterRange: fullRange, actualCharacterRange: nil)
+
+        harness.coordinator.updateTableOverlays(in: harness.textView)
+
+        let hasTableOverlay = harness.textView.subviews.contains { $0 is NoteTableOverlayView }
+        XCTAssertTrue(
+            hasTableOverlay,
+            "Table overlays should rebuild immediately even after the text layout has been invalidated."
+        )
+    }
+
+    // MARK: - First-Line Cursor Skip Regression
+
+    /// Regression: typing the first character in a brand-new empty note must not
+    /// skip the first line. The character should appear at position 0 with the
+    /// cursor immediately after it, and no spurious newlines should be injected.
+    func testFirstCharacterOnEmptyNoteStaysOnFirstLine() {
+        let harness = makeHarness(initialText: "")
+        let textView = harness.textView
+
+        // Pre-condition: storage is truly empty
+        XCTAssertEqual(textView.textStorage?.length ?? -1, 0,
+            "Empty note should start with zero-length storage")
+
+        // Simulate typing "a" at position 0
+        textView.setSelectedRange(NSRange(location: 0, length: 0))
+        textView.insertText("a", replacementRange: NSRange(location: NSNotFound, length: 0))
+        pumpMainLoop()
+
+        let text = textView.textStorage?.string ?? ""
+
+        // 1. No spurious newlines
+        XCTAssertFalse(text.hasPrefix("\n"),
+            "Text must not start with a newline after typing the first character")
+        XCTAssertEqual(text.components(separatedBy: "\n").count, 1,
+            "Single character insertion must not inject any newlines; got: \(text.debugDescription)")
+
+        // 2. Correct cursor position
+        let cursorPos = textView.selectedRange().location
+        XCTAssertEqual(cursorPos, 1,
+            "Cursor should be at position 1 (after the typed character)")
+
+        // 3. The character's glyph sits on the very first line fragment
+        if let layoutManager = textView.layoutManager {
+            layoutManager.ensureLayout(for: textView.textContainer!)
+            let glyphIndex = layoutManager.glyphIndexForCharacter(at: 0)
+            let lineOrigin = layoutManager.lineFragmentRect(
+                forGlyphAt: glyphIndex, effectiveRange: nil).origin
+            XCTAssertEqual(lineOrigin.y, 0, accuracy: 1.0,
+                "First character glyph should be on line fragment at y~0, got y=\(lineOrigin.y)")
+        }
+
+        // 4. Serialized output matches expectations
+        XCTAssertEqual(harness.currentText(), "a",
+            "Serialized binding should contain exactly the typed character")
+    }
+
+    /// Simulates a Return key arriving at the editor right before the first
+    /// real character — mirrors the title-to-editor focus transition where
+    /// the Return keypress may leak through the responder chain.
+    func testReturnKeyLeakBeforeFirstCharacterDoesNotCorruptContent() {
+        let harness = makeHarness(initialText: "")
+        let textView = harness.textView
+
+        // Simulate a Return key arriving (as if leaked from title field transition)
+        textView.setSelectedRange(NSRange(location: 0, length: 0))
+        textView.insertText("\n", replacementRange: NSRange(location: NSNotFound, length: 0))
+        pumpMainLoop()
+
+        // The empty-document guard should have blocked the newline
+        XCTAssertEqual(textView.textStorage?.length ?? -1, 0,
+            "Return into empty document should be rejected")
+
+        // Then simulate the user typing their first real character
+        textView.insertText("a", replacementRange: NSRange(location: NSNotFound, length: 0))
+        pumpMainLoop()
+
+        let finalText = textView.textStorage?.string ?? ""
+        XCTAssertEqual(finalText, "a",
+            "First character should appear without a leading newline; got: \(finalText.debugDescription)")
+        XCTAssertEqual(textView.selectedRange().location, 1,
+            "Cursor should be at position 1 after typing 'a'")
+    }
+
+    /// Typing multiple characters rapidly into an empty note should keep
+    /// everything on the first line with no injected newlines.
+    func testRapidTypingInEmptyNoteStaysOnFirstLine() {
+        let harness = makeHarness(initialText: "")
+        let textView = harness.textView
+
+        textView.setSelectedRange(NSRange(location: 0, length: 0))
+        for char in "hello" {
+            textView.insertText(String(char), replacementRange: NSRange(location: NSNotFound, length: 0))
+        }
+        pumpMainLoop()
+
+        let text = textView.textStorage?.string ?? ""
+        XCTAssertEqual(text, "hello",
+            "Rapid typing should produce 'hello' with no injected newlines; got: \(text.debugDescription)")
+        XCTAssertEqual(textView.selectedRange().location, 5,
+            "Cursor should be at end of typed text")
+    }
 }
