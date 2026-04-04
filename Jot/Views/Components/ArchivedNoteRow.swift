@@ -28,18 +28,14 @@ struct ArchivedNoteRow: View {
     var body: some View {
         HStack(spacing: 8) {
             Text(note.title)
-                .font(FontManager.heading(size: 15, weight: .medium))
+                .font(FontManager.heading(size: 13, weight: .medium))
                 .foregroundColor(Color("PrimaryTextColor"))
                 .tracking(-0.1)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            if inFolderContext {
-                Text(Self.dateFormatter.string(from: note.date))
-                    .font(FontManager.metadata(size: 11, weight: .medium))
-                    .foregroundColor(Color("SecondaryTextColor"))
-            } else {
+            if !inFolderContext {
                 Spacer(minLength: 8)
 
                 HStack(spacing: 2) {

@@ -194,8 +194,8 @@ struct TrashSheet: View {
     // MARK: - Footer Buttons
 
     private var footerButtons: some View {
-        HStack(spacing: 8) {
-            // Delete All
+        HStack {
+            Spacer()
             Button {
                 HapticManager.shared.buttonTap()
                 isEmptyTrashConfirmationPresented = true
@@ -211,7 +211,6 @@ struct TrashSheet: View {
             }
             .buttonStyle(.plain)
             .subtleHoverScale(1.02)
-
             Spacer()
         }
         .padding(.horizontal, 12)

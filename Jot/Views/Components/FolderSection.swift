@@ -85,7 +85,7 @@ struct FolderSection: View {
             // Accordion header
             HStack(spacing: 8) {
                 Text("Folders")
-                    .font(FontManager.heading(size: 13, weight: .medium))
+                    .font(FontManager.heading(size: 11, weight: .medium))
                     .foregroundColor(Color("SecondaryTextColor"))
 
                 Circle()
@@ -184,7 +184,7 @@ struct FolderSection: View {
                             .frame(width: 15, height: 15)
 
                         Text(peekFolder.name)
-                            .font(FontManager.heading(size: 15, weight: .medium))
+                            .font(FontManager.heading(size: 13, weight: .medium))
                             .foregroundColor(Color("PrimaryTextColor"))
                             .tracking(-0.1)
                             .lineLimit(1)
@@ -278,7 +278,7 @@ struct FolderSection: View {
 
             if isRenamingThisFolder {
                 TextField("Folder Name", text: $renamingName)
-                    .font(FontManager.heading(size: 15, weight: .medium))
+                    .font(FontManager.heading(size: 13, weight: .medium))
                     .foregroundColor(Color("PrimaryTextColor"))
                     .textFieldStyle(.plain)
                     .focused($isRenaming)
@@ -290,7 +290,7 @@ struct FolderSection: View {
                     }
             } else {
                 Text(folder.name)
-                    .font(FontManager.heading(size: 15, weight: .medium))
+                    .font(FontManager.heading(size: 13, weight: .medium))
                     .foregroundColor(Color("PrimaryTextColor"))
                     .tracking(-0.1)
                     .lineLimit(1)

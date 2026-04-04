@@ -94,21 +94,6 @@ struct CreateFolderSheet: View {
 
     private var colorSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 6) {
-                Image("IconColorSwatch")
-                    .renderingMode(.template)
-                    .resizable()
-                    .scaledToFit()
-                    .foregroundColor(Color("IconSecondaryColor"))
-                    .frame(width: 15, height: 15)
-
-                Text("Choose folder color")
-                    .font(FontManager.heading(size: 13, weight: .medium))
-                    .foregroundColor(Color("PrimaryTextColor"))
-                    .tracking(-0.1)
-            }
-            .padding(.horizontal, 4)
-
             HStack {
                 defaultColorCircle
 

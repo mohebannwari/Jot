@@ -103,3 +103,6 @@ Jot/Ressources/*.jpg
 Jot/Ressources/*.jpeg
 .autoresearch/
 .mcp.json
+
+# Superpowers plugin local session state (brainstorm servers, PIDs, logs — never commit)
+.superpowers/
