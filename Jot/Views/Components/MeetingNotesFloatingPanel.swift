@@ -57,13 +57,16 @@ struct MeetingNotesFloatingPanel: View {
         VStack(spacing: 8) {
             if showTabs {
                 tabBar
+                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .bottom)))
                 contentBlock
+                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .bottom)))
             }
             controlsSection
         }
         .padding(8)
         .frame(width: panelWidth)
         .frame(height: showTabs ? expandedHeight : nil)
+        .clipShape(RoundedRectangle(cornerRadius: panelRadius, style: .continuous))
         .modifier(MeetingPanelBackgroundModifier(
             cornerRadius: panelRadius,
             panelBackground: Color("SurfaceElevatedColor"),
@@ -250,13 +253,6 @@ struct MeetingNotesFloatingPanel: View {
                 .font(FontManager.metadata(size: 12, weight: .medium))
                 .foregroundColor(Color("PrimaryTextColor"))
                 .monospacedDigit()
-
-            // Escape hatch — dismiss during generation
-            squareButton(
-                icon: "IconCrossMedium",
-                iconSize: 10,
-                action: onDismiss
-            )
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)

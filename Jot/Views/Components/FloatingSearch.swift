@@ -289,7 +289,7 @@ struct FloatingSearch: View {
                         .foregroundColor(Color("SecondaryTextColor"))
                         .lineLimit(2)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.leading, 36)
+                        .padding(.leading, 31)
                         .padding(.trailing, 8)
                         .padding(.bottom, belongsToFolder ? 2 : 8)
                 }
@@ -315,7 +315,7 @@ struct FloatingSearch: View {
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
                     .background(folder.folderColor, in: Capsule())
-                    .padding(.leading, 36)
+                    .padding(.leading, 31)
                     .padding(.bottom, 8)
                 }
             }

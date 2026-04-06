@@ -3482,6 +3482,7 @@ struct ContentView: View {
     private func propertiesPanelContent(for note: Note, editorInstanceID: UUID?) -> some View {
         NoteMetadataSection(
             note: note,
+            folder: note.folderID.flatMap { fid in notesManager.folders.first(where: { $0.id == fid }) },
             backlinks: backlinks(for: note.id),
             onUpdateTags: { newTags in
                 notesManager.updateTags(id: note.id, tags: newTags)

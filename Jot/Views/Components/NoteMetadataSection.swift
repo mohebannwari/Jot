@@ -11,6 +11,7 @@ import SwiftUI
 
 struct NoteMetadataSection: View {
     let note: Note
+    var folder: Folder?
     var backlinks: [BacklinkItem] = []
     var onUpdateTags: (([String]) -> Void)?
     var onToggleTodo: ((Int) -> Void)?
@@ -134,8 +135,10 @@ struct NoteMetadataSection: View {
             .components(separatedBy: "/").first ?? urlString
     }
 
-    /// Matches tabs container fill in dark mode (#292524); same as BlockContainerColor in light mode
-    private var todoContainerColor: Color { Color("TodoContainerColor") }
+    /// Matches tabs container fill in dark mode; boosted in dark mode to compensate for blur material behind panel
+    private var todoContainerColor: Color {
+        colorScheme == .dark ? Color.white.opacity(0.12) : Color("TodoContainerColor")
+    }
 
     // MARK: - Date Formatting
 
@@ -149,15 +152,8 @@ struct NoteMetadataSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Header: title with close button
+            // Close button row (left-aligned)
             HStack {
-                Text("Properties")
-                    .font(FontManager.heading(size: 14, weight: .semibold))
-                    .tracking(-0.3)
-                    .foregroundColor(Color("PrimaryTextColor"))
-
-                Spacer()
-
                 Button { onDismiss?() } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 9, weight: .bold))
@@ -167,10 +163,20 @@ struct NoteMetadataSection: View {
                 }
                 .buttonStyle(.plain)
                 .macPointingHandCursor()
+
+                Spacer()
             }
             .padding(.horizontal, 16)
-            .padding(.top, 8)
-            .padding(.bottom, 12)
+            .padding(.top, 18)
+            .padding(.bottom, 18)
+
+            // Title
+            Text("Properties")
+                .font(FontManager.heading(size: 14, weight: .semibold))
+                .tracking(-0.3)
+                .foregroundColor(Color("PrimaryTextColor"))
+                .padding(.horizontal, 16)
+                .padding(.bottom, 12)
 
             ZStack(alignment: .bottom) {
                 ScrollView(showsIndicators: false) {
@@ -181,6 +187,34 @@ struct NoteMetadataSection: View {
                                 .font(.system(size: 12, weight: .medium))
                                 .tracking(-0.3)
                                 .foregroundColor(Color("PrimaryTextColor"))
+                        }
+
+                        // Folder
+                        propertyRow(label: "Folder") {
+                            if let folder {
+                                let pillFg: Color = (colorScheme == .dark && folder.folderColorNeedsDarkForeground)
+                                    ? .black : .white
+
+                                HStack(spacing: 4) {
+                                    Image("IconFolder1")
+                                        .renderingMode(.template)
+                                        .resizable()
+                                        .scaledToFit()
+                                        .foregroundColor(pillFg)
+                                        .frame(width: 15, height: 15)
+
+                                    Text(folder.name)
+                                        .font(FontManager.heading(size: 11, weight: .medium))
+                                        .tracking(-0.2)
+                                        .foregroundColor(pillFg)
+                                        .lineLimit(1)
+                                }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(folder.folderColor, in: Capsule())
+                            } else {
+                                noneText
+                            }
                         }
 
                         // Tags
@@ -230,6 +264,8 @@ struct NoteMetadataSection: View {
                     .allowsHitTesting(false)
             }
         }
+        .background(.ultraThinMaterial)
+        .background(Color("DetailPaneSurfaceColor").opacity(0.5))
         .onAppear { reparseContent() }
         .onChange(of: note.content) { reparseContent() }
     }

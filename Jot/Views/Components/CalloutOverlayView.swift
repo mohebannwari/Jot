@@ -277,22 +277,33 @@ final class CalloutOverlayView: NSView {
 
     // MARK: - Height Calculation
 
+    /// Reusable sizing field configured identically to the real text field.
+    /// Using cellSize(forBounds:) gives exact height -- no manual padding guesswork.
+    private static let sizingField: NSTextField = {
+        let tf = NSTextField()
+        tf.isBordered = false
+        tf.drawsBackground = false
+        tf.cell?.wraps = true
+        tf.cell?.isScrollable = false
+        tf.lineBreakMode = .byWordWrapping
+        tf.usesSingleLineMode = false
+        tf.maximumNumberOfLines = 0
+        tf.font = .systemFont(ofSize: 15, weight: .regular)
+        return tf
+    }()
+
     static func heightForData(_ data: CalloutData, width: CGFloat) -> CGFloat {
         let pillOverflow: CGFloat = 13     // half of 26px pill
         let topPad: CGFloat = 24           // block top padding (clears pill)
         let bottomPad: CGFloat = 16        // block bottom padding
         let hPad: CGFloat = 16             // horizontal padding
-        let cellInset: CGFloat = 4         // NSTextFieldCell internal padding
-        let tw = max(width - hPad * 2, 40)
+        let tfW = max(width - hPad * 2, 40)
         let text = data.content.isEmpty ? "A" : data.content
-        let rect = NSAttributedString(
-            string: text,
-            attributes: [.font: NSFont.systemFont(ofSize: 15, weight: .regular)]
-        ).boundingRect(
-            with: CGSize(width: tw, height: .greatestFiniteMagnitude),
-            options: [.usesLineFragmentOrigin, .usesFontLeading]
-        )
-        return pillOverflow + topPad + max(ceil(rect.height) + cellInset, 20) + bottomPad
+        sizingField.stringValue = text
+        let cellH = sizingField.cell!.cellSize(
+            forBounds: NSRect(x: 0, y: 0, width: tfW, height: .greatestFiniteMagnitude)
+        ).height
+        return pillOverflow + topPad + max(ceil(cellH), 20) + bottomPad
     }
 
     // MARK: - Cursor
