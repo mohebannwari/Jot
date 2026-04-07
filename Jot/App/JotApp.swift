@@ -39,6 +39,10 @@ struct JotApp: App {
         BackupManager.performPostInitRestore(into: manager)
         restoreAccessURL?.stopAccessingSecurityScopedResource()
 
+        // Migrate file/image storage from sandbox to App Group container (one-time)
+        FileAttachmentStorageManager.shared.migrateFromSandboxIfNeeded()
+        ImageStorageManager.shared.migrateFromSandboxIfNeeded()
+
         // Prune expired version snapshots
         let retentionDays = UserDefaults.standard.integer(forKey: ThemeManager.versionRetentionDaysKey)
         if retentionDays > 0 {

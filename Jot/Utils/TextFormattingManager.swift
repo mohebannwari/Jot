@@ -450,7 +450,31 @@ class TextFormattingManager: ObservableObject {
         func toggleBlockQuote(to textView: NSTextView, in range: NSRange) {
             guard let textStorage = textView.textStorage else { return }
 
-            let paragraphRange = (textStorage.string as NSString).paragraphRange(for: range)
+            var paragraphRange = (textStorage.string as NSString).paragraphRange(for: range)
+
+            // When the cursor sits at the very end of the document (after the last \n),
+            // paragraphRange returns zero-length. All addAttribute calls on an empty
+            // range are no-ops, so we insert a real \n first to create a paragraph the
+            // attributes can attach to.
+            if paragraphRange.length == 0, textStorage.length > 0 {
+                let insertLoc = range.location
+                let insertRange = NSRange(location: insertLoc, length: 0)
+                guard textView.shouldChangeText(in: insertRange, replacementString: "\n") else {
+                    return
+                }
+                textStorage.beginEditing()
+                textStorage.replaceCharacters(in: insertRange, with: NSAttributedString(
+                    string: "\n",
+                    attributes: textView.typingAttributes
+                ))
+                textStorage.endEditing()
+                textView.didChangeText()
+                // Place cursor inside the newly created paragraph
+                let cursorLoc = min(insertLoc, textStorage.length)
+                textView.setSelectedRange(NSRange(location: cursorLoc, length: 0))
+                paragraphRange = (textStorage.string as NSString).paragraphRange(
+                    for: NSRange(location: cursorLoc, length: 0))
+            }
 
             // Check if already a block quote
             let hasQuote = paragraphRange.length > 0
@@ -468,6 +492,7 @@ class TextFormattingManager: ObservableObject {
                         ?? NSMutableParagraphStyle()
                     style.firstLineHeadIndent = 0
                     style.headIndent = 0
+                    style.tailIndent = 0
                     textStorage.addAttribute(.paragraphStyle, value: style, range: subRange)
                 }
                 // Restore label color
@@ -485,6 +510,8 @@ class TextFormattingManager: ObservableObject {
                 style.paragraphSpacing = 8
                 style.firstLineHeadIndent = 20
                 style.headIndent = 20
+                style.tailIndent = -4
+                style.lineBreakMode = .byWordWrapping
                 textStorage.addAttribute(.paragraphStyle, value: style, range: paragraphRange)
                 textStorage.addAttribute(
                     .foregroundColor,
@@ -515,6 +542,8 @@ class TextFormattingManager: ObservableObject {
                 quoteStyle.paragraphSpacing = 8
                 quoteStyle.firstLineHeadIndent = 20
                 quoteStyle.headIndent = 20
+                quoteStyle.tailIndent = -4
+                quoteStyle.lineBreakMode = .byWordWrapping
                 typingAttrs[.paragraphStyle] = quoteStyle
             }
             textView.typingAttributes = typingAttrs

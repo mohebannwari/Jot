@@ -83,7 +83,7 @@ struct AIToolsOverlay: View {
         }
         .buttonStyle(.plain)
         .macPointingHandCursor()
-        .glassTooltip("AI Tools", edge: .trailing)
+        .glassTooltip("Apple Intelligence Tools", edge: .trailing)
         .hoverContainer(cornerRadius: 8)
     }
 

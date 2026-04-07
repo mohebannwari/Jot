@@ -156,13 +156,17 @@ struct WindowTransparencyView: NSViewRepresentable {
 /// Floating sidebar background: Liquid Glass on macOS 26+, backdrop blur + tinted surface on older.
 private struct FloatingSidebarBackgroundModifier: ViewModifier {
     let cornerRadius: CGFloat
+    @Environment(\.colorScheme) private var colorScheme
     private let shape = RoundedRectangle(cornerRadius: 24, style: .continuous)
 
     func body(content: Content) -> some View {
         if #available(macOS 26.0, iOS 26.0, *) {
             content
-                .glassEffect(.regular.interactive(true),
-                             in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                .glassEffect(
+                    .regular.interactive(true)
+                        .tint(Color("DetailPaneSurfaceColor").opacity(0.80)),
+                    in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                )
                 .shadow(color: .black.opacity(0.04), radius: 9.5, x: 0, y: 9)
                 .shadow(color: .black.opacity(0.02), radius: 17.5, x: 0, y: 35)
                 .shadow(color: .black.opacity(0.01), radius: 23.5, x: 0, y: 78)
@@ -284,6 +288,7 @@ struct ContentView: View {
     @State private var splitDragDelta: CGFloat = 0
     @State private var isSplitHandleDragging = false
     @State private var isSplitHandleHovered = false
+    @State private var lastSplitHandleClickTime: Date?
     @State private var isDragSplitTargeted = false
     @State private var dragSplitSide: SplitPosition = .right
     @State private var isDragImportOverlayVisible = false
@@ -728,7 +733,11 @@ struct ContentView: View {
                 Color.clear
                     .padding(-40)
                     .ignoresSafeArea()
-                    .liquidGlass(in: Rectangle())
+                    .tintedLiquidGlass(
+                        in: Rectangle(),
+                        tint: Color("DetailPaneSurfaceColor"),
+                        tintOpacity: 0.80
+                    )
             } else {
                 ZStack {
                     BackdropBlurView(material: .hudWindow, blendingMode: .behindWindow)
@@ -1261,7 +1270,7 @@ struct ContentView: View {
             }
         }
         .overlay(alignment: .bottomLeading) {
-            if !(primaryBottomOverlayActive || (primaryBottomInputOverlayActive && width < 620)) {
+            if !(primaryBottomOverlayActive || primaryBottomInputOverlayActive) {
                 NoteToolsBar(note: note, editorInstanceID: primaryEditorID, paneWidth: width, aiToolsExpanded: aiToolsState == .expanded)
                     .padding(.leading, 14).padding(.bottom, 14)
                     .transition(.opacity)
@@ -1491,7 +1500,7 @@ struct ContentView: View {
             }
         }
         .overlay(alignment: .bottomLeading) {
-            if !(splitBottomOverlayActive || (splitBottomInputOverlayActive && width < 620)) {
+            if !(splitBottomOverlayActive || splitBottomInputOverlayActive) {
                 NoteToolsBar(note: note, editorInstanceID: splitEditorID, paneWidth: width, aiToolsExpanded: splitAiToolsState == .expanded)
                     .padding(.leading, 14).padding(.bottom, 14)
                     .transition(.opacity)
@@ -1541,6 +1550,28 @@ struct ContentView: View {
                     splitDragDelta = delta
                 }
                 .onEnded { value in
+                    // Detect double-click: two near-zero-movement gestures within 300ms
+                    let wasDrag = abs(value.translation.width) >= 3
+                    if !wasDrag {
+                        let now = Date()
+                        if let last = lastSplitHandleClickTime, now.timeIntervalSince(last) < 0.3 {
+                            lastSplitHandleClickTime = nil
+                            if let idx = activeSplitIndex {
+                                withAnimation(.jotSpring) {
+                                    splitSessions[idx].ratio = 0.5
+                                    saveSplitSessions()
+                                }
+                            }
+                            splitDragDelta = 0
+                            isSplitHandleDragging = false
+                            if !isSplitHandleHovered { NSCursor.pop() }
+                            return
+                        }
+                        lastSplitHandleClickTime = now
+                    } else {
+                        lastSplitHandleClickTime = nil
+                    }
+
                     let delta = position == .right
                         ? -value.translation.width
                         :  value.translation.width
@@ -2352,7 +2383,7 @@ struct ContentView: View {
                                     .renderingMode(.template)
                                     .resizable()
                                     .scaledToFit()
-                                    .foregroundColor(folder.folderColor)
+                                    .foregroundColor(folder.folderDisplayColor(for: colorScheme))
                                     .frame(width: 15, height: 15)
 
                                 Text(folder.name)
@@ -3406,7 +3437,7 @@ struct ContentView: View {
                 }
                 .buttonStyle(.plain)
                 .macPointingHandCursor()
-                .help("Switch note")
+                .glassTooltip("Switch note", below: true)
                 .hoverContainer(cornerRadius: 8)
 
                 // Move to other pane
@@ -3424,7 +3455,7 @@ struct ContentView: View {
                 }
                 .buttonStyle(.plain)
                 .macPointingHandCursor()
-                .help(isLeftPane ? "Move to right" : "Move to left")
+                .glassTooltip(isLeftPane ? "Move to right" : "Move to left", below: true)
                 .hoverContainer(cornerRadius: 8)
 
                 // Close this pane
@@ -3444,7 +3475,7 @@ struct ContentView: View {
                 }
                 .buttonStyle(.plain)
                 .macPointingHandCursor()
-                .help(isLeftPane ? "Close left split" : "Close right split")
+                .glassTooltip(isLeftPane ? "Close left split" : "Close right split", below: true)
                 .hoverContainer(cornerRadius: 8)
 
                 // Properties panel toggle

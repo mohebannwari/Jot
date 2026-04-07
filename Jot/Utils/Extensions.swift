@@ -251,18 +251,27 @@ extension View {
 
 // MARK: - Glass Tooltip
 
-/// Liquid glass tooltip pill that appears instantly above the hovered view.
+/// Liquid glass tooltip pill that appears on hover above or below the view.
 private struct GlassTooltipModifier: ViewModifier {
     let label: String
     let edge: HorizontalAlignment
+    let below: Bool
 
     @State private var isHovered = false
 
     private var overlayAlignment: Alignment {
-        switch edge {
-        case .leading: return .topLeading
-        case .trailing: return .topTrailing
-        default: return .top
+        if below {
+            switch edge {
+            case .leading: return .bottomLeading
+            case .trailing: return .bottomTrailing
+            default: return .bottom
+            }
+        } else {
+            switch edge {
+            case .leading: return .topLeading
+            case .trailing: return .topTrailing
+            default: return .top
+            }
         }
     }
 
@@ -277,9 +286,9 @@ private struct GlassTooltipModifier: ViewModifier {
                         .padding(.vertical, 4)
                         .fixedSize()
                         .tooltipGlass()
-                        .offset(y: -34)
+                        .offset(y: below ? 34 : -34)
                         .allowsHitTesting(false)
-                        .transition(.scale(scale: 0.9, anchor: .bottom).combined(with: .opacity))
+                        .transition(.scale(scale: 0.9, anchor: below ? .top : .bottom).combined(with: .opacity))
                         .zIndex(10000)
                 }
             }
@@ -290,8 +299,8 @@ private struct GlassTooltipModifier: ViewModifier {
 
 extension View {
     /// Adds a liquid glass tooltip pill that appears instantly on hover.
-    func glassTooltip(_ label: String, edge: HorizontalAlignment = .center) -> some View {
-        modifier(GlassTooltipModifier(label: label, edge: edge))
+    func glassTooltip(_ label: String, edge: HorizontalAlignment = .center, below: Bool = false) -> some View {
+        modifier(GlassTooltipModifier(label: label, edge: edge, below: below))
     }
 }
 
@@ -374,7 +383,7 @@ extension Folder {
     /// Tailwind 600 shades keyed by stored preset hex.
     fileprivate static let tailwind600: [String: String] = [
         "#ef4444": "#dc2626",  // red-600
-        "#facc15": "#ca8a04",  // yellow-600
+        "#facc15": "#a16207",  // yellow-700
         "#22c55e": "#16a34a",  // green-600
         "#d946ef": "#c026d3",  // fuchsia-600
         "#3b82f6": "#2563eb",  // blue-600

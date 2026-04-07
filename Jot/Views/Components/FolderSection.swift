@@ -129,7 +129,7 @@ struct FolderSection: View {
                                     note: peekNote,
                                     isSelected: selectedNoteIDs.contains(peekNote.id),
                                     isActiveNote: peekNote.id == activeNoteID,
-                                    activeIconTint: folder.folderColor,
+                                    activeIconTint: folder.folderDisplayColor(for: colorScheme),
                                     isInsideFolder: true,
                                     onTap: { interaction in onOpenNote(peekNote, interaction) },
                                     onTogglePin: { shouldPin in
@@ -180,7 +180,7 @@ struct FolderSection: View {
                             .renderingMode(.template)
                             .resizable()
                             .scaledToFit()
-                            .foregroundColor(peekFolder.folderColor)
+                            .foregroundColor(peekFolder.folderDisplayColor(for: colorScheme))
                             .frame(width: 15, height: 15)
 
                         Text(peekFolder.name)
@@ -220,7 +220,7 @@ struct FolderSection: View {
                             note: peekNote,
                             isSelected: selectedNoteIDs.contains(peekNote.id),
                             isActiveNote: peekNote.id == activeNoteID,
-                            activeIconTint: peekFolder.folderColor,
+                            activeIconTint: peekFolder.folderDisplayColor(for: colorScheme),
                             isInsideFolder: true,
                             onTap: { interaction in onOpenNote(peekNote, interaction) },
                             onTogglePin: { shouldPin in
@@ -273,7 +273,7 @@ struct FolderSection: View {
                 .renderingMode(.template)
                 .resizable()
                 .scaledToFit()
-                .foregroundColor(folder.folderColor)
+                .foregroundColor(folder.folderDisplayColor(for: colorScheme))
                 .frame(width: 15, height: 15)
 
             if isRenamingThisFolder {
@@ -390,7 +390,7 @@ struct FolderSection: View {
         )
         .overlay {
             if highlightedFolderID == folder.id {
-                FolderHighlightPulse(color: folder.folderColor)
+                FolderHighlightPulse(color: folder.folderDisplayColor(for: colorScheme))
                     .padding(.horizontal, rowHoverHorizontalInset)
             }
         }
@@ -485,7 +485,7 @@ struct FolderSection: View {
                             note: note,
                             isSelected: selectedNoteIDs.contains(note.id),
                             isActiveNote: note.id == activeNoteID,
-                            activeIconTint: folder.folderColor,
+                            activeIconTint: folder.folderDisplayColor(for: colorScheme),
                             isInsideFolder: true,
                             leadingIconAssetName: note.isLocked
                                 ? "IconLock"

@@ -284,10 +284,12 @@ final class BackupManager: ObservableObject {
 
             notesManager.importBackup(notes: notes, folders: folders)
 
-            // Restore images and files
-            let documentsDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-            try restoreDirectory(named: "JotImages", from: backupURL, to: documentsDir)
-            try restoreDirectory(named: "JotFiles", from: backupURL, to: documentsDir)
+            // Restore images and files into the App Group container
+            let restoreBase = FileManager.default.containerURL(
+                forSecurityApplicationGroupIdentifier: appGroupID)
+                ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+            try restoreDirectory(named: "JotImages", from: backupURL, to: restoreBase)
+            try restoreDirectory(named: "JotFiles", from: backupURL, to: restoreBase)
 
             logger.info("Restore complete: \(notes.count) notes, \(folders.count) folders")
         } catch {
@@ -349,9 +351,13 @@ final class BackupManager: ObservableObject {
         return all
     }
 
+    private static let appGroupID = "group.com.mohebanwari.Jot"
+
     private func copyDirectory(named name: String, to backupURL: URL) {
-        let documentsDir = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first!
-        let sourceDir = documentsDir.appendingPathComponent(name, isDirectory: true)
+        let baseDir = fileManager.containerURL(
+            forSecurityApplicationGroupIdentifier: Self.appGroupID)
+            ?? fileManager.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let sourceDir = baseDir.appendingPathComponent(name, isDirectory: true)
 
         guard fileManager.fileExists(atPath: sourceDir.path) else { return }
 

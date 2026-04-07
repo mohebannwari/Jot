@@ -4021,14 +4021,10 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 : NSColor.black.withAlphaComponent(0.3)
             layoutManager.addTemporaryAttribute(.foregroundColor, value: dimColor, forCharacterRange: fullRange)
 
-            // Highlight matched ranges: restore original foreground + add background
-            let matchBg: NSColor = (currentColorScheme == .dark)
-                ? NSColor.systemYellow.withAlphaComponent(0.25)
-                : NSColor.systemYellow.withAlphaComponent(0.35)
+            // Un-dim matched ranges so original foreground colors show through
             for matchRange in ranges {
                 guard matchRange.location + matchRange.length <= storage.length else { continue }
                 layoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: matchRange)
-                layoutManager.addTemporaryAttribute(.backgroundColor, value: matchBg, forCharacterRange: matchRange)
             }
 
             // Scroll active match into view and play impulse
@@ -5557,11 +5553,19 @@ struct TodoEditorRepresentable: NSViewRepresentable {
 
             let selectedText = textStorage.attributedSubstring(from: selectedRange).string
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            guard InlineNSTextView.isLikelyURL(selectedText) else { return }
 
-            let normalizedURL = Self.normalizedURL(from: selectedText)
-            let url = normalizedURL.isEmpty ? selectedText : normalizedURL
-            insertWebClip(url: url)
+            // If the entire selection is a URL, use it directly
+            if InlineNSTextView.isLikelyURL(selectedText) {
+                let normalizedURL = Self.normalizedURL(from: selectedText)
+                let url = normalizedURL.isEmpty ? selectedText : normalizedURL
+                insertWebClip(url: url)
+                return
+            }
+
+            // Otherwise extract the first URL found within the selected text
+            if let detected = InlineNSTextView.firstURL(in: selectedText) {
+                insertWebClip(url: detected.absoluteString)
+            }
         }
 
         private func replaceURLPasteWithPlainLink(url: String, range: NSRange) {
@@ -8871,6 +8875,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             style.paragraphSpacing = 8
             style.firstLineHeadIndent = 20
             style.headIndent = 20
+            style.tailIndent = -4
+            style.lineBreakMode = .byWordWrapping
             return style
         }
 
@@ -9259,9 +9265,24 @@ final class InlineNSTextView: NSTextView, QLPreviewPanelDataSource, QLPreviewPan
         guard !trimmed.isEmpty, !trimmed.contains(" "), !trimmed.contains("\n") else {
             return false
         }
-        if trimmed.hasPrefix("http://") || trimmed.hasPrefix("https://") { return true }
-        let domainPattern = #"^[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?(\.[a-zA-Z]{2,})+(/.*)?$"#
-        return trimmed.range(of: domainPattern, options: .regularExpression) != nil
+        guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else {
+            return false
+        }
+        let fullRange = NSRange(location: 0, length: (trimmed as NSString).length)
+        let matches = detector.matches(in: trimmed, options: [], range: fullRange)
+        // The detected link must span the entire trimmed text
+        return matches.count == 1 && matches[0].range.location == 0 && matches[0].range.length == fullRange.length
+    }
+
+    /// Extracts the first URL found within arbitrary text using NSDataDetector.
+    static func firstURL(in text: String) -> URL? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else {
+            return nil
+        }
+        let fullRange = NSRange(location: 0, length: (trimmed as NSString).length)
+        return detector.firstMatch(in: trimmed, options: [], range: fullRange)?.url
     }
 
     /// Detect if pasted text is likely source code.

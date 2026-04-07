@@ -211,7 +211,7 @@ struct NoteMetadataSection: View {
                                 }
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 4)
-                                .background(folder.folderColor, in: Capsule())
+                                .background(folder.folderDisplayColor(for: colorScheme), in: Capsule())
                             } else {
                                 noneText
                             }

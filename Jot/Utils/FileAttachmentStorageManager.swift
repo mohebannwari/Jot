@@ -199,14 +199,73 @@ public final class FileAttachmentStorageManager {
         return try? storageDirectoryURLSync()
     }
 
-    private func storageDirectoryURLSync() throws -> URL {
-        let manager = FileManager.default
-        let documentsURL = try manager.url(
+    private static let appGroupID = "group.com.mohebanwari.Jot"
+
+    func storageDirectoryURLSync() throws -> URL {
+        // Prefer App Group container so files co-locate with SwiftData store
+        // and survive app binary deletion. Fall back to sandbox Documents for
+        // unit tests where the App Group entitlement is unavailable.
+        let base: URL
+        if let groupURL = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: Self.appGroupID) {
+            base = groupURL
+        } else {
+            base = try FileManager.default.url(
+                for: .documentDirectory,
+                in: .userDomainMask,
+                appropriateFor: nil,
+                create: true)
+        }
+        return base.appendingPathComponent(storageDirectoryName, isDirectory: true)
+    }
+
+    /// One-time migration: moves files from the old sandbox Documents/JotFiles/
+    /// to the App Group container. Idempotent -- skips if already done.
+    func migrateFromSandboxIfNeeded() {
+        let key = "com.jot.didMigrateFilesToAppGroup.v1.files"
+        guard !UserDefaults.standard.bool(forKey: key) else { return }
+
+        let fm = FileManager.default
+        guard let oldBase = try? fm.url(
             for: .documentDirectory,
             in: .userDomainMask,
             appropriateFor: nil,
-            create: true
-        )
-        return documentsURL.appendingPathComponent(storageDirectoryName, isDirectory: true)
+            create: false
+        ) else {
+            UserDefaults.standard.set(true, forKey: key)
+            return
+        }
+        let oldDir = oldBase.appendingPathComponent(storageDirectoryName, isDirectory: true)
+        guard fm.fileExists(atPath: oldDir.path) else {
+            UserDefaults.standard.set(true, forKey: key)
+            return
+        }
+
+        guard let groupURL = fm.containerURL(
+            forSecurityApplicationGroupIdentifier: Self.appGroupID) else {
+            return
+        }
+        let newDir = groupURL.appendingPathComponent(storageDirectoryName, isDirectory: true)
+
+        // Ensure destination exists
+        try? fm.createDirectory(at: newDir, withIntermediateDirectories: true)
+
+        guard let files = try? fm.contentsOfDirectory(
+            at: oldDir, includingPropertiesForKeys: nil) else {
+            UserDefaults.standard.set(true, forKey: key)
+            return
+        }
+
+        for file in files {
+            let dest = newDir.appendingPathComponent(file.lastPathComponent)
+            if !fm.fileExists(atPath: dest.path) {
+                do {
+                    try fm.moveItem(at: file, to: dest)
+                } catch {
+                    logger.error("migrateFromSandbox: failed to move \(file.lastPathComponent): \(error.localizedDescription)")
+                }
+            }
+        }
+        UserDefaults.standard.set(true, forKey: key)
     }
 }

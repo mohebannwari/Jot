@@ -17,6 +17,7 @@ These rules are absolute. No exceptions. No rationalizations. No "just this once
 ---
 
 ## Thinking & Effort
+
 - **Effort level must always be set to maximum.** This is the default. Never reduce effort, never use low-effort or quick modes. Every response gets full reasoning depth, no matter how simple the task appears.
 - Ultra think after every prompt. Full depth, full rigor, always.
 
@@ -46,11 +47,11 @@ Defined in `.claude/rules/workflow.md` (auto-ingested). Covers build commands, l
 
 ### Model Hierarchy
 
-| Model | Role | When to use |
-|-------|------|-------------|
-| **Opus** | Lead agent (user-selected) | The hardest problems -- deep architecture decisions, ambiguous cross-cutting requirements, designs that need genuine reasoning. User selects Opus manually. |
-| **Opus** | Default lead agent | Implementation, planning, multi-file edits, most features. |
-| **Sonnet** | Fire-and-forget worker | Single-purpose lookups that have no business in the main context. Spin it and move on. |
+| Model      | Role                       | When to use                                                                                                                                                 |
+| ---------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Opus**   | Lead agent (user-selected) | The hardest problems -- deep architecture decisions, ambiguous cross-cutting requirements, designs that need genuine reasoning. User selects Opus manually. |
+| **Opus**   | Default lead agent         | Implementation, planning, multi-file edits, most features.                                                                                                  |
+| **Sonnet** | Fire-and-forget worker     | Single-purpose lookups that have no business in the main context. Spin it and move on.                                                                      |
 
 ### Fire & Forget -- Delegation Rules
 
@@ -96,7 +97,9 @@ Opus (escalation only -- not parallel, not fire-and-forget):
 ---
 
 ## Context Engineering
+
 Before any feature implementation:
+
 1. Write `INITIAL.md` describing the feature
 2. `/generate-prp INITIAL.md`
 3. `/execute-prp PRPs/feature-name.md`
@@ -107,18 +110,19 @@ Before any feature implementation:
 
 **Always invoke the right skill before acting:**
 
-| Task | Skills |
-|------|--------|
-| New feature | `superpowers:brainstorming` -> `superpowers:writing-plans` -> `superpowers:test-driven-development` |
-| Bug | `debugging` skill (reproduce-first -- see Bug Workflow below) |
-| Design / UI from Figma (Swift) | `figma-to-swiftui` -> `figma-design` -> `frontend-design` (invoke all three -- Swift/SwiftUI projects only) |
-| Design / UI from Figma (Web/RN) | `figma-design` -> `frontend-design` (invoke both -- web, React Native, websites, any non-Swift project) |
-| Icons (Swift) | Always download from Figma via `figma-to-swiftui` -- never use placeholders unless explicitly told |
-| Icons (Web/RN) | Always download from Figma via `figma-design` -- never use placeholders unless explicitly told |
-| Completion | `superpowers:verification-before-completion` -> `superpowers:requesting-code-review` |
-| Multi-task | `superpowers:dispatching-parallel-agents` |
+| Task                            | Skills                                                                                                      |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| New feature                     | `superpowers:brainstorming` -> `superpowers:writing-plans` -> `superpowers:test-driven-development`         |
+| Bug                             | `debugging` skill (reproduce-first -- see Bug Workflow below)                                               |
+| Design / UI from Figma (Swift)  | `figma-to-swiftui` -> `figma-design` -> `frontend-design` (invoke all three -- Swift/SwiftUI projects only) |
+| Design / UI from Figma (Web/RN) | `figma-design` -> `frontend-design` (invoke both -- web, React Native, websites, any non-Swift project)     |
+| Icons (Swift)                   | Always download from Figma via `figma-to-swiftui` -- never use placeholders unless explicitly told          |
+| Icons (Web/RN)                  | Always download from Figma via `figma-design` -- never use placeholders unless explicitly told              |
+| Completion                      | `superpowers:verification-before-completion` -> `superpowers:requesting-code-review`                        |
+| Multi-task                      | `superpowers:dispatching-parallel-agents`                                                                   |
 
 **MCP / Plugin priority:**
+
 1. Context7 -- SDK/API docs (always first)
 2. Swift LSP plugin -- type lookups, jump-to-definition, symbol search, diagnostics, code intelligence. Use proactively for any Swift/SwiftUI code to verify types, protocols, and API signatures instead of guessing.
 3. Official Figma MCP plugin (`claude.ai Figma`) -- design tokens, component specs, screenshots, variable definitions
@@ -129,6 +133,7 @@ Before any feature implementation:
 ---
 
 ## Architecture
+
 ```
 Jot/
 ├── App/              # JotApp, ContentView, AppDelegate, menu commands
@@ -145,6 +150,7 @@ Jot/
 Second asset catalog: `Jot/Assets.xcassets/` (icons, images, plus a few color tokens).
 
 **Patterns:**
+
 - State: `@StateObject` / `@EnvironmentObject` (NotesManager, ThemeManager)
 - Persistence: `SimpleSwiftDataManager`
 - `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` project-wide
@@ -160,11 +166,13 @@ Second asset catalog: `Jot/Assets.xcassets/` (icons, images, plus a few color to
 ## Liquid Glass (iOS 26+ / macOS 26+)
 
 Variants (from the `Glass` type):
+
 - `.regular` -- default for toolbars, buttons, navigation (adapts to any content)
 - `.clear` -- floating controls over media (photos, maps); needs bold foreground
 - `.identity` -- disables glass conditionally (cleaner than if/else branching)
 
 Modifiers (chain on any variant):
+
 - `.tint(color)` -- semantic coloring integrated into the glass material
 - `.interactive()` -- scaling, bounce, shimmer on press (interactive elements only)
 
@@ -173,6 +181,7 @@ Shapes: `Capsule()` (default), `RoundedRectangle(cornerRadius:)`, `Circle()`, `.
 Morphing: `.glassEffectID(id, in: namespace)` inside `GlassEffectContainer`
 
 Helpers (in `GlassEffects.swift`):
+
 - `liquidGlass(in:)` -- standard interactive glass
 - `tintedLiquidGlass(in:tint:)` -- glass with native `.tint()` color
 - `thinLiquidGlass(in:)` -- plain glass without interactivity
@@ -187,35 +196,42 @@ Rules: no glass-on-glass; floating elements only; coordinate morphing with `Glas
 ## SVG Icon Rules
 
 ### Asset Catalog -- Required Properties
+
 Every `.imageset/Contents.json` **must** include both flags in `properties`:
+
 ```json
 "properties": {
   "template-rendering-intent": "template",
   "preserves-vector-representation": true
 }
 ```
+
 Without `preserves-vector-representation`, Xcode rasterizes SVGs as 1x bitmaps at build time. On Retina displays those bitmaps scale up = blur. **Always verify this when adding new icon assets.**
 
 ### Stroke Weight -- Consistency Formula
+
 Target stroke ratio: `1/12` of viewBox size. Calculate: `stroke-width = viewBox_size / 12`.
 
 | Figma grid | Correct stroke-width |
-|------------|---------------------|
-| 10 x 10   | 0.833               |
-| 12 x 12   | 1.0                 |
-| 16 x 16   | 1.333               |
-| 24 x 24   | 2.0                 |
+| ---------- | -------------------- |
+| 10 x 10    | 0.833                |
+| 12 x 12    | 1.0                  |
+| 16 x 16    | 1.333                |
+| 24 x 24    | 2.0                  |
 
 Icons that deviate from this ratio will appear thinner or heavier than their siblings when scaled to the same SwiftUI frame. Fix the SVG source, not the frame size.
 
 ### SVG Rotation in SwiftUI
+
 Figma may export SVGs in the wrong orientation. To rotate (e.g., horizontal to vertical):
 `.frame(width: W, height: H).rotationEffect(.degrees(90)).frame(width: H, height: W)`
 
 ---
 
 ## Bug Workflow
+
 When a bug is reported, **do not attempt to fix it immediately.** Instead:
+
 1. Write a test that reproduces the bug (the test must fail).
 2. Dispatch subagents to fix the bug and prove the fix with the now-passing test.
 3. Only declare the bug fixed when the reproduction test passes.
@@ -223,6 +239,8 @@ When a bug is reported, **do not attempt to fix it immediately.** Instead:
 ---
 
 ## Code Rules
+
+- Research the codebase before editing. Never change code you haven't read.
 - No hardcoded colors, spacing, or radii -- use design tokens.
 - Check existing components before creating new ones.
 - Rich text: `AttributedString` + `.richTextCapabilities()`.
@@ -235,6 +253,8 @@ When a bug is reported, **do not attempt to fix it immediately.** Instead:
 ---
 
 ## CI / GitHub Actions
+
 Workflows live at `.github/workflows/` -- this is a GitHub requirement and cannot move.
+
 - `claude-code-review.yml` -- PR review bot
 - `claude.yml` -- responds to `@claude` mentions in issues/PRs

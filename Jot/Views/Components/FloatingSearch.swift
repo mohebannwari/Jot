@@ -314,7 +314,7 @@ struct FloatingSearch: View {
                     }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(folder.folderColor, in: Capsule())
+                    .background(folder.folderDisplayColor(for: colorScheme), in: Capsule())
                     .padding(.leading, 31)
                     .padding(.bottom, 8)
                 }
