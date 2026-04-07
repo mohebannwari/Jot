@@ -318,7 +318,8 @@ struct MeetingNotesFloatingPanel: View {
                             .foregroundColor(Color("SecondaryTextColor"))
                             .padding(.top, 4)
 
-                        ForEach(Array(result.keyPoints.enumerated()), id: \.offset) { _, point in
+                        ForEach(Array(result.keyPoints.enumerated()), id: \.offset) { index, point in
+                            let score = result.grounding?.keyPointScores[safe: index]
                             HStack(alignment: .top, spacing: 6) {
                                 Circle()
                                     .fill(Color("SecondaryTextColor").opacity(0.4))
@@ -328,6 +329,12 @@ struct MeetingNotesFloatingPanel: View {
                                     .font(FontManager.body(size: 13))
                                     .foregroundColor(Color("PrimaryTextColor"))
                                     .lineSpacing(2)
+                                if let score, score < 0.3 {
+                                    Text("low confidence")
+                                        .font(FontManager.metadata(size: 9, weight: .medium))
+                                        .foregroundColor(Color.orange.opacity(0.8))
+                                        .padding(.top, 2)
+                                }
                             }
                         }
                     }
@@ -338,16 +345,24 @@ struct MeetingNotesFloatingPanel: View {
                             .foregroundColor(Color("SecondaryTextColor"))
                             .padding(.top, 4)
 
-                        ForEach(Array(result.actionItems.enumerated()), id: \.offset) { _, item in
+                        ForEach(Array(result.actionItems.enumerated()), id: \.offset) { index, item in
+                            let score = result.grounding?.actionItemScores[safe: index]
                             HStack(alignment: .top, spacing: 6) {
                                 Image(systemName: "square")
                                     .font(.system(size: 11))
                                     .foregroundColor(Color("SecondaryTextColor"))
                                     .padding(.top, 2)
                                 VStack(alignment: .leading, spacing: 1) {
-                                    Text(item.description)
-                                        .font(FontManager.body(size: 13))
-                                        .foregroundColor(Color("PrimaryTextColor"))
+                                    HStack(spacing: 4) {
+                                        Text(item.description)
+                                            .font(FontManager.body(size: 13))
+                                            .foregroundColor(Color("PrimaryTextColor"))
+                                        if let score, score < 0.3 {
+                                            Text("low confidence")
+                                                .font(FontManager.metadata(size: 9, weight: .medium))
+                                                .foregroundColor(Color.orange.opacity(0.8))
+                                        }
+                                    }
                                     if item.assignee != "Unassigned" {
                                         Text(item.assignee)
                                             .font(FontManager.metadata(size: 11, weight: .medium))
@@ -364,7 +379,8 @@ struct MeetingNotesFloatingPanel: View {
                             .foregroundColor(Color("SecondaryTextColor"))
                             .padding(.top, 4)
 
-                        ForEach(Array(result.decisions.enumerated()), id: \.offset) { _, decision in
+                        ForEach(Array(result.decisions.enumerated()), id: \.offset) { index, decision in
+                            let score = result.grounding?.decisionScores[safe: index]
                             HStack(alignment: .top, spacing: 6) {
                                 Circle()
                                     .fill(Color("SecondaryTextColor").opacity(0.4))
@@ -374,6 +390,11 @@ struct MeetingNotesFloatingPanel: View {
                                     .font(FontManager.body(size: 13))
                                     .foregroundColor(Color("PrimaryTextColor"))
                                     .lineSpacing(2)
+                                if let score, score < 0.3 {
+                                    Text("low confidence")
+                                        .font(FontManager.metadata(size: 9, weight: .medium))
+                                        .foregroundColor(Color.orange.opacity(0.8))
+                                }
                             }
                         }
                     }
@@ -586,5 +607,13 @@ private struct MeetingPanelBackgroundModifier: ViewModifier {
                 .shadow(color: .black.opacity(0.08), radius: 8, y: 4)
                 .shadow(color: .black.opacity(0.04), radius: 24, y: 8)
         }
+    }
+}
+
+// MARK: - Safe Array Subscript
+
+private extension Array {
+    subscript(safe index: Int) -> Element? {
+        indices.contains(index) ? self[index] : nil
     }
 }

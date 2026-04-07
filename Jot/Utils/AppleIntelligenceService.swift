@@ -150,7 +150,9 @@ final class AppleIntelligenceService {
 
     // MARK: - Task Cancellation
 
-    private var currentAITask: Task<Void, Error>?
+    /// Tracks the current in-flight AI operation so a new request can cancel
+    /// any prior one. Each AI method wraps its work in a Task assigned here.
+    private var currentAITask: Task<Void, Never>?
 
     func cancelCurrentOperation() {
         currentAITask?.cancel()
@@ -301,35 +303,31 @@ final class AppleIntelligenceService {
 
     #if canImport(FoundationModels)
 
-    // MARK: - Session Cache
+    // MARK: - Input Length Limits
 
-    private var sessionCache: [String: Any] = [:]
+    /// Maximum input characters for summarize/keyPoints before truncation.
+    /// ~750 tokens at ~4 chars/token, leaving room for instructions + output
+    /// in the on-device model's 4K token context window.
+    private static let maxInputChars: Int = 3000
 
-    @available(macOS 26.0, *)
-    private func cachedSession(instructions: String) -> LanguageModelSession {
-        if let existing = sessionCache[instructions] as? LanguageModelSession {
-            return existing
-        }
-        let session = LanguageModelSession(instructions: instructions)
-        sessionCache[instructions] = session
-        return session
-    }
-
-    func clearSessionCache() {
-        guard #available(macOS 26.0, *) else { return }
-        sessionCache.removeAll()
+    /// Truncate text to maxInputChars, appending a disclaimer if truncated.
+    private static func truncateForModel(_ text: String) -> String {
+        guard text.count > maxInputChars else { return text }
+        let truncated = String(text.prefix(maxInputChars))
+        return truncated + "\n\n[Note: The text above was truncated. The full note is longer than what could be processed.]"
     }
 
     func summarize(text: String) async throws -> String {
         guard #available(macOS 26.0, *) else {
             throw AIServiceError.unavailable(unavailabilityReason)
         }
-        currentAITask?.cancel()
-        let session = cachedSession(
+        cancelCurrentOperation()
+        let inputText = Self.truncateForModel(text)
+        let session = LanguageModelSession(
             instructions: "You are a precise writing assistant. Summarize the user's note concisely and accurately. Only include information explicitly stated in the note. Do not add, infer, or embellish any details not present in the source text."
         )
         let response = try await session.respond(
-            to: "Summarize only what is explicitly written in this note:\n\n\(text)",
+            to: "Summarize only what is explicitly written in this note:\n\n\(inputText)",
             generating: SummaryResult.self
         )
         try Task.checkCancellation()
@@ -340,12 +338,13 @@ final class AppleIntelligenceService {
         guard #available(macOS 26.0, *) else {
             throw AIServiceError.unavailable(unavailabilityReason)
         }
-        currentAITask?.cancel()
-        let session = cachedSession(
+        cancelCurrentOperation()
+        let inputText = Self.truncateForModel(text)
+        let session = LanguageModelSession(
             instructions: "You are a precise writing assistant. Identify the 3-5 main themes or takeaways from the user's note. Consolidate related sub-points into single high-level key points. Do not list every individual line — synthesize related items together. Do not add topics not covered in the note."
         )
         let response = try await session.respond(
-            to: "Identify the main themes of this note. Consolidate related items into 3-5 high-level key points:\n\n\(text)",
+            to: "Identify the main themes of this note. Consolidate related items into 3-5 high-level key points:\n\n\(inputText)",
             generating: KeyPointsResult.self
         )
         try Task.checkCancellation()
@@ -356,8 +355,8 @@ final class AppleIntelligenceService {
         guard #available(macOS 26.0, *) else {
             throw AIServiceError.unavailable(unavailabilityReason)
         }
-        currentAITask?.cancel()
-        let session = cachedSession(
+        cancelCurrentOperation()
+        let session = LanguageModelSession(
             instructions: "You are a meticulous editor. Identify only genuine grammar, spelling, and clarity errors in the provided text. Every 'original' field must be an EXACT character-for-character substring found in the input text. Do not fabricate errors that do not exist. Do not suggest stylistic rewrites. Return an empty array if the text is error-free."
         )
         let response = try await session.respond(
@@ -374,7 +373,7 @@ final class AppleIntelligenceService {
         guard #available(macOS 26.0, *) else {
             throw AIServiceError.unavailable(unavailabilityReason)
         }
-        currentAITask?.cancel()
+        cancelCurrentOperation()
         let systemPrompt: String
         let userPrompt: String
         if isSelection {
@@ -388,7 +387,7 @@ final class AppleIntelligenceService {
             systemPrompt = "You are a skilled writing assistant. Apply the user's editing instruction precisely while preserving the note's overall structure and voice."
             userPrompt = "Apply this instruction to the note: \(instruction)\n\nNote:\n\(text)"
         }
-        let session = cachedSession(instructions: systemPrompt)
+        let session = LanguageModelSession(instructions: systemPrompt)
         let response = try await session.respond(
             to: userPrompt,
             generating: EditResult.self
@@ -401,7 +400,7 @@ final class AppleIntelligenceService {
         guard #available(macOS 26.0, *) else {
             throw AIServiceError.unavailable(unavailabilityReason)
         }
-        currentAITask?.cancel()
+        cancelCurrentOperation()
         let systemPrompt: String
         let userPrompt: String
         if isSelection {
@@ -415,7 +414,7 @@ final class AppleIntelligenceService {
             systemPrompt = "You are a precise translator. Translate the user's text into the requested language accurately while preserving tone, meaning, and formatting."
             userPrompt = "Translate this text into \(language):\n\n\(text)"
         }
-        let session = cachedSession(instructions: systemPrompt)
+        let session = LanguageModelSession(instructions: systemPrompt)
         let response = try await session.respond(
             to: userPrompt,
             generating: TranslationResult.self
@@ -428,7 +427,7 @@ final class AppleIntelligenceService {
         guard #available(macOS 26.0, *) else {
             throw AIServiceError.unavailable(unavailabilityReason)
         }
-        currentAITask?.cancel()
+        cancelCurrentOperation()
 
         // First attempt: expansion framing (the on-device model handles
         // "expand this idea" far better than "generate text about X")
@@ -463,7 +462,7 @@ final class AppleIntelligenceService {
         guard #available(macOS 26.0, *) else {
             throw AIServiceError.unavailable(unavailabilityReason)
         }
-        let session = cachedSession(instructions: instruction)
+        let session = LanguageModelSession(instructions: instruction)
         let response = try await session.respond(to: prompt, generating: TextGenerationResult.self)
         try Task.checkCancellation()
         return response.content.generatedText
@@ -474,8 +473,16 @@ final class AppleIntelligenceService {
         let normIn = input.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         let normOut = output.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         if normOut == normIn { return true }
-        if normOut.hasPrefix(normIn) && normOut.count < normIn.count * 2 { return true }
-        if normIn.count > 20 && normOut.contains(normIn) && normOut.count < normIn.count * 2 { return true }
+        // Prefix echo: output starts with input but has less than 50 chars of new content
+        if normOut.hasPrefix(normIn) {
+            let newContent = normOut.count - normIn.count
+            if newContent < 50 { return true }
+        }
+        // Contained echo: input appears verbatim and output is barely longer
+        if normIn.count > 20 && normOut.contains(normIn) {
+            let newContent = normOut.count - normIn.count
+            if newContent < 50 { return true }
+        }
         return false
     }
     #else

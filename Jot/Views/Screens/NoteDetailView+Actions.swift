@@ -42,7 +42,9 @@ extension NoteDetailView {
                 let rawAnnotations = try await AppleIntelligenceService.shared.proofread(text: textToProofread)
                 let nsContent = content as NSString  // filter against full document for overlay positioning
                 let annotations = rawAnnotations.filter {
-                    nsContent.range(of: $0.original, options: .literal).location != NSNotFound
+                    // Use case-insensitive matching to tolerate minor casing differences
+                    // from the model while still requiring the substring to exist in the doc
+                    nsContent.range(of: $0.original, options: [.literal, .caseInsensitive]).location != NSNotFound
                 }
                 currentProofreadIndex = 0
                 withAnimation(.jotSpring) { aiPanelState = .proofread(annotations) }
@@ -73,9 +75,15 @@ extension NoteDetailView {
 
     @MainActor
     func handleAIEdit(instruction: String) async {
-        let sourceText = capturedSelectionText.isEmpty
-            ? AppleIntelligenceService.stripMarkupForAI(editedContent)
-            : capturedSelectionText
+        // Require a text selection — full-document edit replaces all content
+        // with plain text, destroying rich text formatting (bold, links, etc.)
+        guard !capturedSelectionText.isEmpty else {
+            withAnimation(.jotSpring) {
+                aiPanelState = .error("Select some text first, then use Edit Content.")
+            }
+            return
+        }
+        let sourceText = capturedSelectionText
         guard !sourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
 
         withAnimation(.jotSpring) {
@@ -84,7 +92,7 @@ extension NoteDetailView {
             aiIsProcessing = true
         }
 
-        let hasSelection = !capturedSelectionText.isEmpty
+        let hasSelection = true
         do {
             let revised = try await AppleIntelligenceService.shared.editContent(
                 text: sourceText, instruction: instruction, isSelection: hasSelection)
@@ -296,6 +304,7 @@ extension NoteDetailView {
     }
 
     func dismissTextGeneration() {
+        aiCaptureIsCardOrigin = false
         withAnimation(.jotSpring) {
             showTextGenPanel = false
             aiPanelState = .none
@@ -580,6 +589,9 @@ extension NoteDetailView {
         Task {
             // Stop audio and transcription
             let audioURL = await meetingAudioRecorder.stop()
+            // Capture duration immediately after stop — the recorder resets it to 0 on .idle
+            let recordedDuration = meetingAudioRecorder.duration
+            meetingRecordedDuration = recordedDuration
             await meetingTranscriptionService.stopTranscription()
 
             withAnimation(.jotSpring) {
@@ -633,7 +645,7 @@ extension NoteDetailView {
                 )
             ),
             transcript: meetingTranscriptionService.serializedTranscript(),
-            duration: meetingAudioRecorder.duration,
+            duration: meetingRecordedDuration,
             language: meetingTranscriptionService.detectedLanguage,
             manualNotes: meetingManualNotes
         )
@@ -665,7 +677,10 @@ extension NoteDetailView {
 
     @MainActor
     func dismissMeetingPanel() {
-        // If still recording, stop first
+        // Nil the buffer callback first to prevent audio thread from invoking it during teardown
+        meetingAudioRecorder.onBufferAvailable = nil
+
+        // If still recording, stop first — awaited to ensure clean teardown
         if meetingRecordingState == .recording || meetingRecordingState == .paused {
             Task {
                 let audioURL = await meetingAudioRecorder.stop()
@@ -673,16 +688,15 @@ extension NoteDetailView {
                 if let url = audioURL {
                     AudioRecorder.cleanupMeetingAudio(at: url)
                 }
+                meetingAudioRecorder.setMeetingMode(false)
             }
+        } else {
+            meetingAudioRecorder.setMeetingMode(false)
         }
 
         withAnimation(.jotSpring) {
             showMeetingPanel = false
             meetingRecordingState = .idle
         }
-
-        // Cleanup
-        meetingAudioRecorder.onBufferAvailable = nil
-        meetingAudioRecorder.setMeetingMode(false)
     }
 }

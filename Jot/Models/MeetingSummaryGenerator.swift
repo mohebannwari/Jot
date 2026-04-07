@@ -58,6 +58,7 @@ final class MeetingSummaryGenerator {
         // Step 1: Summarize each chunk
         var chunkSummaries: [ChunkSummaryText] = []
         for (index, chunk) in chunks.enumerated() {
+            try Task.checkCancellation()
             let summary = try await summarizeChunk(chunk, index: index + 1, total: chunks.count)
             chunkSummaries.append(summary)
         }
@@ -66,6 +67,7 @@ final class MeetingSummaryGenerator {
         let merged = mergeChunkSummaries(chunkSummaries)
 
         // Step 3: Final summarization pass with merged content, transcript excerpt for grounding, + manual notes
+        try Task.checkCancellation()
         var finalResult = try await generateFinalSummary(
             mergedContent: merged,
             rawTranscript: transcript,
@@ -234,7 +236,9 @@ extension MeetingSummaryGenerator {
         // Build the prompt with clearly separated sections.
         // Include a raw transcript excerpt so the model can cross-check against actual spoken words.
         let instructionOverhead = 1500 // chars reserved for system instruction + schema
-        let maxPromptChars = Self.chunkSizeChars * Self.charsPerToken // ~12,000 chars usable
+        // Budget in characters: chunkSizeChars (~3000) leaves room for
+        // instructions + output in the 4K-token context window.
+        let maxPromptChars = Self.chunkSizeChars
         let notesText = manualNotes.trimmingCharacters(in: .whitespacesAndNewlines)
         let excerptBudget = max(0, maxPromptChars - mergedContent.count - notesText.count - instructionOverhead)
 

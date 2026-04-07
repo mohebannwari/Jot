@@ -106,6 +106,8 @@ struct NoteDetailView: View {
     @StateObject var meetingTranscriptionService = MeetingTranscriptionService()
     @StateObject var meetingAudioRecorder = AudioRecorder(barCount: 28)
     @State var meetingSummaryGenerator = MeetingSummaryGenerator()
+    /// Duration captured immediately after stop() — the recorder resets to 0 on .idle
+    @State var meetingRecordedDuration: TimeInterval = 0
 
     // Persisted meeting data (loaded from note, updated on save)
     @State var savedIsMeetingNote: Bool = false
@@ -607,9 +609,18 @@ struct NoteDetailView: View {
             } else {
                 aiStateCache[oldNoteID] = aiPanelState == .none ? nil : aiPanelState
             }
+            // Evict oldest entries if cache exceeds 10 to prevent unbounded growth
+            if aiStateCache.count > 10 {
+                let excess = aiStateCache.count - 10
+                let keysToRemove = Array(aiStateCache.keys.prefix(excess))
+                for key in keysToRemove {
+                    aiStateCache.removeValue(forKey: key)
+                }
+            }
 
             // Tear down transient overlays
             aiIsProcessing = false
+            aiCaptureIsCardOrigin = false
             showEditContentPanel = false
             showTranslatePanel = false
             showTextGenPanel = false
@@ -834,6 +845,7 @@ struct NoteDetailView: View {
                             state: aiPanelState,
                             onReplace: { applyEditContentReplacement() },
                             onDismiss: {
+                                aiCaptureIsCardOrigin = false
                                 withAnimation(.jotSpring) {
                                     showEditContentPanel = false
                                     aiPanelState = .none
@@ -869,6 +881,7 @@ struct NoteDetailView: View {
                             onReplace: { applyTranslateReplacement() },
                             onCopy: { copyTranslation() },
                             onDismiss: {
+                                aiCaptureIsCardOrigin = false
                                 withAnimation(.jotSpring) {
                                     showTranslatePanel = false
                                     aiPanelState = .none

@@ -59,8 +59,9 @@ final class MeetingTranscriptionService: ObservableObject {
     /// Feed an audio buffer from AudioRecorder's tap.
     /// Called from the audio processing thread -- dispatches to MainActor
     /// since bufferContinuation and recognitionRequest are actor-isolated.
+    /// Uses Task { @MainActor } for Swift 6 strict concurrency compatibility.
     nonisolated func feedBuffer(_ buffer: AVAudioPCMBuffer) {
-        DispatchQueue.main.async { [weak self] in
+        Task { @MainActor [weak self] in
             guard let self else { return }
             self.bufferContinuation?.yield(buffer)
             if self.isRestarting {

@@ -127,9 +127,11 @@ extension Array where Element == TranscriptSegment {
     }
 
     /// Deserialize transcript segments from stored string.
+    /// Uses a deterministic UUID based on line index + timestamp so that
+    /// SwiftUI ForEach identity is stable across deserialization cycles.
     static func deserialized(from string: String) -> [TranscriptSegment] {
         guard !string.isEmpty else { return [] }
-        return string.components(separatedBy: "\n").compactMap { line in
+        return string.components(separatedBy: "\n").enumerated().compactMap { index, line in
             let parts = line.split(separator: "|", maxSplits: 1)
             guard parts.count == 2,
                   let timestamp = TimeInterval(parts[0])
@@ -137,7 +139,11 @@ extension Array where Element == TranscriptSegment {
             let unescapedText = String(parts[1])
                 .replacingOccurrences(of: "\\n", with: "\n")
                 .replacingOccurrences(of: "\\\\", with: "\\")
+            // Deterministic ID from index + timestamp for stable ForEach identity
+            let idBytes = "\(index)-\(parts[0])".utf8
+            let stableID = UUID(fromStableHash: idBytes)
             return TranscriptSegment(
+                id: stableID,
                 text: unescapedText,
                 timestamp: timestamp,
                 isFinal: true
@@ -149,5 +155,29 @@ extension Array where Element == TranscriptSegment {
     func plainText() -> String {
         map(\.text)
             .joined(separator: " ")
+    }
+}
+
+// MARK: - Deterministic UUID
+
+extension UUID {
+    /// Creates a deterministic UUID from a UTF-8 byte sequence using a simple hash.
+    /// Used for stable ForEach identity when deserializing transcript segments.
+    init<C: Collection>(fromStableHash bytes: C) where C.Element == UInt8 {
+        var hash: [UInt8] = Array(repeating: 0, count: 16)
+        for (i, byte) in bytes.enumerated() {
+            hash[i % 16] ^= byte
+            // Mix bits
+            hash[i % 16] = hash[i % 16] &+ (byte &* 31)
+        }
+        // Set version 4 (random) and variant bits for RFC 4122 compliance
+        hash[6] = (hash[6] & 0x0F) | 0x40  // version 4
+        hash[8] = (hash[8] & 0x3F) | 0x80  // variant 1
+        self = UUID(uuid: (
+            hash[0], hash[1], hash[2], hash[3],
+            hash[4], hash[5], hash[6], hash[7],
+            hash[8], hash[9], hash[10], hash[11],
+            hash[12], hash[13], hash[14], hash[15]
+        ))
     }
 }
