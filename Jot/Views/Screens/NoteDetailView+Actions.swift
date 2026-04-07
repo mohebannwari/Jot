@@ -593,19 +593,21 @@ extension NoteDetailView {
     func stopMeetingRecording() {
         guard meetingRecordingState == .recording || meetingRecordingState == .paused else { return }
 
+        // Transition immediately — gives instant visual feedback and prevents
+        // double-tap re-entry (guard above rejects non-.recording/.paused states).
+        withAnimation(.jotSpring) {
+            meetingRecordingState = .processing
+            meetingSelectedTab = .summary
+            isMeetingSummaryLoading = true
+        }
+
         Task {
-            // Stop audio and transcription
+            // Stop audio and transcription (stopTranscription waits up to 3s
+            // for SFSpeechRecognizer's final result — UI is already in .processing)
             let audioURL = await meetingAudioRecorder.stop()
-            // Capture duration immediately after stop — the recorder resets it to 0 on .idle
             let recordedDuration = meetingAudioRecorder.duration
             meetingRecordedDuration = recordedDuration
             await meetingTranscriptionService.stopTranscription()
-
-            withAnimation(.jotSpring) {
-                meetingRecordingState = .processing
-                meetingSelectedTab = .summary
-                isMeetingSummaryLoading = true
-            }
 
             // Generate summary
             do {
