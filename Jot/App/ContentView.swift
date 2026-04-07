@@ -164,7 +164,7 @@ private struct FloatingSidebarBackgroundModifier: ViewModifier {
             content
                 .glassEffect(
                     .regular.interactive(true)
-                        .tint(Color("DetailPaneSurfaceColor").opacity(0.80)),
+                        .tint(Color("DetailPaneSurfaceColor").opacity(0.90)),
                     in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 )
                 .shadow(color: .black.opacity(0.04), radius: 9.5, x: 0, y: 9)
@@ -736,7 +736,7 @@ struct ContentView: View {
                     .tintedLiquidGlass(
                         in: Rectangle(),
                         tint: Color("DetailPaneSurfaceColor"),
-                        tintOpacity: 0.80
+                        tintOpacity: 0.90
                     )
             } else {
                 ZStack {
