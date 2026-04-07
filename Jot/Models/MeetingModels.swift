@@ -61,13 +61,23 @@ enum MeetingTab: String, CaseIterable, Identifiable {
 /// A single meeting recording session attached to a note.
 /// Multiple sessions accumulate when the user records additional meetings on the same note.
 struct MeetingSession: Identifiable, Codable, Equatable {
-    let id: UUID = UUID()
-    var date: Date = Date()
-    var summary: String = ""
-    var transcript: String = ""
-    var duration: TimeInterval = 0
-    var language: String = ""
-    var manualNotes: String = ""
+    let id: UUID
+    var date: Date
+    var summary: String
+    var transcript: String
+    var duration: TimeInterval
+    var language: String
+    var manualNotes: String
+
+    init(id: UUID = UUID(), date: Date = Date(), summary: String = "", transcript: String = "", duration: TimeInterval = 0, language: String = "", manualNotes: String = "") {
+        self.id = id
+        self.date = date
+        self.summary = summary
+        self.transcript = transcript
+        self.duration = duration
+        self.language = language
+        self.manualNotes = manualNotes
+    }
 }
 
 // MARK: - Generable Types for FoundationModels
