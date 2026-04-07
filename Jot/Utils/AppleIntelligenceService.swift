@@ -148,16 +148,10 @@ final class AppleIntelligenceService {
 
     private init() {}
 
-    // MARK: - Task Cancellation
-
-    /// Tracks the current in-flight AI operation so a new request can cancel
-    /// any prior one. Each AI method wraps its work in a Task assigned here.
-    private var currentAITask: Task<Void, Never>?
-
-    func cancelCurrentOperation() {
-        currentAITask?.cancel()
-        currentAITask = nil
-    }
+    // NOTE: Task cancellation is managed by the calling view (NoteDetailView),
+    // not by this singleton service. The view stores the Task handle and cancels
+    // it on note switch. Service methods respect cooperative cancellation via
+    // Task.checkCancellation() before expensive operations.
 
     var isAvailable: Bool {
         #if canImport(FoundationModels)
@@ -321,11 +315,11 @@ final class AppleIntelligenceService {
         guard #available(macOS 26.0, *) else {
             throw AIServiceError.unavailable(unavailabilityReason)
         }
-        cancelCurrentOperation()
         let inputText = Self.truncateForModel(text)
         let session = LanguageModelSession(
             instructions: "You are a precise writing assistant. Summarize the user's note concisely and accurately. Only include information explicitly stated in the note. Do not add, infer, or embellish any details not present in the source text."
         )
+        try Task.checkCancellation()
         let response = try await session.respond(
             to: "Summarize only what is explicitly written in this note:\n\n\(inputText)",
             generating: SummaryResult.self
@@ -338,11 +332,11 @@ final class AppleIntelligenceService {
         guard #available(macOS 26.0, *) else {
             throw AIServiceError.unavailable(unavailabilityReason)
         }
-        cancelCurrentOperation()
         let inputText = Self.truncateForModel(text)
         let session = LanguageModelSession(
             instructions: "You are a precise writing assistant. Identify the 3-5 main themes or takeaways from the user's note. Consolidate related sub-points into single high-level key points. Do not list every individual line — synthesize related items together. Do not add topics not covered in the note."
         )
+        try Task.checkCancellation()
         let response = try await session.respond(
             to: "Identify the main themes of this note. Consolidate related items into 3-5 high-level key points:\n\n\(inputText)",
             generating: KeyPointsResult.self
@@ -355,12 +349,13 @@ final class AppleIntelligenceService {
         guard #available(macOS 26.0, *) else {
             throw AIServiceError.unavailable(unavailabilityReason)
         }
-        cancelCurrentOperation()
+        let inputText = Self.truncateForModel(text)
         let session = LanguageModelSession(
             instructions: "You are a meticulous editor. Identify only genuine grammar, spelling, and clarity errors in the provided text. Every 'original' field must be an EXACT character-for-character substring found in the input text. Do not fabricate errors that do not exist. Do not suggest stylistic rewrites. Return an empty array if the text is error-free."
         )
+        try Task.checkCancellation()
         let response = try await session.respond(
-            to: "Review this text and identify ONLY real errors. Each 'original' value must appear verbatim in the text below:\n\n\(text)",
+            to: "Review this text and identify ONLY real errors. Each 'original' value must appear verbatim in the text below:\n\n\(inputText)",
             generating: ProofreadAnnotationsResult.self
         )
         try Task.checkCancellation()
@@ -373,7 +368,6 @@ final class AppleIntelligenceService {
         guard #available(macOS 26.0, *) else {
             throw AIServiceError.unavailable(unavailabilityReason)
         }
-        cancelCurrentOperation()
         let systemPrompt: String
         let userPrompt: String
         if isSelection {
@@ -388,6 +382,7 @@ final class AppleIntelligenceService {
             userPrompt = "Apply this instruction to the note: \(instruction)\n\nNote:\n\(text)"
         }
         let session = LanguageModelSession(instructions: systemPrompt)
+        try Task.checkCancellation()
         let response = try await session.respond(
             to: userPrompt,
             generating: EditResult.self
@@ -400,7 +395,6 @@ final class AppleIntelligenceService {
         guard #available(macOS 26.0, *) else {
             throw AIServiceError.unavailable(unavailabilityReason)
         }
-        cancelCurrentOperation()
         let systemPrompt: String
         let userPrompt: String
         if isSelection {
@@ -415,6 +409,7 @@ final class AppleIntelligenceService {
             userPrompt = "Translate this text into \(language):\n\n\(text)"
         }
         let session = LanguageModelSession(instructions: systemPrompt)
+        try Task.checkCancellation()
         let response = try await session.respond(
             to: userPrompt,
             generating: TranslationResult.self
@@ -427,8 +422,6 @@ final class AppleIntelligenceService {
         guard #available(macOS 26.0, *) else {
             throw AIServiceError.unavailable(unavailabilityReason)
         }
-        cancelCurrentOperation()
-
         // First attempt: expansion framing (the on-device model handles
         // "expand this idea" far better than "generate text about X")
         let result = try await attemptTextGeneration(
@@ -463,6 +456,7 @@ final class AppleIntelligenceService {
             throw AIServiceError.unavailable(unavailabilityReason)
         }
         let session = LanguageModelSession(instructions: instruction)
+        try Task.checkCancellation()
         let response = try await session.respond(to: prompt, generating: TextGenerationResult.self)
         try Task.checkCancellation()
         return response.content.generatedText

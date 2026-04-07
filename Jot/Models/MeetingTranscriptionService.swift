@@ -47,6 +47,7 @@ final class MeetingTranscriptionService: ObservableObject {
         lastPartialText = ""
         detectedLanguage = Locale.current.language.languageCode?.identifier ?? "en"
         recordingStartDate = Date()
+        pendingBuffers = []
         isTranscribing = true
 
         // v1: Use SFSpeechRecognizer for reliable transcription on all macOS versions.

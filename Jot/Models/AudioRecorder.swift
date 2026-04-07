@@ -77,15 +77,40 @@ public final class AudioRecorder: NSObject, ObservableObject, AudioRecorderServi
     private var targetSampleRate: Double
     private var outputFormat: AVAudioFormat?
 
+    /// Published when the audio engine stops unexpectedly (mic disconnect, sleep, etc.)
+    @Published public private(set) var engineInterrupted: Bool = false
+
     public init(barCount: Int = 28) {
         self.barCount = barCount
         self.targetSampleRate = defaultSampleRate
         self.levels = Array(repeating: 0, count: barCount)
         super.init()
+
+        // Observe audio engine configuration changes (mic disconnect, sleep wake, etc.)
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleEngineConfigChange),
+            name: .AVAudioEngineConfigurationChange,
+            object: engine
+        )
     }
 
     deinit {
+        NotificationCenter.default.removeObserver(self)
         cleanup()
+    }
+
+    @objc private func handleEngineConfigChange(_ notification: Notification) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.state == .recording || self.state == .paused else { return }
+            self.engineInterrupted = true
+            self.stopDurationUpdates()
+            self.decayTimer?.cancel()
+            self.decayTimer = nil
+            self.resetLevels()
+            // Mark as idle — the UI observes engineInterrupted to show an error
+            self.state = .idle
+        }
     }
 
     @MainActor
@@ -192,15 +217,9 @@ public final class AudioRecorder: NSObject, ObservableObject, AudioRecorderServi
         state = .idle
         resetLevels()
 
-        // Verify the file exists and has content
-        if let url = url {
-            if FileManager.default.fileExists(atPath: url.path) {
-                let attributes = try? FileManager.default.attributesOfItem(atPath: url.path)
-                let fileSize = attributes?[.size] as? Int64 ?? 0
-                NSLog("AudioRecorder.stop: Recording saved - size: %lld bytes", fileSize)
-            } else {
-                NSLog("AudioRecorder.stop: Warning - file does not exist at path: %@", url.path)
-            }
+        // Verify the file exists (no logging — diagnostics via debugger only)
+        if let url = url, !FileManager.default.fileExists(atPath: url.path) {
+            return nil
         }
 
         return url

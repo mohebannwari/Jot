@@ -295,16 +295,24 @@ extension MeetingSummaryGenerator {
         guard transcript.count > budgetChars else { return transcript }
 
         let thirdBudget = budgetChars / 3
-        let startEnd = transcript.prefix(thirdBudget)
+        let halfLen = transcript.count / 2
 
-        let midStart = transcript.index(transcript.startIndex, offsetBy: max(0, transcript.count / 2 - thirdBudget / 2))
-        let midEnd = transcript.index(midStart, offsetBy: min(thirdBudget, transcript.distance(from: midStart, to: transcript.endIndex)))
-        let middle = transcript[midStart..<midEnd]
+        // Clamp slices to non-overlapping regions
+        let startSlice = transcript.prefix(min(thirdBudget, halfLen))
 
-        let tailStart = transcript.index(transcript.endIndex, offsetBy: -min(thirdBudget, transcript.count))
-        let end = transcript[tailStart...]
+        let midCenter = halfLen
+        let midHalf = thirdBudget / 2
+        let midLo = max(thirdBudget, midCenter - midHalf)
+        let midHi = min(transcript.count - thirdBudget, midCenter + midHalf)
+        let midStart = transcript.index(transcript.startIndex, offsetBy: midLo)
+        let midEnd = transcript.index(transcript.startIndex, offsetBy: min(midHi, transcript.count))
+        let middleSlice = transcript[midStart..<midEnd]
 
-        return "\(startEnd)\n[...]\n\(middle)\n[...]\n\(end)"
+        let tailOffset = max(transcript.count - thirdBudget, midHi)
+        let tailStart = transcript.index(transcript.startIndex, offsetBy: tailOffset)
+        let endSlice = transcript[tailStart...]
+
+        return "\(startSlice)\n[...]\n\(middleSlice)\n[...]\n\(endSlice)"
     }
 }
 #endif

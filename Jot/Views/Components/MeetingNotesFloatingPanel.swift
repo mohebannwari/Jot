@@ -253,6 +253,16 @@ struct MeetingNotesFloatingPanel: View {
                 .font(FontManager.metadata(size: 12, weight: .medium))
                 .foregroundColor(Color("PrimaryTextColor"))
                 .monospacedDigit()
+
+            Button(action: { showDismissConfirmation = true }) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(Color("SecondaryTextColor"))
+                    .frame(width: 22, height: 22)
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .macPointingHandCursor()
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)

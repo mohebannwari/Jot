@@ -479,7 +479,7 @@ final class SimpleSwiftDataManager: ObservableObject {
             // Meeting notes
             noteEntity.isMeetingNote = updatedNote.isMeetingNote
             if !updatedNote.meetingSessions.isEmpty {
-                noteEntity.meetingSessionsData = try? Self.encoder.encode(updatedNote.meetingSessions)
+                noteEntity.meetingSessionsData = (try? Self.encoder.encode(updatedNote.meetingSessions)) ?? noteEntity.meetingSessionsData
                 noteEntity.meetingTranscript = ""
                 noteEntity.meetingSummary = ""
                 noteEntity.meetingDuration = 0

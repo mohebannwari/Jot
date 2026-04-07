@@ -143,6 +143,11 @@ private struct SessionAccordion: View {
     @State private var selectedTab: MeetingTab = .summary
     @Environment(\.colorScheme) private var colorScheme
 
+    /// Deserialized once at init — avoids re-parsing on every body evaluation.
+    private let cachedSegments: [TranscriptSegment]
+    /// Summary lines split once — avoids re-splitting on every body evaluation.
+    private let cachedSummaryLines: [(offset: Int, element: String)]
+
     private static let maxContentHeight: CGFloat = 300
 
     init(session: MeetingSession, defaultExpanded: Bool = false, onNotesChanged: ((String) -> Void)? = nil, onSummaryChanged: ((String) -> Void)? = nil) {
@@ -150,6 +155,12 @@ private struct SessionAccordion: View {
         self.onNotesChanged = onNotesChanged
         self.onSummaryChanged = onSummaryChanged
         self._isExpanded = State(initialValue: defaultExpanded)
+        self.cachedSegments = [TranscriptSegment].deserialized(from: session.transcript)
+        self.cachedSummaryLines = Array(
+            session.summary.components(separatedBy: "\n")
+                .filter { !$0.isEmpty }
+                .enumerated()
+        )
     }
 
     var body: some View {
@@ -269,8 +280,7 @@ private struct SessionAccordion: View {
 
     private var summaryContent: some View {
         VStack(alignment: .leading, spacing: 8) {
-            let lines = session.summary.components(separatedBy: "\n").filter { !$0.isEmpty }
-            ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
+            ForEach(cachedSummaryLines, id: \.offset) { index, line in
                 meetingSummaryLine(line, at: index)
             }
         }
@@ -355,15 +365,13 @@ private struct SessionAccordion: View {
     // MARK: - Transcript Tab
 
     private var transcriptContent: some View {
-        let segments = [TranscriptSegment].deserialized(from: session.transcript)
-
-        return VStack(alignment: .leading, spacing: 6) {
-            if segments.isEmpty {
+        VStack(alignment: .leading, spacing: 6) {
+            if cachedSegments.isEmpty {
                 Text("No transcript available.")
                     .font(FontManager.body(size: 14))
                     .foregroundColor(Color("TertiaryTextColor"))
             } else {
-                ForEach(segments) { segment in
+                ForEach(cachedSegments) { segment in
                     HStack(alignment: .top, spacing: 8) {
                         Text(formatTimestamp(segment.timestamp))
                             .font(FontManager.metadata(size: 10, weight: .medium))
@@ -466,6 +474,12 @@ private struct NotesEditor: View {
             }
             .onChange(of: editableText) { _, newValue in
                 onChanged?(newValue)
+            }
+            // Resync from parent when the source text changes (e.g. undo, note switch)
+            .onChange(of: text) { _, newValue in
+                if newValue != editableText {
+                    editableText = newValue
+                }
             }
     }
 

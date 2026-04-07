@@ -61,7 +61,7 @@ enum MeetingTab: String, CaseIterable, Identifiable {
 /// A single meeting recording session attached to a note.
 /// Multiple sessions accumulate when the user records additional meetings on the same note.
 struct MeetingSession: Identifiable, Codable, Equatable {
-    var id: UUID = UUID()
+    let id: UUID = UUID()
     var date: Date = Date()
     var summary: String = ""
     var transcript: String = ""

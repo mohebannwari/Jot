@@ -129,10 +129,10 @@ final class NoteEntity {
             self.stickersData = try? JSONEncoder().encode(note.stickers)
         }
 
-        // Meeting notes
+        // Meeting notes — encoding failure must not silently erase sessions
         self.isMeetingNote = note.isMeetingNote
         if !note.meetingSessions.isEmpty {
-            self.meetingSessionsData = try? JSONEncoder().encode(note.meetingSessions)
+            self.meetingSessionsData = (try? JSONEncoder().encode(note.meetingSessions)) ?? self.meetingSessionsData
             self.meetingTranscript = ""
             self.meetingSummary = ""
             self.meetingDuration = 0
@@ -206,7 +206,7 @@ final class NoteEntity {
         if let data = meetingSessionsData,
            let sessions = try? Self.decoder.decode([MeetingSession].self, from: data) {
             note.meetingSessions = sessions
-        } else if isMeetingNote && !meetingSummary.isEmpty {
+        } else if isMeetingNote && (!meetingSummary.isEmpty || !meetingTranscript.isEmpty || meetingDuration > 0) {
             // Legacy migration: synthesize a single session from flat fields
             note.meetingSessions = [MeetingSession(
                 date: modifiedAt,

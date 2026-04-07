@@ -181,7 +181,8 @@ extension NoteDetailView {
     /// Re-runs the same instruction from an editPreview state.
     func redoEditContent() {
         guard case .editPreview(_, _, _, let instruction) = aiPanelState else { return }
-        Task { await handleAIEdit(instruction: instruction) }
+        currentAITask?.cancel()
+        currentAITask = Task { await handleAIEdit(instruction: instruction) }
     }
 
     // MARK: - Translation
@@ -255,7 +256,8 @@ extension NoteDetailView {
 
     func retranslate() {
         guard case .translatePreview(_, _, _, let language) = aiPanelState else { return }
-        Task { await handleAITranslate(language: language) }
+        currentAITask?.cancel()
+        currentAITask = Task { await handleAITranslate(language: language) }
     }
 
     // MARK: - Text Generation
@@ -320,6 +322,11 @@ extension NoteDetailView {
                 object: transcript,
                 userInfo: ["editorInstanceID": editorInstanceID]
             )
+        } else {
+            // Surface feedback when transcription returns nothing
+            withAnimation(.jotSpring) {
+                aiPanelState = .error("No speech detected. Try speaking closer to the microphone.")
+            }
         }
 
         try? FileManager.default.removeItem(at: result.audioURL)

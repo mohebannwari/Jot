@@ -78,6 +78,8 @@ struct NoteDetailView: View {
     /// Tracks whether AI results were loaded from persisted content (prevents re-save on init).
     @State private var aiBlockLoadedFromContent = false
     @State var aiIsProcessing: Bool = false
+    /// Tracks the current in-flight AI Task so it can be cancelled on note switch.
+    @State var currentAITask: Task<Void, Never>?
     @State private var aiStateCache: [UUID: AIPanelState] = [:]
     @State var currentProofreadIndex: Int = 0
 
@@ -618,6 +620,15 @@ struct NoteDetailView: View {
                 }
             }
 
+            // Cancel any in-flight AI task — prevents stale results landing on the new note
+            currentAITask?.cancel()
+            currentAITask = nil
+
+            // Stop active meeting recording if the user switches notes mid-session
+            if meetingRecordingState != .idle {
+                dismissMeetingPanel()
+            }
+
             // Tear down transient overlays
             aiIsProcessing = false
             aiCaptureIsCardOrigin = false
@@ -679,12 +690,14 @@ struct NoteDetailView: View {
         .onReceive(NotificationCenter.default.publisher(for: .aiToolAction)) { notification in
             if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
             guard let tool = notification.object as? AITool else { return }
-            Task { await handleAITool(tool) }
+            currentAITask?.cancel()
+            currentAITask = Task { await handleAITool(tool) }
         }
         .onReceive(NotificationCenter.default.publisher(for: .aiEditSubmit)) { notification in
             if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
             guard let instruction = notification.object as? String else { return }
-            Task { await handleAIEdit(instruction: instruction) }
+            currentAITask?.cancel()
+            currentAITask = Task { await handleAIEdit(instruction: instruction) }
         }
         .onReceive(NotificationCenter.default.publisher(for: .aiEditCaptureSelection)) { notification in
             if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
@@ -697,12 +710,14 @@ struct NoteDetailView: View {
         .onReceive(NotificationCenter.default.publisher(for: .aiTranslateSubmit)) { notification in
             if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
             guard let language = notification.object as? String else { return }
-            Task { await handleAITranslate(language: language) }
+            currentAITask?.cancel()
+            currentAITask = Task { await handleAITranslate(language: language) }
         }
         .onReceive(NotificationCenter.default.publisher(for: .aiTextGenSubmit)) { notification in
             if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
             guard let description = notification.object as? String else { return }
-            Task { await handleAITextGenerate(description: description) }
+            currentAITask?.cancel()
+            currentAITask = Task { await handleAITextGenerate(description: description) }
         }
         .onReceive(NotificationCenter.default.publisher(for: .aiMeetingNotesStart)) { notification in
             if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
