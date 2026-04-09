@@ -86,9 +86,10 @@ struct HotKeyRecorderView: View {
         if isRecording {
             return Color.accentColor.opacity(0.15)
         }
-        return colorScheme == .dark
-            ? Color.white.opacity(0.08)
-            : Color.black.opacity(0.06)
+        // Idle state — use the semantic translucent surface token, which
+        // already encodes the 6% black/white light/dark variants in the
+        // asset catalog.
+        return Color("SurfaceTranslucentColor")
     }
 
     // MARK: - Recording lifecycle

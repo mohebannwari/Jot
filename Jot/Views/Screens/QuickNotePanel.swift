@@ -118,7 +118,12 @@ final class QuickNoteWindowController {
         panel.hasShadow = true
 
         // Reasonable lower bound so the user can't shrink past usability.
-        panel.minSize = NSSize(width: 360, height: 240)
+        // NSWindow.minSize is ignored when the content view uses AutoLayout
+        // (which NSHostingView does), so contentMinSize is the authoritative
+        // setting. Setting both for belt-and-suspenders.
+        let minPanelSize = NSSize(width: 360, height: 240)
+        panel.minSize = minPanelSize
+        panel.contentMinSize = minPanelSize
 
         // Try to restore the user's last position; only center if there is none.
         let autosaveKey = "NSWindow Frame QuickNotePanel"
@@ -201,6 +206,11 @@ struct QuickNotePanelView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .liquidGlass(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        // CLAUDE.md normally bans clipShape on parent containers, but this
+        // is a deliberate exception: the panel is borderless and transparent,
+        // so this rounded clip is the only thing producing the panel's
+        // visible corners. Without it the SwiftUI surface would render as a
+        // square against the empty NSWindow.
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .onAppear {
             // Tiny delay so the window is actually key before focus tries to land.
