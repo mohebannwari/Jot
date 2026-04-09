@@ -14,10 +14,13 @@ struct QuickNoteHotKey: Codable, Equatable {
     var keyCode: UInt32
     var modifiers: UInt32  // Carbon bitmask: cmdKey | optionKey | shiftKey | controlKey
 
-    /// The factory default: Control + Option + Command + N.
+    /// The factory default: Command + Shift + J.
+    /// J is mnemonic for "Jot"; ⌃⌥⌘N collides with too many existing app
+    /// shortcuts (New-anything is almost universally mapped), so ⌘⇧J was
+    /// chosen as the least-conflicting modifier-plus-mnemonic combination.
     static let `default` = QuickNoteHotKey(
-        keyCode: UInt32(kVK_ANSI_N),
-        modifiers: UInt32(cmdKey | optionKey | controlKey)
+        keyCode: UInt32(kVK_ANSI_J),
+        modifiers: UInt32(cmdKey | shiftKey)
     )
 
     /// True if the hotkey has at least one modifier. Required for a valid global
