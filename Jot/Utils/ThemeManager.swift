@@ -123,6 +123,10 @@ final class ThemeManager: ObservableObject {
     static let lastBackupDateKey = "LastBackupDate"
     static let versionRetentionDaysKey = "VersionRetentionDays"
 
+    // Quick Notes feature keys
+    static let quickNoteHotKeyKey = "QuickNoteHotKey"
+    static let quickNotesFolderIDKey = "QuickNotesFolderID"
+
     static let editorSettingsChangedNotification = Notification.Name("EditorSettingsChanged")
 
     private let userDefaults: UserDefaults
@@ -246,6 +250,28 @@ final class ThemeManager: ObservableObject {
         }
     }
 
+    // Quick Notes: user-configurable global hotkey and the dedicated inbox folder ID
+    @Published var quickNoteHotKey: QuickNoteHotKey? {
+        didSet {
+            if let hk = quickNoteHotKey,
+               let data = try? JSONEncoder().encode(hk) {
+                userDefaults.set(data, forKey: Self.quickNoteHotKeyKey)
+            } else {
+                userDefaults.removeObject(forKey: Self.quickNoteHotKeyKey)
+            }
+        }
+    }
+
+    @Published var quickNotesFolderID: UUID? {
+        didSet {
+            if let id = quickNotesFolderID {
+                userDefaults.set(id.uuidString, forKey: Self.quickNotesFolderIDKey)
+            } else {
+                userDefaults.removeObject(forKey: Self.quickNotesFolderIDKey)
+            }
+        }
+    }
+
 
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
@@ -296,6 +322,22 @@ final class ThemeManager: ObservableObject {
         ])
         self.backupMaxCount = userDefaults.integer(forKey: Self.backupMaxCountKey)
         self.versionRetentionDays = userDefaults.integer(forKey: Self.versionRetentionDaysKey)
+
+        // Quick Notes: hotkey defaults to the factory default on first launch,
+        // inbox folder ID is nil until QuickNoteService performs the first save.
+        if let data = userDefaults.data(forKey: Self.quickNoteHotKeyKey),
+           let decoded = try? JSONDecoder().decode(QuickNoteHotKey.self, from: data) {
+            self.quickNoteHotKey = decoded
+        } else {
+            self.quickNoteHotKey = .default
+        }
+
+        if let idString = userDefaults.string(forKey: Self.quickNotesFolderIDKey),
+           let id = UUID(uuidString: idString) {
+            self.quickNotesFolderID = id
+        } else {
+            self.quickNotesFolderID = nil
+        }
 
         // didSet doesn't fire during init — apply manually
         applyAppKitAppearance(self.currentTheme)

@@ -98,3 +98,97 @@ final class QuickNoteHotKeyTests: XCTestCase {
         XCTAssertFalse(hk.hasAnyModifier)
     }
 }
+
+// MARK: - ThemeManager Quick Notes persistence
+
+final class ThemeManagerQuickNoteTests: XCTestCase {
+
+    func testDefaultHotKeyIsFactoryDefaultWhenNothingStored() {
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let manager = ThemeManager(userDefaults: defaults)
+        XCTAssertEqual(manager.quickNoteHotKey, QuickNoteHotKey.default)
+    }
+
+    func testSettingHotKeyPersistsToDefaults() throws {
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let manager = ThemeManager(userDefaults: defaults)
+        let newHotKey = QuickNoteHotKey(
+            keyCode: UInt32(kVK_ANSI_J),
+            modifiers: UInt32(cmdKey | shiftKey)
+        )
+        manager.quickNoteHotKey = newHotKey
+
+        let raw = try XCTUnwrap(defaults.data(forKey: ThemeManager.quickNoteHotKeyKey))
+        let decoded = try JSONDecoder().decode(QuickNoteHotKey.self, from: raw)
+        XCTAssertEqual(decoded, newHotKey)
+    }
+
+    func testInitReadsPersistedHotKey() throws {
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let stored = QuickNoteHotKey(keyCode: UInt32(kVK_ANSI_K), modifiers: UInt32(cmdKey))
+        let data = try JSONEncoder().encode(stored)
+        defaults.set(data, forKey: ThemeManager.quickNoteHotKeyKey)
+
+        let manager = ThemeManager(userDefaults: defaults)
+        XCTAssertEqual(manager.quickNoteHotKey, stored)
+    }
+
+    func testClearingHotKeyRemovesFromDefaults() {
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let manager = ThemeManager(userDefaults: defaults)
+        manager.quickNoteHotKey = QuickNoteHotKey(
+            keyCode: UInt32(kVK_ANSI_J),
+            modifiers: UInt32(cmdKey)
+        )
+        manager.quickNoteHotKey = nil
+
+        XCTAssertNil(defaults.data(forKey: ThemeManager.quickNoteHotKeyKey))
+        XCTAssertNil(manager.quickNoteHotKey)
+    }
+
+    func testFolderIDPersistenceRoundTrip() {
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let manager = ThemeManager(userDefaults: defaults)
+        XCTAssertNil(manager.quickNotesFolderID)
+
+        let id = UUID()
+        manager.quickNotesFolderID = id
+        XCTAssertEqual(defaults.string(forKey: ThemeManager.quickNotesFolderIDKey), id.uuidString)
+
+        let manager2 = ThemeManager(userDefaults: defaults)
+        XCTAssertEqual(manager2.quickNotesFolderID, id)
+    }
+
+    func testClearingFolderIDRemovesFromDefaults() {
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let manager = ThemeManager(userDefaults: defaults)
+        manager.quickNotesFolderID = UUID()
+        manager.quickNotesFolderID = nil
+
+        XCTAssertNil(defaults.string(forKey: ThemeManager.quickNotesFolderIDKey))
+        XCTAssertNil(manager.quickNotesFolderID)
+    }
+
+    // MARK: - Helpers
+
+    private func makeIsolatedDefaults() -> (UserDefaults, String) {
+        let suiteName = "QuickNoteThemeManagerTests.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            fatalError("Unable to create isolated UserDefaults suite")
+        }
+        defaults.removePersistentDomain(forName: suiteName)
+        return (defaults, suiteName)
+    }
+}
