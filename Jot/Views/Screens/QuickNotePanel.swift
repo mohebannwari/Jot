@@ -5,7 +5,7 @@
 //  Floating panel for Quick Notes capture. Three tightly-coupled types live
 //  together in this file because they're small and reading them together is
 //  clearer than splitting them across three files:
-//    1. QuickNotePanelWindow     — NSPanel subclass (can become key, not main)
+//    1. QuickNotePanelWindow      — borderless NSPanel subclass
 //    2. QuickNoteWindowController — singleton owning the panel lifecycle
 //    3. QuickNotePanelView        — SwiftUI plain-text editor inside the panel
 //
@@ -16,8 +16,11 @@ import os
 
 // MARK: - NSPanel subclass
 
-/// NSPanel that can become key (so its text fields accept input) but never
-/// becomes main (so it never steals the main-window role from ContentView).
+/// Borderless NSPanel that can become key (so its text fields accept input)
+/// but never becomes main (so it never steals the main-window role from
+/// ContentView). The borderless style is required to drop Apple's window
+/// chrome (rounded rect, traffic lights, titlebar) — without it, our custom
+/// liquid-glass surface would render *inside* a second outer rectangle.
 final class QuickNotePanelWindow: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
@@ -59,7 +62,8 @@ final class QuickNoteWindowController {
         // guarantees @State goes back to defaults without any indirection.
         installContent(into: panel)
 
-        panel.center()
+        // Do NOT call center() here — the frame autosave restores the user's
+        // last position. Centering on every show would defeat that.
         panel.alphaValue = 1.0
         panel.makeKeyAndOrderFront(nil)
         logger.info("Showed Quick Note panel")
@@ -89,25 +93,40 @@ final class QuickNoteWindowController {
     // MARK: - Panel construction
 
     private func makePanel() -> QuickNotePanelWindow {
-        let size = NSSize(width: 480, height: 320)
-        let rect = NSRect(origin: .zero, size: size)
+        let initialSize = NSSize(width: 600, height: 400)
+        let rect = NSRect(origin: .zero, size: initialSize)
 
+        // Borderless + nonactivating + resizable. No .titled, no .closable —
+        // the SwiftUI surface is the entire chrome.
         let panel = QuickNotePanelWindow(
             contentRect: rect,
-            styleMask: [.titled, .closable, .nonactivatingPanel, .fullSizeContentView],
+            styleMask: [.borderless, .nonactivatingPanel, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         panel.isFloatingPanel = true
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
-        panel.titlebarAppearsTransparent = true
-        panel.titleVisibility = .hidden
         panel.isMovableByWindowBackground = true
         panel.hidesOnDeactivate = false
-        panel.setFrameAutosaveName("QuickNotePanel")
         panel.isReleasedWhenClosed = false
+
+        // Make the window itself transparent so only the SwiftUI rounded glass
+        // is visible. hasShadow still works because the glass content is opaque.
         panel.backgroundColor = .clear
+        panel.isOpaque = false
+        panel.hasShadow = true
+
+        // Reasonable lower bound so the user can't shrink past usability.
+        panel.minSize = NSSize(width: 360, height: 240)
+
+        // Try to restore the user's last position; only center if there is none.
+        let autosaveKey = "NSWindow Frame QuickNotePanel"
+        let hasSavedFrame = UserDefaults.standard.string(forKey: autosaveKey) != nil
+        panel.setFrameAutosaveName("QuickNotePanel")
+        if !hasSavedFrame {
+            panel.center()
+        }
 
         installContent(into: panel)
         return panel
@@ -123,7 +142,9 @@ final class QuickNoteWindowController {
                 self?.dismissPanel(saved: false)
             }
         )
-        panel.contentView = NSHostingView(rootView: rootView)
+        let hosting = NSHostingView(rootView: rootView)
+        hosting.autoresizingMask = [.width, .height]
+        panel.contentView = hosting
     }
 }
 
@@ -142,44 +163,41 @@ struct QuickNotePanelView: View {
 
     private enum Field { case title, body }
 
+    private var hasContent: Bool {
+        !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !bodyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     var body: some View {
-        ZStack {
-            // Hidden save accelerator: captures Cmd+Return without rendering.
-            Button("", action: performSave)
-                .keyboardShortcut(.return, modifiers: .command)
-                .buttonStyle(.plain)
-                .opacity(0)
-                .frame(width: 0, height: 0)
-                .accessibilityHidden(true)
+        VStack(spacing: 0) {
+            TextField("Title", text: $title)
+                .textFieldStyle(.plain)
+                .font(FontManager.heading(size: 22, weight: .semibold))
+                .foregroundColor(Color("PrimaryTextColor"))
+                .padding(.horizontal, 24)
+                .padding(.top, 22)
+                .padding(.bottom, 12)
+                .focused($focus, equals: .title)
+                .onSubmit {
+                    focus = .body
+                }
 
-            VStack(spacing: 0) {
-                TextField("Title", text: $title)
-                    .textFieldStyle(.plain)
-                    .font(FontManager.heading(size: 20, weight: .semibold))
-                    .foregroundColor(Color("PrimaryTextColor"))
-                    .padding(.horizontal, 20)
-                    .padding(.top, 22)
-                    .padding(.bottom, 10)
-                    .focused($focus, equals: .title)
-                    .onSubmit {
-                        focus = .body
-                    }
+            Divider()
+                .padding(.horizontal, 24)
 
-                Divider()
-                    .padding(.horizontal, 20)
+            TextEditor(text: $bodyText)
+                .scrollContentBackground(.hidden)
+                .font(FontManager.body(size: 15))
+                .foregroundColor(Color("PrimaryTextColor"))
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
+                .focused($focus, equals: .body)
 
-                TextEditor(text: $bodyText)
-                    .scrollContentBackground(.hidden)
-                    .font(FontManager.body(size: 14))
-                    .foregroundColor(Color("PrimaryTextColor"))
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                    .focused($focus, equals: .body)
-
-                footer
-            }
+            footer
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .liquidGlass(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .onAppear {
             // Tiny delay so the window is actually key before focus tries to land.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) {
@@ -195,7 +213,7 @@ struct QuickNotePanelView: View {
     // MARK: - Footer
 
     private var footer: some View {
-        HStack {
+        HStack(spacing: 12) {
             if showSavedCheckmark {
                 HStack(spacing: 4) {
                     Image(systemName: "checkmark.circle.fill")
@@ -206,26 +224,46 @@ struct QuickNotePanelView: View {
                 }
                 .transition(.opacity)
             } else {
-                Text("\u{2318}\u{21A9} to save \u{00B7} esc to cancel")
+                Text("\u{2318}\u{21A9} save \u{00B7} esc cancel")
                     .font(FontManager.metadata(size: 11, weight: .medium))
                     .foregroundColor(Color("SecondaryTextColor"))
             }
+
             Spacer()
+
+            saveButton
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 14)
     }
 
+    /// The Save button is also the Cmd+Return accelerator — one button serves
+    /// both the visible and keyboard paths.
+    private var saveButton: some View {
+        Button(action: performSave) {
+            Text("Save")
+                .font(FontManager.heading(size: 13, weight: .semibold))
+                .foregroundColor(Color("ButtonPrimaryTextColor"))
+                .padding(.horizontal, 18)
+                .padding(.vertical, 8)
+                .background(
+                    Capsule().fill(
+                        hasContent
+                            ? Color("ButtonPrimaryBgColor")
+                            : Color("ButtonPrimaryBgColor").opacity(0.35)
+                    )
+                )
+        }
+        .buttonStyle(.plain)
+        .keyboardShortcut(.return, modifiers: .command)
+        .disabled(!hasContent)
+        .macPointingHandCursor()
+    }
+
     // MARK: - Save action
 
     private func performSave() {
-        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedBody = bodyText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedTitle.isEmpty || !trimmedBody.isEmpty else {
-            // Nothing to save — cancel silently.
-            onCancel()
-            return
-        }
+        guard hasContent else { return }
 
         withAnimation(.easeIn(duration: 0.15)) {
             showSavedCheckmark = true
