@@ -274,6 +274,45 @@ struct SettingsPage: View {
                     }
                 }
 
+                // Shortcuts
+                VStack(alignment: .leading, spacing: 12) {
+                    sectionLabel("Shortcuts")
+
+                    settingsGroupedCard {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Quick Notes")
+                                .font(FontManager.heading(size: 13, weight: .semibold))
+                                .foregroundColor(Color("PrimaryTextColor"))
+
+                            Text("Open a floating note panel from any app using a global keyboard shortcut.")
+                                .font(FontManager.metadata(size: 11, weight: .medium))
+                                .foregroundColor(Color("SecondaryTextColor"))
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                        HStack {
+                            Text("Shortcut")
+                                .font(FontManager.heading(size: 13, weight: .medium))
+                                .tracking(-0.5)
+                                .foregroundColor(Color("SettingsPlaceholderTextColor"))
+
+                            Spacer()
+
+                            HotKeyRecorderView(
+                                hotKey: $themeManager.quickNoteHotKey,
+                                onChange: { newHotKey in
+                                    if let hk = newHotKey {
+                                        GlobalHotKeyManager.shared.replace(with: hk)
+                                    } else {
+                                        GlobalHotKeyManager.shared.uninstall()
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+
                 // Locked notes
                 VStack(alignment: .leading, spacing: 12) {
                     sectionLabel("Locked notes")
