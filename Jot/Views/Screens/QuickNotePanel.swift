@@ -158,6 +158,10 @@ struct QuickNotePanelView: View {
     @State private var title: String = ""
     @State private var bodyText: String = ""
     @State private var showSavedCheckmark: Bool = false
+    /// Pending save scheduled by the 400ms checkmark animation. Stored in
+    /// state so the escape handler can cancel it before it fires, and so
+    /// double Cmd+Return presses can't queue a duplicate.
+    @State private var pendingSave: DispatchWorkItem?
     @FocusState private var focus: Field?
     @Environment(\.colorScheme) private var colorScheme
 
@@ -205,6 +209,7 @@ struct QuickNotePanelView: View {
             }
         }
         .onKeyPress(.escape) {
+            cancelPendingSave()
             onCancel()
             return .handled
         }
@@ -262,15 +267,27 @@ struct QuickNotePanelView: View {
 
     // MARK: - Save action
 
+    /// Schedules the actual save 400ms in the future so the checkmark
+    /// animation has time to play. Subsequent calls while a save is pending
+    /// are no-ops (prevents the double-Cmd+Return duplicate-note bug).
+    /// `cancelPendingSave` from the escape handler can interrupt the
+    /// scheduled work item before it fires.
     private func performSave() {
-        guard hasContent else { return }
+        guard hasContent, pendingSave == nil else { return }
 
         withAnimation(.easeIn(duration: 0.15)) {
             showSavedCheckmark = true
         }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+        let work = DispatchWorkItem {
             onSave(title, bodyText)
         }
+        pendingSave = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
+    }
+
+    private func cancelPendingSave() {
+        pendingSave?.cancel()
+        pendingSave = nil
     }
 }
