@@ -88,3 +88,18 @@ struct QuickNoteHotKey: Codable, Equatable {
         keyCodeGlyphs[keyCode] ?? String(format: "Key 0x%02X", keyCode)
     }
 }
+
+// MARK: - Convenience loaders
+
+extension QuickNoteHotKey {
+    /// Reads the hotkey from `UserDefaults.standard` using the same key
+    /// ThemeManager uses. This is a convenience for `JotApp.init`, where we
+    /// need to install the hotkey before ThemeManager is constructed.
+    static func loadFromStandardDefaults() -> QuickNoteHotKey? {
+        guard let data = UserDefaults.standard.data(forKey: ThemeManager.quickNoteHotKeyKey),
+              let decoded = try? JSONDecoder().decode(QuickNoteHotKey.self, from: data) else {
+            return nil
+        }
+        return decoded
+    }
+}
