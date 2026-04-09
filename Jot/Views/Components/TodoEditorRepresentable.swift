@@ -6184,6 +6184,26 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             scheduleOverlayUpdate()
         }
 
+        /// Test-only: cancel any pending debounced serialization and run it
+        /// synchronously. The 150 ms `serializeWorkItem` debounce above is the
+        /// right trade-off for production (coalesces keystroke-driven binding
+        /// writes so `serialize()` doesn't enumerate attributes on every
+        /// character) but it races the tight run-loop pump that unit tests use
+        /// to exercise the insert pipeline. Tests call this after pumping the
+        /// main loop so they can assert on the binding state deterministically.
+        /// This is a no-op in any code path that doesn't call it — production
+        /// behavior is unchanged.
+        func flushPendingSerialization() {
+            serializeWorkItem?.cancel()
+            serializeWorkItem = nil
+            guard textView != nil else { return }
+            let serialized = serialize()
+            if serialized != lastSerialized {
+                lastSerialized = serialized
+                textBinding.wrappedValue = serialized
+            }
+        }
+
         // MARK: - Inline Image Overlay Management
 
         func updateImageOverlays(in textView: NSTextView) {
