@@ -14,13 +14,16 @@ struct QuickNoteHotKey: Codable, Equatable {
     var keyCode: UInt32
     var modifiers: UInt32  // Carbon bitmask: cmdKey | optionKey | shiftKey | controlKey
 
-    /// The factory default: Command + Shift + J.
-    /// J is mnemonic for "Jot"; ⌃⌥⌘N collides with too many existing app
-    /// shortcuts (New-anything is almost universally mapped), so ⌘⇧J was
-    /// chosen as the least-conflicting modifier-plus-mnemonic combination.
+    /// The factory default: Control + Shift + J.
+    /// J is mnemonic for "Jot". Previous candidates rejected:
+    ///   - ⌃⌥⌘N — "New" is mapped in essentially every Mac app.
+    ///   - ⌘⇧J — Chrome uses it for DevTools, Safari for Downloads historically;
+    ///            Carbon RegisterEventHotKey fails with eventHotKeyExistsErr
+    ///            if another app (especially a foreground browser) claims it first.
+    /// ⌃⇧J is rarely claimed by any major app and is comfortable one-handed.
     static let `default` = QuickNoteHotKey(
         keyCode: UInt32(kVK_ANSI_J),
-        modifiers: UInt32(cmdKey | shiftKey)
+        modifiers: UInt32(controlKey | shiftKey)
     )
 
     /// True if the hotkey has at least one modifier. Required for a valid global

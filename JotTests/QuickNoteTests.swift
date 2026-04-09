@@ -112,6 +112,22 @@ final class ThemeManagerQuickNoteTests: XCTestCase {
         XCTAssertEqual(manager.quickNoteHotKey, QuickNoteHotKey.default)
     }
 
+    /// Regression: ThemeManager.init must NOT write the factory default to
+    /// UserDefaults. Otherwise the first launch persists the in-code default
+    /// and subsequent launches with a different in-code default get ignored.
+    /// This is the bug that pinned ⌃⌥⌘N in production for the user.
+    func testInitDoesNotPersistFactoryDefault() {
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        _ = ThemeManager(userDefaults: defaults)
+
+        XCTAssertNil(
+            defaults.data(forKey: ThemeManager.quickNoteHotKeyKey),
+            "init must not write the default hotkey to UserDefaults"
+        )
+    }
+
     func testSettingHotKeyPersistsToDefaults() throws {
         let (defaults, suiteName) = makeIsolatedDefaults()
         defer { defaults.removePersistentDomain(forName: suiteName) }

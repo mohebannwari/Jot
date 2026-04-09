@@ -132,6 +132,13 @@ final class ThemeManager: ObservableObject {
     private let userDefaults: UserDefaults
     private var appearanceObserver: NSKeyValueObservation?
 
+    /// True once `init` has finished assigning all properties. `@Published`
+    /// property wrappers route assignments through their setter, which fires
+    /// `didSet` even during init — so observers that persist to UserDefaults
+    /// must guard on this flag to avoid writing factory defaults on first
+    /// launch (which would then pin the value across in-code default changes).
+    private var hasFinishedInitialization = false
+
     @Published var currentTheme: AppTheme {
         didSet {
             userDefaults.set(currentTheme.rawValue, forKey: Self.themeDefaultsKey)
@@ -253,6 +260,7 @@ final class ThemeManager: ObservableObject {
     // Quick Notes: user-configurable global hotkey and the dedicated inbox folder ID
     @Published var quickNoteHotKey: QuickNoteHotKey? {
         didSet {
+            guard hasFinishedInitialization else { return }
             if let hk = quickNoteHotKey,
                let data = try? JSONEncoder().encode(hk) {
                 userDefaults.set(data, forKey: Self.quickNoteHotKeyKey)
@@ -264,6 +272,7 @@ final class ThemeManager: ObservableObject {
 
     @Published var quickNotesFolderID: UUID? {
         didSet {
+            guard hasFinishedInitialization else { return }
             if let id = quickNotesFolderID {
                 userDefaults.set(id.uuidString, forKey: Self.quickNotesFolderIDKey)
             } else {
@@ -339,9 +348,14 @@ final class ThemeManager: ObservableObject {
             self.quickNotesFolderID = nil
         }
 
-        // didSet doesn't fire during init — apply manually
+        // didSet doesn't fire during init for plain stored properties — apply
+        // those side effects manually. Property-wrapper-backed @Published
+        // properties have the OPPOSITE behavior (didSet fires even in init),
+        // which is why hasFinishedInitialization guards their persistence
+        // observers above. Setting the flag here completes init.
         applyAppKitAppearance(self.currentTheme)
         resolvedColorScheme = Self.resolveColorScheme(for: self.currentTheme)
+        hasFinishedInitialization = true
 
         // Track system appearance changes so "System" mode stays in sync
         appearanceObserver = NSApplication.shared.observe(\.effectiveAppearance) { [weak self] _, _ in
