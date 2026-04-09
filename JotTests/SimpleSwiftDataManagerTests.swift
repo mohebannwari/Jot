@@ -61,13 +61,16 @@ final class SimpleSwiftDataManagerTests: XCTestCase {
         XCTAssertEqual(manager.notes.first?.content, "Test content")
         XCTAssertEqual(manager.notes.first?.tags, ["test"])
 
-        // Test updating a note
+        // Test updating a note. Title/content go through updateNote, tags go
+        // through updateTags — updateNote intentionally preserves existing
+        // entity tags so autosaves from the editor can't clobber tags the user
+        // edited in the properties panel with a stale snapshot.
         var updatedNote = addedNote
         updatedNote.title = "Updated Title"
         updatedNote.content = "Updated content"
-        updatedNote.tags = ["updated", "test"]
 
         manager.updateNote(updatedNote)
+        manager.updateTags(id: addedNote.id, tags: ["updated", "test"])
         XCTAssertEqual(manager.notes.count, 1)
         XCTAssertEqual(manager.notes.first?.title, "Updated Title")
         XCTAssertEqual(manager.notes.first?.content, "Updated content")
@@ -111,8 +114,12 @@ final class SimpleSwiftDataManagerTests: XCTestCase {
     func testPerformanceWithManyNotes() async throws {
         let noteCount = 1000
 
-        // Test adding performance
+        // XCTest `measure` runs this block multiple times (10 by default), so
+        // every iteration must start from a clean store — otherwise we'd be
+        // measuring "add 1000 notes to an increasingly full store" and the
+        // post-measure assertions would see 10x the expected count.
         measure {
+            try? manager.clearAllData()
             for i in 0..<noteCount {
                 _ = manager.addNote(
                     title: "Performance Note \(i)",

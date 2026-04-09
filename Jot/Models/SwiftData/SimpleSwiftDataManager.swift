@@ -415,6 +415,7 @@ final class SimpleSwiftDataManager: ObservableObject {
     ) -> Note {
         let noteEntity = NoteEntity(title: title, content: content)
         noteEntity.folderID = folderID
+        noteEntity.tags = tags
         if folderID != nil {
             noteEntity.isPinned = false
         }
