@@ -15,7 +15,11 @@ import Carbon.HIToolbox
 struct HotKeyRecorderView: View {
 
     @Binding var hotKey: QuickNoteHotKey?
-    let onChange: (QuickNoteHotKey?) -> Void
+    /// Called whenever the user picks a new chord or clears the binding.
+    /// Return `true` if the system accepted the change (e.g., Carbon registration
+    /// succeeded). Return `false` to surface an inline error and revert the
+    /// recorder UI without updating the binding.
+    let onChange: (QuickNoteHotKey?) -> Bool
 
     @State private var isRecording: Bool = false
     @State private var errorMessage: String?
@@ -133,15 +137,23 @@ struct HotKeyRecorderView: View {
             return
         }
 
-        hotKey = candidate
-        errorMessage = nil
-        onChange(candidate)
-        stopRecording()
+        // Try the registration first; only commit to the binding if it
+        // succeeds. Otherwise the recorder UI would show a chord that
+        // doesn't actually fire.
+        if onChange(candidate) {
+            hotKey = candidate
+            errorMessage = nil
+            stopRecording()
+        } else {
+            errorMessage = "Already in use. Try another."
+            // Stay in recording mode so the user can immediately try again.
+        }
     }
 
     private func clearHotKey() {
+        // Clearing always succeeds — there's no Carbon registration to fail.
+        _ = onChange(nil)
         hotKey = nil
         errorMessage = nil
-        onChange(nil)
     }
 }

@@ -303,9 +303,10 @@ struct SettingsPage: View {
                                 hotKey: $themeManager.quickNoteHotKey,
                                 onChange: { newHotKey in
                                     if let hk = newHotKey {
-                                        GlobalHotKeyManager.shared.replace(with: hk)
+                                        return GlobalHotKeyManager.shared.replace(with: hk)
                                     } else {
                                         GlobalHotKeyManager.shared.uninstall()
+                                        return true
                                     }
                                 }
                             )
