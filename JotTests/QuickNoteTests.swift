@@ -171,32 +171,10 @@ final class ThemeManagerQuickNoteTests: XCTestCase {
         XCTAssertNil(manager.quickNoteHotKey)
     }
 
-    func testFolderIDPersistenceRoundTrip() {
-        let (defaults, suiteName) = makeIsolatedDefaults()
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-
-        let manager = ThemeManager(userDefaults: defaults)
-        XCTAssertNil(manager.quickNotesFolderID)
-
-        let id = UUID()
-        manager.quickNotesFolderID = id
-        XCTAssertEqual(defaults.string(forKey: ThemeManager.quickNotesFolderIDKey), id.uuidString)
-
-        let manager2 = ThemeManager(userDefaults: defaults)
-        XCTAssertEqual(manager2.quickNotesFolderID, id)
-    }
-
-    func testClearingFolderIDRemovesFromDefaults() {
-        let (defaults, suiteName) = makeIsolatedDefaults()
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-
-        let manager = ThemeManager(userDefaults: defaults)
-        manager.quickNotesFolderID = UUID()
-        manager.quickNotesFolderID = nil
-
-        XCTAssertNil(defaults.string(forKey: ThemeManager.quickNotesFolderIDKey))
-        XCTAssertNil(manager.quickNotesFolderID)
-    }
+    // Note: there is intentionally no ThemeManager-level test for
+    // quickNotesFolderID — that key is owned by QuickNoteService directly
+    // (see QuickNoteServiceTests for round-trip coverage). Mirroring it on
+    // ThemeManager would just be a second source of truth to keep in sync.
 
     // MARK: - Helpers
 

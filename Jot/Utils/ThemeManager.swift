@@ -257,7 +257,10 @@ final class ThemeManager: ObservableObject {
         }
     }
 
-    // Quick Notes: user-configurable global hotkey and the dedicated inbox folder ID
+    // Quick Notes: user-configurable global hotkey. The companion
+    // quickNotesFolderIDKey is owned by QuickNoteService directly — no
+    // ThemeManager mirror because nothing in the UI binds to it and a
+    // mirrored copy would just be one more thing to keep in sync.
     @Published var quickNoteHotKey: QuickNoteHotKey? {
         didSet {
             guard hasFinishedInitialization else { return }
@@ -266,17 +269,6 @@ final class ThemeManager: ObservableObject {
                 userDefaults.set(data, forKey: Self.quickNoteHotKeyKey)
             } else {
                 userDefaults.removeObject(forKey: Self.quickNoteHotKeyKey)
-            }
-        }
-    }
-
-    @Published var quickNotesFolderID: UUID? {
-        didSet {
-            guard hasFinishedInitialization else { return }
-            if let id = quickNotesFolderID {
-                userDefaults.set(id.uuidString, forKey: Self.quickNotesFolderIDKey)
-            } else {
-                userDefaults.removeObject(forKey: Self.quickNotesFolderIDKey)
             }
         }
     }
@@ -332,20 +324,14 @@ final class ThemeManager: ObservableObject {
         self.backupMaxCount = userDefaults.integer(forKey: Self.backupMaxCountKey)
         self.versionRetentionDays = userDefaults.integer(forKey: Self.versionRetentionDaysKey)
 
-        // Quick Notes: hotkey defaults to the factory default on first launch,
-        // inbox folder ID is nil until QuickNoteService performs the first save.
+        // Quick Notes: hotkey defaults to the factory default on first launch.
+        // The inbox folder ID is owned by QuickNoteService directly via
+        // userDefaults; no ThemeManager mirror.
         if let data = userDefaults.data(forKey: Self.quickNoteHotKeyKey),
            let decoded = try? JSONDecoder().decode(QuickNoteHotKey.self, from: data) {
             self.quickNoteHotKey = decoded
         } else {
             self.quickNoteHotKey = .default
-        }
-
-        if let idString = userDefaults.string(forKey: Self.quickNotesFolderIDKey),
-           let id = UUID(uuidString: idString) {
-            self.quickNotesFolderID = id
-        } else {
-            self.quickNotesFolderID = nil
         }
 
         // didSet doesn't fire during init for plain stored properties — apply
