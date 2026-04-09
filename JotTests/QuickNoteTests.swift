@@ -21,10 +21,10 @@ final class QuickNoteHotKeyTests: XCTestCase {
 
     // MARK: Default
 
-    func testDefaultIsCommandShiftJ() {
+    func testDefaultIsControlShiftJ() {
         let d = QuickNoteHotKey.default
         XCTAssertEqual(d.keyCode, UInt32(kVK_ANSI_J))
-        XCTAssertEqual(d.modifiers, UInt32(cmdKey | shiftKey))
+        XCTAssertEqual(d.modifiers, UInt32(controlKey | shiftKey))
     }
 
     // MARK: Cocoa -> Carbon translation (16 combinations)
@@ -68,8 +68,8 @@ final class QuickNoteHotKeyTests: XCTestCase {
     }
 
     func testDisplayStringDefault() {
-        // ⇧⌘J — display order is Control, Option, Shift, Command, then key
-        XCTAssertEqual(QuickNoteHotKey.default.displayString, "\u{21E7}\u{2318}J")
+        // ⌃⇧J — display order is Control, Option, Shift, Command, then key
+        XCTAssertEqual(QuickNoteHotKey.default.displayString, "\u{2303}\u{21E7}J")
     }
 
     func testDisplayStringSingleModifier() {
