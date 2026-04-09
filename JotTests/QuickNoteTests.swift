@@ -192,3 +192,125 @@ final class ThemeManagerQuickNoteTests: XCTestCase {
         return (defaults, suiteName)
     }
 }
+
+// MARK: - QuickNoteService
+
+@MainActor
+final class QuickNoteServiceTests: XCTestCase {
+
+    var manager: SimpleSwiftDataManager!
+
+    override func setUp() async throws {
+        try await super.setUp()
+        manager = try SimpleSwiftDataManager(inMemoryForTesting: true)
+    }
+
+    override func tearDown() async throws {
+        manager = nil
+        try await super.tearDown()
+    }
+
+    // MARK: - Folder resolution
+
+    func testSaveCreatesQuickNotesFolderOnFirstCall() throws {
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let service = QuickNoteService(manager: manager, defaults: defaults)
+        let note = service.save(title: "Meeting prep", body: "Bring coffee")
+
+        XCTAssertEqual(note.title, "Meeting prep")
+        XCTAssertEqual(note.content, "Bring coffee")
+        XCTAssertNotNil(note.folderID)
+
+        // Folder ID was persisted
+        let storedID = defaults.string(forKey: ThemeManager.quickNotesFolderIDKey)
+        XCTAssertEqual(storedID, note.folderID?.uuidString)
+
+        // Folder name is "Quick Notes"
+        let folder = manager.folders.first(where: { $0.id == note.folderID })
+        XCTAssertEqual(folder?.name, "Quick Notes")
+    }
+
+    func testSaveReusesExistingInboxFolder() throws {
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let service = QuickNoteService(manager: manager, defaults: defaults)
+        let first = service.save(title: "First", body: "1")
+        let second = service.save(title: "Second", body: "2")
+
+        XCTAssertEqual(first.folderID, second.folderID)
+        XCTAssertEqual(manager.folders.filter { $0.name == "Quick Notes" }.count, 1)
+    }
+
+    func testSaveRecreatesFolderWhenStoredIDIsStale() throws {
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        // Plant a stale folder ID that doesn't correspond to any real folder
+        let staleID = UUID()
+        defaults.set(staleID.uuidString, forKey: ThemeManager.quickNotesFolderIDKey)
+
+        let service = QuickNoteService(manager: manager, defaults: defaults)
+        let note = service.save(title: "Fresh", body: "body")
+
+        XCTAssertNotNil(note.folderID)
+        XCTAssertNotEqual(note.folderID, staleID)
+        // Stored ID was replaced with the new folder's ID
+        let newStored = defaults.string(forKey: ThemeManager.quickNotesFolderIDKey)
+        XCTAssertEqual(newStored, note.folderID?.uuidString)
+    }
+
+    // MARK: - Title derivation
+
+    func testEmptyTitleDerivesFromFirstNonEmptyLineOfBody() throws {
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let service = QuickNoteService(manager: manager, defaults: defaults)
+        let note = service.save(title: "   ", body: "First line\nSecond line\nThird")
+        XCTAssertEqual(note.title, "First line")
+    }
+
+    func testEmptyTitleSkipsLeadingBlankLines() throws {
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let service = QuickNoteService(manager: manager, defaults: defaults)
+        let note = service.save(title: "", body: "\n\n  \nActual content")
+        XCTAssertEqual(note.title, "Actual content")
+    }
+
+    func testEmptyTitleTruncatesLongFirstLineToSixtyChars() throws {
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let service = QuickNoteService(manager: manager, defaults: defaults)
+        let longLine = String(repeating: "a", count: 120)
+        let note = service.save(title: "", body: longLine)
+
+        XCTAssertEqual(note.title.count, 60)
+        XCTAssertTrue(longLine.hasPrefix(note.title))
+    }
+
+    func testEmptyTitleAndEmptyBodyFallsBackToLiteralQuickNote() throws {
+        let (defaults, suiteName) = makeIsolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let service = QuickNoteService(manager: manager, defaults: defaults)
+        let note = service.save(title: "", body: "   \n  ")
+        XCTAssertEqual(note.title, "Quick Note")
+    }
+
+    // MARK: - Helpers
+
+    private func makeIsolatedDefaults() -> (UserDefaults, String) {
+        let suiteName = "QuickNoteServiceTests.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            fatalError("Unable to create isolated UserDefaults suite")
+        }
+        defaults.removePersistentDomain(forName: suiteName)
+        return (defaults, suiteName)
+    }
+}
