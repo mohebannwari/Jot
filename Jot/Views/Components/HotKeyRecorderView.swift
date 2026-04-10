@@ -47,16 +47,6 @@ struct HotKeyRecorderView: View {
             .buttonStyle(.plain)
             .macPointingHandCursor()
 
-            if hotKey != nil && !isRecording {
-                Button(action: clearHotKey) {
-                    Text("Clear")
-                        .font(FontManager.metadata(size: 11, weight: .medium))
-                        .foregroundColor(Color("SecondaryTextColor"))
-                }
-                .buttonStyle(.plain)
-                .macPointingHandCursor()
-            }
-
             if let errorMessage = errorMessage {
                 Text(errorMessage)
                     .font(FontManager.metadata(size: 10, weight: .medium))
@@ -151,10 +141,4 @@ struct HotKeyRecorderView: View {
         }
     }
 
-    private func clearHotKey() {
-        // Clearing always succeeds — there's no Carbon registration to fail.
-        _ = onChange(nil)
-        hotKey = nil
-        errorMessage = nil
-    }
 }

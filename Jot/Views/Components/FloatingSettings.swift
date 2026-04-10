@@ -278,24 +278,11 @@ struct SettingsPage: View {
                 VStack(alignment: .leading, spacing: 12) {
                     sectionLabel("Shortcuts")
 
-                    settingsGroupedCard {
-                        VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(alignment: .center) {
                             Text("Quick Notes")
                                 .font(FontManager.heading(size: 13, weight: .semibold))
                                 .foregroundColor(Color("PrimaryTextColor"))
-
-                            Text("Open a floating note panel from any app using a global keyboard shortcut.")
-                                .font(FontManager.metadata(size: 11, weight: .medium))
-                                .foregroundColor(Color("SecondaryTextColor"))
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-
-                        HStack {
-                            Text("Shortcut")
-                                .font(FontManager.heading(size: 13, weight: .medium))
-                                .tracking(-0.5)
-                                .foregroundColor(Color("SettingsPlaceholderTextColor"))
 
                             Spacer()
 
@@ -311,6 +298,18 @@ struct SettingsPage: View {
                                 }
                             )
                         }
+                        .padding(.vertical, 12)
+                        .padding(.horizontal, 14)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(colorScheme == .light ? Color.white : Color("SettingsOptionCardColor"))
+                        )
+
+                        Text("Open a floating note panel from any app using a global keyboard shortcut.")
+                            .font(FontManager.heading(size: 11, weight: .regular))
+                            .foregroundColor(Color("SettingsPlaceholderTextColor"))
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.horizontal, 14)
                     }
                 }
 
