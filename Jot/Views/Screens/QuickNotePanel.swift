@@ -69,25 +69,70 @@ final class QuickNoteWindowController {
         logger.info("Showed Quick Note panel")
     }
 
-    /// Dismiss the panel with a brief fade-out, then return focus to whichever
-    /// app was frontmost before the panel appeared.
+    /// Dismiss the panel. Two distinct animations depending on why:
+    ///   - `saved: true`  → SpriteKit genie warp toward the main Jot window,
+    ///                      signalling "your note is now in the app"
+    ///   - `saved: false` → SwiftUI atom dissolve driven off a window-server
+    ///                      snapshot of the panel, signalling "the ink
+    ///                      decomposes into nothing"
+    /// Both paths restore focus to whichever app was frontmost when the
+    /// panel was summoned.
     func dismissPanel(saved: Bool) {
         guard let panel = panel, panel.isVisible else { return }
 
-        NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.2
-            panel.animator().alphaValue = 0.0
-        }, completionHandler: { [weak self] in
-            // The completion handler is typed as a plain closure, not
-            // @MainActor, but NSAnimationContext always delivers it on the
-            // main queue. Hop explicitly to satisfy strict concurrency.
-            DispatchQueue.main.async {
-                panel.orderOut(nil)
-                panel.alphaValue = 1.0
+        if saved {
+            let target = genieTargetPoint(excluding: panel)
+            GenieDismiss.run(panel: panel, toward: target) { [weak self] in
                 self?.previousApp?.activate()
                 self?.previousApp = nil
             }
-        })
+            return
+        }
+
+        AtomDismiss.run(panel: panel) { [weak self] in
+            self?.previousApp?.activate()
+            self?.previousApp = nil
+        }
+    }
+
+    /// Chooses the collapse point for the genie animation.
+    /// Preference order:
+    ///   1. `NSApp.mainWindow` — Apple's designated main content window.
+    ///      This is the correct answer when Jot has a main window and the
+    ///      Quick Note panel was summoned from within the app.
+    ///   2. The largest visible window in `NSApp.windows` that is NOT an
+    ///      NSPanel subclass — handles the case where the global hotkey
+    ///      fires while a non-Jot app is frontmost and mainWindow is nil.
+    ///      Excluding NSPanel ensures we don't target the Quick Note panel
+    ///      itself or any other floating palette.
+    ///   3. Bottom-center of the screen as a last-resort fallback.
+    private func genieTargetPoint(excluding: NSPanel) -> CGPoint {
+        if let main = NSApp.mainWindow,
+           main !== excluding,
+           main.isVisible,
+           main.contentView != nil {
+            return CGPoint(x: main.frame.midX, y: main.frame.midY)
+        }
+
+        let candidates = NSApp.windows.filter { win in
+            win !== excluding
+                && !(win is NSPanel)
+                && win.isVisible
+                && win.contentView != nil
+                && win.frame.width > 100
+                && win.frame.height > 100
+        }
+        if let biggest = candidates.max(by: {
+            ($0.frame.width * $0.frame.height) < ($1.frame.width * $1.frame.height)
+        }) {
+            return CGPoint(x: biggest.frame.midX, y: biggest.frame.midY)
+        }
+
+        let screen = excluding.screen ?? NSScreen.main ?? NSScreen.screens.first
+        if let frame = screen?.frame {
+            return CGPoint(x: frame.midX, y: frame.minY + 60)
+        }
+        return .zero
     }
 
     // MARK: - Panel construction
@@ -162,11 +207,11 @@ struct QuickNotePanelView: View {
 
     @State private var title: String = ""
     @State private var bodyText: String = ""
-    @State private var showSavedCheckmark: Bool = false
-    /// Pending save scheduled by the 400ms checkmark animation. Stored in
-    /// state so the escape handler can cancel it before it fires, and so
-    /// double Cmd+Return presses can't queue a duplicate.
-    @State private var pendingSave: DispatchWorkItem?
+    /// Sentinel set on the first performSave invocation to block double
+    /// Cmd+Return presses from firing two saves while the genie animation
+    /// is in flight. The genie IS the visual feedback — there's no checkmark
+    /// or delay to race.
+    @State private var saveInFlight: Bool = false
     @FocusState private var focus: Field?
     @Environment(\.colorScheme) private var colorScheme
 
@@ -191,9 +236,6 @@ struct QuickNotePanelView: View {
                     focus = .body
                 }
 
-            Divider()
-                .padding(.horizontal, 24)
-
             TextEditor(text: $bodyText)
                 .scrollContentBackground(.hidden)
                 .font(FontManager.body(size: 15))
@@ -205,7 +247,29 @@ struct QuickNotePanelView: View {
             footer
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .liquidGlass(in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        // Backdrop matches the main Jot content pane's treatment so the
+        // Quick Note panel reads as a floating "mini detail pane": warm
+        // stone palette, same material family. On macOS 26+ it's tinted
+        // Liquid Glass with DetailPaneSurfaceColor; on pre-26 it falls back
+        // to an NSVisualEffectView (.hudWindow / .behindWindow) with a
+        // 95%-opaque DetailPaneSurfaceColor over the top, mirroring what
+        // ContentView does for the main window.
+        .background {
+            if #available(macOS 26.0, iOS 26.0, *) {
+                Color.clear
+                    .tintedLiquidGlass(
+                        in: RoundedRectangle(cornerRadius: 20, style: .continuous),
+                        tint: Color("DetailPaneSurfaceColor"),
+                        tintOpacity: 0.80
+                    )
+            } else {
+                ZStack {
+                    BackdropBlurView(material: .hudWindow, blendingMode: .behindWindow)
+                    Color("DetailPaneSurfaceColor").opacity(0.95)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            }
+        }
         // CLAUDE.md normally bans clipShape on parent containers, but this
         // is a deliberate exception: the panel is borderless and transparent,
         // so this rounded clip is the only thing producing the panel's
@@ -219,7 +283,6 @@ struct QuickNotePanelView: View {
             }
         }
         .onKeyPress(.escape) {
-            cancelPendingSave()
             onCancel()
             return .handled
         }
@@ -229,75 +292,54 @@ struct QuickNotePanelView: View {
 
     private var footer: some View {
         HStack(spacing: 12) {
-            if showSavedCheckmark {
-                HStack(spacing: 4) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(.green)
-                    Text("Saved")
-                        .font(FontManager.metadata(size: 11, weight: .semibold))
-                        .foregroundColor(Color("SecondaryTextColor"))
-                }
-                .transition(.opacity)
-            } else {
-                Text("\u{2318}\u{21A9} save \u{00B7} esc cancel")
-                    .font(FontManager.metadata(size: 11, weight: .medium))
-                    .foregroundColor(Color("SecondaryTextColor"))
-            }
-
-            Spacer()
-
             saveButton
+            Spacer()
+            Text("esc cancel")
+                .font(FontManager.metadata(size: 11, weight: .medium))
+                .foregroundColor(Color("SecondaryTextColor"))
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 14)
     }
 
     /// The Save button is also the Cmd+Return accelerator — one button serves
-    /// both the visible and keyboard paths.
+    /// both the visible and keyboard paths. The ⌘↩ glyphs live inside the
+    /// capsule next to the label so there's a single "Save" in the UI.
     private var saveButton: some View {
         Button(action: performSave) {
-            Text("Save")
-                .font(FontManager.heading(size: 13, weight: .semibold))
-                .foregroundColor(Color("ButtonPrimaryTextColor"))
-                .padding(.horizontal, 18)
-                .padding(.vertical, 8)
-                .background(
-                    Capsule().fill(
-                        hasContent
-                            ? Color("ButtonPrimaryBgColor")
-                            : Color("ButtonPrimaryBgColor").opacity(0.35)
-                    )
+            HStack(spacing: 6) {
+                Text("Save")
+                    .font(FontManager.heading(size: 13, weight: .semibold))
+                Text("\u{2318}\u{21A9}")
+                    .font(FontManager.metadata(size: 11, weight: .semibold))
+                    .opacity(0.6)
+            }
+            .foregroundColor(Color("ButtonPrimaryTextColor"))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(
+                Capsule().fill(
+                    hasContent
+                        ? Color("ButtonPrimaryBgColor")
+                        : Color("ButtonPrimaryBgColor").opacity(0.35)
                 )
+            )
         }
         .buttonStyle(.plain)
         .keyboardShortcut(.return, modifiers: .command)
-        .disabled(!hasContent)
+        .disabled(!hasContent || saveInFlight)
         .macPointingHandCursor()
     }
 
     // MARK: - Save action
 
-    /// Schedules the actual save 400ms in the future so the checkmark
-    /// animation has time to play. Subsequent calls while a save is pending
-    /// are no-ops (prevents the double-Cmd+Return duplicate-note bug).
-    /// `cancelPendingSave` from the escape handler can interrupt the
-    /// scheduled work item before it fires.
+    /// Fires the save immediately and lets the controller drive the genie
+    /// animation. `saveInFlight` blocks the second of two Cmd+Return presses
+    /// that arrive during the animation window, which would otherwise call
+    /// `onSave` twice before the panel has been ordered out.
     private func performSave() {
-        guard hasContent, pendingSave == nil else { return }
-
-        withAnimation(.easeIn(duration: 0.15)) {
-            showSavedCheckmark = true
-        }
-
-        let work = DispatchWorkItem {
-            onSave(title, bodyText)
-        }
-        pendingSave = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4, execute: work)
-    }
-
-    private func cancelPendingSave() {
-        pendingSave?.cancel()
-        pendingSave = nil
+        guard hasContent, !saveInFlight else { return }
+        saveInFlight = true
+        onSave(title, bodyText)
     }
 }
