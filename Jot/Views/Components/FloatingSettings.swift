@@ -274,6 +274,45 @@ struct SettingsPage: View {
                     }
                 }
 
+                // Shortcuts
+                VStack(alignment: .leading, spacing: 12) {
+                    sectionLabel("Shortcuts")
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(alignment: .center) {
+                            Text("Quick Notes")
+                                .font(FontManager.heading(size: 13, weight: .semibold))
+                                .foregroundColor(Color("PrimaryTextColor"))
+
+                            Spacer()
+
+                            HotKeyRecorderView(
+                                hotKey: $themeManager.quickNoteHotKey,
+                                onChange: { newHotKey in
+                                    if let hk = newHotKey {
+                                        return GlobalHotKeyManager.shared.replace(with: hk)
+                                    } else {
+                                        GlobalHotKeyManager.shared.uninstall()
+                                        return true
+                                    }
+                                }
+                            )
+                        }
+                        .padding(.vertical, 12)
+                        .padding(.horizontal, 14)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill(colorScheme == .light ? Color.white : Color("SettingsOptionCardColor"))
+                        )
+
+                        Text("Open a floating note panel from any app using a global keyboard shortcut.")
+                            .font(FontManager.heading(size: 11, weight: .regular))
+                            .foregroundColor(Color("SettingsPlaceholderTextColor"))
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.horizontal, 14)
+                    }
+                }
+
                 // Locked notes
                 VStack(alignment: .leading, spacing: 12) {
                     sectionLabel("Locked notes")

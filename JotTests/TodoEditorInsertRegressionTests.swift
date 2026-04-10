@@ -80,8 +80,14 @@ final class TodoEditorInsertRegressionTests: XCTestCase {
         )
     }
 
-    private func pumpMainLoop() {
+    /// Drains the main run loop and then flushes the Coordinator's debounced
+    /// serialization so tests can assert on the binding state deterministically.
+    /// `syncText` in production defers binding writes by 150 ms to coalesce
+    /// keystroke noise; without an explicit flush the 50 ms pump would return
+    /// before the debounced work item fires and the binding would still be stale.
+    private func pumpMainLoop(_ harness: EditorHarness) {
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        harness.coordinator.flushPendingSerialization()
     }
 
     func testCommandMenuTableInsertPerformsSingleBindingSync() {
@@ -97,7 +103,7 @@ final class TodoEditorInsertRegressionTests: XCTestCase {
             userInfo: ["editorInstanceID": harness.editorInstanceID]
         )
 
-        pumpMainLoop()
+        pumpMainLoop(harness)
 
         XCTAssertEqual(
             harness.syncCount(),
@@ -122,7 +128,7 @@ final class TodoEditorInsertRegressionTests: XCTestCase {
             ]
         )
 
-        pumpMainLoop()
+        pumpMainLoop(harness)
 
         let hasTableOverlay = harness.textView.subviews.contains { $0 is NoteTableOverlayView }
         XCTAssertTrue(
@@ -144,7 +150,7 @@ final class TodoEditorInsertRegressionTests: XCTestCase {
             userInfo: ["editorInstanceID": harness.editorInstanceID]
         )
 
-        pumpMainLoop()
+        pumpMainLoop(harness)
 
         XCTAssertEqual(
             harness.syncCount(),
@@ -174,7 +180,7 @@ final class TodoEditorInsertRegressionTests: XCTestCase {
             ]
         )
 
-        pumpMainLoop()
+        pumpMainLoop(harness)
 
         let text = harness.currentText()
         let tabsBlocks = text.components(separatedBy: "[[tabs|").count - 1
@@ -202,7 +208,7 @@ final class TodoEditorInsertRegressionTests: XCTestCase {
             ]
         )
 
-        pumpMainLoop()
+        pumpMainLoop(harness)
 
         harness.coordinator.removeAllOverlays()
         let fullRange = NSRange(location: 0, length: harness.textView.textStorage?.length ?? 0)
@@ -233,7 +239,7 @@ final class TodoEditorInsertRegressionTests: XCTestCase {
         // Simulate typing "a" at position 0
         textView.setSelectedRange(NSRange(location: 0, length: 0))
         textView.insertText("a", replacementRange: NSRange(location: NSNotFound, length: 0))
-        pumpMainLoop()
+        pumpMainLoop(harness)
 
         let text = textView.textStorage?.string ?? ""
 
@@ -273,7 +279,7 @@ final class TodoEditorInsertRegressionTests: XCTestCase {
         // Simulate a Return key arriving (as if leaked from title field transition)
         textView.setSelectedRange(NSRange(location: 0, length: 0))
         textView.insertText("\n", replacementRange: NSRange(location: NSNotFound, length: 0))
-        pumpMainLoop()
+        pumpMainLoop(harness)
 
         // The empty-document guard should have blocked the newline
         XCTAssertEqual(textView.textStorage?.length ?? -1, 0,
@@ -281,7 +287,7 @@ final class TodoEditorInsertRegressionTests: XCTestCase {
 
         // Then simulate the user typing their first real character
         textView.insertText("a", replacementRange: NSRange(location: NSNotFound, length: 0))
-        pumpMainLoop()
+        pumpMainLoop(harness)
 
         let finalText = textView.textStorage?.string ?? ""
         XCTAssertEqual(finalText, "a",
@@ -300,7 +306,7 @@ final class TodoEditorInsertRegressionTests: XCTestCase {
         for char in "hello" {
             textView.insertText(String(char), replacementRange: NSRange(location: NSNotFound, length: 0))
         }
-        pumpMainLoop()
+        pumpMainLoop(harness)
 
         let text = textView.textStorage?.string ?? ""
         XCTAssertEqual(text, "hello",

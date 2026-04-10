@@ -1,0 +1,144 @@
+//
+//  HotKeyRecorderView.swift
+//  Jot
+//
+//  SwiftUI control that records a keyboard chord for the Quick Notes feature
+//  by installing a local NSEvent monitor only while the user is in recording
+//  mode. Rejects modifier-less chords (pure letter keys would block typing
+//  system-wide if registered as a global hotkey).
+//
+
+import SwiftUI
+import AppKit
+import Carbon.HIToolbox
+
+struct HotKeyRecorderView: View {
+
+    @Binding var hotKey: QuickNoteHotKey?
+    /// Called whenever the user picks a new chord or clears the binding.
+    /// Return `true` if the system accepted the change (e.g., Carbon registration
+    /// succeeded). Return `false` to surface an inline error and revert the
+    /// recorder UI without updating the binding.
+    let onChange: (QuickNoteHotKey?) -> Bool
+
+    @State private var isRecording: Bool = false
+    @State private var errorMessage: String?
+    @State private var localMonitor: Any?
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Button(action: toggleRecording) {
+                Text(buttonLabel)
+                    .font(FontManager.metadata(size: 11, weight: .semibold))
+                    .foregroundColor(labelColor)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(
+                        Capsule().fill(buttonBackground)
+                    )
+                    .overlay(
+                        Capsule().stroke(
+                            isRecording ? Color.accentColor.opacity(0.5) : Color.clear,
+                            lineWidth: 1
+                        )
+                    )
+            }
+            .buttonStyle(.plain)
+            .macPointingHandCursor()
+
+            if let errorMessage = errorMessage {
+                Text(errorMessage)
+                    .font(FontManager.metadata(size: 10, weight: .medium))
+                    .foregroundColor(.red)
+                    .lineLimit(2)
+            }
+        }
+        .onDisappear {
+            stopRecording()
+        }
+    }
+
+    // MARK: - Labels and colors
+
+    private var buttonLabel: String {
+        if isRecording { return "Press a chord..." }
+        if let hk = hotKey { return hk.displayString }
+        return "Click to record"
+    }
+
+    private var labelColor: Color {
+        if isRecording { return Color("PrimaryTextColor") }
+        return hotKey == nil ? Color("SecondaryTextColor") : Color("PrimaryTextColor")
+    }
+
+    private var buttonBackground: Color {
+        if isRecording {
+            return Color.accentColor.opacity(0.15)
+        }
+        // Idle state — use the semantic translucent surface token, which
+        // already encodes the 6% black/white light/dark variants in the
+        // asset catalog.
+        return Color("SurfaceTranslucentColor")
+    }
+
+    // MARK: - Recording lifecycle
+
+    private func toggleRecording() {
+        if isRecording {
+            stopRecording()
+        } else {
+            startRecording()
+        }
+    }
+
+    private func startRecording() {
+        errorMessage = nil
+        isRecording = true
+
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            handleEvent(event)
+            return nil // swallow so the key doesn't reach any other responder
+        }
+    }
+
+    private func stopRecording() {
+        isRecording = false
+        if let monitor = localMonitor {
+            NSEvent.removeMonitor(monitor)
+            localMonitor = nil
+        }
+    }
+
+    private func handleEvent(_ event: NSEvent) {
+        // Escape cancels recording without changing anything.
+        if event.keyCode == UInt16(kVK_Escape) {
+            stopRecording()
+            return
+        }
+
+        let carbonMods = QuickNoteHotKey.carbonModifiers(from: event.modifierFlags)
+        let candidate = QuickNoteHotKey(
+            keyCode: UInt32(event.keyCode),
+            modifiers: carbonMods
+        )
+
+        guard candidate.hasAnyModifier else {
+            errorMessage = "Shortcut requires at least one modifier"
+            return
+        }
+
+        // Try the registration first; only commit to the binding if it
+        // succeeds. Otherwise the recorder UI would show a chord that
+        // doesn't actually fire.
+        if onChange(candidate) {
+            hotKey = candidate
+            errorMessage = nil
+            stopRecording()
+        } else {
+            errorMessage = "Already in use. Try another."
+            // Stay in recording mode so the user can immediately try again.
+        }
+    }
+
+}

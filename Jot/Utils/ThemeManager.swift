@@ -123,10 +123,21 @@ final class ThemeManager: ObservableObject {
     static let lastBackupDateKey = "LastBackupDate"
     static let versionRetentionDaysKey = "VersionRetentionDays"
 
+    // Quick Notes feature keys
+    static let quickNoteHotKeyKey = "QuickNoteHotKey"
+    static let quickNotesFolderIDKey = "QuickNotesFolderID"
+
     static let editorSettingsChangedNotification = Notification.Name("EditorSettingsChanged")
 
     private let userDefaults: UserDefaults
     private var appearanceObserver: NSKeyValueObservation?
+
+    /// True once `init` has finished assigning all properties. `@Published`
+    /// property wrappers route assignments through their setter, which fires
+    /// `didSet` even during init — so observers that persist to UserDefaults
+    /// must guard on this flag to avoid writing factory defaults on first
+    /// launch (which would then pin the value across in-code default changes).
+    private var hasFinishedInitialization = false
 
     @Published var currentTheme: AppTheme {
         didSet {
@@ -246,6 +257,22 @@ final class ThemeManager: ObservableObject {
         }
     }
 
+    // Quick Notes: user-configurable global hotkey. The companion
+    // quickNotesFolderIDKey is owned by QuickNoteService directly — no
+    // ThemeManager mirror because nothing in the UI binds to it and a
+    // mirrored copy would just be one more thing to keep in sync.
+    @Published var quickNoteHotKey: QuickNoteHotKey? {
+        didSet {
+            guard hasFinishedInitialization else { return }
+            if let hk = quickNoteHotKey,
+               let data = try? JSONEncoder().encode(hk) {
+                userDefaults.set(data, forKey: Self.quickNoteHotKeyKey)
+            } else {
+                userDefaults.removeObject(forKey: Self.quickNoteHotKeyKey)
+            }
+        }
+    }
+
 
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
@@ -297,9 +324,24 @@ final class ThemeManager: ObservableObject {
         self.backupMaxCount = userDefaults.integer(forKey: Self.backupMaxCountKey)
         self.versionRetentionDays = userDefaults.integer(forKey: Self.versionRetentionDaysKey)
 
-        // didSet doesn't fire during init — apply manually
+        // Quick Notes: hotkey defaults to the factory default on first launch.
+        // The inbox folder ID is owned by QuickNoteService directly via
+        // userDefaults; no ThemeManager mirror.
+        if let data = userDefaults.data(forKey: Self.quickNoteHotKeyKey),
+           let decoded = try? JSONDecoder().decode(QuickNoteHotKey.self, from: data) {
+            self.quickNoteHotKey = decoded
+        } else {
+            self.quickNoteHotKey = .default
+        }
+
+        // didSet doesn't fire during init for plain stored properties — apply
+        // those side effects manually. Property-wrapper-backed @Published
+        // properties have the OPPOSITE behavior (didSet fires even in init),
+        // which is why hasFinishedInitialization guards their persistence
+        // observers above. Setting the flag here completes init.
         applyAppKitAppearance(self.currentTheme)
         resolvedColorScheme = Self.resolveColorScheme(for: self.currentTheme)
+        hasFinishedInitialization = true
 
         // Track system appearance changes so "System" mode stays in sync
         appearanceObserver = NSApplication.shared.observe(\.effectiveAppearance) { [weak self] _, _ in

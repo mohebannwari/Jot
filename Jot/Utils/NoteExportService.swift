@@ -506,6 +506,10 @@ final class NoteExportService {
         if let regex = try? NSRegularExpression(pattern: #"\[\[webclip\|([^|]*)\|([^|]*)\|[^|]*\|[^\]]*\]\]"#) {
             text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "$2 ($1)")
         }
+        // Convert link cards
+        if let regex = try? NSRegularExpression(pattern: #"\[\[linkcard\|([^|]*)\|([^|]*)\|([^\]]*)\]\]"#) {
+            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "$1 ($3)")
+        }
         // Strip table markup (just show raw cell text)
         if let regex = try? NSRegularExpression(pattern: #"\[\[table\|[^\]]*\]\]"#) {
             text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "[Table]")
@@ -564,6 +568,10 @@ final class NoteExportService {
         // Web clips
         if let regex = try? NSRegularExpression(pattern: #"\[\[webclip\|([^|]*)\|([^|]*)\|[^|]*\|[^\]]*\]\]"#) {
             text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "[$2]($1)")
+        }
+        // Link cards
+        if let regex = try? NSRegularExpression(pattern: #"\[\[linkcard\|([^|]*)\|([^|]*)\|([^\]]*)\]\]"#) {
+            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "[$1]($3)")
         }
         // Strip alignment (no markdown equivalent)
         if let regex = try? NSRegularExpression(pattern: #"\[\[align:[a-z]+\]\]"#) {
@@ -685,6 +693,20 @@ final class NoteExportService {
                     let label = String(text[labelRange])
                     let sanitizedURL = sanitizeURL(url)
                     text = text.replacingCharacters(in: fullRange, with: "<a href=\"\(sanitizedURL)\" class=\"webclip\">\(label)</a>")
+                }
+            }
+        }
+        // Link cards
+        if let regex = try? NSRegularExpression(pattern: #"\[\[linkcard\|([^|]*)\|([^|]*)\|([^\]]*)\]\]"#) {
+            let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
+            for match in matches.reversed() {
+                if let titleRange = Range(match.range(at: 1), in: text),
+                   let urlRange = Range(match.range(at: 3), in: text),
+                   let fullRange = Range(match.range, in: text) {
+                    let title = String(text[titleRange])
+                    let url = String(text[urlRange])
+                    let sanitizedURL = sanitizeURL(url)
+                    text = text.replacingCharacters(in: fullRange, with: "<a href=\"\(sanitizedURL)\" class=\"linkcard\">\(title)</a>")
                 }
             }
         }

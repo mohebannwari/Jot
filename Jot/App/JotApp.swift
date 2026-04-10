@@ -58,6 +58,15 @@ struct JotApp: App {
 
         // Install Cmd+P handler at NSEvent level (bypasses SwiftUI/macOS print validation)
         PrintKeyHandler.shared.install()
+
+        // Install the Quick Notes global hotkey. Reads the stored chord from
+        // UserDefaults directly so this works regardless of ThemeManager's
+        // construction order. Falls back to the factory default on first launch.
+        let storedHotKey = QuickNoteHotKey.loadFromStandardDefaults() ?? .default
+        GlobalHotKeyManager.shared.onFire = {
+            QuickNoteWindowController.shared.showPanel()
+        }
+        GlobalHotKeyManager.shared.install(storedHotKey)
     }
 
     /// Clean up temporary files that may have accumulated from previous sessions
