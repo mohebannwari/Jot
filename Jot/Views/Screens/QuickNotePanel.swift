@@ -12,7 +12,6 @@
 
 import AppKit
 import SwiftUI
-import os
 
 // MARK: - NSPanel subclass
 
@@ -35,7 +34,6 @@ final class QuickNoteWindowController {
 
     private var panel: QuickNotePanelWindow?
     private weak var previousApp: NSRunningApplication?
-    private let logger = Logger(subsystem: "com.jot", category: "QuickNoteWindowController")
 
     private init() {}
 
@@ -66,7 +64,6 @@ final class QuickNoteWindowController {
         // last position. Centering on every show would defeat that.
         panel.alphaValue = 1.0
         panel.makeKeyAndOrderFront(nil)
-        logger.info("Showed Quick Note panel")
     }
 
     /// Dismiss the panel. Two distinct animations depending on why:
