@@ -1203,7 +1203,14 @@ struct ContentView: View {
     }
 
     private var detailBg: Color {
-        Color("DetailPaneSurfaceColor")
+        // Single choke point for the detail pane's "paper" color, used by:
+        // - Main detail pane body fill (line 1256)
+        // - Split-view secondary pane fill (line 1487)
+        // - `splitPaneShadow` background color for cast shadows (4 call sites)
+        // - Settings overlay background (line 1122)
+        // Routing through `tintedPaneSurface(for:)` makes all of these absorb
+        // the user's app-wide hue tint simultaneously.
+        themeManager.tintedPaneSurface(for: colorScheme)
     }
 
 
