@@ -136,9 +136,13 @@ struct NoteMetadataSection: View {
             .components(separatedBy: "/").first ?? urlString
     }
 
-    /// Matches tabs container fill in dark mode; boosted in dark mode to compensate for blur material behind panel
+    /// Secondary pill/panel surface inside the Properties panel. Routes through
+    /// `themeManager.tintedBlockContainer` so tag pills, the tag input, the todo
+    /// counter, and the expanded todo list container all absorb the app-wide
+    /// hue tint — matching the tabs container, code block language chip, and
+    /// table header cells that already run through the same pipeline.
     private var todoContainerColor: Color {
-        colorScheme == .dark ? Color.white.opacity(0.12) : Color("TodoContainerColor")
+        themeManager.tintedBlockContainer(for: colorScheme)
     }
 
     // MARK: - Date Formatting
