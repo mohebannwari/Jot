@@ -683,25 +683,35 @@ struct SettingsPage: View {
     // MARK: - Tint Section
 
     private var tintSection: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 12) {
             sectionLabel("Colors")
 
-            tintRow(
-                title: "Hue",
-                caption: "Choose a tint color"
-            ) {
-                HueGradientSlider(value: $themeManager.tintHue)
-                    .frame(width: 140)
-            }
+            VStack(alignment: .leading, spacing: 8) {
+                settingsGroupedCard {
+                    tintRow(
+                        title: "Hue",
+                        caption: "Choose a tint color"
+                    ) {
+                        HueGradientSlider(value: $themeManager.tintHue)
+                            .frame(width: 140)
+                    }
 
-            tintRow(
-                title: "Intensity",
-                caption: "Control how strongly the tint is applied",
-                trailing: "\(Int((themeManager.tintIntensity * 100).rounded()))%"
-            ) {
-                Slider(value: $themeManager.tintIntensity, in: 0...1)
-                    .tint(Color("AccentColor"))
-                    .frame(width: 140)
+                    tintRow(
+                        title: "Intensity",
+                        caption: "Control how strongly the tint is applied",
+                        trailing: "\(Int((themeManager.tintIntensity * 100).rounded()))%"
+                    ) {
+                        Slider(value: $themeManager.tintIntensity, in: 0...1)
+                            .tint(Color("AccentColor"))
+                            .frame(width: 140)
+                    }
+                }
+
+                Text("Apply a subtle color wash to the app window and detail pane. The tint adapts to light and dark mode automatically — softer in light, deeper in dark.")
+                    .font(FontManager.heading(size: 11, weight: .regular))
+                    .foregroundColor(Color("SettingsPlaceholderTextColor"))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 14)
             }
         }
     }
@@ -725,7 +735,7 @@ struct SettingsPage: View {
             control()
             if let trailing {
                 Text(trailing)
-                    .font(FontManager.heading(size: 12, weight: .medium).monospacedDigit())
+                    .font(FontManager.metadata(size: 11, weight: .medium))
                     .foregroundStyle(Color("SettingsPlaceholderTextColor"))
                     .frame(width: 32, alignment: .trailing)
             }
