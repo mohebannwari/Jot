@@ -133,6 +133,12 @@ final class ThemeManager: ObservableObject {
 
     static let editorSettingsChangedNotification = Notification.Name("EditorSettingsChanged")
 
+    /// Posted whenever tintHue or tintIntensity changes. NSView overlays
+    /// (tabs container, code block chip) that paint stone-300/stone-800
+    /// surfaces subscribe to this so they can recompute their layer
+    /// background colors without depending on the SwiftUI environment.
+    static let tintDidChangeNotification = Notification.Name("JotTintDidChange")
+
     private let userDefaults: UserDefaults
     private var appearanceObserver: NSKeyValueObservation?
 
@@ -285,6 +291,7 @@ final class ThemeManager: ObservableObject {
         didSet {
             guard hasFinishedInitialization else { return }
             userDefaults.set(tintHue, forKey: Self.tintHueKey)
+            NotificationCenter.default.post(name: Self.tintDidChangeNotification, object: nil)
         }
     }
 
@@ -295,6 +302,7 @@ final class ThemeManager: ObservableObject {
         didSet {
             guard hasFinishedInitialization else { return }
             userDefaults.set(tintIntensity, forKey: Self.tintIntensityKey)
+            NotificationCenter.default.post(name: Self.tintDidChangeNotification, object: nil)
         }
     }
 
@@ -442,6 +450,78 @@ final class ThemeManager: ObservableObject {
     func resetTint() {
         tintHue = 0.55
         tintIntensity = 0.0
+    }
+
+    /// SwiftUI helper for the "secondary" surface that sits one layer above
+    /// `tintedPaneSurface` in the visual hierarchy — editor block containers
+    /// (tabs outer wrapper, code block chip pill, file attachment tags,
+    /// callout/code block chrome). Uses a deliberately different target from
+    /// `tintedPaneSurface` so that at full intensity the two surfaces remain
+    /// visually distinct: slightly more saturated and offset in brightness.
+    func tintedBlockContainer(for colorScheme: ColorScheme) -> Color {
+        let base = Color("BlockContainerColor")
+        guard tintIntensity > 0 else { return base }
+
+        let target: Color
+        switch colorScheme {
+        case .light:
+            target = Color(hue: tintHue, saturation: 0.14, brightness: 0.88)
+        case .dark:
+            target = Color(hue: tintHue, saturation: 0.45, brightness: 0.22)
+        @unknown default:
+            target = Color(hue: tintHue, saturation: 0.14, brightness: 0.88)
+        }
+
+        if #available(macOS 15.0, iOS 18.0, *) {
+            return base.mix(with: target, by: tintIntensity, in: .perceptual)
+        } else {
+            let baseNS = NSColor(base).usingColorSpace(.sRGB) ?? NSColor(base)
+            let targetNS = NSColor(target).usingColorSpace(.sRGB) ?? NSColor(target)
+            let blended = baseNS.blended(withFraction: CGFloat(tintIntensity), of: targetNS) ?? baseNS
+            return Color(nsColor: blended)
+        }
+    }
+
+    // MARK: - Tint (AppKit / NSView bridge)
+
+    /// Read the current persisted tint hue directly from UserDefaults.
+    /// Safe to call from any thread and from NSView overlays that don't
+    /// have access to an @EnvironmentObject ThemeManager reference.
+    nonisolated static func currentTintHue() -> Double {
+        UserDefaults.standard.object(forKey: tintHueKey) as? Double ?? 0.55
+    }
+
+    /// Read the current persisted tint intensity directly from UserDefaults.
+    /// See `currentTintHue()` for rationale.
+    nonisolated static func currentTintIntensity() -> Double {
+        UserDefaults.standard.object(forKey: tintIntensityKey) as? Double ?? 0.0
+    }
+
+    /// NSColor variant of `tintedBlockContainer(for:)` for AppKit overlays
+    /// (TabsContainerOverlayView, CodeBlockOverlayView). Reads the current
+    /// tint state from UserDefaults and blends the stone-300 / stone-800
+    /// base toward the hue-derived target in sRGB.
+    ///
+    /// The target values mirror the SwiftUI helper so light/dark surfaces
+    /// land in the same place visually whether they come from SwiftUI or
+    /// AppKit. Base colors (#D6D3D1 / #292524) match the Figma
+    /// BlockContainerColor token exactly.
+    nonisolated static func tintedBlockContainerNS(isDark: Bool) -> NSColor {
+        let base: NSColor = isDark
+            ? NSColor(srgbRed: 41/255, green: 37/255, blue: 36/255, alpha: 1)     // #292524 stone-800
+            : NSColor(srgbRed: 214/255, green: 211/255, blue: 209/255, alpha: 1)  // #D6D3D1 stone-300
+
+        let intensity = currentTintIntensity()
+        guard intensity > 0 else { return base }
+
+        let hue = CGFloat(currentTintHue())
+        let target: NSColor = isDark
+            ? NSColor(hue: hue, saturation: 0.45, brightness: 0.22, alpha: 1)
+            : NSColor(hue: hue, saturation: 0.14, brightness: 0.88, alpha: 1)
+
+        let baseSRGB = base.usingColorSpace(.sRGB) ?? base
+        let targetSRGB = target.usingColorSpace(.sRGB) ?? target
+        return baseSRGB.blended(withFraction: CGFloat(intensity), of: targetSRGB) ?? baseSRGB
     }
 
     // MARK: - Private

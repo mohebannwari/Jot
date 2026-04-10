@@ -1077,7 +1077,13 @@ struct FileLinkPillView: View {
         }
         .foregroundColor(Color("PrimaryTextColor"))
         .padding(4)
-        .background(Color("BlockContainerColor"), in: Capsule())
+        .background(
+            // Pills render via ImageRenderer so they can't rely on
+            // @EnvironmentObject (it crashes outside a live view hierarchy).
+            // Read tint state from the static helper instead.
+            Color(nsColor: ThemeManager.tintedBlockContainerNS(isDark: colorScheme == .light)),
+            in: Capsule()
+        )
         .environment(\.colorScheme, colorScheme == .dark ? .light : .dark)
         .fixedSize()
         .onHover { inside in

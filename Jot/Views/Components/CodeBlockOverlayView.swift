@@ -139,6 +139,8 @@ final class CodeBlockOverlayView: NSView {
 
     override var isFlipped: Bool { true }
 
+    private var tintObserver: NSObjectProtocol?
+
     // MARK: - Init
 
     init(codeBlockData: CodeBlockData) {
@@ -147,10 +149,29 @@ final class CodeBlockOverlayView: NSView {
         buildView()
         updateAppearance()
         populate()
+        setupTintObserver()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
+
+    deinit {
+        if let tintObserver {
+            NotificationCenter.default.removeObserver(tintObserver)
+        }
+    }
+
+    /// Subscribe to tint changes so the chip pill recomputes its color
+    /// when the user moves the Hue or Intensity slider in Settings.
+    private func setupTintObserver() {
+        tintObserver = NotificationCenter.default.addObserver(
+            forName: ThemeManager.tintDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.updateAppearance()
+        }
+    }
 
     // MARK: - Build
 
@@ -313,10 +334,11 @@ final class CodeBlockOverlayView: NSView {
             ? NSColor(srgbRed: 12/255, green: 10/255, blue: 9/255, alpha: 1).cgColor      // #0C0A09
             : NSColor.white.cgColor                                                        // #FFFFFF
 
-        // Chip pill -- stone-800 in both modes (matches tabs container fill)
-        chipView.layer?.backgroundColor = dark
-            ? NSColor(srgbRed: 41/255, green: 37/255, blue: 36/255, alpha: 1).cgColor     // #292524
-            : NSColor(srgbRed: 41/255, green: 37/255, blue: 36/255, alpha: 1).cgColor     // #292524
+        // Chip pill -- always uses the DARK variant of the tinted block
+        // container so it reads as a deep, saturated pill in both light
+        // and dark app modes (matches the original "stone-800 in both
+        // modes" design intent, plus picks up the user's hue tint).
+        chipView.layer?.backgroundColor = ThemeManager.tintedBlockContainerNS(isDark: true).cgColor
 
         langLabel.attributedStringValue = NSAttributedString(
             string: CodeBlockData.displayName(for: codeBlockData.language),
