@@ -49,7 +49,15 @@ struct FileAttachmentTagView: View {
         }
         .foregroundColor(Color("PrimaryTextColor"))
         .padding(4)
-        .background(Color("BlockContainerColor"), in: Capsule())
+        .background(
+            // Pills render via ImageRenderer so they can't rely on
+            // @EnvironmentObject (it crashes outside a live view hierarchy).
+            // Read tint state from the static helper instead. The bitmap
+            // is cached in the NSTextAttachment, so existing pills update
+            // the next time they're re-rendered (note reopen / reformat).
+            Color(nsColor: ThemeManager.tintedBlockContainerNS(isDark: colorScheme == .light)),
+            in: Capsule()
+        )
         .environment(\.colorScheme, colorScheme == .dark ? .light : .dark)
         .onHover { inside in
             if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }

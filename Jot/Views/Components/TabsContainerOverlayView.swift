@@ -88,6 +88,22 @@ final class TabsContainerOverlayView: NSView {
         rebuildTabsRow()
         updateContentText()
         setupFormattingObserver()
+        setupTintObserver()
+    }
+
+    /// Observe app-wide tint changes so the stone-300 / stone-800 outer
+    /// container absorbs the user's picked hue alongside the SwiftUI
+    /// surfaces. Uses the shared `formattingObservers` array so cleanup
+    /// happens automatically in `deinit`.
+    private func setupTintObserver() {
+        let obs = NotificationCenter.default.addObserver(
+            forName: ThemeManager.tintDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.updateColors()
+        }
+        formattingObservers.append(obs)
     }
 
     deinit {
@@ -767,11 +783,11 @@ final class TabsContainerOverlayView: NSView {
             : NSColor.white
     }
 
-    /// bg/block-container: stone-300 (light) / stone-800 (dark) — from Figma variable tokens
+    /// bg/block-container: stone-300 (light) / stone-800 (dark) — from Figma variable tokens.
+    /// Routes through `ThemeManager.tintedBlockContainerNS` so the user's
+    /// app-wide hue tint reaches this outer container too.
     private static func containerColor(isDark: Bool) -> NSColor {
-        isDark
-            ? NSColor(srgbRed: 41/255, green: 37/255, blue: 36/255, alpha: 1)    // #292524
-            : NSColor(srgbRed: 214/255, green: 211/255, blue: 209/255, alpha: 1) // #D6D3D1
+        ThemeManager.tintedBlockContainerNS(isDark: isDark)
     }
 
     private func updateColors() {

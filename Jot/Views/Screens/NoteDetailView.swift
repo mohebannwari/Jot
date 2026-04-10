@@ -1417,7 +1417,7 @@ struct NoteDetailView: View {
 
     @ViewBuilder
     private var headerMaterialBase: some View {
-        Rectangle().fill(Color("DetailPaneSurfaceColor"))
+        Rectangle().fill(themeManager.tintedPaneSurface(for: colorScheme))
     }
 
     private static let headerMaskGradient: LinearGradient = {

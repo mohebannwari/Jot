@@ -157,6 +157,7 @@ struct WindowTransparencyView: NSViewRepresentable {
 private struct FloatingSidebarBackgroundModifier: ViewModifier {
     let cornerRadius: CGFloat
     @Environment(\.colorScheme) private var colorScheme
+    @EnvironmentObject private var themeManager: ThemeManager
     private let shape = RoundedRectangle(cornerRadius: 24, style: .continuous)
 
     func body(content: Content) -> some View {
@@ -164,7 +165,7 @@ private struct FloatingSidebarBackgroundModifier: ViewModifier {
             content
                 .glassEffect(
                     .regular.interactive(true)
-                        .tint(Color("DetailPaneSurfaceColor").opacity(0.80)),
+                        .tint(themeManager.tintedPaneSurface(for: colorScheme).opacity(0.80)),
                     in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 )
                 .shadow(color: .black.opacity(0.04), radius: 9.5, x: 0, y: 9)
@@ -175,7 +176,7 @@ private struct FloatingSidebarBackgroundModifier: ViewModifier {
                 .background {
                     ZStack {
                         BackdropBlurView(material: .popover, blendingMode: .withinWindow)
-                        Color("DetailPaneSurfaceColor")
+                        themeManager.tintedPaneSurface(for: colorScheme)
                             .opacity(0.60)
                     }
                     .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
@@ -735,13 +736,13 @@ struct ContentView: View {
                     .ignoresSafeArea()
                     .tintedLiquidGlass(
                         in: Rectangle(),
-                        tint: Color("DetailPaneSurfaceColor"),
+                        tint: themeManager.tintedPaneSurface(for: colorScheme),
                         tintOpacity: 0.80
                     )
             } else {
                 ZStack {
                     BackdropBlurView(material: .hudWindow, blendingMode: .behindWindow)
-                    Color("DetailPaneSurfaceColor")
+                    themeManager.tintedPaneSurface(for: colorScheme)
                         .opacity(0.95)
                 }
                 .ignoresSafeArea()
@@ -1202,7 +1203,14 @@ struct ContentView: View {
     }
 
     private var detailBg: Color {
-        Color("DetailPaneSurfaceColor")
+        // Single choke point for the detail pane's "paper" color, used by:
+        // - Main detail pane body fill (line 1256)
+        // - Split-view secondary pane fill (line 1487)
+        // - `splitPaneShadow` background color for cast shadows (4 call sites)
+        // - Settings overlay background (line 1122)
+        // Routing through `tintedPaneSurface(for:)` makes all of these absorb
+        // the user's app-wide hue tint simultaneously.
+        themeManager.tintedPaneSurface(for: colorScheme)
     }
 
 

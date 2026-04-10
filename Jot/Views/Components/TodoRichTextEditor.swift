@@ -733,10 +733,15 @@ struct TodoRichTextEditor: View {
 
     private func clampedCommandMenuPosition(for geometry: GeometryProxy) -> CGPoint {
         let containerSize = geometry.size
-        let menuGap: CGFloat = 4
+        // Below-cursor uses a tight 4pt gap; above-cursor uses a larger gap
+        // so the "/" character and its "Type to search" placeholder stay
+        // visually uncovered by the menu's bottom edge.
+        let menuGapBelow: CGFloat = 4
+        let menuGapAbove: CGFloat = 12
         let menuHeight = CommandMenuLayout.idealHeight(for: filteredCommandMenuTools.count) + Self.commandMenuVerticalPadding
         let cursorHeight = commandMenuCursorHeight
         let bottomReserve: CGFloat = 50 // bottom toolbar overlay
+        let topReserve: CGFloat = 20    // small safety margin at viewport top
 
         // Clamp X
         let maxX = max(0, containerSize.width - Self.commandMenuTotalWidth)
@@ -752,18 +757,39 @@ struct TodoRichTextEditor: View {
 
         let windowHeight = NSApp.keyWindow?.contentView?.bounds.height ?? globalFrame.height
         let spaceBelow = windowHeight - cursorBottomViewport - bottomReserve
-        let fitsBelow = spaceBelow >= (menuHeight + menuGap)
+        let spaceAbove = cursorViewportY - topReserve
+        let fitsBelow = spaceBelow >= (menuHeight + menuGapBelow)
+        let fitsAbove = spaceAbove >= (menuHeight + menuGapAbove)
 
         let yPosition: CGFloat
         if fitsBelow {
-            // Below cursor
-            yPosition = commandMenuPosition.y + cursorHeight + menuGap
+            // Below cursor with tight gap
+            yPosition = commandMenuPosition.y + cursorHeight + menuGapBelow
+        } else if fitsAbove {
+            // Above cursor with larger gap so "/" + placeholder stay uncovered
+            yPosition = commandMenuPosition.y - menuHeight - menuGapAbove
         } else {
-            // Above cursor
-            yPosition = commandMenuPosition.y - menuHeight - menuGap
+            // Neither direction has enough room for the full menu. Pick the
+            // direction with MORE space and let the menu's internal ScrollView
+            // handle the overflow. Never return a y that would overlap the
+            // cursor line — the old `max(0, yPosition)` clamp caused exactly
+            // that bug when the cursor was near the top of the viewport.
+            if spaceAbove >= spaceBelow {
+                // Above: pin the menu's bottom at `cursorLineTop - menuGapAbove`,
+                // and push its top as high as available space allows. If the
+                // menu is taller than the available space, it will be clipped
+                // at the top by SwiftUI's overlay bounds — acceptable because
+                // the menu has internal vertical scrolling.
+                let menuBottom = commandMenuPosition.y - menuGapAbove
+                yPosition = menuBottom - menuHeight
+            } else {
+                // Below: pin the menu's top at `cursorLineBottom + menuGapBelow`.
+                // Internal scrolling handles bottom overflow.
+                yPosition = commandMenuPosition.y + cursorHeight + menuGapBelow
+            }
         }
 
-        return CGPoint(x: clampedX, y: max(0, yPosition))
+        return CGPoint(x: clampedX, y: yPosition)
     }
 
     private func clampedURLPasteMenuPosition(for containerSize: CGSize) -> CGPoint {

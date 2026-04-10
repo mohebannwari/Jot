@@ -23,6 +23,7 @@ struct NoteMetadataSection: View {
     @State private var newTagText = ""
     @FocusState private var tagFieldFocused: Bool
     @Environment(\.colorScheme) private var colorScheme
+    @EnvironmentObject private var themeManager: ThemeManager
 
     // MARK: - Content-Derived Metadata (cached, updated on content change)
 
@@ -258,14 +259,14 @@ struct NoteMetadataSection: View {
                     .fill(Color.clear)
                     .frame(height: 180)
                     .background(
-                        Rectangle().fill(Color("DetailPaneSurfaceColor"))
+                        Rectangle().fill(themeManager.tintedPaneSurface(for: colorScheme))
                             .mask(Self.bottomFadeGradient)
                     )
                     .allowsHitTesting(false)
             }
         }
         .background(.ultraThinMaterial)
-        .background(Color("DetailPaneSurfaceColor").opacity(0.5))
+        .background(themeManager.tintedPaneSurface(for: colorScheme).opacity(0.5))
         .onAppear { reparseContent() }
         .onChange(of: note.content) { reparseContent() }
     }

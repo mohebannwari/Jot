@@ -180,10 +180,10 @@ final class NoteTableOverlayView: NSView {
         NSColor.controlAccentColor.withAlphaComponent(isDarkMode ? 0.85 : 0.7)
     }
     private var headerBackgroundColor: NSColor {
-        NSColor(named: "BlockContainerColor")
-            ?? (isDarkMode
-                ? NSColor(srgbRed: 41/255, green: 37/255, blue: 36/255, alpha: 1)
-                : NSColor(srgbRed: 214/255, green: 211/255, blue: 209/255, alpha: 1))
+        // Routes through the tint pipeline so the table header cell fill
+        // shifts with the app-wide hue tint alongside other block chrome
+        // (tabs container, code block chip, file attachment tag).
+        ThemeManager.tintedBlockContainerNS(isDark: isDarkMode)
     }
 
     /// Compute the total table height for a given NoteTableData (used by attachment sizing).
@@ -220,16 +220,37 @@ final class NoteTableOverlayView: NSView {
 
     // MARK: - Init
 
+    private var tintObserver: NSObjectProtocol?
+
     init(tableData: NoteTableData) {
         self.tableData = tableData
         super.init(frame: .zero)
         wantsLayer = true
         layer?.masksToBounds = false
+        setupTintObserver()
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("NoteTableOverlayView does not support init(coder:)")
+    }
+
+    deinit {
+        if let tintObserver {
+            NotificationCenter.default.removeObserver(tintObserver)
+        }
+    }
+
+    /// Subscribe to tint changes so the header cell fill repaints when
+    /// the user drags the Hue or Intensity slider in Settings.
+    private func setupTintObserver() {
+        tintObserver = NotificationCenter.default.addObserver(
+            forName: ThemeManager.tintDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.needsDisplay = true
+        }
     }
 
     // MARK: - Computed Geometry

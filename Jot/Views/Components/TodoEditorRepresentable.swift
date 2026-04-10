@@ -1077,7 +1077,13 @@ struct FileLinkPillView: View {
         }
         .foregroundColor(Color("PrimaryTextColor"))
         .padding(4)
-        .background(Color("BlockContainerColor"), in: Capsule())
+        .background(
+            // Pills render via ImageRenderer so they can't rely on
+            // @EnvironmentObject (it crashes outside a live view hierarchy).
+            // Read tint state from the static helper instead.
+            Color(nsColor: ThemeManager.tintedBlockContainerNS(isDark: colorScheme == .light)),
+            in: Capsule()
+        )
         .environment(\.colorScheme, colorScheme == .dark ? .light : .dark)
         .fixedSize()
         .onHover { inside in
@@ -9439,8 +9445,34 @@ struct TodoEditorRepresentable: NSViewRepresentable {
 
 final class InlineNSTextView: NSTextView, QLPreviewPanelDataSource, QLPreviewPanelDelegate {
     // Per-instance menu state for keyboard event handling (avoids cross-editor contamination in split views)
-    var isCommandMenuShowing = false
-    var commandSlashLocation: Int = -1
+    var isCommandMenuShowing = false {
+        didSet {
+            // Reset filter state on open/close transitions so the placeholder
+            // starts in its "empty filter → show ghost" state on reopen and
+            // doesn't briefly flash a stale filter from a previous session.
+            if isCommandMenuShowing != oldValue {
+                commandMenuFilterText = ""
+            }
+            updateCommandMenuPlaceholder()
+        }
+    }
+    var commandSlashLocation: Int = -1 {
+        didSet { updateCommandMenuPlaceholder() }
+    }
+
+    /// Current filter text typed after the slash. Drives the "Type to search"
+    /// ghost placeholder visibility — when empty AND the menu is showing,
+    /// the placeholder is drawn next to the slash; as soon as the user types
+    /// a filter character, the placeholder hides. Mirrors the filter text
+    /// broadcast over `.commandMenuFilterUpdate`.
+    var commandMenuFilterText: String = "" {
+        didSet { updateCommandMenuPlaceholder() }
+    }
+
+    /// Ghost placeholder NSTextField shown next to the "/" when the command
+    /// menu opens. Subview of the text view itself, positioned in text-view-
+    /// local coordinates via `updateCommandMenuPlaceholder()`.
+    private var commandMenuPlaceholderField: NSTextField?
 
     // URL paste menu state
     var isURLPasteMenuShowing = false
@@ -10379,6 +10411,7 @@ final class InlineNSTextView: NSTextView, QLPreviewPanelDataSource, QLPreviewPan
                 NotificationCenter.default.post(name: .hideCommandMenu, object: nil, userInfo: eidInfo)
             } else {
                 let filterText = readCommandFilterText()
+                self.commandMenuFilterText = filterText
                 NotificationCenter.default.post(
                     name: .commandMenuFilterUpdate, object: filterText, userInfo: eidInfo)
             }
@@ -10489,6 +10522,7 @@ final class InlineNSTextView: NSTextView, QLPreviewPanelDataSource, QLPreviewPan
         if isCommandMenuShowing {
             super.insertText(string, replacementRange: replacementRange)
             let filterText = readCommandFilterText()
+            self.commandMenuFilterText = filterText
             NotificationCenter.default.post(
                 name: .commandMenuFilterUpdate, object: filterText, userInfo: eidInfo)
             return
@@ -10804,6 +10838,85 @@ final class InlineNSTextView: NSTextView, QLPreviewPanelDataSource, QLPreviewPan
         var info = contextMenuUserInfo
         info["tool"] = "bulletList"
         NotificationCenter.default.post(name: .applyEditTool, object: nil, userInfo: info)
+    }
+
+    // MARK: - Command Menu Placeholder
+
+    /// Shows a dimmed "Type to search" ghost text right after the "/" when
+    /// the slash command menu is open and no filter text has been typed yet.
+    /// Hides automatically when the user types any filter character or when
+    /// the menu closes. Called from didSet on `isCommandMenuShowing`,
+    /// `commandSlashLocation`, and `commandMenuFilterText`.
+    func updateCommandMenuPlaceholder() {
+        // Show only when the menu is open, a valid slash location is recorded,
+        // and the user has not yet typed any filter characters.
+        let shouldShow = isCommandMenuShowing
+            && commandSlashLocation >= 0
+            && commandMenuFilterText.isEmpty
+
+        guard shouldShow else {
+            commandMenuPlaceholderField?.removeFromSuperview()
+            commandMenuPlaceholderField = nil
+            return
+        }
+
+        guard let layoutManager = self.layoutManager,
+              let textContainer = self.textContainer,
+              let textStorage = self.textStorage,
+              commandSlashLocation < textStorage.length
+        else { return }
+
+        // Compute the glyph rect for the "/" character so we can position
+        // the placeholder immediately to its right.
+        let glyphIndex = layoutManager.glyphIndexForCharacter(at: commandSlashLocation)
+        let slashRect = layoutManager.boundingRect(
+            forGlyphRange: NSRange(location: glyphIndex, length: 1),
+            in: textContainer
+        )
+
+        // Get the "/" glyph's baseline position within its line fragment so
+        // we can baseline-align the placeholder field to it. Without this,
+        // the field's TOP would align with the line fragment's top — which
+        // looks visibly higher than the "/" character because the placeholder
+        // font (12pt) is shorter than the body font (16pt) and its text ends
+        // up floating above the "/" vertical center.
+        let lineFragmentRect = layoutManager.lineFragmentRect(
+            forGlyphAt: glyphIndex,
+            effectiveRange: nil
+        )
+        let glyphBaselineInLine = layoutManager.location(forGlyphAt: glyphIndex)
+        let slashBaselineY = lineFragmentRect.origin.y + glyphBaselineInLine.y + textContainerOrigin.y
+
+        let originX = slashRect.origin.x + textContainerOrigin.x + slashRect.width + 4
+
+        // Reuse or create the placeholder field.
+        let field: NSTextField
+        if let existing = commandMenuPlaceholderField {
+            field = existing
+        } else {
+            field = NSTextField(labelWithString: "Type to search")
+            field.font = NSFont.systemFont(ofSize: 12, weight: .regular)
+            field.textColor = NSColor(named: "SecondaryTextColor") ?? .secondaryLabelColor
+            field.backgroundColor = .clear
+            field.isBezeled = false
+            field.isEditable = false
+            field.isSelectable = false
+            field.drawsBackground = false
+            field.isHidden = false
+            // Don't intercept any events — the field is purely decorative.
+            field.refusesFirstResponder = true
+            addSubview(field)
+            commandMenuPlaceholderField = field
+        }
+
+        field.sizeToFit()
+
+        // NSTextField's text baseline sits at `frame.origin.y + (height - descender)`
+        // (descender is negative). To make the field's baseline match the "/"
+        // glyph's baseline, subtract the ascender from the baseline Y.
+        let fieldAscender = field.font?.ascender ?? 0
+        let originY = slashBaselineY - fieldAscender
+        field.frame.origin = NSPoint(x: originX, y: originY)
     }
 }
 
