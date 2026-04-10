@@ -10873,8 +10873,21 @@ final class InlineNSTextView: NSTextView, QLPreviewPanelDataSource, QLPreviewPan
             forGlyphRange: NSRange(location: glyphIndex, length: 1),
             in: textContainer
         )
+
+        // Get the "/" glyph's baseline position within its line fragment so
+        // we can baseline-align the placeholder field to it. Without this,
+        // the field's TOP would align with the line fragment's top — which
+        // looks visibly higher than the "/" character because the placeholder
+        // font (12pt) is shorter than the body font (16pt) and its text ends
+        // up floating above the "/" vertical center.
+        let lineFragmentRect = layoutManager.lineFragmentRect(
+            forGlyphAt: glyphIndex,
+            effectiveRange: nil
+        )
+        let glyphBaselineInLine = layoutManager.location(forGlyphAt: glyphIndex)
+        let slashBaselineY = lineFragmentRect.origin.y + glyphBaselineInLine.y + textContainerOrigin.y
+
         let originX = slashRect.origin.x + textContainerOrigin.x + slashRect.width + 4
-        let originY = slashRect.origin.y + textContainerOrigin.y
 
         // Reuse or create the placeholder field.
         let field: NSTextField
@@ -10897,9 +10910,12 @@ final class InlineNSTextView: NSTextView, QLPreviewPanelDataSource, QLPreviewPan
         }
 
         field.sizeToFit()
-        // Vertically center the label inside the line height so the baseline
-        // roughly matches the "/" character. The exact offset depends on font
-        // metrics, but sizeToFit + origin matches the glyph rect closely enough.
+
+        // NSTextField's text baseline sits at `frame.origin.y + (height - descender)`
+        // (descender is negative). To make the field's baseline match the "/"
+        // glyph's baseline, subtract the ascender from the baseline Y.
+        let fieldAscender = field.font?.ascender ?? 0
+        let originY = slashBaselineY - fieldAscender
         field.frame.origin = NSPoint(x: originX, y: originY)
     }
 }
