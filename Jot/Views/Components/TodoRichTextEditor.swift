@@ -209,6 +209,20 @@ struct TodoRichTextEditor: View {
                                 name: .urlPasteSelectPlainLink,
                                 object: payload
                             )
+                        },
+                        onCard: {
+                            withAnimation(.smooth(duration: 0.15)) { showURLPasteMenu = false }
+                            syncMenuState(["isURLPasteMenuShowing": false])
+                            defer { urlPasteRange = NSRange(location: 0, length: 0) }
+                            var payload: [String: Any] = [
+                                "url": urlPasteURL,
+                                "range": NSValue(range: urlPasteRange),
+                            ]
+                            if let eid = editorInstanceID { payload["editorInstanceID"] = eid }
+                            NotificationCenter.default.post(
+                                name: .urlPasteSelectCard,
+                                object: payload
+                            )
                         }
                     )
                     .offset(
@@ -853,12 +867,13 @@ struct TodoRichTextEditor: View {
 struct URLPasteOptionMenu: View {
     let onMention: () -> Void
     let onPasteAsURL: () -> Void
+    let onCard: () -> Void
 
     @Environment(\.colorScheme) private var colorScheme
     @State private var focusedOption: Int = 0
     @State private var hoveredOption: Int?
 
-    private let optionCount = 2
+    private let optionCount = 3
 
     private var activeOption: Int {
         hoveredOption ?? focusedOption
@@ -873,9 +888,15 @@ struct URLPasteOptionMenu: View {
                 action: onMention
             )
             optionRow(
+                iconName: "IconPostcard",
+                label: "Paste as Card",
+                index: 1,
+                action: onCard
+            )
+            optionRow(
                 iconName: "IconGlobe",
                 label: "Paste as URL",
-                index: 1,
+                index: 2,
                 action: onPasteAsURL
             )
         }
@@ -900,6 +921,8 @@ struct URLPasteOptionMenu: View {
             let selected = activeOption
             if selected == 0 {
                 onMention()
+            } else if selected == 1 {
+                onCard()
             } else {
                 onPasteAsURL()
             }

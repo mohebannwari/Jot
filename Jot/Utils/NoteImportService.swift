@@ -145,9 +145,35 @@ final class NoteImportService {
     private func convertMarkdown(at url: URL) async -> (title: String, content: String)? {
         guard let raw = try? String(contentsOf: url, encoding: .utf8) else { return nil }
         let baseDir = url.deletingLastPathComponent()
+
+        // Pre-pass: convert setext-style headings to ATX-style
+        // (Title\n=== -> # Title, Subtitle\n--- -> ## Subtitle)
+        let rawLines = raw.components(separatedBy: .newlines)
+        var preprocessed: [String] = []
+        var idx = 0
+        while idx < rawLines.count {
+            let current = rawLines[idx]
+            let currentTrimmed = current.trimmingCharacters(in: .whitespaces)
+            if idx + 1 < rawLines.count && !currentTrimmed.isEmpty {
+                let nextTrimmed = rawLines[idx + 1].trimmingCharacters(in: .whitespaces)
+                if nextTrimmed.count >= 2 && nextTrimmed.allSatisfy({ $0 == "=" }) {
+                    preprocessed.append("# \(currentTrimmed)")
+                    idx += 2
+                    continue
+                } else if nextTrimmed.count >= 2 && nextTrimmed.allSatisfy({ $0 == "-" }) {
+                    preprocessed.append("## \(currentTrimmed)")
+                    idx += 2
+                    continue
+                }
+            }
+            preprocessed.append(current)
+            idx += 1
+        }
+
         var lines: [String] = []
         var codeBlockLanguage: String? = nil   // nil = not inside a code block
         var codeBlockLines: [String] = []
+        var indentedCodeLines: [String]? = nil  // nil = not inside an indented block
         var pendingTableRows: [[String]] = []
         var quoteLines: [String] = []
         var isCallout = false
@@ -184,7 +210,19 @@ final class NoteImportService {
             calloutType = "note"
         }
 
-        for line in raw.components(separatedBy: .newlines) {
+        /// Flush accumulated indented code block lines
+        func flushIndentedCode() {
+            guard let codeLines = indentedCodeLines, !codeLines.isEmpty else {
+                indentedCodeLines = nil
+                return
+            }
+            let code = codeLines.joined(separator: "\n")
+            let data = CodeBlockData(language: "plaintext", code: code)
+            lines.append(data.serialize())
+            indentedCodeLines = nil
+        }
+
+        for line in preprocessed {
             // Code fences — accumulate into CodeBlockData
             if line.hasPrefix("```") {
                 flushPipeTable()
@@ -206,6 +244,25 @@ final class NoteImportService {
             if codeBlockLanguage != nil {
                 codeBlockLines.append(line)
                 continue
+            }
+
+            // Indented code blocks: 4+ spaces or 1 tab prefix
+            let indentedContent: String?
+            if line.hasPrefix("    ") {
+                indentedContent = String(line.dropFirst(4))
+            } else if line.hasPrefix("\t") {
+                indentedContent = String(line.dropFirst(1))
+            } else {
+                indentedContent = nil
+            }
+            if let codeContent = indentedContent {
+                flushPipeTable()
+                flushQuoteBlock()
+                if indentedCodeLines == nil { indentedCodeLines = [] }
+                indentedCodeLines!.append(codeContent)
+                continue
+            } else {
+                flushIndentedCode()
             }
 
             // Pipe-delimited markdown table detection
@@ -230,6 +287,8 @@ final class NoteImportService {
             }
 
             var converted = line
+            // Soft line break: strip 2+ trailing spaces (Markdown line-break signal)
+            converted = converted.replacingOccurrences(of: #"\s{2,}$"#, with: "", options: .regularExpression)
             var blockPrefix = ""
             var blockSuffix = ""
 
@@ -243,9 +302,10 @@ final class NoteImportService {
                 continue
             }
 
-            // Block quotes: accumulate multi-line > blocks
-            if converted.hasPrefix("> ") || converted == ">" {
-                let quoteLine = converted == ">" ? "" : String(converted.dropFirst(2))
+            // Block quotes: accumulate multi-line > blocks (nested >> flattened to single level)
+            let isQuote = converted.hasPrefix(">")
+            if isQuote {
+                let quoteLine = converted.replacingOccurrences(of: #"^(>\s?)+"#, with: "", options: .regularExpression)
                 // Detect callout syntax on first line: > [!type]
                 if quoteLines.isEmpty {
                     if let calloutMatch = quoteLine.firstMatch(of: /^\[!(\w+)\]\s*(.*)$/) {
@@ -372,6 +432,14 @@ final class NoteImportService {
                 ) { "[[link|\($0[1])|\($0[1])]]" }
             }
 
+            // Bold-italic: ***text*** or ___text___ (before bold/italic to consume triple delimiters first)
+            converted = replacePattern(
+                in: converted, pattern: #"\*{3}(.+?)\*{3}"#
+            ) { "[[b]][[i]]\($0[1])[[/i]][[/b]]" }
+            converted = replacePattern(
+                in: converted, pattern: #"_{3}(.+?)_{3}"#
+            ) { "[[b]][[i]]\($0[1])[[/i]][[/b]]" }
+
             // Bold: **text** or __text__ (before italic to avoid conflicts)
             converted = replacePattern(
                 in: converted, pattern: #"\*\*(.+?)\*\*"#
@@ -401,6 +469,7 @@ final class NoteImportService {
             lines.append(blockPrefix + converted + blockSuffix)
         }
 
+        flushIndentedCode()
         flushQuoteBlock()
 
         // Flush any trailing pipe table

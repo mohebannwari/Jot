@@ -302,7 +302,7 @@ enum RichTextSerializer {
 
             // Skip known attachment tags that cards don't support
             if remaining.hasPrefix("[[image") || remaining.hasPrefix("[[webclip|") ||
-               remaining.hasPrefix("[[link|") || remaining.hasPrefix("[[filelink|") ||
+               remaining.hasPrefix("[[linkcard|") || remaining.hasPrefix("[[link|") || remaining.hasPrefix("[[filelink|") ||
                remaining.hasPrefix("[[file|") || remaining.hasPrefix("[[table|") ||
                remaining.hasPrefix("[[callout|") || remaining.hasPrefix("[[code]]") ||
                remaining.hasPrefix("[[tabs|") || remaining.hasPrefix("[[cards|") ||

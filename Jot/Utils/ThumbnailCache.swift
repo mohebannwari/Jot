@@ -101,8 +101,12 @@ class ThumbnailCache: ObservableObject {
     func cleanupOrphanedThumbnails(activeNoteContents: [String]) {
         // Pre-compute active filenames on the main actor where Self access is allowed
         var activeFilenames: Set<String> = []
-        let pattern = #"\[\[webclip\|[^|]*\|[^|]*\|([^\]]+)\]\]"#
-        if let regex = try? NSRegularExpression(pattern: pattern) {
+        let patterns = [
+            #"\[\[webclip\|[^|]*\|[^|]*\|([^\]]+)\]\]"#,
+            #"\[\[linkcard\|[^|]*\|[^|]*\|([^\]]+)\]\]"#
+        ]
+        for pattern in patterns {
+            guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
             for content in activeNoteContents {
                 let nsContent = content as NSString
                 let matches = regex.matches(

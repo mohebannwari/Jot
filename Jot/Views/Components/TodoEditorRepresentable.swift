@@ -34,6 +34,10 @@ extension NSAttributedString.Key {
     static let webClipDomain = NSAttributedString.Key("WebClipDomain")
     static let webClipFullURL = NSAttributedString.Key("WebClipFullURL")
     static let plainLinkURL = NSAttributedString.Key("PlainLinkURL")
+    static let linkCardTitle = NSAttributedString.Key("LinkCardTitle")
+    static let linkCardDescription = NSAttributedString.Key("LinkCardDescription")
+    static let linkCardDomain = NSAttributedString.Key("LinkCardDomain")
+    static let linkCardFullURL = NSAttributedString.Key("LinkCardFullURL")
     static let imageFilename = NSAttributedString.Key("ImageFilename")
     static let imageWidthRatio = NSAttributedString.Key("ImageWidthRatio")
     static let fileStoredFilename = NSAttributedString.Key("FileStoredFilename")
@@ -448,89 +452,157 @@ final class TypingAnimationLayoutManager: NSLayoutManager {
 
     // MARK: - Organic Highlight Shape Drawing
 
-    /// 8 pre-parsed CGPaths from the Figma highlight vector designs.
-    /// Each path is defined in a 279x42 viewBox and scaled to the target rect at draw time.
-    private static let highlightPaths: [CGPath] = {
-        let pathData: [String] = [
-            // Vector 1
-            "M6.02194 31.1884L2 21.2754L38.1974 16.3188L104.559 9.15942L270.464 2L277 4.75362V21.2754L270.464 36.6957L224.212 40H107.576H92.4936L75.4004 36.6957L64.34 31.1884L60.8208 36.6957H48.755L38.1974 31.1884L32.1645 36.6957L6.02194 31.1884Z",
-            // Vector 2
-            "M2 28.9367V12.5823L27.8691 10.6582H64.4233L94.7914 13.5443L136.969 9.6962H210.078L272.501 2L277 2.96203V12.5823L274.751 22.2025L272.501 29.8987L237.072 34.7089L211.202 37.5949L171.836 34.7089L99.8528 40L86.9182 37.5949H68.9223L58.2372 36.6329H51.4888L39.1166 37.5949L30.681 34.7089L7.06135 36.6329L2 28.9367Z",
-            // Vector 3
-            "M6.47154 35.7183L2 27.1549L2.55894 14.8451L9.26626 5.21127L19.3272 10.0282L76.3394 5.74648L103.728 10.0282L143.413 7.88732L213.839 11.0986L240.669 10.0282L272.528 2L277 7.88732L273.646 16.4507L271.411 25.5493L269.734 31.9718L240.669 38.9296L214.398 39.4648L185.333 38.9296L166.888 25.5493L138.941 21.8028L101.492 27.1549L84.7236 22.8732L65.7195 31.9718L62.3659 34.6479L55.6585 34.1127L48.3923 38.9296L36.0955 40H16.5325L6.47154 35.7183Z",
-            // Vector 4
-            "M14.6368 15.0625L6.814 17.4375L2 15.0625L4.407 9.71875L14.6368 8.53125H40.512L47.1313 13.875L96.4748 5.5625L101.289 9.71875L113.926 7.34375L129.571 10.9062L144.615 7.34375L174.101 8.53125L181.923 2L224.046 7.34375H251.726H270.982L275.195 15.0625V22.7812L277 30.5V37.0312L267.974 38.2188L224.046 34.0625H201.781L185.534 31.6875L178.915 38.2188L161.464 40L144.615 37.0312L129.571 40L116.934 38.2188L102.492 40L94.6696 30.5L88.0503 19.2188L73.0066 22.7812L62.7768 25.1562L59.1663 28.7188H53.1488L44.1225 25.1562L38.7068 21L30.884 13.875L22.4595 15.0625H14.6368Z",
-            // Vector 5
-            "M8.15212 29.2162L4.46085 19.973L2 13.2973L4.46085 8.67568L14.9195 5.08108L33.9911 2H45.0649H54.2931L74.5951 8.67568L98.5884 5.08108L104.74 3.54054L115.814 5.08108H132.425H145.345L168.107 3.54054L177.951 2L189.025 12.2703L208.096 9.7027L229.013 6.62162H257.313L273.924 7.64865L277 15.3514L273.924 19.973V25.1081V30.7568V34.8649L226.553 33.3243L203.174 36.9189L185.949 40L182.872 33.3243L171.183 26.6486L150.266 29.2162L132.425 30.7568L121.351 29.2162H108.432H96.1275L85.0537 30.7568L74.5951 33.3243L69.0582 30.7568L59.83 26.6486H54.2931L47.5257 29.2162H38.2975H30.2998H19.226H8.15212Z",
-            // Vector 6
-            "M7.12422 37.4382L3.13872 26.764L2 16.9438L13.3872 17.7978L31.0373 19.9326L46.9793 16.9438H60.6439L76.0166 14.382L90.8199 12.2472L113.594 9.68539L123.843 8.83146L135.23 7.55056L148.894 6.69663L156.865 5.8427H172.238H182.487L191.596 6.69663L209.246 4.5618L228.605 2H254.795H273.014L277 6.69663V10.5393V14.809V19.5056V22.9213L226.327 21.2135L204.692 24.2022L188.749 26.764L181.348 25.9101L172.238 26.764H152.88L136.938 27.618L124.981 29.3258L107.331 31.4607H95.9441L85.6956 32.7416L76.0166 34.8764L69.7536 36.1573L60.6439 37.4382L52.6729 38.7191L42.4244 39.573L34.4534 40L27.6211 39.573H18.5114L7.12422 37.4382Z",
-            // Vector 7
-            "M6.52055 40L3.50685 26.359L2 14.1795L10.2877 10.2821H21.589L42.6849 6.87179H60.7671L81.1096 6.38462H90.9041H109.74L125.562 6.87179L138.37 7.35897L157.205 8.33333L171.521 7.35897L187.342 6.38462L200.904 5.41026L212.959 6.38462L238.575 3.94872L274.74 2L277 6.38462L274.74 11.7436L273.986 15.641V18.0769L272.479 26.359L253.644 27.3333L241.589 30.2564L229.534 31.2308H203.918L182.822 32.2051L167 34.1538L148.164 32.6923H133.096H115.014H102.959H88.6438H75.0822H63.0274H52.4795L41.9315 34.1538L33.6438 32.6923L19.3288 37.5641L6.52055 40Z",
-            // Vector 8
-            "M10.2201 37.7647L4.24185 31.0588L2 21.5588L13.9565 18.7647L29.6495 17.6471H44.5951L58.7935 13.7353L84.2011 4.23529L103.63 2.55882L113.345 4.23529L128.291 6.47059L140.995 8.14706H157.435L167.897 9.26471L185.084 8.14706H197.788H209.745L234.405 5.35294L274.011 2V9.26471V13.7353V18.7647L277 21.5588L274.011 32.1765L249.351 31.0588H234.405L222.448 34.4118L200.03 36.6471L179.106 37.7647L164.908 39.4412L140.995 36.6471L126.796 35.5294L105.872 34.4118H90.9266H79.7174L67.7609 37.7647L60.288 38.3235H49.8261L39.3641 40L31.144 38.3235L20.6821 39.4412L10.2201 37.7647Z",
-        ]
-        return pathData.compactMap { TypingAnimationLayoutManager.parseSVGPath($0) }
-    }()
+    // MARK: - Hand-Drawn Highlight Rendering
 
-    /// Figma viewBox dimensions for the highlight vector shapes.
-    private static let highlightViewBoxWidth: CGFloat = 279
-    private static let highlightViewBoxHeight: CGFloat = 42
+    /// Deterministic linear congruential RNG used to seed per-highlight noise.
+    /// The same seed always produces the same wobble, so highlights remain stable
+    /// across redraws, scrolls, and app launches.
+    private struct SeededRNG {
+        private var state: UInt64
 
-    /// Parses a subset of SVG path `d` data (M, L, H, V, Z — absolute only) into a CGPath.
-    private static func parseSVGPath(_ d: String) -> CGPath? {
+        init(seed: Int) {
+            // Mix the seed with a golden-ratio constant so seed == 0 still produces
+            // useful output, then advance once so the first call doesn't leak the seed.
+            let mixed = UInt64(bitPattern: Int64(seed)) &* 0x9E3779B97F4A7C15
+            state = mixed ^ 0xDEADBEEFCAFEBABE
+            _ = nextUnit()
+        }
+
+        /// Returns noise in [0, 1) — standard Numerical Recipes LCG constants.
+        mutating func nextUnit() -> CGFloat {
+            state = state &* 6364136223846793005 &+ 1442695040888963407
+            let top = Double(state >> 40) / Double(1 << 24)
+            return CGFloat(top)
+        }
+
+        /// Returns signed noise in [-1, 1).
+        mutating func nextSigned() -> CGFloat { nextUnit() * 2 - 1 }
+    }
+
+    /// Tunable constants for the procedural highlight shape. These are the four
+    /// knobs to turn when refining the aesthetic — no other code changes needed.
+    /// - `highlightAmplitude`: wobble magnitude in points (how uneven the top/bottom edges look)
+    /// - `highlightCapRadiusFactor`: corner softness as a fraction of the shape height
+    /// - `highlightControlPointSpacing`: distance (pt) between noise samples along the width
+    /// - `highlightHeightFactor`: shape height as a fraction of the line fragment height.
+    ///   Values > 1.0 make adjacent highlighted lines overlap, which is the core
+    ///   "marker on paper" effect from the reference.
+    private static let highlightAmplitude: CGFloat = 1.0
+    private static let highlightCapRadiusFactor: CGFloat = 0.35
+    private static let highlightControlPointSpacing: CGFloat = 18
+    private static let highlightHeightFactor: CGFloat = 1.15
+
+    /// Generates a smooth hand-drawn highlight shape inside `rect`, with subtly wobbling
+    /// top and bottom edges plus soft rounded corners. Deterministic for a given `seed`,
+    /// so the same highlight always redraws identically.
+    private static func generateHandDrawnHighlightPath(in rect: CGRect, seed: Int) -> CGPath {
+        guard rect.width > 2, rect.height > 2 else {
+            return CGPath(rect: rect, transform: nil)
+        }
+
+        let amplitude = highlightAmplitude
+        let maxRadius = min(rect.height * 0.5, rect.width * 0.5)
+        let capRadius = min(rect.height * highlightCapRadiusFactor, maxRadius)
+
+        // Region where the wobbly edges live (between the two rounded corners)
+        let innerLeft = rect.minX + capRadius
+        let innerRight = rect.maxX - capRadius
+        let innerTop = rect.minY + capRadius
+        let innerBottom = rect.maxY - capRadius
+        let innerWidth = max(innerRight - innerLeft, 0)
+
+        // Sample count scales with width; at least 3 so short highlights still wobble
+        let sampleCount = max(3, Int((innerWidth / highlightControlPointSpacing).rounded(.up)))
+
+        // Independent seeds for top and bottom so the two edges don't mirror each other
+        var topRNG = SeededRNG(seed: seed &* 2)
+        var bottomRNG = SeededRNG(seed: seed &* 2 &+ 1)
+
+        // Top edge anchors: (innerLeft, minY) -> wavy interior -> (innerRight, minY)
+        var topPoints: [CGPoint] = [CGPoint(x: innerLeft, y: rect.minY)]
+        for i in 1..<sampleCount {
+            let t = CGFloat(i) / CGFloat(sampleCount)
+            let x = innerLeft + t * innerWidth
+            let y = rect.minY + topRNG.nextSigned() * amplitude
+            topPoints.append(CGPoint(x: x, y: y))
+        }
+        topPoints.append(CGPoint(x: innerRight, y: rect.minY))
+
+        // Bottom edge anchors (right -> left): (innerRight, maxY) -> wavy interior -> (innerLeft, maxY)
+        var bottomPoints: [CGPoint] = [CGPoint(x: innerRight, y: rect.maxY)]
+        for i in 1..<sampleCount {
+            let t = CGFloat(i) / CGFloat(sampleCount)
+            let x = innerRight - t * innerWidth
+            let y = rect.maxY + bottomRNG.nextSigned() * amplitude
+            bottomPoints.append(CGPoint(x: x, y: y))
+        }
+        bottomPoints.append(CGPoint(x: innerLeft, y: rect.maxY))
+
         let path = CGMutablePath()
-        let chars = Array(d)
-        var pos = 0
-        var cmd: Character = "M"
-        var cx: CGFloat = 0, cy: CGFloat = 0
+        path.move(to: topPoints[0])
 
-        func skipSeparators() {
-            while pos < chars.count && (chars[pos] == " " || chars[pos] == ",") { pos += 1 }
+        // Smooth cubic curves through top anchors. Control points are offset horizontally
+        // by half the segment width, giving C1-continuous waves that interpolate every anchor.
+        for i in 1..<topPoints.count {
+            let prev = topPoints[i - 1]
+            let curr = topPoints[i]
+            let dx = (curr.x - prev.x) * 0.5
+            path.addCurve(
+                to: curr,
+                control1: CGPoint(x: prev.x + dx, y: prev.y),
+                control2: CGPoint(x: curr.x - dx, y: curr.y)
+            )
         }
 
-        func readNumber() -> CGFloat? {
-            skipSeparators()
-            guard pos < chars.count else { return nil }
-            var s = ""
-            if chars[pos] == "-" { s.append(chars[pos]); pos += 1 }
-            while pos < chars.count && (chars[pos].isNumber || chars[pos] == ".") {
-                s.append(chars[pos]); pos += 1
-            }
-            guard let v = Double(s) else { return nil }
-            return CGFloat(v)
+        // Top-right rounded corner
+        path.addArc(
+            tangent1End: CGPoint(x: rect.maxX, y: rect.minY),
+            tangent2End: CGPoint(x: rect.maxX, y: innerBottom),
+            radius: capRadius
+        )
+
+        // Right wall (straight vertical segment between the two right corners)
+        path.addLine(to: CGPoint(x: rect.maxX, y: innerBottom))
+
+        // Bottom-right rounded corner
+        path.addArc(
+            tangent1End: CGPoint(x: rect.maxX, y: rect.maxY),
+            tangent2End: CGPoint(x: innerLeft, y: rect.maxY),
+            radius: capRadius
+        )
+
+        // Smooth cubic curves through bottom anchors (right -> left). Same formula as the
+        // top edge; the negative dx handles the reverse direction naturally.
+        for i in 1..<bottomPoints.count {
+            let prev = bottomPoints[i - 1]
+            let curr = bottomPoints[i]
+            let dx = (curr.x - prev.x) * 0.5
+            path.addCurve(
+                to: curr,
+                control1: CGPoint(x: prev.x + dx, y: prev.y),
+                control2: CGPoint(x: curr.x - dx, y: curr.y)
+            )
         }
 
-        while pos < chars.count {
-            skipSeparators()
-            guard pos < chars.count else { break }
+        // Bottom-left rounded corner
+        path.addArc(
+            tangent1End: CGPoint(x: rect.minX, y: rect.maxY),
+            tangent2End: CGPoint(x: rect.minX, y: innerTop),
+            radius: capRadius
+        )
 
-            if chars[pos].isLetter {
-                cmd = chars[pos]; pos += 1
-                if cmd == "Z" || cmd == "z" {
-                    path.closeSubpath(); continue
-                }
-            }
+        // Left wall (straight vertical segment between the two left corners)
+        path.addLine(to: CGPoint(x: rect.minX, y: innerTop))
 
-            switch cmd {
-            case "M":
-                guard let x = readNumber(), let y = readNumber() else { break }
-                path.move(to: CGPoint(x: x, y: y))
-                cx = x; cy = y; cmd = "L"
-            case "L":
-                guard let x = readNumber(), let y = readNumber() else { break }
-                path.addLine(to: CGPoint(x: x, y: y))
-                cx = x; cy = y
-            case "H":
-                guard let x = readNumber() else { break }
-                path.addLine(to: CGPoint(x: x, y: cy)); cx = x
-            case "V":
-                guard let y = readNumber() else { break }
-                path.addLine(to: CGPoint(x: cx, y: y)); cy = y
-            default: pos += 1
-            }
-        }
+        // Top-left rounded corner — closes the shape
+        path.addArc(
+            tangent1End: CGPoint(x: rect.minX, y: rect.minY),
+            tangent2End: CGPoint(x: innerLeft, y: rect.minY),
+            radius: capRadius
+        )
 
-        return path.isEmpty ? nil : path.copy()
+        path.closeSubpath()
+        return path
     }
 
     private func drawHighlightShapes(
@@ -542,8 +614,7 @@ final class TypingAnimationLayoutManager: NSLayoutManager {
         context: CGContext
     ) {
         let totalGlyphs = numberOfGlyphs
-        let paths = Self.highlightPaths
-        guard !paths.isEmpty else { return }
+        guard textStorage.length > 0 else { return }
 
         textStorage.enumerateAttribute(.highlightColor, in: safeCharRange, options: []) { colorValue, attrCharRange, _ in
             guard let hex = colorValue as? String else { return }
@@ -551,9 +622,6 @@ final class TypingAnimationLayoutManager: NSLayoutManager {
             guard let variant = textStorage.attribute(
                 .highlightVariant, at: attrCharRange.location, effectiveRange: nil
             ) as? Int else { return }
-
-            let pathIndex = max(0, min(paths.count - 1, variant))
-            let shapePath = paths[pathIndex]
 
             let hlGlyphRange = self.glyphRange(forCharacterRange: attrCharRange, actualCharacterRange: nil)
             guard hlGlyphRange.location != NSNotFound else { return }
@@ -570,29 +638,26 @@ final class TypingAnimationLayoutManager: NSLayoutManager {
                 let segmentRect = self.boundingRect(forGlyphRange: lineHighlight, in: textContainer)
                 guard segmentRect.width > 2 else { return }
 
-                // ~10% vertical overflow matches the Figma inset (-5.26% top+bottom)
-                let vOverflow = lineRect.height * 0.1
+                // Height is a multiple of the line fragment height so adjacent highlighted
+                // lines overlap slightly — the "marker on paper" effect from the reference.
+                // Centered on the line midY, the overflow splits evenly above and below.
+                let shapeHeight = lineRect.height * Self.highlightHeightFactor
+                let centerY = origin.y + lineRect.midY
+
                 let drawRect = CGRect(
                     x: origin.x + segmentRect.origin.x,
-                    y: origin.y + lineRect.origin.y - vOverflow * 0.5,
+                    y: centerY - shapeHeight * 0.5,
                     width: segmentRect.width,
-                    height: lineRect.height + vOverflow
+                    height: shapeHeight
                 )
 
-                // Scale the 279x42 path to fit the target draw rect
-                var xform = CGAffineTransform.identity
-                xform = xform.translatedBy(x: drawRect.origin.x, y: drawRect.origin.y)
-                xform = xform.scaledBy(
-                    x: drawRect.width / Self.highlightViewBoxWidth,
-                    y: drawRect.height / Self.highlightViewBoxHeight
-                )
-
+                // Use the persisted variant (0–7) as the noise seed so existing notes
+                // render stably under the new system without any migration.
+                let shapePath = Self.generateHandDrawnHighlightPath(in: drawRect, seed: variant)
                 context.saveGState()
-                if let scaled = shapePath.copy(using: &xform) {
-                    context.addPath(scaled)
-                    context.setFillColor(tintColor.cgColor)
-                    context.fillPath()
-                }
+                context.addPath(shapePath)
+                context.setFillColor(tintColor.cgColor)
+                context.fillPath()
                 context.restoreGState()
             }
         }
@@ -643,6 +708,29 @@ final class ImageSizeAttachmentCell: NSTextAttachmentCell {
 
     override func draw(withFrame cellFrame: NSRect, in controlView: NSView?, characterIndex charIndex: Int, layoutManager: NSLayoutManager) {
         // Intentionally empty — overlay view renders the image
+    }
+}
+
+final class NoteLinkCardAttachment: NSTextAttachment {
+    var title: String
+    var descriptionText: String
+    var domain: String
+    var url: String
+    var thumbnailImage: NSImage?
+    var thumbnailTintColor: NSColor?
+    let cardID = UUID()
+
+    init(title: String, description: String, domain: String, url: String) {
+        self.title = title
+        self.descriptionText = description
+        self.domain = domain
+        self.url = url
+        super.init(data: nil, ofType: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("NoteLinkCardAttachment does not support init(coder:)")
     }
 }
 
@@ -1585,6 +1673,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         private var codeBlockOverlays: [ObjectIdentifier: CodeBlockOverlayView] = [:]
         private var tabsOverlays: [ObjectIdentifier: TabsContainerOverlayView] = [:]
         private var cardSectionOverlays: [ObjectIdentifier: CardSectionOverlayView] = [:]
+        private var linkCardOverlays: [ObjectIdentifier: NSView] = [:]
+        private var linkCardThumbnailLoadAttempted: Set<ObjectIdentifier> = []
         private var filePreviewOverlays: [ObjectIdentifier: FilePreviewOverlayView] = [:]
 
         private weak var overlayHostView: NSView?
@@ -1626,6 +1716,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 self.updateCodeBlockOverlays(in: tv)
                 self.updateTabsOverlays(in: tv)
                 self.updateCardSectionOverlays(in: tv)
+                self.updateLinkCardOverlays(in: tv)
                 self.updateFilePreviewOverlays(in: tv)
             }
             pendingOverlayUpdate = work
@@ -1803,6 +1894,12 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         private static let plainLinkPattern = #"\[\[link\|([^\]]*)\]\]"#
         private static let plainLinkRegex: NSRegularExpression? = try? NSRegularExpression(
             pattern: plainLinkPattern,
+            options: []
+        )
+        private static let linkCardMarkupPrefix = "[[linkcard|"
+        private static let linkCardPattern = #"\[\[linkcard\|([^|]*)\|([^|]*)\|([^\]]*)\]\]"#
+        private static let linkCardRegex: NSRegularExpression? = try? NSRegularExpression(
+            pattern: linkCardPattern,
             options: []
         )
         private static func cleanedWebClipComponent(_ value: Any?) -> String {
@@ -2314,6 +2411,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 || textStorage.attribute(.notelinkID, at: charIdx, effectiveRange: nil) != nil
             let isWebclip = textStorage.attribute(.webClipTitle, at: charIdx, effectiveRange: nil) != nil
             let isPlainLink = textStorage.attribute(.plainLinkURL, at: charIdx, effectiveRange: nil) != nil
+            let isLinkCard = attachment is NoteLinkCardAttachment
             let isFileLink = attachment is FileLinkAttachment
                 || textStorage.attribute(.fileLinkPath, at: charIdx, effectiveRange: nil) != nil
             let isStoredFile: Bool
@@ -2326,7 +2424,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 isStoredFile = false
             }
 
-            guard isNotelink || isWebclip || isPlainLink || isFileLink || isStoredFile else {
+            guard isNotelink || isWebclip || isPlainLink || isLinkCard || isFileLink || isStoredFile else {
                 if currentHoveredCharIndex != nil { endAttachmentHover() }
                 return false
             }
@@ -2860,6 +2958,20 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 }
             }
 
+            let urlPasteSelectCard = NotificationCenter.default.addObserver(
+                forName: .urlPasteSelectCard, object: nil, queue: .main
+            ) { [weak self] notification in
+                guard let info = notification.object as? [String: Any],
+                      let url = info["url"] as? String,
+                      let rangeValue = info["range"] as? NSValue else { return }
+                if let nid = info["editorInstanceID"] as? UUID,
+                   let myID = self?.editorInstanceID, nid != myID { return }
+                let range = rangeValue.rangeValue
+                Task { @MainActor [weak self] in
+                    self?.replaceURLPasteWithLinkCard(url: url, range: range)
+                }
+            }
+
             let urlPasteDismiss = NotificationCenter.default.addObserver(
                 forName: .urlPasteDismiss, object: nil, queue: .main
             ) { [weak self] notification in
@@ -3231,7 +3343,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 performSearch, highlightSearch, clearSearch, replaceMatch, replaceAll,
                 proofreadShow, proofreadClear, proofreadApply, captureSelection,
                 editReplace, proofreadReplaceAll, textGenInsert,
-                urlPasteMention, urlPasteSelectPlainLink, urlPasteDismiss,
+                urlPasteMention, urlPasteSelectPlainLink, urlPasteSelectCard, urlPasteDismiss,
                 codePasteSelectCodeBlock, codePasteSelectPlainText, codePasteDismissObserver,
                 applyColor, removeColor, applyHighlight, removeHighlight, setHighlightRange,
                 applyFontSize, applyFontFamily,
@@ -3488,6 +3600,12 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 return createWeblocFile(for: webURL)
             }
 
+            // 3b. Link card URL
+            if let linkCard = attrs[.attachment] as? NoteLinkCardAttachment,
+               let webURL = URL(string: linkCard.url) {
+                return createWeblocFile(for: webURL)
+            }
+
             // 4. Plain link URL
             if let linkStr = attrs[.plainLinkURL] as? String,
                let webURL = URL(string: linkStr) {
@@ -3698,6 +3816,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 updateCodeBlockOverlays(in: textView)
                 updateTabsOverlays(in: textView)
                 updateCardSectionOverlays(in: textView)
+                updateLinkCardOverlays(in: textView)
 
             }
         }
@@ -4342,6 +4461,9 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                       let linkValue = Self.linkURLString(from: attributes),
                       let url = URL(string: linkValue) {
                 action = .webClip(url: url)
+            } else if let linkCard = attributes[.attachment] as? NoteLinkCardAttachment,
+                      let url = URL(string: linkCard.url) {
+                action = .webClip(url: url)
             } else if let linkValue = attributes[.plainLinkURL] as? String,
                       let url = URL(string: linkValue) {
                 action = .webClip(url: url)
@@ -4592,6 +4714,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             updateCodeBlockOverlays(in: textView)
             updateTabsOverlays(in: textView)
             updateCardSectionOverlays(in: textView)
+            updateLinkCardOverlays(in: textView)
 
             needsDeferredOverlaySetup = true
         }
@@ -4644,6 +4767,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             updateCodeBlockOverlays(in: textView)
             updateTabsOverlays(in: textView)
             updateCardSectionOverlays(in: textView)
+            updateLinkCardOverlays(in: textView)
 
         }
 
@@ -4804,6 +4928,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                             || value is NoteTabsAttachment
                             || value is NoteCardSectionAttachment
                             || value is NoteDividerAttachment
+                            || value is NoteLinkCardAttachment
                             || (value is NoteFileAttachment && (value as! NoteFileAttachment).viewMode != .tag) {
                             hasBlockAttachment = true
                             stop.pointee = true
@@ -5589,6 +5714,109 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             syncText()
         }
 
+        private func replaceURLPasteWithLinkCard(url: String, range: NSRange) {
+            guard let textView = textView, let textStorage = textView.textStorage else { return }
+
+            if range.location + range.length <= textStorage.length {
+                textStorage.removeAttribute(.foregroundColor, range: range)
+            }
+
+            textView.setSelectedRange(range)
+
+            let normalizedURL = Self.normalizedURL(from: url)
+            let linkValue = normalizedURL.isEmpty ? url : normalizedURL
+            let domain = Self.resolvedDomain(from: linkValue)
+
+            // Insert using the code-block overlay pattern — card needs its own paragraph
+            let baseAttrs = Self.baseTypingAttributes(for: currentColorScheme)
+            let composed = NSMutableAttributedString()
+
+            // Leading newline if not at paragraph start
+            if range.location > 0,
+               let lastScalar = textStorage.string[
+                   textStorage.string.index(textStorage.string.startIndex, offsetBy: range.location - 1)
+               ].unicodeScalars.last,
+               !CharacterSet.newlines.contains(lastScalar) {
+                composed.append(NSAttributedString(string: "\n", attributes: baseAttrs))
+            }
+
+            composed.append(makeLinkCardAttachment(
+                url: linkValue, title: domain, description: "", domain: domain))
+            composed.append(NSAttributedString(string: "\n", attributes: baseAttrs))
+
+            replaceSelection(with: composed)
+            updateLinkCardOverlays(in: textView)
+            syncText()
+
+            // Fetch real metadata and update the attachment data in place
+            let fetcher = WebMetadataFetcher()
+            fetcher.fetchMetadata(from: linkValue) { [weak self] metadata in
+                guard let self = self,
+                      let textView = self.textView,
+                      let textStorage = textView.textStorage else { return }
+
+                let fullRange = NSRange(location: 0, length: textStorage.length)
+                textStorage.enumerateAttribute(.attachment, in: fullRange, options: []) { val, range, stop in
+                    guard let att = val as? NoteLinkCardAttachment, att.url == linkValue else { return }
+                    att.title = metadata.title
+                    att.descriptionText = metadata.description
+                    att.domain = metadata.domain
+                    att.thumbnailImage = metadata.thumbnail
+                    att.thumbnailTintColor = metadata.thumbnail.flatMap { LinkCardView.averageColor(of: $0) }
+
+                    // Persist thumbnail to disk cache
+                    if let thumb = metadata.thumbnail {
+                        ThumbnailCache.shared.cacheThumbnail(thumb, for: linkValue)
+                    }
+
+                    // Resize attachment to accommodate thumbnail
+                    let newHeight = LinkCardView.heightForCard(hasThumbnail: metadata.thumbnail != nil)
+                    let newSize = CGSize(width: 224, height: newHeight)
+                    att.attachmentCell = CodeBlockSizeAttachmentCell(size: newSize)
+                    att.bounds = CGRect(origin: .zero, size: newSize)
+                    if let lm = textView.layoutManager {
+                        lm.invalidateLayout(forCharacterRange: range, actualCharacterRange: nil)
+                    }
+
+                    self.updateLinkCardOverlays(in: textView)
+                    self.syncText()
+                    stop.pointee = true
+                }
+            }
+        }
+
+        private func makeLinkCardAttachment(
+            url rawURL: String,
+            title: String,
+            description: String,
+            domain: String
+        ) -> NSMutableAttributedString {
+            let normalizedURL = Self.normalizedURL(from: rawURL)
+            let linkValue = normalizedURL.isEmpty ? rawURL : normalizedURL
+            let resolvedDomain = domain.isEmpty ? Self.resolvedDomain(from: linkValue) : domain
+
+            let cardWidth: CGFloat = 224
+            let cardHeight = LinkCardView.fixedHeight
+            let size = CGSize(width: cardWidth, height: cardHeight)
+
+            let attachment = NoteLinkCardAttachment(
+                title: title.isEmpty ? resolvedDomain : title,
+                description: description,
+                domain: resolvedDomain,
+                url: linkValue)
+            attachment.attachmentCell = CodeBlockSizeAttachmentCell(size: size)
+            attachment.bounds = CGRect(origin: .zero, size: size)
+
+            let attributed = NSMutableAttributedString(attachment: attachment)
+            let range = NSRange(location: 0, length: attributed.length)
+            let blockStyle = NSMutableParagraphStyle()
+            blockStyle.alignment = .left
+            blockStyle.paragraphSpacing = 8
+            blockStyle.paragraphSpacingBefore = 8
+            attributed.addAttribute(.paragraphStyle, value: blockStyle, range: range)
+            return attributed
+        }
+
         private func clearURLPasteHighlight(range: NSRange) {
             guard let textStorage = textView?.textStorage else { return }
             guard range.location + range.length <= textStorage.length else { return }
@@ -5889,6 +6117,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             updateCodeBlockOverlays(in: textView)
             updateTabsOverlays(in: textView)
             updateCardSectionOverlays(in: textView)
+            updateLinkCardOverlays(in: textView)
 
             syncText()
         }
@@ -5951,6 +6180,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             updateCodeBlockOverlays(in: textView)
             updateTabsOverlays(in: textView)
             updateCardSectionOverlays(in: textView)
+            updateLinkCardOverlays(in: textView)
             syncText()
         }
 
@@ -6069,6 +6299,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             }
 
             updateCardSectionOverlays(in: textView)
+            updateLinkCardOverlays(in: textView)
             syncText()
         }
 
@@ -7136,6 +7367,120 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             }
         }
 
+        // MARK: - Link Card Overlay Management
+
+        func updateLinkCardOverlays(in textView: NSTextView) {
+            guard let textStorage = textView.textStorage,
+                  let layoutManager = textView.layoutManager,
+                  let textContainer = textView.textContainer else { return }
+
+            let hostView: NSView = textView
+            var seenIDs = Set<ObjectIdentifier>()
+            let fullRange = NSRange(location: 0, length: textStorage.length)
+            guard fullRange.length > 0 else {
+                linkCardOverlays.values.forEach { $0.removeFromSuperview() }
+                linkCardOverlays.removeAll()
+                linkCardThumbnailLoadAttempted.removeAll()
+                return
+            }
+
+            textStorage.enumerateAttribute(.attachment, in: fullRange, options: []) { val, range, _ in
+                guard let attachment = val as? NoteLinkCardAttachment else { return }
+                let id = ObjectIdentifier(attachment)
+                seenIDs.insert(id)
+
+                // Restore thumbnail from disk cache if missing (one attempt per attachment)
+                if attachment.thumbnailImage == nil && !linkCardThumbnailLoadAttempted.contains(id) {
+                    linkCardThumbnailLoadAttempted.insert(id)
+                    Task { @MainActor [weak self] in
+                        if let cached = await ThumbnailCache.shared.loadCachedThumbnail(for: attachment.url) {
+                            attachment.thumbnailImage = cached
+                            attachment.thumbnailTintColor = LinkCardView.averageColor(of: cached)
+                            if let tv = self?.textView { self?.updateLinkCardOverlays(in: tv) }
+                        }
+                    }
+                }
+
+                // Size correction — dynamic height based on thumbnail presence
+                let cardWidth: CGFloat = 224
+                let hasThumbnail = attachment.thumbnailImage != nil
+                let cardHeight = LinkCardView.heightForCard(hasThumbnail: hasThumbnail)
+                let correctSize = CGSize(width: cardWidth, height: cardHeight)
+                let currentCell = attachment.attachmentCell as? CodeBlockSizeAttachmentCell
+                let needsCorrection = currentCell == nil
+                    || abs(currentCell!.displaySize.height - correctSize.height) > 1
+                    || abs(currentCell!.displaySize.width - correctSize.width) > 1
+
+                if needsCorrection {
+                    attachment.attachmentCell = CodeBlockSizeAttachmentCell(size: correctSize)
+                    attachment.bounds = CGRect(origin: .zero, size: correctSize)
+                    layoutManager.invalidateLayout(
+                        forCharacterRange: range,
+                        actualCharacterRange: nil
+                    )
+                }
+
+                let glyphRange = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+                if glyphRange.length > 0 { layoutManager.ensureLayout(forGlyphRange: glyphRange) }
+                guard glyphRange.length > 0 else { return }
+                let glyphRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+
+                let overlayRect = CGRect(
+                    x: glyphRect.origin.x + textView.textContainerOrigin.x,
+                    y: glyphRect.origin.y + textView.textContainerOrigin.y,
+                    width: attachment.bounds.width,
+                    height: attachment.bounds.height
+                )
+
+                let cardView = LinkCardView(
+                    title: attachment.title,
+                    description: attachment.descriptionText,
+                    domain: attachment.domain,
+                    url: attachment.url,
+                    thumbnailImage: attachment.thumbnailImage,
+                    tintColor: attachment.thumbnailTintColor,
+                    cardWidth: cardWidth
+                )
+
+                let hostingView: NSView
+                if let existing = linkCardOverlays[id] {
+                    hostingView = existing
+                    if let hv = hostingView as? NSHostingView<AnyView> {
+                        hv.rootView = AnyView(
+                            cardView.onTapGesture {
+                                if let url = URL(string: attachment.url) {
+                                    NSWorkspace.shared.open(url)
+                                }
+                            }
+                        )
+                    }
+                } else {
+                    let cardContent = AnyView(
+                        cardView.onTapGesture {
+                            if let url = URL(string: attachment.url) {
+                                NSWorkspace.shared.open(url)
+                            }
+                        }
+                    )
+                    let hv = NSHostingView(rootView: cardContent)
+                    hv.wantsLayer = true
+                    hv.layer?.backgroundColor = .clear
+                    hostView.addSubview(hv)
+                    hostingView = hv
+                    linkCardOverlays[id] = hv
+                }
+
+                hostingView.frame = overlayRect.integral
+            }
+
+            let toRemove = linkCardOverlays.keys.filter { !seenIDs.contains($0) }
+            for key in toRemove {
+                linkCardOverlays[key]?.removeFromSuperview()
+                linkCardOverlays.removeValue(forKey: key)
+                linkCardThumbnailLoadAttempted.remove(key)
+            }
+        }
+
         // MARK: - File Preview Overlays
 
         func updateFilePreviewOverlays(in textView: NSTextView) {
@@ -7602,7 +7947,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                             cell.invalidateAppearance()
                             stop.pointee = true
                         }
-                        // Check if it's a web clip attachment (has webClipTitle attribute)
+                        // Check if it's a web clip attachment (inline pill style)
                         else if textStorage.attribute(
                             .webClipTitle, at: substringRange.location, effectiveRange: nil)
                             != nil
@@ -7615,12 +7960,13 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                             isTableParagraph = true
                             stop.pointee = true
                         }
-                        // Other block-level attachments (image, callout, code block, file preview)
+                        // Other block-level attachments (image, callout, code block, link card, file preview)
                         else if attachment is NoteImageAttachment
                                 || attachment is NoteCalloutAttachment
                                 || attachment is NoteCodeBlockAttachment
                                 || attachment is NoteTabsAttachment
                                 || attachment is NoteCardSectionAttachment
+                                || attachment is NoteLinkCardAttachment
                                 || (attachment is NoteFileAttachment && (attachment as! NoteFileAttachment).viewMode != .tag) {
                             isImageParagraph = true
                             stop.pointee = true
@@ -7832,6 +8178,14 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     let cell = attachment.attachmentCell as? TodoCheckboxAttachmentCell
                 {
                     output.append(cell.isChecked ? "[x]" : "[ ]")
+                } else if let linkCard = attributes[.attachment] as? NoteLinkCardAttachment {
+                    var title = Self.cleanedWebClipComponent(linkCard.title)
+                    let description = Self.cleanedWebClipComponent(linkCard.descriptionText)
+                    if title.isEmpty {
+                        title = Self.cleanedWebClipComponent(linkCard.domain)
+                    }
+                    let urlString = linkCard.url.trimmingCharacters(in: .whitespacesAndNewlines)
+                    output.append("[[linkcard|\(title)|\(description)|\(urlString)]]")
                 } else if let urlString = attributes[.plainLinkURL] as? String {
                     let sanitizedURL = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
                     output.append("[[link|\(sanitizedURL)]]")
@@ -7892,6 +8246,14 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     // degraded to a plain NSTextAttachment by AppKit copy/undo operations,
                     // but the text attributes survive. Catch them before the generic handler.
                     output.append("[[notelink|\(nlID)|\(nlTitle)]]")
+                } else if let linkCard = attributes[.attachment] as? NoteLinkCardAttachment {
+                    // Link card fallback — same recovery pattern as webclip
+                    var title = Self.cleanedWebClipComponent(linkCard.title)
+                    let description = Self.cleanedWebClipComponent(linkCard.descriptionText)
+                    let domain = Self.cleanedWebClipComponent(linkCard.domain)
+                    if title.isEmpty { title = domain }
+                    let url = linkCard.url.trimmingCharacters(in: .whitespacesAndNewlines)
+                    output.append("[[linkcard|\(title)|\(description)|\(url)]]")
                 } else if attributes[.webClipTitle] != nil {
                     // Webclip fallback — .link attribute may have been stripped by AppKit,
                     // but webclip metadata attributes survive. Recover the webclip.
@@ -8156,6 +8518,62 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                             attrs[.corruptedBlock] = webclipText
                             attrs[.backgroundColor] = NSColor.systemRed.withAlphaComponent(0.1)
                             result.append(NSAttributedString(string: "[Corrupted webclip block]", attributes: attrs))
+                            index = endIndex
+                            lastWasWebClip = false
+                            continue
+                        }
+                    }
+                } else if text[index...].hasPrefix(Self.linkCardMarkupPrefix) {
+                    flushBuffer()
+                    if let endIndex = text[index...].range(of: "]]")?.upperBound {
+                        let cardText = String(text[index..<endIndex])
+                        if let regex = Self.linkCardRegex,
+                           let match = regex.firstMatch(
+                               in: cardText, options: [],
+                               range: NSRange(location: 0, length: cardText.utf16.count))
+                        {
+                            let rawTitle = Self.string(from: match, at: 1, in: cardText)
+                            let rawDescription = Self.string(from: match, at: 2, in: cardText)
+                            let rawURL = Self.string(from: match, at: 3, in: cardText)
+
+                            let cleanedTitle = Self.sanitizedWebClipComponent(rawTitle)
+                            let cleanedDescription = Self.sanitizedWebClipComponent(rawDescription)
+                            let normalizedURL = Self.normalizedURL(from: rawURL)
+                            let linkForAttachment = normalizedURL.isEmpty ? rawURL : normalizedURL
+                            let domain = Self.sanitizedWebClipComponent(
+                                Self.resolvedDomain(from: linkForAttachment))
+
+                            let baseAttributes = Self.baseTypingAttributes(for: currentColorScheme)
+                            // Ensure link card is on its own paragraph (same as code blocks/images)
+                            if result.length > 0,
+                               let lastScalar = result.string.unicodeScalars.last,
+                               !CharacterSet.newlines.contains(lastScalar) {
+                                result.append(NSAttributedString(string: "\n", attributes: baseAttributes))
+                            }
+                            let cardAttr = makeLinkCardAttachment(
+                                url: linkForAttachment,
+                                title: cleanedTitle.isEmpty ? domain : cleanedTitle,
+                                description: cleanedDescription,
+                                domain: domain)
+                            result.append(cardAttr)
+                            // Trailing newline so subsequent content gets its own paragraph
+                            if endIndex < text.endIndex {
+                                if !text[endIndex].isNewline {
+                                    result.append(NSAttributedString(string: "\n", attributes: baseAttributes))
+                                }
+                            } else {
+                                result.append(NSAttributedString(string: "\n", attributes: baseAttributes))
+                            }
+
+                            index = endIndex
+                            lastWasWebClip = false
+                            continue
+                        } else {
+                            let baseAttributes = Self.baseTypingAttributes(for: currentColorScheme)
+                            var attrs = baseAttributes
+                            attrs[.corruptedBlock] = cardText
+                            attrs[.backgroundColor] = NSColor.systemRed.withAlphaComponent(0.1)
+                            result.append(NSAttributedString(string: "[Corrupted linkcard block]", attributes: attrs))
                             index = endIndex
                             lastWasWebClip = false
                             continue
@@ -9691,7 +10109,7 @@ final class InlineNSTextView: NSTextView, QLPreviewPanelDataSource, QLPreviewPan
             if value is NoteImageAttachment || value is NoteTableAttachment
                 || value is NoteCalloutAttachment || value is NoteCodeBlockAttachment
                 || value is NoteTabsAttachment || value is NoteCardSectionAttachment
-                || value is NoteDividerAttachment {
+                || value is NoteDividerAttachment || value is NoteLinkCardAttachment {
                 hasBlockAttachment = true
                 stop.pointee = true
             }
@@ -10651,6 +11069,7 @@ extension Notification.Name {
     static let urlPasteDetected = Notification.Name("URLPasteDetected")
     static let urlPasteSelectMention = Notification.Name("URLPasteSelectMention")
     static let urlPasteSelectPlainLink = Notification.Name("URLPasteSelectPlainLink")
+    static let urlPasteSelectCard = Notification.Name("URLPasteSelectCard")
     static let urlPasteDismiss = Notification.Name("URLPasteDismiss")
     static let urlPasteNavigateUp = Notification.Name("URLPasteNavigateUp")
     static let urlPasteNavigateDown = Notification.Name("URLPasteNavigateDown")
