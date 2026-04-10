@@ -46,15 +46,40 @@
     },
     {
       "layers" : [
+
+      ],
+      "shadow" : {
+        "kind" : "neutral",
+        "opacity" : 0.5
+      },
+      "translucency" : {
+        "enabled" : true,
+        "value" : 0.5
+      }
+    },
+    {
+      "layers" : [
         {
-          "glass" : true,
-          "image-name" : "IconFeather2 2.png",
-          "name" : "IconFeather2 2",
+          "glass-specializations" : [
+            {
+              "value" : true
+            },
+            {
+              "appearance" : "dark",
+              "value" : true
+            },
+            {
+              "appearance" : "tinted",
+              "value" : true
+            }
+          ],
+          "image-name" : "logo.png",
+          "name" : "logo",
           "position" : {
-            "scale" : 2,
+            "scale" : 2.3,
             "translation-in-points" : [
-              27.9296875,
-              18.015625
+              -1,
+              2
             ]
           }
         }
