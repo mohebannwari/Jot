@@ -5731,13 +5731,17 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             let baseAttrs = Self.baseTypingAttributes(for: currentColorScheme)
             let composed = NSMutableAttributedString()
 
-            // Leading newline if not at paragraph start
-            if range.location > 0,
-               let lastScalar = textStorage.string[
-                   textStorage.string.index(textStorage.string.startIndex, offsetBy: range.location - 1)
-               ].unicodeScalars.last,
-               !CharacterSet.newlines.contains(lastScalar) {
-                composed.append(NSAttributedString(string: "\n", attributes: baseAttrs))
+            // Leading newline if not at paragraph start.
+            // NSRange.location is a UTF-16 offset — use NSString.character(at:)
+            // to index correctly through emoji / non-BMP / combining marks.
+            // (Mirrors the sibling pattern in replaceCodePasteWithCodeBlock.)
+            let nsString = textStorage.string as NSString
+            if range.location > 0 {
+                let prevChar = nsString.character(at: range.location - 1)
+                if let scalar = Unicode.Scalar(prevChar),
+                   !CharacterSet.newlines.contains(scalar) {
+                    composed.append(NSAttributedString(string: "\n", attributes: baseAttrs))
+                }
             }
 
             composed.append(makeLinkCardAttachment(
