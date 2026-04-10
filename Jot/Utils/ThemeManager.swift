@@ -127,6 +127,10 @@ final class ThemeManager: ObservableObject {
     static let quickNoteHotKeyKey = "QuickNoteHotKey"
     static let quickNotesFolderIDKey = "QuickNotesFolderID"
 
+    // Appearance tint keys
+    static let tintHueKey = "AppTintHue"
+    static let tintIntensityKey = "AppTintIntensity"
+
     static let editorSettingsChangedNotification = Notification.Name("EditorSettingsChanged")
 
     private let userDefaults: UserDefaults
@@ -273,6 +277,27 @@ final class ThemeManager: ObservableObject {
         }
     }
 
+    /// Hue of the app-wide tint, 0...1 (maps to 0...360 degrees).
+    /// Defaults to 0.55 (blue-ish) on first launch so the rainbow picker
+    /// thumb lands somewhere pleasant — but `tintIntensity = 0` means
+    /// this value has no visual effect until the user slides intensity up.
+    @Published var tintHue: Double {
+        didSet {
+            guard hasFinishedInitialization else { return }
+            userDefaults.set(tintHue, forKey: Self.tintHueKey)
+        }
+    }
+
+    /// Strength of the app-wide tint, 0...1. Zero = no tint (base DetailPaneSurfaceColor),
+    /// one = full blend toward the hue-derived target. Defaults to 0 so existing
+    /// users see zero visual change on upgrade.
+    @Published var tintIntensity: Double {
+        didSet {
+            guard hasFinishedInitialization else { return }
+            userDefaults.set(tintIntensity, forKey: Self.tintIntensityKey)
+        }
+    }
+
 
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
@@ -295,6 +320,14 @@ final class ThemeManager: ObservableObject {
 
         let savedFontSize = userDefaults.object(forKey: Self.fontSizeKey) as? CGFloat
         self.bodyFontSize = savedFontSize ?? 16
+
+        // Tint: read as Optional<Double> so "never set" is distinguishable
+        // from "explicitly 0", and we can apply explicit defaults only on
+        // first launch.
+        let savedTintHue = userDefaults.object(forKey: Self.tintHueKey) as? Double
+        self.tintHue = savedTintHue ?? 0.55
+        let savedTintIntensity = userDefaults.object(forKey: Self.tintIntensityKey) as? Double
+        self.tintIntensity = savedTintIntensity ?? 0.0
 
         let savedSortOrder = userDefaults.string(forKey: Self.noteSortOrderKey) ?? NoteSortOrder.dateEdited.rawValue
         self.noteSortOrder = NoteSortOrder(rawValue: savedSortOrder) ?? .dateEdited
@@ -361,6 +394,54 @@ final class ThemeManager: ObservableObject {
 
     func setBodyFontStyle(_ bodyFontStyle: BodyFontStyle) {
         currentBodyFontStyle = bodyFontStyle
+    }
+
+    // MARK: - Tint
+
+    /// Computes the app-wide pane surface color by blending the base
+    /// `DetailPaneSurfaceColor` asset toward a hue-derived target in perceptual
+    /// color space. The target is chosen based on the passed `colorScheme` so
+    /// that light mode reads as a pastel wash and dark mode reads as a deeper
+    /// saturated wash.
+    ///
+    /// When `tintIntensity == 0` the base color is returned untouched — this
+    /// is the zero-regression fast path that keeps the app visually identical
+    /// to its pre-tint appearance for users who never touch the slider.
+    ///
+    /// **Availability:** `Color.mix(with:by:in:)` is macOS 15+ / iOS 18+. The
+    /// main Jot app targets macOS 26, but some auxiliary targets (tests,
+    /// helpers) target 14.0 and compile this file too, so we gate on availability
+    /// and fall back to `NSColor.blended(withFraction:of:)` on older platforms.
+    /// The fallback does RGB (not perceptual) blending — acceptable because the
+    /// fallback path never renders a production surface.
+    func tintedPaneSurface(for colorScheme: ColorScheme) -> Color {
+        let base = Color("DetailPaneSurfaceColor")
+        guard tintIntensity > 0 else { return base }
+
+        let target: Color
+        switch colorScheme {
+        case .light:
+            target = Color(hue: tintHue, saturation: 0.10, brightness: 0.96)
+        case .dark:
+            target = Color(hue: tintHue, saturation: 0.38, brightness: 0.16)
+        @unknown default:
+            target = Color(hue: tintHue, saturation: 0.10, brightness: 0.96)
+        }
+
+        if #available(macOS 15.0, iOS 18.0, *) {
+            return base.mix(with: target, by: tintIntensity, in: .perceptual)
+        } else {
+            let baseNS = NSColor(base).usingColorSpace(.sRGB) ?? NSColor(base)
+            let targetNS = NSColor(target).usingColorSpace(.sRGB) ?? NSColor(target)
+            let blended = baseNS.blended(withFraction: CGFloat(tintIntensity), of: targetNS) ?? baseNS
+            return Color(nsColor: blended)
+        }
+    }
+
+    /// Restore hue + intensity to factory defaults.
+    func resetTint() {
+        tintHue = 0.55
+        tintIntensity = 0.0
     }
 
     // MARK: - Private

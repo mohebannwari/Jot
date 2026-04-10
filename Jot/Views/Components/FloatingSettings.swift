@@ -609,6 +609,7 @@ struct SettingsPage: View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 48) {
                 themeSection
+                tintSection
                 bodyFontSection
                 lineSpacingSection
                 fontSizeSection
@@ -675,6 +676,58 @@ struct SettingsPage: View {
                 hoveredTheme = theme
             } else if hoveredTheme == theme {
                 hoveredTheme = nil
+            }
+        }
+    }
+
+    // MARK: - Tint Section
+
+    private var tintSection: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            sectionLabel("Colors")
+
+            tintRow(
+                title: "Hue",
+                caption: "Choose a tint color"
+            ) {
+                HueGradientSlider(value: $themeManager.tintHue)
+                    .frame(width: 140)
+            }
+
+            tintRow(
+                title: "Intensity",
+                caption: "Control how strongly the tint is applied",
+                trailing: "\(Int((themeManager.tintIntensity * 100).rounded()))%"
+            ) {
+                Slider(value: $themeManager.tintIntensity, in: 0...1)
+                    .tint(Color("AccentColor"))
+                    .frame(width: 140)
+            }
+        }
+    }
+
+    private func tintRow<Control: View>(
+        title: String,
+        caption: String,
+        trailing: String? = nil,
+        @ViewBuilder control: () -> Control
+    ) -> some View {
+        HStack(alignment: .center, spacing: 16) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(FontManager.heading(size: 13, weight: .semibold))
+                    .foregroundStyle(Color("SettingsPrimaryTextColor"))
+                Text(caption)
+                    .font(FontManager.heading(size: 12, weight: .regular))
+                    .foregroundStyle(Color("SettingsPlaceholderTextColor"))
+            }
+            Spacer(minLength: 16)
+            control()
+            if let trailing {
+                Text(trailing)
+                    .font(FontManager.heading(size: 12, weight: .medium).monospacedDigit())
+                    .foregroundStyle(Color("SettingsPlaceholderTextColor"))
+                    .frame(width: 32, alignment: .trailing)
             }
         }
     }
