@@ -18,6 +18,9 @@ struct CreateFolderSheet: View {
     @State private var customColor: Color = .gray
     @FocusState private var isNameFieldFocused: Bool
 
+    @EnvironmentObject private var themeManager: ThemeManager
+    @Environment(\.colorScheme) private var colorScheme
+
     private var isEditing: Bool { editingFolder != nil }
 
     init(onCreate: @escaping (String, String?) -> Void,
@@ -86,7 +89,7 @@ struct CreateFolderSheet: View {
             }
         }
         .padding(12)
-        .background(Color("DetailPaneColor"))
+        .background(themeManager.tintedDetailPane(for: colorScheme))
         .clipShape(Capsule())
     }
 

@@ -5017,40 +5017,39 @@ struct NoteListCard: View {
                     }
             }
 
-            // Waveform indicator for notes with active background recording.
-            // When not hovered: waveform sits at the trailing edge (ellipsis position).
-            // When hovered: ellipsis appears at trailing edge, waveform shifts left.
-            if let recordingID = meetingRecorderManager.recordingNoteID,
-               recordingID == note.id,
-               !isActiveNote,
-               meetingRecorderManager.recordingState != .idle {
-                AudioWaveformIndicator(
-                    levels: meetingRecorderManager.levels,
-                    isPaused: meetingRecorderManager.recordingState == .paused
-                )
-                .frame(width: 18, height: 18)
-                .padding(.trailing, isHovered ? 0 : 2)
-                .animation(.jotHover, value: isHovered)
-            }
+            // Waveform + ellipsis trailing group. Uses a zero-spacing HStack so
+            // the waveform sits flush at the trailing edge when the ellipsis is hidden.
+            // On hover the ellipsis expands and the waveform shifts left naturally.
+            HStack(spacing: 4) {
+                if let recordingID = meetingRecorderManager.recordingNoteID,
+                   recordingID == note.id,
+                   !isActiveNote,
+                   meetingRecorderManager.recordingState != .idle {
+                    AudioWaveformIndicator(
+                        levels: meetingRecorderManager.levels,
+                        isPaused: meetingRecorderManager.recordingState == .paused
+                    )
+                    .frame(width: 16, height: 16)
+                }
 
-            Menu {
-                noteContextMenuContent
-            } label: {
-                Image(systemName: "ellipsis")
-                    .font(FontManager.icon(size: 12, weight: .medium))
-                    .foregroundColor(isActiveNote
-                        ? activeTextColor.opacity(isEllipsisHovered ? 1.0 : 0.7)
-                        : secondaryTextColor.opacity(isEllipsisHovered ? 1.0 : 0.7))
-                    .frame(width: 12, height: 12)
-                    .contentShape(Rectangle())
+                Menu {
+                    noteContextMenuContent
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(FontManager.icon(size: 12, weight: .medium))
+                        .foregroundColor(isActiveNote
+                            ? activeTextColor.opacity(isEllipsisHovered ? 1.0 : 0.7)
+                            : secondaryTextColor.opacity(isEllipsisHovered ? 1.0 : 0.7))
+                        .frame(width: 12, height: 12)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .onHover { isEllipsisHovered = $0 }
+                .frame(width: isHovered ? nil : 0)
+                .opacity(isHovered ? 1 : 0)
+                .allowsHitTesting(isHovered)
+                .clipped()
             }
-            .buttonStyle(.plain)
-            .onHover { isEllipsisHovered = $0 }
-            .frame(width: isHovered ? nil : 0)
-            .opacity(isHovered ? 1 : 0)
-            .allowsHitTesting(isHovered)
-            .padding(.trailing, 2)
-            .clipped()
         }
         .animation(.jotHover, value: isHovered)
         .padding(8)

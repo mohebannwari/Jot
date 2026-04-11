@@ -465,7 +465,7 @@ struct SettingsPage: View {
                         } label: {
                             ZStack {
                                 Circle()
-                                    .fill(colorScheme == .dark ? Color(white: 0.22) : Color(white: 0.88))
+                                    .fill(themeManager.tintedSettingsInnerPill(for: colorScheme))
                                     .frame(width: 15, height: 15)
                                 Text("?")
                                     .font(.system(size: 11, weight: .semibold))
@@ -728,7 +728,7 @@ struct SettingsPage: View {
                     .font(FontManager.heading(size: 13, weight: .semibold))
                     .foregroundStyle(Color("SettingsPrimaryTextColor"))
                 Text(caption)
-                    .font(FontManager.heading(size: 12, weight: .regular))
+                    .font(FontManager.heading(size: 11, weight: .regular))
                     .foregroundStyle(Color("SettingsPlaceholderTextColor"))
             }
             Spacer(minLength: 16)
@@ -1146,7 +1146,7 @@ struct SettingsPage: View {
                             ? type.selectedBackground(for: colorScheme)
                             : isHovered
                                 ? Color("HoverBackgroundColor")
-                                : Color("SettingsInnerPillColor")
+                                : themeManager.tintedSettingsInnerPill(for: colorScheme)
                     )
             )
         }

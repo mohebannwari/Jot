@@ -15,6 +15,7 @@ struct TranslateFloatingPanel: View {
     let onDismiss: () -> Void
     let onRetranslate: () -> Void
     @Environment(\.colorScheme) private var colorScheme
+    @EnvironmentObject private var themeManager: ThemeManager
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -169,7 +170,7 @@ struct TranslateFloatingPanel: View {
                 .foregroundColor(Color("PrimaryTextColor"))
                 .padding(.horizontal, 14)
                 .padding(.vertical, 7)
-                .background(Color("ButtonSecondaryBgColor"), in: Capsule())
+                .background(themeManager.tintedSecondaryButtonBackground(for: colorScheme), in: Capsule())
                 .buttonStyle(.plain)
                 .macPointingHandCursor()
                 .subtleHoverScale(1.04)
@@ -179,7 +180,7 @@ struct TranslateFloatingPanel: View {
                 .foregroundColor(Color("PrimaryTextColor"))
                 .padding(.horizontal, 14)
                 .padding(.vertical, 7)
-                .background(Color("ButtonSecondaryBgColor"), in: Capsule())
+                .background(themeManager.tintedSecondaryButtonBackground(for: colorScheme), in: Capsule())
                 .buttonStyle(.plain)
                 .macPointingHandCursor()
                 .subtleHoverScale(1.04)
@@ -192,7 +193,7 @@ struct TranslateFloatingPanel: View {
             .foregroundColor(Color("PrimaryTextColor"))
             .padding(.horizontal, 14)
             .padding(.vertical, 7)
-            .background(Color("ButtonSecondaryBgColor"), in: Capsule())
+            .background(themeManager.tintedSecondaryButtonBackground(for: colorScheme), in: Capsule())
             .buttonStyle(.plain)
             .macPointingHandCursor()
             .subtleHoverScale(1.04)

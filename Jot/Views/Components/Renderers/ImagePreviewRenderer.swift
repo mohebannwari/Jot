@@ -11,6 +11,7 @@ struct ImagePreviewRenderer: View {
     let storedFilename: String
     let containerWidth: CGFloat
 
+    @Environment(\.colorScheme) private var colorScheme
     @State private var image: NSImage?
     @State private var loadFailed = false
 
@@ -40,7 +41,7 @@ struct ImagePreviewRenderer: View {
     @ViewBuilder
     private func placeholder(_ message: String) -> some View {
         RoundedRectangle(cornerRadius: 10, style: .continuous)
-            .fill(Color("SurfaceElevatedColor"))
+            .fill(colorScheme == .dark ? Color("DetailPaneColor") : Color.white)
             .frame(maxWidth: containerWidth)
             .frame(height: 200)
             .overlay {

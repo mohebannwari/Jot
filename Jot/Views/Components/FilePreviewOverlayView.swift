@@ -204,11 +204,15 @@ final class FilePreviewOverlayView: NSView {
             } else {
                 contentHeight = 400
             }
-        case .audio:    contentHeight = 80
-        case .video:    contentHeight = 300
-        case .text:     contentHeight = 200
-        case .office:   contentHeight = 200
-        case .other:    contentHeight = 200
+        case .audio:
+            contentHeight = 80
+        case .video:
+            contentHeight = 300
+        case .text:
+            contentHeight = TextPreviewRenderer.preferredHeight(for: viewMode)
+        case .office, .other:
+            let contentW = width - 24
+            contentHeight = ThumbnailPreviewRenderer.preferredHeight(forWidth: contentW)
         }
         return topPad + headerHeight + gap + contentHeight + bottomPad + glassOverhead
     }

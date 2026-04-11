@@ -55,6 +55,7 @@ struct FilePreviewContent: View {
     var onRename: ((String) -> Void)?
     var onCopy: (() -> Void)?
     var onDelete: (() -> Void)?
+    @Environment(\.colorScheme) private var colorScheme
     var onOpenInApp: (() -> Void)?
 
     @State private var appIcon: NSImage?
@@ -67,7 +68,8 @@ struct FilePreviewContent: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             headerBar
-                .padding(.horizontal, 12)
+                .padding(.leading, 24)
+                .padding(.trailing, 12)
                 .padding(.top, 12)
             contentArea
                 .padding(.horizontal, 12)
@@ -133,7 +135,12 @@ struct FilePreviewContent: View {
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
-            .background(Color("ButtonSecondaryBgColor"), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            // NSHostingView in FilePreviewOverlayView is not in the app SwiftUI tree, so we cannot use
+            // @EnvironmentObject(ThemeManager). Static NS tint matches FileAttachmentTagView / editor overlays.
+            .background(
+                Color(nsColor: ThemeManager.tintedSecondaryButtonBackgroundNS(isDark: colorScheme == .dark)),
+                in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+            )
         }
         .buttonStyle(.plain)
     }
@@ -152,7 +159,11 @@ struct FilePreviewContent: View {
         case .video:
             VideoPreviewRenderer(storedFilename: storedFilename, containerWidth: contentWidth)
         case .text:
-            TextPreviewRenderer(storedFilename: storedFilename, containerWidth: contentWidth)
+            TextPreviewRenderer(
+                storedFilename: storedFilename,
+                containerWidth: contentWidth,
+                viewMode: viewMode
+            )
         case .office, .other:
             ThumbnailPreviewRenderer(storedFilename: storedFilename, containerWidth: contentWidth)
         }

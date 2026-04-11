@@ -3,7 +3,9 @@ description:
 alwaysApply: true
 ---
 
-# CLAUDE.md -- Jot
+# claude.md -- Jot
+
+**Keep in sync with** `.claude/CLAUDE.md` **(canonical for Claude Code).** This root copy exists for tools that only read `claude.md` at the repository root.
 
 iOS 26+ / macOS 26+ note-taking app in SwiftUI with Apple Liquid Glass design system.
 

@@ -537,6 +537,7 @@ struct FolderSection: View {
                             Text(showsAll ? "Show less" : "Show more")
                                 .font(FontManager.metadata(size: 11, weight: .semibold))
                                 .foregroundColor(Color("SecondaryTextColor"))
+                                .textCase(.uppercase)
                         }
                         .buttonStyle(.plain)
                         .padding(.leading, 8)

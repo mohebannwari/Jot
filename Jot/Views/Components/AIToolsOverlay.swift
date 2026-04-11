@@ -256,7 +256,7 @@ struct AIToolsOverlay: View {
     }
 
     private var textAreaBackgroundColor: Color {
-        Color("SurfaceElevatedColor")
+        colorScheme == .dark ? Color("DetailPaneColor") : Color.white
     }
 
     private var enterButtonBackgroundColor: Color {

@@ -524,6 +524,110 @@ final class ThemeManager: ObservableObject {
         return baseSRGB.blended(withFraction: CGFloat(intensity), of: targetSRGB) ?? baseSRGB
     }
 
+    // MARK: - Secondary Button Background Tint
+
+    /// Computes the tinted secondary button background color.
+    /// Base: ButtonSecondaryBgColor (#D6D3D1 light / #292524 dark - same as BlockContainerColor)
+    /// Target: Slightly more saturated than block container to maintain visual hierarchy
+    func tintedSecondaryButtonBackground(for colorScheme: ColorScheme) -> Color {
+        let base = Color("ButtonSecondaryBgColor")
+        guard tintIntensity > 0 else { return base }
+
+        let target: Color
+        switch colorScheme {
+        case .light:
+            target = Color(hue: tintHue, saturation: 0.16, brightness: 0.86)
+        case .dark:
+            target = Color(hue: tintHue, saturation: 0.48, brightness: 0.24)
+        @unknown default:
+            target = Color(hue: tintHue, saturation: 0.16, brightness: 0.86)
+        }
+
+        if #available(macOS 15.0, iOS 18.0, *) {
+            return base.mix(with: target, by: tintIntensity, in: .perceptual)
+        } else {
+            let baseNS = NSColor(base).usingColorSpace(.sRGB) ?? NSColor(base)
+            let targetNS = NSColor(target).usingColorSpace(.sRGB) ?? NSColor(target)
+            let blended = baseNS.blended(withFraction: CGFloat(tintIntensity), of: targetNS) ?? baseNS
+            return Color(nsColor: blended)
+        }
+    }
+
+    /// NSColor variant of `tintedSecondaryButtonBackground(for:)` for AppKit overlays.
+    nonisolated static func tintedSecondaryButtonBackgroundNS(isDark: Bool) -> NSColor {
+        let base: NSColor = isDark
+            ? NSColor(srgbRed: 41/255, green: 37/255, blue: 36/255, alpha: 1)     // #292524
+            : NSColor(srgbRed: 214/255, green: 211/255, blue: 209/255, alpha: 1)  // #D6D3D1
+
+        let intensity = currentTintIntensity()
+        guard intensity > 0 else { return base }
+
+        let hue = CGFloat(currentTintHue())
+        let target: NSColor = isDark
+            ? NSColor(hue: hue, saturation: 0.48, brightness: 0.24, alpha: 1)
+            : NSColor(hue: hue, saturation: 0.16, brightness: 0.86, alpha: 1)
+
+        let baseSRGB = base.usingColorSpace(.sRGB) ?? base
+        let targetSRGB = target.usingColorSpace(.sRGB) ?? target
+        return baseSRGB.blended(withFraction: CGFloat(intensity), of: targetSRGB) ?? baseSRGB
+    }
+
+    // MARK: - Settings Inner Pill Tint
+
+    /// Computes the tinted settings inner pill color.
+    /// Base: SettingsInnerPillColor (#E7E6E4 light / #1C1917 dark)
+    func tintedSettingsInnerPill(for colorScheme: ColorScheme) -> Color {
+        let base = Color("SettingsInnerPillColor")
+        guard tintIntensity > 0 else { return base }
+
+        let target: Color
+        switch colorScheme {
+        case .light:
+            target = Color(hue: tintHue, saturation: 0.12, brightness: 0.90)
+        case .dark:
+            target = Color(hue: tintHue, saturation: 0.42, brightness: 0.20)
+        @unknown default:
+            target = Color(hue: tintHue, saturation: 0.12, brightness: 0.90)
+        }
+
+        if #available(macOS 15.0, iOS 18.0, *) {
+            return base.mix(with: target, by: tintIntensity, in: .perceptual)
+        } else {
+            let baseNS = NSColor(base).usingColorSpace(.sRGB) ?? NSColor(base)
+            let targetNS = NSColor(target).usingColorSpace(.sRGB) ?? NSColor(target)
+            let blended = baseNS.blended(withFraction: CGFloat(tintIntensity), of: targetNS) ?? baseNS
+            return Color(nsColor: blended)
+        }
+    }
+
+    // MARK: - Detail Pane Color Tint
+
+    /// Computes the tinted detail pane color.
+    /// Base: DetailPaneColor (#E7E5E4 light / #0C0A09 dark)
+    func tintedDetailPane(for colorScheme: ColorScheme) -> Color {
+        let base = Color("DetailPaneColor")
+        guard tintIntensity > 0 else { return base }
+
+        let target: Color
+        switch colorScheme {
+        case .light:
+            target = Color(hue: tintHue, saturation: 0.10, brightness: 0.92)
+        case .dark:
+            target = Color(hue: tintHue, saturation: 0.35, brightness: 0.14)
+        @unknown default:
+            target = Color(hue: tintHue, saturation: 0.10, brightness: 0.92)
+        }
+
+        if #available(macOS 15.0, iOS 18.0, *) {
+            return base.mix(with: target, by: tintIntensity, in: .perceptual)
+        } else {
+            let baseNS = NSColor(base).usingColorSpace(.sRGB) ?? NSColor(base)
+            let targetNS = NSColor(target).usingColorSpace(.sRGB) ?? NSColor(target)
+            let blended = baseNS.blended(withFraction: CGFloat(tintIntensity), of: targetNS) ?? baseNS
+            return Color(nsColor: blended)
+        }
+    }
+
     // MARK: - Private
 
     private func applyAppKitAppearance(_ theme: AppTheme) {

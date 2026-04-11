@@ -66,7 +66,7 @@ struct BackupSettingsPanel: View {
                             .padding(.vertical, 6)
                             .background(
                                 Capsule()
-                                    .fill(Color("SettingsInnerPillColor"))
+                                    .fill(themeManager.tintedSettingsInnerPill(for: colorScheme))
                             )
                     }
                     .buttonStyle(.plain)
@@ -157,7 +157,7 @@ struct BackupSettingsPanel: View {
                     .padding(.vertical, 1)
                     .background(
                         Capsule()
-                            .fill(Color("SettingsInnerPillColor"))
+                            .fill(themeManager.tintedSettingsInnerPill(for: colorScheme))
                     )
                 }
             }
@@ -184,7 +184,7 @@ struct BackupSettingsPanel: View {
                             .foregroundColor(Color("PrimaryTextColor"))
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 11)
-                            .background(Color("ButtonSecondaryBgColor"), in: Capsule())
+                            .background(themeManager.tintedSecondaryButtonBackground(for: colorScheme), in: Capsule())
                     }
                     .menuStyle(.button)
                     .buttonStyle(.plain)

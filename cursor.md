@@ -12,6 +12,8 @@ These rules are absolute. No exceptions. No rationalizations. No "just this once
 2. **No log-based debugging.** Do not add `NSLog`, `print()`, `os_log`, or any temporary logging statements to diagnose issues. Logs pollute the codebase, require rebuild-relaunch cycles, and encourage guess-and-check instead of thinking. Research the problem, read Apple documentation, check system configuration (entitlements, plist, sandbox), and reason about the architecture. If you need runtime observation, use Xcode's debugger, not log statements.
 3. **No fix without root cause.** Proposing a fix before identifying the root cause is prohibited. "I think it might be X" is not a root cause. A root cause is: "The app sandbox requires `com.apple.security.print` for `NSPrintOperation` to function, and this entitlement is missing from Jot.entitlements." Specificity or silence.
 
+4. **No unsolicited test runs, NSLog, or background monitoring.** Whatever model is selected: do not start test instances of the app or project (dev servers, simulators, preview hosts, or similar) unless the user explicitly asks. Do not add `NSLog` or other logging for diagnostics (rule 2 stands). Do not run or leave background monitoring of builds, processes, logs, or environment state unless the user explicitly requests it.
+
 ---
 
 ## Thinking & Effort
@@ -121,14 +123,12 @@ Without `preserves-vector-representation`, Xcode rasterizes SVGs as 1x bitmaps a
 
 Target stroke ratio: `1/12` of viewBox size. Calculate: `stroke-width = viewBox_size / 12`.
 
-
 | Figma grid | Correct stroke-width |
 | ---------- | -------------------- |
 | 10 x 10    | 0.833                |
 | 12 x 12    | 1.0                  |
 | 16 x 16    | 1.333                |
 | 24 x 24    | 2.0                  |
-
 
 Icons that deviate from this ratio will appear thinner or heavier than their siblings when scaled to the same SwiftUI frame. Fix the SVG source, not the frame size.
 
@@ -238,7 +238,7 @@ Nesting order: align > heading/bold/italic > underline > strikethrough > color
 ## Figma Source
 
 - Jot design file (always reference this):
-[https://www.figma.com/design/BhVLOWG63LckTVCuO3q0Tv/Jot?node-id=0-1&p=f&t=Exr6XkLRSkF2tndZ-0](https://www.figma.com/design/BhVLOWG63LckTVCuO3q0Tv/Jot?node-id=0-1&p=f&t=Exr6XkLRSkF2tndZ-0)
+  [https://www.figma.com/design/BhVLOWG63LckTVCuO3q0Tv/Jot?node-id=0-1&p=f&t=Exr6XkLRSkF2tndZ-0](https://www.figma.com/design/BhVLOWG63LckTVCuO3q0Tv/Jot?node-id=0-1&p=f&t=Exr6XkLRSkF2tndZ-0)
 
 Suggested uses:
 
@@ -255,7 +255,6 @@ Single source of truth for design tokens. Extracted from Figma and xcassets.
 ### Color Tokens
 
 All semantic colors live in `Jot/Ressources/Assets.xcassets/`. Reference by name in SwiftUI (`Color("TokenName")`). Always support both light and dark.
-
 
 | Token                          | Light                              | Dark                               |
 | ------------------------------ | ---------------------------------- | ---------------------------------- |
@@ -291,7 +290,6 @@ All semantic colors live in `Jot/Ressources/Assets.xcassets/`. Reference by name
 | `TagTextColor`                 | `#1A1A1A`                          | `#FFFFFF`                          |
 | `TertiaryTextColor`            | `#52525B`                          | `#A19FA9`                          |
 
-
 #### Primitive Colors (Figma Variables)
 
 ```
@@ -306,7 +304,6 @@ All type uses **SF Pro**. Weights: Regular=400, Medium=500, SemiBold=600, Bold=7
 
 #### Figma Type Scale
 
-
 | Style      | Size | Line Height | Tracking | Weights Available |
 | ---------- | ---- | ----------- | -------- | ----------------- |
 | Heading/H4 | 20   | 24          | -0.20    | Medium            |
@@ -317,11 +314,9 @@ All type uses **SF Pro**. Weights: Regular=400, Medium=500, SemiBold=600, Bold=7
 | Tiny       | 10   | 12          | 0        | Medium, SemiBold  |
 | Micro      | 9    | 10          | 0        | SemiBold, Bold    |
 
-
 #### FontManager API (code-level)
 
 Three font families: **Charter** (serif body), **SF Pro** (headings/UI), **SF Mono** (metadata/code).
-
 
 | Method       | SwiftUI                          | Size | Weight  | Notes                           |
 | ------------ | -------------------------------- | ---- | ------- | ------------------------------- |
@@ -330,14 +325,12 @@ Three font families: **Charter** (serif body), **SF Pro** (headings/UI), **SF Mo
 | `metadata()` | `Font.system(monospaced, size:)` | 12   | Medium  | Timestamps, dates               |
 | `icon()`     | `Font.system(size:)`             | 20   | Regular | SF Symbols                      |
 
-
 Body font style is user-configurable: `default` (Charter), `system` (SF Pro), `mono` (SF Mono).
 Line spacing presets: Compact (1.0x), Default (1.2x), Relaxed (1.5x) -- stored in `ThemeManager.lineSpacing`.
 
 ### Spacing Scale
 
 Figma token name -> pt value:
-
 
 | Token  | Value |
 | ------ | ----- |
@@ -351,11 +344,9 @@ Figma token name -> pt value:
 | `xl4`  | 48    |
 | `xl5`  | 60    |
 
-
 Canonical padding values in use: `4, 6, 8, 12, 16, 18, 24, 60`
 
 ### Corner Radius Scale
-
 
 | Token  | Value         |
 | ------ | ------------- |
@@ -367,21 +358,17 @@ Canonical padding values in use: `4, 6, 8, 12, 16, 18, 24, 60`
 | `3xl`  | 24            |
 | `full` | 999 (capsule) |
 
-
 Canonical radius values in use: `4, 20, 24, Capsule`
 
 ### Effects
-
 
 | Token          | Value                     |
 | -------------- | ------------------------- |
 | `bg-blur/tags` | Background blur, radius 4 |
 
-
 ### Animations & Timing
 
 All in `Extensions.swift`:
-
 
 | Animation         | Response | Damping | Duration | Usage                              |
 | ----------------- | -------- | ------- | -------- | ---------------------------------- |
@@ -390,7 +377,6 @@ All in `Extensions.swift`:
 | **jotSmoothFast** | -        | -       | 0.2s     | Fast linear transitions            |
 | **jotHover**      | 0.25s    | 0.75    | -        | Hover state animations (subtle)    |
 | **jotDragSnap**   | 0.18s    | 0.9     | -        | Drag-release snap-to-grid effect   |
-
 
 ### Liquid Glass Tokens (iOS 26+ / macOS 26+)
 
@@ -419,11 +405,8 @@ Glass behavior is governed by native `.glassEffect()`. Not a color token -- a mo
 
 ### Asset Catalog Locations
 
-
 | Content         | Path                              |
 | --------------- | --------------------------------- |
 | Semantic colors | `Jot/Ressources/Assets.xcassets/` |
 | Icons & images  | `Jot/Assets.xcassets/`            |
 | SVG icons       | `Jot/` (root-level .svg files)    |
-
-

@@ -14,9 +14,12 @@ These rules are absolute. No exceptions. No rationalizations. No "just this once
 
 3. **No fix without root cause.** Proposing a fix before identifying the root cause is prohibited. "I think it might be X" is not a root cause. A root cause is: "The app sandbox requires `com.apple.security.print` for `NSPrintOperation` to function, and this entitlement is missing from Jot.entitlements." Specificity or silence.
 
+4. **No unsolicited test runs, NSLog, or background monitoring.** Whatever model is selected: do not start test instances of the app or project (dev servers, simulators, preview hosts, or similar) unless the user explicitly asks. Do not add `NSLog` or other logging for diagnostics (rule 2 stands). Do not run or leave background monitoring of builds, processes, logs, or environment state unless the user explicitly requests it.
+
 ---
 
 ## Thinking & Effort
+
 - **Effort level must always be set to maximum.** This is the default. Never reduce effort, never use low-effort or quick modes. Every response gets full reasoning depth, no matter how simple the task appears.
 - Think deeply after every prompt. Full depth, full rigor, always.
 
@@ -43,6 +46,7 @@ If you catch yourself writing "I'll assume..." -- that's below 95%. Stop and ask
 ---
 
 ## Architecture
+
 ```
 Jot/
 ├── App/              # JotApp, ContentView, AppDelegate, menu commands
@@ -59,6 +63,7 @@ Jot/
 Second asset catalog: `Jot/Assets.xcassets/` (icons, images, plus a few color tokens).
 
 **Patterns:**
+
 - State: `@StateObject` / `@EnvironmentObject` (NotesManager, ThemeManager)
 - Persistence: `SimpleSwiftDataManager`
 - `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` project-wide
@@ -74,11 +79,13 @@ Second asset catalog: `Jot/Assets.xcassets/` (icons, images, plus a few color to
 ## Liquid Glass (iOS 26+ / macOS 26+)
 
 Variants (from the `Glass` type):
+
 - `.regular` -- default for toolbars, buttons, navigation (adapts to any content)
 - `.clear` -- floating controls over media (photos, maps); needs bold foreground
 - `.identity` -- disables glass conditionally (cleaner than if/else branching)
 
 Modifiers (chain on any variant):
+
 - `.tint(color)` -- semantic coloring integrated into the glass material
 - `.interactive()` -- scaling, bounce, shimmer on press (interactive elements only)
 
@@ -87,6 +94,7 @@ Shapes: `Capsule()` (default), `RoundedRectangle(cornerRadius:)`, `Circle()`, `.
 Morphing: `.glassEffectID(id, in: namespace)` inside `GlassEffectContainer`
 
 Helpers (in `GlassEffects.swift`):
+
 - `liquidGlass(in:)` -- standard interactive glass
 - `tintedLiquidGlass(in:tint:)` -- glass with native `.tint()` color
 - `thinLiquidGlass(in:)` -- plain glass without interactivity
@@ -101,35 +109,42 @@ Rules: no glass-on-glass; floating elements only; coordinate morphing with `Glas
 ## SVG Icon Rules
 
 ### Asset Catalog -- Required Properties
+
 Every `.imageset/Contents.json` **must** include both flags in `properties`:
+
 ```json
 "properties": {
   "template-rendering-intent": "template",
   "preserves-vector-representation": true
 }
 ```
+
 Without `preserves-vector-representation`, Xcode rasterizes SVGs as 1x bitmaps at build time. On Retina displays those bitmaps scale up = blur. **Always verify this when adding new icon assets.**
 
 ### Stroke Weight -- Consistency Formula
+
 Target stroke ratio: `1/12` of viewBox size. Calculate: `stroke-width = viewBox_size / 12`.
 
 | Figma grid | Correct stroke-width |
-|------------|---------------------|
-| 10 x 10   | 0.833               |
-| 12 x 12   | 1.0                 |
-| 16 x 16   | 1.333               |
-| 24 x 24   | 2.0                 |
+| ---------- | -------------------- |
+| 10 x 10    | 0.833                |
+| 12 x 12    | 1.0                  |
+| 16 x 16    | 1.333                |
+| 24 x 24    | 2.0                  |
 
 Icons that deviate from this ratio will appear thinner or heavier than their siblings when scaled to the same SwiftUI frame. Fix the SVG source, not the frame size.
 
 ### SVG Rotation in SwiftUI
+
 Figma may export SVGs in the wrong orientation. To rotate (e.g., horizontal to vertical):
 `.frame(width: W, height: H).rotationEffect(.degrees(90)).frame(width: H, height: W)`
 
 ---
 
 ## Bug Workflow
+
 When a bug is reported, **do not attempt to fix it immediately.** Instead:
+
 1. Write a test that reproduces the bug (the test must fail).
 2. Fix the bug and prove the fix with the now-passing test.
 3. Only declare the bug fixed when the reproduction test passes.
@@ -137,6 +152,7 @@ When a bug is reported, **do not attempt to fix it immediately.** Instead:
 ---
 
 ## Code Rules
+
 - No hardcoded colors, spacing, or radii -- use design tokens.
 - Check existing components before creating new ones.
 - Rich text: `AttributedString` + `.richTextCapabilities()`.
@@ -148,7 +164,9 @@ When a bug is reported, **do not attempt to fix it immediately.** Instead:
 ---
 
 ## CI / GitHub Actions
+
 Workflows live at `.github/workflows/` -- this is a GitHub requirement and cannot move.
+
 - `claude-code-review.yml` -- PR review bot
 - `claude.yml` -- responds to `@claude` mentions in issues/PRs
 
@@ -207,6 +225,7 @@ Analyze against: alignment, spacing, sizing from design tokens, light/dark mode,
 ## Rich Text Serialization Format
 
 Reference (for `TodoRichTextEditor`):
+
 - `[[b]]...[[/b]]`, `[[i]]...[[/i]]`, `[[u]]...[[/u]]`, `[[s]]...[[/s]]` -- inline formatting
 - `[[h1]]...[[/h1]]`, `[[h2]]`, `[[h3]]` -- headings
 - `[[align:center/right/justify]]...[[/align]]` -- alignment
@@ -224,6 +243,7 @@ Nesting order: align > heading/bold/italic > underline > strikethrough > color
   https://www.figma.com/design/BhVLOWG63LckTVCuO3q0Tv/Jot?node-id=0-1&p=f&t=Exr6XkLRSkF2tndZ-0
 
 Suggested uses:
+
 - Verify tokens (colors, typography) before changing assets.
 - Align component specs (spacing, radii, effects) with the selected frame.
 - Use as the single source of truth for light/dark variants and Liquid Glass behavior.
@@ -238,41 +258,42 @@ Single source of truth for design tokens. Extracted from Figma and xcassets.
 
 All semantic colors live in `Jot/Ressources/Assets.xcassets/`. Reference by name in SwiftUI (`Color("TokenName")`). Always support both light and dark.
 
-| Token | Light | Dark |
-|-------|-------|------|
-| `AccentColor` | `#2563EB` | `#608DFA` |
-| `MainColor` | `#1A1A1A` (= ButtonPrimaryBgColor) | `#FFFFFF` (= ButtonPrimaryBgColor) |
-| `BackgroundColor` | `#FFFFFF5C` (36% white) | `#0C0A0908` (3% near-black) |
-| `BlockContainerColor` | `#D6D3D1` (stone-300) | `#292524` (stone-800) |
-| `BorderSubtleColor` | `#1A1A1A17` (9% black) | `#FFFFFF17` (9% white) |
-| `ButtonPrimaryBgColor` | `#1A1A1A` | `#FFFFFF` |
-| `ButtonPrimaryTextColor` | `#FFFFFF` | `#1A1A1A` |
-| `ButtonSecondaryBgColor` | `#D6D3D1` (stone-300) | `#292524` (stone-800) |
-| `CardBackgroundColor` | `#FFFFFFB3` (70% white) | `#1C1918B3` (70% dark) |
-| `FolderBadgeBgColor` | `#FFFFFF5C` (36% white) | `#FFFFFF1F` (12% white) |
-| `HoverBackgroundColor` | `#D1D3D0` | `#444040` |
-| `IconSecondaryColor` | `#1A1A1AB3` (70% black) | `#A8A29E` |
-| `MenuButtonColor` | `#1A1A1AB3` (70% black) | `#FFFFFFB3` (70% white) |
-| `PinnedBgColor` | `#FEF08A` (amber) | `#854D0E` (amber-dark) |
-| `PinnedIconColor` | `#854D0E` | `#FEEF8A` |
-| `PrimaryTextColor` | `#1A1A1A` | `#FFFFFF` |
-| `SearchInputBackgroundColor` | `#FFFFFF` | `#1C1918` |
-| `SecondaryBackgroundColor` | `#E7E6E4` | `#292524` |
-| `SecondaryTextColor` | `#1A1A1AB3` (70% black) | `#FFFFFFB3` (70% white) |
-| `SettingsActiveTabColor` | `#F5F4F4` | `#444040` |
-| `SettingsIconSecondaryColor` | `#1A1A1AB3` | `#A8A29E` |
-| `SettingsOptionCardColor` | `#E7E6E4` | `#0C0A09` |
-| `SettingsPanelPrimaryColor` | `#FFFFFF5C` (36% white) | `#1A1A1ACC` (80% black) |
-| `SettingsPlaceholderTextColor` | `#1A1A1AB3` | `#FFFFFFB2` |
-| `SettingsPrimaryTextColor` | `#1A1A1A` | `#FFFFFF` |
-| `SurfaceDefaultColor` | `#FFFFFF` | `#1C1918` |
-| `SurfaceElevatedColor` | `#F5F4F4` | `#292524` |
-| `SurfaceTranslucentColor` | `#1A1A1A0F` (6% black) | `#FFFFFF0F` (6% white) |
-| `TagBackgroundColor` | `#608DFA59` (35% accent) | `#608DFA40` (25% accent) |
-| `TagTextColor` | `#1A1A1A` | `#FFFFFF` |
-| `TertiaryTextColor` | `#52525B` | `#A19FA9` |
+| Token                          | Light                              | Dark                               |
+| ------------------------------ | ---------------------------------- | ---------------------------------- |
+| `AccentColor`                  | `#2563EB`                          | `#608DFA`                          |
+| `MainColor`                    | `#1A1A1A` (= ButtonPrimaryBgColor) | `#FFFFFF` (= ButtonPrimaryBgColor) |
+| `BackgroundColor`              | `#FFFFFF5C` (36% white)            | `#0C0A0908` (3% near-black)        |
+| `BlockContainerColor`          | `#D6D3D1` (stone-300)              | `#292524` (stone-800)              |
+| `BorderSubtleColor`            | `#1A1A1A17` (9% black)             | `#FFFFFF17` (9% white)             |
+| `ButtonPrimaryBgColor`         | `#1A1A1A`                          | `#FFFFFF`                          |
+| `ButtonPrimaryTextColor`       | `#FFFFFF`                          | `#1A1A1A`                          |
+| `ButtonSecondaryBgColor`       | `#D6D3D1` (stone-300)              | `#292524` (stone-800)              |
+| `CardBackgroundColor`          | `#FFFFFFB3` (70% white)            | `#1C1918B3` (70% dark)             |
+| `FolderBadgeBgColor`           | `#FFFFFF5C` (36% white)            | `#FFFFFF1F` (12% white)            |
+| `HoverBackgroundColor`         | `#D1D3D0`                          | `#444040`                          |
+| `IconSecondaryColor`           | `#1A1A1AB3` (70% black)            | `#A8A29E`                          |
+| `MenuButtonColor`              | `#1A1A1AB3` (70% black)            | `#FFFFFFB3` (70% white)            |
+| `PinnedBgColor`                | `#FEF08A` (amber)                  | `#854D0E` (amber-dark)             |
+| `PinnedIconColor`              | `#854D0E`                          | `#FEEF8A`                          |
+| `PrimaryTextColor`             | `#1A1A1A`                          | `#FFFFFF`                          |
+| `SearchInputBackgroundColor`   | `#FFFFFF`                          | `#1C1918`                          |
+| `SecondaryBackgroundColor`     | `#E7E6E4`                          | `#292524`                          |
+| `SecondaryTextColor`           | `#1A1A1AB3` (70% black)            | `#FFFFFFB3` (70% white)            |
+| `SettingsActiveTabColor`       | `#F5F4F4`                          | `#444040`                          |
+| `SettingsIconSecondaryColor`   | `#1A1A1AB3`                        | `#A8A29E`                          |
+| `SettingsOptionCardColor`      | `#E7E6E4`                          | `#0C0A09`                          |
+| `SettingsPanelPrimaryColor`    | `#FFFFFF5C` (36% white)            | `#1A1A1ACC` (80% black)            |
+| `SettingsPlaceholderTextColor` | `#1A1A1AB3`                        | `#FFFFFFB2`                        |
+| `SettingsPrimaryTextColor`     | `#1A1A1A`                          | `#FFFFFF`                          |
+| `SurfaceDefaultColor`          | `#FFFFFF`                          | `#1C1918`                          |
+| `SurfaceElevatedColor`         | `#F5F4F4`                          | `#292524`                          |
+| `SurfaceTranslucentColor`      | `#1A1A1A0F` (6% black)             | `#FFFFFF0F` (6% white)             |
+| `TagBackgroundColor`           | `#608DFA59` (35% accent)           | `#608DFA40` (25% accent)           |
+| `TagTextColor`                 | `#1A1A1A`                          | `#FFFFFF`                          |
+| `TertiaryTextColor`            | `#52525B`                          | `#A19FA9`                          |
 
 #### Primitive Colors (Figma Variables)
+
 ```
 blue/500     #3B82F6
 red/500      #EF4444
@@ -285,26 +306,26 @@ All type uses **SF Pro**. Weights: Regular=400, Medium=500, SemiBold=600, Bold=7
 
 #### Figma Type Scale
 
-| Style | Size | Line Height | Tracking | Weights Available |
-|-------|------|-------------|----------|-------------------|
-| Heading/H4 | 20 | 24 | -0.20 | Medium |
-| Label-2 | 15 | 18 | -0.50 | Medium |
-| Label-3 | 13 | 16 | -0.40 | Medium |
-| Label-4 | 12 | 14 | -0.30 | Medium, SemiBold |
-| Label-5 | 11 | 14 | -0.20 | Medium |
-| Tiny | 10 | 12 | 0 | Medium, SemiBold |
-| Micro | 9 | 10 | 0 | SemiBold, Bold |
+| Style      | Size | Line Height | Tracking | Weights Available |
+| ---------- | ---- | ----------- | -------- | ----------------- |
+| Heading/H4 | 20   | 24          | -0.20    | Medium            |
+| Label-2    | 15   | 18          | -0.50    | Medium            |
+| Label-3    | 13   | 16          | -0.40    | Medium            |
+| Label-4    | 12   | 14          | -0.30    | Medium, SemiBold  |
+| Label-5    | 11   | 14          | -0.20    | Medium            |
+| Tiny       | 10   | 12          | 0        | Medium, SemiBold  |
+| Micro      | 9    | 10          | 0        | SemiBold, Bold    |
 
 #### FontManager API (code-level)
 
 Three font families: **Charter** (serif body), **SF Pro** (headings/UI), **SF Mono** (metadata/code).
 
-| Method | SwiftUI | Size | Weight | Notes |
-|--------|---------|------|--------|-------|
-| `body()` | `Font.custom("Charter", size:)` | 16 | Regular | Follows `bodyFontStyle` setting |
-| `heading()` | `Font.system(size:, weight:)` | 24 | Medium | Respects `bodyFontStyle` |
-| `metadata()` | `Font.system(monospaced, size:)` | 12 | Medium | Timestamps, dates |
-| `icon()` | `Font.system(size:)` | 20 | Regular | SF Symbols |
+| Method       | SwiftUI                          | Size | Weight  | Notes                           |
+| ------------ | -------------------------------- | ---- | ------- | ------------------------------- |
+| `body()`     | `Font.custom("Charter", size:)`  | 16   | Regular | Follows `bodyFontStyle` setting |
+| `heading()`  | `Font.system(size:, weight:)`    | 24   | Medium  | Respects `bodyFontStyle`        |
+| `metadata()` | `Font.system(monospaced, size:)` | 12   | Medium  | Timestamps, dates               |
+| `icon()`     | `Font.system(size:)`             | 20   | Regular | SF Symbols                      |
 
 Body font style is user-configurable: `default` (Charter), `system` (SF Pro), `mono` (SF Mono).
 Line spacing presets: Compact (1.0x), Default (1.2x), Relaxed (1.5x) -- stored in `ThemeManager.lineSpacing`.
@@ -313,51 +334,51 @@ Line spacing presets: Compact (1.0x), Default (1.2x), Relaxed (1.5x) -- stored i
 
 Figma token name -> pt value:
 
-| Token | Value |
-|-------|-------|
-| `zero` | 0 |
-| `xxs` | 2 |
-| `xs2` | 4 |
-| `xs` | 8 |
-| `sm` | 12 |
-| `base` | 16 |
-| `xl2` | 32 |
-| `xl4` | 48 |
-| `xl5` | 60 |
+| Token  | Value |
+| ------ | ----- |
+| `zero` | 0     |
+| `xxs`  | 2     |
+| `xs2`  | 4     |
+| `xs`   | 8     |
+| `sm`   | 12    |
+| `base` | 16    |
+| `xl2`  | 32    |
+| `xl4`  | 48    |
+| `xl5`  | 60    |
 
 Canonical padding values in use: `4, 6, 8, 12, 16, 18, 24, 60`
 
 ### Corner Radius Scale
 
-| Token | Value |
-|-------|-------|
-| `none` | 0 |
-| `lg` | 8 |
-| `xl` | 12 |
-| `2xl` | 16 |
-| `md` | 20 |
-| `3xl` | 24 |
+| Token  | Value         |
+| ------ | ------------- |
+| `none` | 0             |
+| `lg`   | 8             |
+| `xl`   | 12            |
+| `2xl`  | 16            |
+| `md`   | 20            |
+| `3xl`  | 24            |
 | `full` | 999 (capsule) |
 
 Canonical radius values in use: `4, 20, 24, Capsule`
 
 ### Effects
 
-| Token | Value |
-|-------|-------|
+| Token          | Value                     |
+| -------------- | ------------------------- |
 | `bg-blur/tags` | Background blur, radius 4 |
 
 ### Animations & Timing
 
 All in `Extensions.swift`:
 
-| Animation | Response | Damping | Duration | Usage |
-|-----------|----------|---------|----------|-------|
-| **jotSpring** | 0.35s | 0.82 | - | Spring response for natural motion |
-| **jotBounce** | - | - | 0.3s | Bouncy easing |
-| **jotSmoothFast** | - | - | 0.2s | Fast linear transitions |
-| **jotHover** | 0.25s | 0.75 | - | Hover state animations (subtle) |
-| **jotDragSnap** | 0.18s | 0.9 | - | Drag-release snap-to-grid effect |
+| Animation         | Response | Damping | Duration | Usage                              |
+| ----------------- | -------- | ------- | -------- | ---------------------------------- |
+| **jotSpring**     | 0.35s    | 0.82    | -        | Spring response for natural motion |
+| **jotBounce**     | -        | -       | 0.3s     | Bouncy easing                      |
+| **jotSmoothFast** | -        | -       | 0.2s     | Fast linear transitions            |
+| **jotHover**      | 0.25s    | 0.75    | -        | Hover state animations (subtle)    |
+| **jotDragSnap**   | 0.18s    | 0.9     | -        | Drag-release snap-to-grid effect   |
 
 ### Liquid Glass Tokens (iOS 26+ / macOS 26+)
 
@@ -378,6 +399,7 @@ Glass behavior is governed by native `.glassEffect()`. Not a color token -- a mo
 ```
 
 **Rules:**
+
 - Apply to floating elements only (toolbars, cards, overlays)
 - Never stack glass on glass -- use `.implicit` display mode
 - Avoid in scrollable content
@@ -385,8 +407,8 @@ Glass behavior is governed by native `.glassEffect()`. Not a color token -- a mo
 
 ### Asset Catalog Locations
 
-| Content | Path |
-|---------|------|
+| Content         | Path                              |
+| --------------- | --------------------------------- |
 | Semantic colors | `Jot/Ressources/Assets.xcassets/` |
-| Icons & images | `Jot/Assets.xcassets/` |
-| SVG icons | `Jot/` (root-level .svg files) |
+| Icons & images  | `Jot/Assets.xcassets/`            |
+| SVG icons       | `Jot/` (root-level .svg files)    |

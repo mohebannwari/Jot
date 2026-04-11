@@ -10,16 +10,29 @@ import SwiftUI
 struct TextPreviewRenderer: View {
     let storedFilename: String
     let containerWidth: CGFloat
+    let viewMode: FileViewMode
 
+    @Environment(\.colorScheme) private var colorScheme
     @State private var content: String?
     @State private var loadFailed = false
-
-    private let maxHeight: CGFloat = 200
 
     private static let codeExtensions: Set<String> = [
         "swift", "py", "js", "json", "xml", "html", "css",
         "ts", "go", "rs", "c", "cpp", "h"
     ]
+
+    // Keep markdown/text previews taller as the preview widens so the reading
+    // column does not turn into a very short strip in full-width mode.
+    static func preferredHeight(for viewMode: FileViewMode) -> CGFloat {
+        switch viewMode {
+        case .full:
+            return 420
+        case .medium:
+            return 280
+        case .tag:
+            return 200
+        }
+    }
 
     private var isCodeFile: Bool {
         let ext = (storedFilename as NSString).pathExtension.lowercased()
@@ -30,6 +43,10 @@ struct TextPreviewRenderer: View {
         isCodeFile
             ? .system(size: 13, design: .monospaced)
             : .system(size: 13)
+    }
+
+    private var previewHeight: CGFloat {
+        Self.preferredHeight(for: viewMode)
     }
 
     var body: some View {
@@ -46,8 +63,8 @@ struct TextPreviewRenderer: View {
                 }
                 .scrollIndicators(.automatic)
                 .frame(maxWidth: containerWidth)
-                .frame(maxHeight: maxHeight)
-                .background(Color("SurfaceElevatedColor"))
+                .frame(height: previewHeight)
+                .background(colorScheme == .dark ? Color("DetailPaneColor") : Color.white)
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .shadow(color: .black.opacity(0.1), radius: 5, x: 0, y: 5)
             } else {
@@ -64,9 +81,9 @@ struct TextPreviewRenderer: View {
     @ViewBuilder
     private func placeholder(_ message: String) -> some View {
         RoundedRectangle(cornerRadius: 10, style: .continuous)
-            .fill(Color("SurfaceElevatedColor"))
+            .fill(colorScheme == .dark ? Color("DetailPaneColor") : Color.white)
             .frame(maxWidth: containerWidth)
-            .frame(height: maxHeight)
+            .frame(height: previewHeight)
             .overlay {
                 Text(message)
                     .font(.system(size: 11, weight: .medium))
@@ -83,8 +100,8 @@ struct TextPreviewRenderer: View {
             return
         }
 
-        // Read only the first 64KB for the preview -- full file load is unnecessary
-        // for a 200pt scroll view and avoids memory pressure on large files.
+        // Read only the first 64KB for the preview -- height is mode-dependent (tag/medium/full)
+        // but capping bytes avoids memory pressure on large files.
         let maxPreviewBytes = 64 * 1024
         do {
             let handle = try FileHandle(forReadingFrom: url)

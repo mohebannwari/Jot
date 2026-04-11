@@ -13,6 +13,7 @@ struct PDFPreviewRenderer: View {
     let storedFilename: String
     let containerWidth: CGFloat
 
+    @Environment(\.colorScheme) private var colorScheme
     @State private var pageImages: [NSImage] = []
     @State private var loadFailed = false
 
@@ -73,7 +74,7 @@ struct PDFPreviewRenderer: View {
     @ViewBuilder
     private func placeholder(_ message: String) -> some View {
         RoundedRectangle(cornerRadius: pageCornerRadius, style: .continuous)
-            .fill(Color("SurfaceElevatedColor"))
+            .fill(colorScheme == .dark ? Color("DetailPaneColor") : Color.white)
             .frame(height: 400)
             .overlay {
                 Text(message)

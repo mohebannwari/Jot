@@ -22,6 +22,11 @@ final class CalloutOverlayView: NSView {
     /// Set by the coordinator so drag-resize respects the actual container.
     var currentContainerWidth: CGFloat = 0
     private static let handleWidth: CGFloat = 12
+    /// The handle is centered on the content's right edge, so half its width sits outside the
+    /// glyph/attachment rect. The overlay's `frame` must extend by this amount on the right or
+    /// AppKit hit-testing never reaches the outer half (cursor shows via `cursorForPoint`, but
+    /// `mouseDown` falls through to the text view). Matches the table overlay expansion pattern.
+    static let resizeHitOutset: CGFloat = handleWidth / 2
 
     var calloutData: CalloutData {
         didSet {
@@ -34,6 +39,9 @@ final class CalloutOverlayView: NSView {
     var onDataChanged:  ((CalloutData) -> Void)?
     var onDeleteCallout: (() -> Void)?
     var onWidthChanged: ((CGFloat) -> Void)?
+    /// Width of the callout block content (attachment width). Layout uses this instead of
+    /// `bounds.width` because `bounds.width` includes `resizeHitOutset` for hit testing.
+    var contentLayoutWidth: CGFloat = 0
 
     // -- Figma Design Tokens (node 2448:7886) --------------------------------
     private let blockRadius:        CGFloat = 16   // var(--2xl, 16px)
@@ -146,9 +154,11 @@ final class CalloutOverlayView: NSView {
         let effectiveMax = currentContainerWidth > 0 ? currentContainerWidth : CGFloat.greatestFiniteMagnitude
         let effectiveMin = min(Self.minWidth, effectiveMax)
         let clamped = floor(max(effectiveMin, min(effectiveMax, newWidth)))
+        contentLayoutWidth = clamped
         var f = frame
-        f.size.width = clamped
+        f.size.width = clamped + Self.resizeHitOutset
         frame = f
+        needsLayout = true
         onWidthChanged?(clamped)
     }
 
@@ -216,10 +226,11 @@ final class CalloutOverlayView: NSView {
         super.layout()
 
         let pO = pillOverflow  // 13px
+        let contentW = contentLayoutWidth > 0 ? contentLayoutWidth : bounds.width
 
-        // Block fills width, offset down by pill overflow
+        // Block fills content width, offset down by pill overflow
         let blockH = max(bounds.height - pO, 50)
-        blockView.frame = CGRect(x: 0, y: pO, width: bounds.width, height: blockH)
+        blockView.frame = CGRect(x: 0, y: pO, width: contentW, height: blockH)
 
         // Dynamic corner radius: 16 for single-line, 22 for multiline
         let contentH = blockH - blockPaddingTop - blockPaddingBottom
@@ -227,7 +238,7 @@ final class CalloutOverlayView: NSView {
         blockView.layer?.cornerRadius = dynamicRadius
 
         // Text field inside block
-        let tfW = max(bounds.width - blockPaddingH * 2, 40)
+        let tfW = max(contentW - blockPaddingH * 2, 40)
         let tfH = max(blockH - blockPaddingTop - blockPaddingBottom, 20)
         // blockView is non-flipped (y=0 at bottom), so y=blockPaddingBottom
         // gives 16px from bottom, leaving 24px at the top to clear the pill
@@ -264,9 +275,9 @@ final class CalloutOverlayView: NSView {
             height: chevronSize
         )
 
-        // Resize handle -- straddles right edge
+        // Resize handle -- straddles right edge of content (not expanded bounds)
         resizeHandle.frame = CGRect(
-            x: bounds.width - Self.handleWidth / 2,
+            x: contentW - Self.handleWidth / 2,
             y: 0,
             width: Self.handleWidth,
             height: bounds.height
@@ -442,7 +453,14 @@ private final class _CalloutResizeHandle: NSView {
             return
         }
         dragStartX = event.locationInWindow.x
-        dragStartWidth = superview?.bounds.width ?? 0
+        // Use content width, not overlay bounds.width (bounds include resizeHitOutset on the right).
+        if let overlay = superview as? CalloutOverlayView {
+            dragStartWidth = overlay.contentLayoutWidth > 0
+                ? overlay.contentLayoutWidth
+                : max(0, overlay.bounds.width - CalloutOverlayView.resizeHitOutset)
+        } else {
+            dragStartWidth = superview?.bounds.width ?? 0
+        }
     }
 
     override func mouseDragged(with event: NSEvent) {

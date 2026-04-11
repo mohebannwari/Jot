@@ -1054,7 +1054,6 @@ struct NotelinkPillView: View {
 
 struct FileLinkPillView: View {
     let displayName: String
-    let colorScheme: ColorScheme
 
     var body: some View {
         HStack(spacing: 4) {
@@ -1075,16 +1074,10 @@ struct FileLinkPillView: View {
                 .scaledToFit()
                 .frame(width: 14, height: 14)
         }
-        .foregroundColor(Color("PrimaryTextColor"))
+        // Match properties-panel file pills: untinted ButtonPrimary* tokens.
+        .foregroundColor(Color("ButtonPrimaryTextColor"))
         .padding(4)
-        .background(
-            // Pills render via ImageRenderer so they can't rely on
-            // @EnvironmentObject (it crashes outside a live view hierarchy).
-            // Read tint state from the static helper instead.
-            Color(nsColor: ThemeManager.tintedBlockContainerNS(isDark: colorScheme == .light)),
-            in: Capsule()
-        )
-        .environment(\.colorScheme, colorScheme == .dark ? .light : .dark)
+        .background(Color("ButtonPrimaryBgColor"), in: Capsule())
         .fixedSize()
         .onHover { inside in
             if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }
@@ -2017,7 +2010,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         }
 
         private func makeFileLinkAttachment(filePath: String, displayName: String, bookmarkBase64: String = "") -> NSMutableAttributedString {
-            let pillView = FileLinkPillView(displayName: displayName, colorScheme: currentColorScheme)
+            let pillView = FileLinkPillView(displayName: displayName)
                 .environment(\.colorScheme, currentColorScheme)
             let renderer = ImageRenderer(content: pillView)
             let displayScale = NSScreen.main?.backingScaleFactor ?? 2.0
@@ -6887,7 +6880,16 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 }
 
                 overlay.currentContainerWidth = containerW
-                overlay.frame = overlayRect.integral
+                // Widen frame past the glyph rect so the resize handle's outer half is inside
+                // the overlay bounds for hit testing (see CalloutOverlayView.resizeHitOutset).
+                overlay.contentLayoutWidth = attachment.bounds.width
+                let calloutExpanded = CGRect(
+                    x: overlayRect.origin.x,
+                    y: overlayRect.origin.y,
+                    width: overlayRect.width + CalloutOverlayView.resizeHitOutset,
+                    height: overlayRect.height
+                )
+                overlay.frame = calloutExpanded.integral
             }
 
             let toRemoveCallout = calloutOverlays.keys.filter { !seenIDs.contains($0) }

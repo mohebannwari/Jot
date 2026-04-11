@@ -10,8 +10,6 @@ import SwiftUI
 struct FileAttachmentTagView: View {
     let label: String
 
-    @Environment(\.colorScheme) private var colorScheme
-
     private var assetIconName: String? {
         switch label.lowercased() {
         case "image": return "gallery"
@@ -47,18 +45,10 @@ struct FileAttachmentTagView: View {
                 .scaledToFit()
                 .frame(width: 14, height: 14)
         }
-        .foregroundColor(Color("PrimaryTextColor"))
+        // Match NoteMetadataSection attachment pills: primary button tokens only (no app tint).
+        .foregroundColor(Color("ButtonPrimaryTextColor"))
         .padding(4)
-        .background(
-            // Pills render via ImageRenderer so they can't rely on
-            // @EnvironmentObject (it crashes outside a live view hierarchy).
-            // Read tint state from the static helper instead. The bitmap
-            // is cached in the NSTextAttachment, so existing pills update
-            // the next time they're re-rendered (note reopen / reformat).
-            Color(nsColor: ThemeManager.tintedBlockContainerNS(isDark: colorScheme == .light)),
-            in: Capsule()
-        )
-        .environment(\.colorScheme, colorScheme == .dark ? .light : .dark)
+        .background(Color("ButtonPrimaryBgColor"), in: Capsule())
         .onHover { inside in
             if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }
         }

@@ -12,6 +12,7 @@ struct AudioPreviewRenderer: View {
     let storedFilename: String
     let containerWidth: CGFloat
 
+    @Environment(\.colorScheme) private var colorScheme
     @State private var player: AVAudioPlayer?
     @State private var isPlaying = false
     @State private var currentTime: TimeInterval = 0
@@ -54,7 +55,7 @@ struct AudioPreviewRenderer: View {
         .frame(width: containerWidth, height: contentHeight)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color("SurfaceElevatedColor"))
+                .fill(colorScheme == .dark ? Color("DetailPaneColor") : Color.white)
         )
         .shadow(color: .black.opacity(0.1), radius: 5, x: 0, y: 5)
     }
@@ -106,7 +107,7 @@ struct AudioPreviewRenderer: View {
     @ViewBuilder
     private func placeholder(_ message: String) -> some View {
         RoundedRectangle(cornerRadius: 10, style: .continuous)
-            .fill(Color("SurfaceElevatedColor"))
+            .fill(colorScheme == .dark ? Color("DetailPaneColor") : Color.white)
             .frame(height: contentHeight)
             .overlay {
                 HStack(spacing: 8) {

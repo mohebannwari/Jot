@@ -12,6 +12,7 @@ struct VideoPreviewRenderer: View {
     let storedFilename: String
     let containerWidth: CGFloat
 
+    @Environment(\.colorScheme) private var colorScheme
     @State private var thumbnail: NSImage?
     @State private var player: AVPlayer?
     @State private var isPlaying = false
@@ -93,7 +94,7 @@ struct VideoPreviewRenderer: View {
     @ViewBuilder
     private func placeholder(_ message: String) -> some View {
         RoundedRectangle(cornerRadius: 10, style: .continuous)
-            .fill(Color("SurfaceElevatedColor"))
+            .fill(colorScheme == .dark ? Color("DetailPaneColor") : Color.white)
             .frame(width: containerWidth, height: contentHeight)
             .overlay {
                 HStack(spacing: 8) {

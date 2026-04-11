@@ -26,6 +26,7 @@ struct MeetingNotesFloatingPanel: View {
     let onDismiss: () -> Void
 
     @Environment(\.colorScheme) private var colorScheme
+    @EnvironmentObject private var themeManager: ThemeManager
     @State private var isExpanded = false
     @State private var showStopConfirmation = false
     @State private var showDismissConfirmation = false
@@ -108,7 +109,7 @@ struct MeetingNotesFloatingPanel: View {
                         .contentShape(Capsule())
                         .background(
                             selectedTab == tab
-                                ? Capsule().fill(Color("ButtonSecondaryBgColor"))
+                                ? Capsule().fill(themeManager.tintedSecondaryButtonBackground(for: colorScheme))
                                 : nil
                         )
                 }
@@ -132,7 +133,7 @@ struct MeetingNotesFloatingPanel: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color("SurfaceDefaultColor"))
+        .background(colorScheme == .dark ? Color("DetailPaneColor") : Color.white)
         .clipShape(RoundedRectangle(cornerRadius: contentRadius, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: contentRadius, style: .continuous)
@@ -294,7 +295,7 @@ struct MeetingNotesFloatingPanel: View {
                     .contentShape(Capsule())
             }
             .buttonStyle(.plain)
-            .background(Color("ButtonSecondaryBgColor"), in: Capsule())
+            .background(themeManager.tintedSecondaryButtonBackground(for: colorScheme), in: Capsule())
             .macPointingHandCursor()
             .subtleHoverScale(1.04)
         }
@@ -551,7 +552,7 @@ struct MeetingNotesFloatingPanel: View {
                 .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .background(Color("ButtonSecondaryBgColor"), in: Capsule())
+        .background(themeManager.tintedSecondaryButtonBackground(for: colorScheme), in: Capsule())
         .macPointingHandCursor()
         .subtleHoverScale(1.1)
     }
