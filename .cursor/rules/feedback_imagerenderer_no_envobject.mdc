@@ -1,0 +1,16 @@
+---
+description: "SwiftUI views rendered via ImageRenderer to bitmap NSTextAttachments cannot use @EnvironmentObject — the environment chain doesn't propagate, causing runtime crashes"
+alwaysApply: false
+---
+
+# ImageRenderer doesn't propagate @EnvironmentObject
+
+In Jot, pill views like `FileLinkPillView` and `FileAttachmentTagView` are rendered to bitmap NSTextAttachments via `ImageRenderer(content:).cgImage`. They are NOT live SwiftUI views in the main window's view hierarchy.
+
+**Why:** `ImageRenderer` constructs a fresh, isolated SwiftUI context to produce the bitmap. It does NOT inherit environment values or environment objects from whatever Swift code is calling it. Adding `@EnvironmentObject private var themeManager: ThemeManager` to a view that only gets rendered via ImageRenderer will compile fine but crash at runtime with "No ObservableObject of type ThemeManager found" the first time the view's body runs.
+
+**How to apply:**
+
+- For views rendered via `ImageRenderer`, never use `@EnvironmentObject`. Either pass the needed values as init parameters, or call static methods like `ThemeManager.tintedBlockContainerNS(isDark:)` / `currentTintHue()` / `currentTintIntensity()` directly from the view body.
+- The static-helper approach is used for the app-wide hue tint in `FileLinkPillView` (TodoEditorRepresentable.swift) and `FileAttachmentTagView.swift`. It produces a _frozen_ bitmap — pills already inserted into a note will not update when the user changes the tint slider. They only pick up the new tint the next time the attachment is re-rendered (note reopen, reformat, etc.).
+- If you ever need LIVE tint updates on these pills, the fix is not to restore @EnvironmentObject — it's to regenerate the attachment bitmaps by re-running `makeFileLinkAttachment` / the file-attachment path when `ThemeManager.tintDidChangeNotification` fires. That's a non-trivial architectural change, defer unless specifically requested.

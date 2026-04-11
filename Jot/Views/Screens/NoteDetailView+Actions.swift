@@ -11,6 +11,9 @@ import UniformTypeIdentifiers
 
 extension NoteDetailView {
 
+    // The meetingRecorderManager is injected via @EnvironmentObject from ContentView.
+    // It is used in the meeting recording methods below to keep the session alive across note switches.
+
     // MARK: - Apple Intelligence
 
     @MainActor
@@ -537,134 +540,57 @@ extension NoteDetailView {
 
     @MainActor
     func startMeetingRecording() {
-        guard meetingRecordingState == .idle else { return }
+        // Delegate to shared manager so the session persists when switching notes
+        meetingRecorderManager.startRecording(for: note.id)
 
-        meetingSummaryResult = nil
-        isMeetingSummaryLoading = false
-        meetingManualNotes = ""
-        meetingSelectedTab = .transcript
-
-        // Configure audio recorder for meeting mode
-        meetingAudioRecorder.setMeetingMode(true)
-        let transcriptionService = meetingTranscriptionService
-        meetingAudioRecorder.onBufferAvailable = { buffer in
-            transcriptionService.feedBuffer(buffer)
-        }
-
-        Task {
-            do {
-                try await meetingAudioRecorder.start()
-                meetingTranscriptionService.startTranscription()
-                withAnimation(.jotSpring) {
-                    meetingRecordingState = .recording
-                    showMeetingPanel = true
-                }
-            } catch {
-                withAnimation(.jotSpring) {
-                    aiPanelState = .error("Failed to start recording: \(error.localizedDescription)")
-                }
-            }
+        withAnimation(.jotSpring) {
+            showMeetingPanel = true
         }
     }
 
     @MainActor
     func pauseMeetingRecording() {
-        guard meetingRecordingState == .recording else { return }
-        Task {
-            await meetingAudioRecorder.pause()
-            withAnimation(.jotSpring) {
-                meetingRecordingState = .paused
-            }
-        }
+        meetingRecorderManager.pauseRecording()
     }
 
     @MainActor
     func resumeMeetingRecording() {
-        guard meetingRecordingState == .paused else { return }
-        Task {
-            try? await meetingAudioRecorder.resume()
-            withAnimation(.jotSpring) {
-                meetingRecordingState = .recording
-            }
-        }
+        meetingRecorderManager.resumeRecording()
     }
 
     @MainActor
     func stopMeetingRecording() {
-        guard meetingRecordingState == .recording || meetingRecordingState == .paused else { return }
-
-        // Transition immediately — gives instant visual feedback and prevents
-        // double-tap re-entry (guard above rejects non-.recording/.paused states).
-        withAnimation(.jotSpring) {
-            meetingRecordingState = .processing
-            meetingSelectedTab = .summary
-            isMeetingSummaryLoading = true
-        }
-
-        Task {
-            // Stop audio and transcription (stopTranscription waits up to 3s
-            // for SFSpeechRecognizer's final result — UI is already in .processing)
-            let audioURL = await meetingAudioRecorder.stop()
-            let recordedDuration = meetingAudioRecorder.duration
-            meetingRecordedDuration = recordedDuration
-            await meetingTranscriptionService.stopTranscription()
-
-            // Generate summary
-            do {
-                let (result, _) = try await meetingSummaryGenerator.generateSummary(
-                    from: meetingTranscriptionService.segments,
-                    manualNotes: meetingManualNotes
-                )
-
-                withAnimation(.jotSpring) {
-                    meetingSummaryResult = result
-                    isMeetingSummaryLoading = false
-                    meetingRecordingState = .complete
-                }
-            } catch {
-                withAnimation(.jotSpring) {
-                    isMeetingSummaryLoading = false
-                    meetingRecordingState = .complete
-                    meetingSummaryResult = MeetingSummaryDisplayResult(
-                        title: "Meeting Notes",
-                        summary: "Summary generation failed: \(error.localizedDescription)",
-                        keyPoints: [],
-                        actionItems: [],
-                        decisions: []
-                    )
-                }
-            }
-
-            // Cleanup audio file
-            if let url = audioURL {
-                AudioRecorder.cleanupMeetingAudio(at: url)
-            }
-        }
+        // Delegate to manager. The manager handles the stop, summary generation, and save callback.
+        // The manager sets its own isSummaryLoading and summaryResult properties.
+        meetingRecorderManager.stopRecording()
     }
 
     @MainActor
     func saveMeetingNote() {
-        guard meetingRecordingState == .complete else { return }
+        guard meetingRecorderManager.recordingState == .complete else { return }
 
+        let manager = meetingRecorderManager
+
+        // Build a new session from the manager's collected data
         let newSession = MeetingSession(
             date: Date(),
-            summary: meetingSummaryGenerator.formatAsRichText(
-                meetingSummaryResult ?? MeetingSummaryDisplayResult(
+            summary: manager.summaryGenerator.formatAsRichText(
+                manager.summaryResult ?? MeetingSummaryDisplayResult(
                     title: "Meeting Notes", summary: "", keyPoints: [], actionItems: [], decisions: []
                 )
             ),
-            transcript: meetingTranscriptionService.serializedTranscript(),
-            duration: meetingRecordedDuration,
-            language: meetingTranscriptionService.detectedLanguage,
-            manualNotes: meetingManualNotes
+            transcript: manager.transcriptionService.serializedTranscript(),
+            duration: manager.recordedDuration,
+            language: manager.transcriptionService.detectedLanguage,
+            manualNotes: manager.manualNotes
         )
 
         var updatedNote = note
         updatedNote.isMeetingNote = true
         updatedNote.meetingSessions = note.meetingSessions + [newSession]
 
-        // Set the note title from summary if it's still untitled
-        if let result = meetingSummaryResult, !result.title.isEmpty {
+        // Update title from summary if still untitled
+        if let result = manager.summaryResult, !result.title.isEmpty {
             let currentTitle = editedTitle.trimmingCharacters(in: .whitespacesAndNewlines)
             if currentTitle.isEmpty || currentTitle == "Untitled" || currentTitle == "New Note" || currentTitle == "Note Title" {
                 updatedNote.title = result.title
@@ -672,10 +598,8 @@ extension NoteDetailView {
             }
         }
 
-        // Persist
         notesManager.updateNote(updatedNote)
 
-        // Update local state so the detail panel appears immediately
         withAnimation(.jotSpring) {
             savedIsMeetingNote = true
             savedMeetingSessions = updatedNote.meetingSessions
@@ -686,26 +610,10 @@ extension NoteDetailView {
 
     @MainActor
     func dismissMeetingPanel() {
-        // Nil the buffer callback first to prevent audio thread from invoking it during teardown
-        meetingAudioRecorder.onBufferAvailable = nil
-
-        // If still recording, stop first — awaited to ensure clean teardown
-        if meetingRecordingState == .recording || meetingRecordingState == .paused {
-            Task {
-                let audioURL = await meetingAudioRecorder.stop()
-                await meetingTranscriptionService.stopTranscription()
-                if let url = audioURL {
-                    AudioRecorder.cleanupMeetingAudio(at: url)
-                }
-                meetingAudioRecorder.setMeetingMode(false)
-            }
-        } else {
-            meetingAudioRecorder.setMeetingMode(false)
-        }
+        meetingRecorderManager.dismiss()
 
         withAnimation(.jotSpring) {
             showMeetingPanel = false
-            meetingRecordingState = .idle
         }
     }
 }

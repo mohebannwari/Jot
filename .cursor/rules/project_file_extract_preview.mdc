@@ -1,0 +1,39 @@
+---
+description: "Inline file preview system -- tag-to-overlay extraction, category renderers, view modes, and the debugging saga that produced it"
+alwaysApply: false
+---
+
+# File Extract Preview Feature (April 2026)
+
+File extract preview feature built across 13+ sessions starting 2026-04-01. Transforms file attachment capsule tags into inline preview containers within the NSTextView editor.
+
+**Why:** Users need to see file contents inline without opening external apps. Complements existing Quick Look hover tooltip.
+
+**How to apply:** When working on file preview code, understand the full data flow before making changes. This feature had 6+ failed fix attempts because the systems involved (NSTextAttachment sizing, NSLayoutManager glyph caching, styleTodoParagraphs, SwiftUI/NSHostingView bridge) are deeply interconnected.
+
+## Architecture
+
+- `NoteFileAttachment` (in TodoEditorRepresentable.swift) -- NSTextAttachment subclass with viewMode (.tag/.medium/.full), storedFilename, cachedImageAspectRatio
+- `FilePreviewOverlayView` -- NSView shell wrapping NSHostingView, follows CodeBlockOverlayView/CalloutOverlayView pattern
+- `FilePreviewContent` -- SwiftUI view with header bar (filename + chevron menu, "Open in App" button) and category-specific renderers
+- `Renderers/` directory -- PDFPreviewRenderer, ImagePreviewRenderer, AudioPreviewRenderer, VideoPreviewRenderer, TextPreviewRenderer, ThumbnailPreviewRenderer
+- `FileHoverTooltips` -- glass pill tooltips for Quick Look + Extract actions on tag-mode attachments
+- `FileCategory` enum classifies UTType into pdf/image/audio/video/text/office/other
+
+## Critical Implementation Details
+
+- `heightForData()` computes height reservation for the NSTextAttachment. For images, uses `cachedImageAspectRatio` (computed via CGImageSource header reading) to derive `min(contentWidth / ar, 600)`.
+- `updateFilePreviewOverlays()` called synchronously (not via scheduleOverlayUpdate) -- async was a root cause of layout mismatch
+- `styleTodoParagraphs()` must include `NoteFileAttachment` (with viewMode != .tag) in block attachment detection -- omission was root cause of height=1-line bug
+- `isUpdating` flag must wrap replaceCharacters calls in extractStoredFile/extractFileLink to prevent textDidChange reentrancy
+- Hover tooltips are viewMode-aware: only show on .tag mode, not on extracted previews
+- "Open in App" button uses `Color("ButtonSecondaryBgColor")` (not glass-on-glass, not ultraThinMaterial-on-glass)
+- `containerWidth` must be passed to FilePreviewOverlayView init (not set after) -- see feedback_nshostingview_width_timing.md
+
+## Serialization
+
+`[[file|typeIdentifier|storedFilename|originalFilename|viewMode]]` -- viewMode is optional, defaults to .tag for backward compatibility.
+
+## Status as of 2026-04-02
+
+Feature is functional but undergoing polish. Image width-fill and aspect-ratio-locked height just implemented. Multi-page PDF rendering deferred. Context menu (View As, Rename, Copy, Delete) works. Tag reversion resets paragraph style to prevent new-line insertion.

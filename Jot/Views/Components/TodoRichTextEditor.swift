@@ -94,7 +94,6 @@ struct TodoRichTextEditor: View {
     static let commandMenuActions: [EditTool] = [.imageUpload, .fileLink, .voiceRecord, .link, .todo, .bulletList, .numberedList, .blockQuote, .codeBlock, .callout, .tabs, .cards, .divider, .table, .sticker]
     static let commandMenuOuterPadding: CGFloat = CommandMenuLayout.outerPadding
     static let commandMenuHorizontalPadding = commandMenuOuterPadding * 2
-    static let commandMenuVerticalPadding = commandMenuOuterPadding * 2
     static let commandMenuTotalWidth: CGFloat =
         CommandMenuLayout.width + commandMenuHorizontalPadding
 
@@ -733,12 +732,17 @@ struct TodoRichTextEditor: View {
 
     private func clampedCommandMenuPosition(for geometry: GeometryProxy) -> CGPoint {
         let containerSize = geometry.size
-        // Below-cursor uses a tight 4pt gap; above-cursor uses a larger gap
-        // so the "/" character and its "Type to search" placeholder stay
-        // visually uncovered by the menu's bottom edge.
+        // Symmetric gaps from the glyph edges. `cursorY` is the glyph top
+        // and `cursorY + cursorHeight` is the glyph bottom (both computed
+        // from lineFragmentUsedRect in showCommandMenuAtCursor), so a 4pt
+        // gap applied in either direction produces the same visual distance
+        // between the "/" and the menu card.
         let menuGapBelow: CGFloat = 4
-        let menuGapAbove: CGFloat = 12
-        let menuHeight = CommandMenuLayout.idealHeight(for: filteredCommandMenuTools.count) + Self.commandMenuVerticalPadding
+        let menuGapAbove: CGFloat = 4
+        // Use the menu's TRUE rendered height (includes scroll-view spacers
+        // and outer padding) — `idealHeight(for:)` alone under-counts by 8pt,
+        // which previously caused the above-flip to overlap the "/" anchor.
+        let menuHeight = CommandMenuLayout.totalHeight(for: filteredCommandMenuTools.count)
         let cursorHeight = commandMenuCursorHeight
         let bottomReserve: CGFloat = 50 // bottom toolbar overlay
         let topReserve: CGFloat = 20    // small safety margin at viewport top

@@ -1,0 +1,16 @@
+---
+description: "Never guess at fixes -- always investigate root cause first. No log-based debugging. Dispatch agents to research instead."
+alwaysApply: true
+---
+
+# No guessing when debugging
+
+Never guess when debugging. Every bug requires root cause investigation before attempting any fix.
+
+**Why:** During Batch 2 printing implementation, I attempted 4 consecutive fix attempts for the "This application does not support printing" error -- all wrong. The actual root cause was a missing `com.apple.security.print` sandbox entitlement, which a single subagent research query would have found immediately. Four rounds of guess-and-check wasted significant time and user patience.
+
+**How to apply:**
+- When any bug appears, dispatch subagents to research the problem (documentation, entitlements, plist, build settings, sandbox permissions)
+- Never add log statements (NSLog, print, os_log) for debugging -- use subagents and documentation instead
+- A root cause must be specific and verifiable (e.g., "missing entitlement X" not "maybe the responder chain")
+- Only propose a fix after the root cause is confirmed

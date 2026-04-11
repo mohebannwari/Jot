@@ -1,0 +1,83 @@
+---
+description: "Complete record of debugging nested ScrollView event propagation in SwiftUI/AppKit hybrid — every failed approach, why it failed, and the final solution. Reference for any future scroll isolation or responder chain bugs."
+alwaysApply: false
+---
+
+# scroll-propagation-bug-debugging-journey
+
+## The Bug
+When scrolling inside the slash command menu (`/`) or note picker (`@`), scroll events propagated to the parent NoteDetailView ScrollView, causing the entire note to scroll underneath the popup.
+
+## Root Cause
+SwiftUI's `ScrollView` propagates unused scroll delta (momentum, over-scroll at bounds) up the AppKit responder chain. The `CommandMenu` and `NotePickerMenu` each contain a `ScrollView` that lives as an `.overlay` inside `NoteDetailView`'s parent `ScrollView`. When the inner menu ScrollView hits its top/bottom bounds, leftover scroll delta leaks to the parent.
+
+## Architecture Context
+- `NoteDetailView` wraps everything in a `ScrollView` (line ~271)
+- `TodoRichTextEditor` is inside that ScrollView
+- `CommandMenu` and `NotePickerMenu` are `.overlay`s on `TodoRichTextEditor`
+- Both popup menus contain their own `ScrollView` for item lists
+- The editor itself is a bare `NSTextView` (no enclosing NSScrollView) via `NSViewRepresentable`
+
+## Failed Approach 1: NSHostingView Wrapper (ScrollIsolated<Content>)
+**Idea:** Wrap the CommandMenu in an `NSViewRepresentable` containing a `ScrollTrapNSView` that overrides `scrollWheel(with:)` and forwards events only to its child `NSHostingView`, never calling `super`.
+
+**Implementation:** `ScrollTrapNSView` contained an `NSHostingView<Content>` as a subview. `scrollWheel` called `hostingView.scrollWheel(with: event)` instead of `super`.
+
+**Result:** CRASH — infinite recursion, stack overflow at depth 16,870.
+
+**Why it failed:** `ScrollTrapNSView.scrollWheel` -> `hostingView.scrollWheel` -> internal `NSScrollView` processes event -> at bounds, calls `nextResponder?.scrollWheel` -> walks up to parent view -> which is `ScrollTrapNSView` -> calls `hostingView.scrollWheel` again -> infinite loop. The `NSHostingView` is a *child* of the trap, so the responder chain goes child -> parent (trap) -> child -> parent forever.
+
+**Crash signature:** `EXC_BAD_ACCESS / SIGSEGV`, "Thread stack size exceeded due to excessive recursion", `recursionInfoArray` with `keyFrame: @objc ScrollTrapNSView.scrollWheel(with:)`, depth 16870.
+
+## Failed Approach 2: object_setClass isa-swizzle (_NonPropagatingScrollView)
+**Idea:** Use a `.background` marker `NSViewRepresentable` that walks up the AppKit view hierarchy to find SwiftUI's internal `NSScrollView`, then use `object_setClass()` to change its class to `_NonPropagatingScrollView` — a subclass that returns `nil` from `nextResponder` during `scrollWheel` handling.
+
+**Implementation:** Used `objc_getAssociatedObject`/`objc_setAssociatedObject` for the `isHandlingScroll` flag (since `object_setClass` doesn't reallocate memory, stored properties would corrupt memory). The subclass overrode `nextResponder` to return `nil` when `isHandlingScroll` was true.
+
+**Result:** CRASH — `EXC_BREAKPOINT / SIGTRAP`, unrecognized selector.
+
+**Why it failed:** SwiftUI's internal `NSScrollView` is actually a *private subclass* with custom method dispatch. Changing the isa pointer broke the internal forwarding — when `NSClipView` posted a bounds-change notification, the observer (the swizzled scroll view) couldn't respond to some private selector, hitting `___forwarding___` (unrecognized selector). The isa-swizzle is fundamentally unsafe on SwiftUI's private view subclasses.
+
+**Crash signature:** `EXC_BREAKPOINT`, ASI backtrace showing `___forwarding___ + 1480` -> `__CFNOTIFICATIONCENTER_IS_CALLING_OUT_TO_AN_OBSERVER__` -> `-[NSView _postBoundsChangeNotification]` -> `-[NSClipView _selfBoundsChanged]`.
+
+## Failed Approach 3: Replace ScrollView with VStack + manual offset
+**Idea:** Remove `ScrollView` entirely. Use a `VStack` with `.offset(y: scrollOffset)` + `.clipped()` driven by `selectedIndex` changes. No ScrollView = no scroll events to propagate.
+
+**Implementation:** Computed `targetOffset(for:)` to keep selected item in viewport. Applied `.onChange(of: selectedIndex)` to animate offset.
+
+**Result:** No crash, but broken UX — trackpad/mouse wheel scrolling didn't work at all. Only keyboard arrow keys could navigate the menu. The user reported "I can't scroll through the menu at all. Instead the detail pane receives the scrolling trigger."
+
+**Why it failed:** Without a `ScrollView`, there's no `NSScrollView` to receive and handle `scrollWheel` events. The events pass straight through the `VStack` overlay to the parent NoteDetailView ScrollView. The offset approach only responds to keyboard-driven `selectedIndex` changes, not trackpad gestures.
+
+## Successful Approach: .scrollDisabled() on the parent ScrollView
+**Idea:** Don't fight the responder chain at all. Instead, disable the *recipient* — apply `.scrollDisabled(true)` on NoteDetailView's parent `ScrollView` whenever a popup menu is visible.
+
+**Implementation:**
+1. Added `@State private var popupMenuActive = false` to `NoteDetailView`
+2. Added `.scrollDisabled(popupMenuActive)` on the parent `ScrollView`
+3. Set `popupMenuActive = true` in existing `.onReceive(.showCommandMenu)` and new `.onReceive(.showNotePicker)` handlers
+4. Set `popupMenuActive = false` in existing `.onReceive(.hideCommandMenu)` and new `.onReceive(.hideNotePicker)` handlers
+5. Restored both `CommandMenu` and `NotePickerMenu` to their original `ScrollView` implementations (no modifications needed to the menu views themselves)
+
+**Why it works:** When the parent `ScrollView` is disabled, it doesn't accept scroll events at all. The popup menu's inner `ScrollView` handles all scroll events normally — there's simply nowhere for leftover delta to leak to. When the popup dismisses, the parent scroll re-enables.
+
+**Files changed:**
+- `NoteDetailView.swift` — added `popupMenuActive` state, `.scrollDisabled()`, and notification handlers
+- `CommandMenu.swift` — restored to original (removed all scroll isolation attempts)
+- `NotePickerMenu.swift` — restored to original
+
+**No tests were applied.** This is a UI scroll event propagation issue in SwiftUI/AppKit hybrid views — it's not testable with unit tests. The only verification is manual: open the `/` menu, scroll with trackpad, confirm the note body doesn't scroll. Repeat for `@` picker. Dismiss menu, confirm note scrolls normally again.
+
+## Key Lessons
+
+1. **Never wrap SwiftUI content in NSHostingView inside NSViewRepresentable** to intercept events — it creates responder chain loops because the hosting view's internal views route back up to the wrapper.
+
+2. **Never use object_setClass on SwiftUI's private NSView subclasses** — they have internal dispatch mechanisms that break when the isa pointer changes.
+
+3. **Don't remove ScrollView to avoid scroll propagation** — you lose trackpad/mouse scroll handling entirely, which is worse than the original bug.
+
+4. **The pattern for nested ScrollView isolation in SwiftUI:** disable the outer ScrollView while the inner one needs focus. `.scrollDisabled()` is the correct, supported API.
+
+5. **Solve propagation at the destination, not the source.** Fighting the responder chain is fragile. Disabling the recipient is robust.
+
+6. **Notification-driven state is already available** — `commandMenuNeedsSpace` and the show/hide notification pairs already existed. The infrastructure was there; just needed one more boolean.

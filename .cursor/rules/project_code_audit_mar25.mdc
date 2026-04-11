@@ -1,0 +1,54 @@
+---
+description: "Comprehensive codebase audit completed 2026-03-25 on branch audit/code-cleanup-mar25 — 14 batches of fixes plus 6 deferred items"
+alwaysApply: false
+---
+
+# Code Audit (March 2026)
+
+Full audit completed 2026-03-25 across all 115 Swift source files. Branch: `audit/code-cleanup-mar25`.
+
+**Why:** User requested thorough review for bugs, security risks, storage leaks, and code quality — no UI changes allowed.
+
+**How to apply:** If merging the audit branch, verify all 14 batches compiled cleanly. If starting fresh, check the deferred items below for known tech debt.
+
+## Completed (14 batches)
+
+**Security:**
+- Password comparison bug fixed (`ContentView.swift:2874`) — was using `==` instead of `KeychainManager.verifyPassword`
+- Backup restore now throws instead of silently swallowing `try?` errors (`BackupManager.swift`)
+- Force-unwrap on Formspree URL replaced with `guard let` (`FloatingSettings.swift`)
+- Sparkle `SUEnableAutomaticChecks` set to `false` — feed URL is still a placeholder (`your-host.com`)
+
+**Code quality:**
+- 50+ NSLog statements removed across 6 files, replaced with `Logger` for error paths
+- 2 force casts (`as!`) converted to safe `as?` guards
+- 3 `try!` regex inits converted to `try?` in WebMetadataFetcher
+- `[weak self]` added to Task closures in BackupManager and ImageStorageManager
+- Dead `NoteEntity.wordCount` property removed
+
+**Storage:**
+- `cleanupUnusedImages` hooked up on initial load (was defined but never called)
+- `ThumbnailCache.cleanupOrphanedThumbnails` added and hooked up on initial load
+- `NoteVersionManager` capped at 50 versions per note
+
+**Performance:**
+- `recomputeDerivedNotes` rewritten from 9 sort passes to 1 sort + 1 partition pass
+
+**Build config:**
+- `ENABLE_USER_SELECTED_FILES` aligned to `readwrite` to match entitlement
+
+## Deferred (known tech debt)
+
+| Item | Reason |
+|------|--------|
+| 500-note hard cap with silent truncation | Needs pagination UI |
+| WKWebView per-fetch window allocation | Needs visual testing |
+| ContentView 5400-line monolith | Massive refactor risk |
+| No SwiftData VersionedSchema/SchemaMigrationPlan | Adding it is itself a schema change |
+| SHA-256 password hashing (not PBKDF2) | Needs migration for existing passwords |
+| Sparkle feed URL still placeholder | User must supply real URL before distribution |
+
+## Pre-existing test failures (not from audit)
+
+- `testBasicCRUD` — tags not passed through `addNote` correctly
+- `testPerformanceWithManyNotes` — expects 1000 but creates 10000 (500-note cap)

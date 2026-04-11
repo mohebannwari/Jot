@@ -1,3 +1,8 @@
+---
+description: 
+alwaysApply: true
+---
+
 # CLAUDE.md -- Jot
 
 iOS 26+ / macOS 26+ note-taking app in SwiftUI with Apple Liquid Glass design system.

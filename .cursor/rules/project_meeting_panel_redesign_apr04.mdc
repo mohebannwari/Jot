@@ -1,0 +1,42 @@
+---
+description: "MeetingNotesFloatingPanel visual redesign from Figma node 2721-5736 -- completed 2026-04-05, commit 91c0dd8"
+alwaysApply: false
+---
+
+# Meeting Recording Panel Redesign (April 2026)
+
+Completed 2026-04-05 (commit `91c0dd8`). Redesigned MeetingNotesFloatingPanel to match updated Figma specs.
+
+**Why:** The panel's layout, button styling, and recording indicator needed to match the refreshed Figma design. The user also wanted a reactive audio waveform instead of the pulsing dot.
+
+**How to apply:** Reference when working on meeting panel code. The panel's structure fundamentally changed.
+
+## Key Structural Changes
+
+- Layout flipped: **tabs on top, content in middle, controls at bottom** (was controls on top)
+- Panel width: **383px** (was 400px)
+- Expanded height: **299px** fixed (all expanded states)
+- Collapsed state: 2-row vertical (info bar + buttons), not a horizontal pill
+- Tab segments: equal-width (flex), 34px height, capsule shape
+- Content area: explicit `SurfaceDefaultColor` background, 14px corner radius
+- Action buttons: full-width tinted capsules (orange 25% pause, blue 25% play, red 25% stop)
+- Square utility buttons (X, expand/minimize): 34x34, `ButtonSecondaryBgColor`
+
+## New Components
+
+- `AudioWaveformIndicator.swift` -- 18x18 view, 4 bars reactive to `AudioRecorder.levels` (recording) or 4 static dots (paused)
+- New color tokens: `MeetingRecordingColor` (#EF4444), `MeetingPausedColor` (#F97316)
+- New icons downloaded from Figma: IconPause, IconPlayCircle, StopCircle, IconExpand45, IconMinimize45
+
+## User Overrides from Figma
+
+- Timer + state text: **keep monospaced** (FontManager.metadata/heading, not Figma's SF Pro Label-5)
+- BrailleLoader + shimmer: **stay** for "Generating summary" (not Figma's blue dots)
+- No action buttons during summary generation (match Figma)
+- Summary tab only visible after wrap-up (fades in on stop)
+- Waveform **reactive to actual audio levels** (AudioRecorder.levels, 28 bars sampled down to 4)
+
+## Tab Visibility Rules
+
+- Recording/paused: only Transcript + Notes tabs
+- After wrap-up (processing/complete): Summary + Transcript + Notes (Summary fades in)

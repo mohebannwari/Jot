@@ -1,0 +1,28 @@
+---
+description: "Pre-26 glass fallbacks must use .ultraThinMaterial (not solid colors) for translucency. Window must be transparent on ALL versions. BackdropBlurView uses .behindWindow blending."
+globs:
+  - "Jot/Utils/GlassEffects.swift"
+  - "Jot/Views/Components/FloatingSearch.swift"
+alwaysApply: false
+---
+
+# Glass effect fallback patterns for pre-macOS 26
+
+Glass effect fallbacks for pre-macOS 26 must provide actual translucency, not solid opaque fills.
+
+**Why:** On 2026-03-26, solid `SecondaryBackgroundColor` fills were used as fallbacks in `GlassEffects.swift`. The user tested on macOS 14 and reported "no translucency and no blur anywhere." The window was also made opaque-only on pre-26 (gated behind `#available`), which killed the desktop blur-through effect. Both were wrong -- the app should be translucent on all macOS versions.
+
+**How to apply:**
+
+1. **Window transparency is unconditional.** `WindowTransparencyView` sets `isOpaque = false` + `backgroundColor = .clear` on ALL versions, not just macOS 26+. Do NOT gate this behind `#available`.
+
+2. **BackdropBlurView uses `.behindWindow` blending** (not `.withinWindow`). With a transparent window, `.behindWindow` blurs the desktop content. `.withinWindow` just blurs within the opaque window = no effect.
+
+3. **Glass helper fallbacks** in `GlassEffects.swift` use `.ultraThinMaterial` + tinted overlay:
+   ```swift
+   .background(.ultraThinMaterial, in: shape)
+   .background(Color("SecondaryBackgroundColor").opacity(0.5), in: shape)
+   ```
+   Not: `.background(Color("SecondaryBackgroundColor"), in: shape)` (opaque, no blur)
+
+4. **Any component with its own pre-26 background** (not going through `liquidGlass()`) needs the same pattern. `FloatingSearch.swift` had a custom fallback that was missed -- had to be fixed separately.

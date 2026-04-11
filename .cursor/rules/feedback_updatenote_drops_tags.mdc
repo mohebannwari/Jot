@@ -1,0 +1,14 @@
+---
+description: "SimpleSwiftDataManager.updateNote is a content-only write path — it preserves the entity's existing tags on purpose. Tag writes go through updateTags()."
+alwaysApply: false
+---
+
+# updateNote intentionally ignores the caller's tags
+
+`SimpleSwiftDataManager.updateNote(_:)` does NOT write `Note.tags` to the NoteEntity even though it takes a full `Note` argument. It preserves the entity's existing tags by design (see the comment at `Jot/Models/SwiftData/SimpleSwiftDataManager.swift` around line 496). Tag writes must go through `updateTags(id:tags:)`.
+
+**Why:** The editor autosave loop snapshots the full `Note` and calls `updateNote`. If `updateNote` wrote `.tags`, a stale autosave snapshot could silently clobber tag edits the user just made in the properties panel. This was an explicit fix — don't unwind it without re-deriving the race.
+
+**How to apply:** When wiring any tag-mutation code path, call `updateTags(id:tags:)`. When writing tests that mutate tags on an existing note, do the same. Do NOT "fix" `updateNote` to honor its `tags` argument — that re-opens the autosave race. If you ever need a single atomic write of (content + tags), introduce a third dedicated method rather than merging the two.
+
+Related fix: April 2026 `addNote` was also silently dropping its `tags` parameter. That one WAS a real bug (addNote has no autosave race) and was fixed by assigning `noteEntity.tags = tags` during construction.

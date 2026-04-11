@@ -1,0 +1,12 @@
+---
+description: "Must use SwiftUI.CommandMenu in Commands structs because the project's own CommandMenu view shadows it"
+alwaysApply: false
+---
+
+# CommandMenu SwiftUI disambiguation
+
+All `Commands` structs in `Jot/App/` must use `SwiftUI.CommandMenu(...)` instead of bare `CommandMenu(...)`.
+
+**Why:** The project has its own `CommandMenu` view in `Jot/Views/Components/CommandMenu.swift` (the command palette UI). Without the `SwiftUI.` prefix, the compiler resolves to the project's type, producing confusing errors about missing arguments for `tools:`, `isRevealed:`, etc.
+
+**How to apply:** When creating new `Commands` structs (like `ViewMenuCommands`, `FormatMenuCommands`), always write `SwiftUI.CommandMenu("MenuName") { ... }`. All existing command files follow this pattern.

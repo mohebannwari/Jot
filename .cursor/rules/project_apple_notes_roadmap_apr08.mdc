@@ -1,0 +1,35 @@
+---
+description: "Feature roadmap comparing Jot vs Apple Notes, with 6 features in 4 phases -- 3 done, 3 remaining"
+alwaysApply: false
+---
+
+# Apple Notes Gap Roadmap (April 2026)
+
+New roadmap created 2026-04-08 at `roadmap.md` (project root). Replaces the March 2026 roadmap (which was fully completed).
+
+**Why:** User requested a gap analysis against Apple Notes (iOS 26 / macOS 26) to identify missing features and plan sequential implementation.
+
+**How to apply:** Work on one task at a time. Polish each before moving to the next.
+
+## Completed
+
+1. **Complete Markdown Import** (Phase 1) -- added setext headings, indented code blocks, nested blockquote flattening, soft line breaks, bold-italic combos to `NoteImportService.swift`
+2. **Web Link Rich Previews** (Phase 1, MVP) -- added "Card" option to URL paste menu. New `[[linkcard|title|desc|url]]` tag with async metadata fetch via `WebMetadataFetcher`. MVP card UI in `LinkCardView` (in `WebClipView.swift`). Ready for UI polish pass.
+3. **Quick Notes (Global Hotkey Capture)** (Phase 2, completed 2026-04-09) -- user-configurable global hotkey (default `⌃⇧J`) opens a borderless 600x400 floating `NSPanel` for plain-text capture from any app. Carbon `RegisterEventHotKey` for sandbox-safe registration. Saves to an auto-created "Quick Notes" inbox folder tracked by UUID. Settings recorder surfaces Carbon registration failures inline. New files: `QuickNoteHotKey.swift`, `GlobalHotKeyManager.swift`, `QuickNoteService.swift`, `QuickNotePanel.swift`, `HotKeyRecorderView.swift`. Modified: `ThemeManager.swift` (with `hasFinishedInitialization` flag to fix `@Published` + `didSet` + init bug), `JotApp.swift`, `FloatingSettings.swift`. UI polish pass deferred to a later session per user request.
+
+## Remaining
+
+4. Smart Folders (saved filter predicates)
+5. Collapsible Sections (heading-based folding)
+6. Map Embedding (MapKit inline attachments)
+
+## Future Exploration (deferred)
+
+- Real-time Collaboration
+- Document Scanner
+- Widgets (WidgetKit)
+- Siri Integration
+
+## Excluded (never)
+
+iCloud Sync, Math Notes, Drawing/Handwriting, Apple Watch

@@ -33,6 +33,7 @@ struct NoteDetailView: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @EnvironmentObject private var themeManager: ThemeManager
     @EnvironmentObject var notesManager: SimpleSwiftDataManager
+    @EnvironmentObject var meetingRecorderManager: MeetingRecorderManager
 
     // MARK: - Core editing state
     @State var editedTitle: String
@@ -98,18 +99,12 @@ struct NoteDetailView: View {
     // Text Generation floating panel
     @State var showTextGenPanel: Bool = false
 
-    // Meeting Notes
+    // Meeting Notes - now driven by shared MeetingRecorderManager (see ContentView)
+    // Local state only for panel visibility and persisted sessions. Recording continues
+    // in background when switching notes. Waveform levels and state come from manager.
+    // The local meetingRecordingState, meetingAudioRecorder, meetingTranscriptionService
+    // have been removed to avoid duplicate instances. The manager handles persistence.
     @State var showMeetingPanel: Bool = false
-    @State var meetingRecordingState: MeetingRecordingState = .idle
-    @State var meetingSelectedTab: MeetingTab = .transcript
-    @State var meetingManualNotes: String = ""
-    @State var meetingSummaryResult: MeetingSummaryDisplayResult? = nil
-    @State var isMeetingSummaryLoading: Bool = false
-    @StateObject var meetingTranscriptionService = MeetingTranscriptionService()
-    @StateObject var meetingAudioRecorder = AudioRecorder(barCount: 28)
-    @State var meetingSummaryGenerator = MeetingSummaryGenerator()
-    /// Duration captured immediately after stop() — the recorder resets to 0 on .idle
-    @State var meetingRecordedDuration: TimeInterval = 0
 
     // Persisted meeting data (loaded from note, updated on save)
     @State var savedIsMeetingNote: Bool = false
@@ -210,6 +205,7 @@ struct NoteDetailView: View {
         self._savedIsMeetingNote = State(initialValue: note.isMeetingNote)
         self._savedMeetingSessions = State(initialValue: note.meetingSessions)
         // Meeting panel layout fields removed — panel renders at fixed position and full width.
+        // Note: meeting recorder is now shared via @EnvironmentObject in ContentView to persist across note switches.
     }
 
     // MARK: - Body
@@ -624,10 +620,10 @@ struct NoteDetailView: View {
             currentAITask?.cancel()
             currentAITask = nil
 
-            // Stop active meeting recording if the user switches notes mid-session
-            if meetingRecordingState != .idle {
-                dismissMeetingPanel()
-            }
+            // NOTE: Meeting recording no longer auto-dismisses on note switch.
+            // The shared MeetingRecorderManager in ContentView keeps the AVAudioEngine
+            // and transcription running in background. Sidebar waveform indicator shows
+            // active session on the original note's row. Panel only shows when on that note.
 
             // Tear down transient overlays
             aiIsProcessing = false
@@ -655,8 +651,9 @@ struct NoteDetailView: View {
             // Restore meeting data for new note
             savedIsMeetingNote = note.isMeetingNote
             savedMeetingSessions = note.meetingSessions
-            showMeetingPanel = false
-            meetingRecordingState = .idle
+            // Auto-show the meeting panel if returning to the note with active recording
+            showMeetingPanel = meetingRecorderManager.recordingNoteID == note.id
+                && meetingRecorderManager.recordingState != .idle
             isPlacingSticker = false
             selectedStickerID = nil
             showVoiceRecorderOverlay = false; showLinkInputOverlay = false; showFileLinkPicker = false
@@ -954,14 +951,14 @@ struct NoteDetailView: View {
                     VStack {
                         Spacer()
                         MeetingNotesFloatingPanel(
-                            transcriptionService: meetingTranscriptionService,
-                            recordingState: meetingRecordingState,
-                            duration: meetingAudioRecorder.duration,
-                            audioLevels: meetingAudioRecorder.levels,
-                            summaryResult: meetingSummaryResult,
-                            isSummaryLoading: isMeetingSummaryLoading,
-                            manualNotes: $meetingManualNotes,
-                            selectedTab: $meetingSelectedTab,
+                            transcriptionService: meetingRecorderManager.transcriptionService,
+                            recordingState: meetingRecorderManager.recordingState,
+                            duration: meetingRecorderManager.duration,
+                            audioLevels: meetingRecorderManager.levels,
+                            summaryResult: meetingRecorderManager.summaryResult,
+                            isSummaryLoading: meetingRecorderManager.isSummaryLoading,
+                            manualNotes: meetingRecorderManager.bindingManualNotes,
+                            selectedTab: meetingRecorderManager.bindingSelectedTab,
                             onPause: { pauseMeetingRecording() },
                             onResume: { resumeMeetingRecording() },
                             onStop: { stopMeetingRecording() },
