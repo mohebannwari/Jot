@@ -1,0 +1,12 @@
+---
+description: "blockQuoteParagraphStyle must set tailIndent = -4 to prevent text clipping on the right edge"
+alwaysApply: false
+---
+
+# Blockquote tailIndent requirement
+
+Block quote paragraph style must include `tailIndent = -4` and `lineBreakMode = .byWordWrapping`. Without negative tailIndent, text visually extends past the right edge because the headIndent (20pt) shifts content right without compensating on the trailing side.
+
+**Why:** Blockquote text was clipping on the right. The style had `headIndent = 20` but no `tailIndent`, so the NSTextContainer's width wasn't adjusted for the left indent. Fixed 2026-04-07 in three locations: `blockQuoteParagraphStyle()`, `TextFormattingManager.toggleBlockQuote` apply branch, and `toggleBlockQuote` typingAttributes branch. The remove branch resets `tailIndent = 0`.
+
+**How to apply:** Any new paragraph style that sets `headIndent` should also set a negative `tailIndent` to prevent right-edge overflow. The formula: `tailIndent = -(some small value)` to inset the right edge. Also: blockquotes are paragraph-level (like Notion/Google Docs), so `paragraphRange(for:)` expanding to the full paragraph is correct behavior.

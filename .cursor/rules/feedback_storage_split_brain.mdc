@@ -1,0 +1,15 @@
+---
+description: "Notes in Group Container survive rebuilds, images/files in Sandbox Container do not -- explains missing assets after rebuild"
+alwaysApply: false
+---
+
+# Storage split-brain architecture
+
+Jot has a split-brain storage architecture:
+
+- **Layer A (survives rebuilds):** SwiftData store at `~/Library/Group Containers/group.com.mohebanwari.Jot/Library/Application Support/default.store` -- App Group container shared with Share Extension.
+- **Layer B (does NOT survive container deletion):** Binary blobs (images at `JotImages/`, files at `JotFiles/`) in `~/Library/Containers/com.mohebanwari.Jot/Data/Documents/`.
+
+**Why:** After deleting the app from disk and rebuilding, notes persist (Group Container untouched) but images and file attachments are missing (Sandbox Container deleted with the app). This is not a code bug -- it's the expected macOS sandbox behavior.
+
+**How to apply:** When debugging "images not loading" or "files missing" after a rebuild, check whether the Sandbox Container still exists. The fix is migrating binary storage to the Group Container (not yet done) or using the backup/restore system. Don't chase phantom bugs in `ImageStorageManager` or `FileAttachmentStorageManager` -- verify the files exist on disk first.

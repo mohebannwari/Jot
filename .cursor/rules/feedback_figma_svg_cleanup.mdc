@@ -1,0 +1,21 @@
+---
+description: "SVGs downloaded from Figma MCP asset URLs contain CSS variables that Xcode cannot parse -- must be replaced before adding to asset catalog"
+alwaysApply: false
+---
+
+# Figma SVG CSS variable cleanup
+
+When downloading SVG icons from Figma MCP (`get_design_context` asset URLs), the SVGs contain CSS custom properties that Xcode's asset catalog cannot interpret:
+
+- `fill="var(--fill-0, #F97316)"` on filled shapes
+- `stroke="var(--stroke-0, #44403C)"` on stroked shapes
+- `preserveAspectRatio="none"` and `width="100%" height="100%"` (web-specific)
+
+**Why:** Xcode silently fails to render SVGs with CSS variables. The icons appear blank or broken at runtime with no build error.
+
+**How to apply:** After downloading SVGs from Figma, run a cleanup pass:
+
+1. Replace `var(--fill-0, ...)` and `var(--stroke-0, ...)` with `black` (for template-rendered assets, foregroundColor overrides at runtime)
+2. Remove `preserveAspectRatio="none"` and `width="100%" height="100%"` attributes
+3. Verify the viewBox dimensions match the intended icon size
+4. Always set `template-rendering-intent: template` and `preserves-vector-representation: true` in Contents.json

@@ -1,0 +1,14 @@
+---
+description: "\"Secondary button color\" means ButtonSecondaryBgColor -- stone-300 light (#D6D3D1), stone-800 dark (#292524)"
+alwaysApply: false
+---
+
+# Secondary button color token
+
+When user says "secondary button color", use `Color("ButtonSecondaryBgColor")` from the asset catalog.
+- Light mode: stone-300 (#D6D3D1)
+- Dark mode: stone-800 (#292524)
+
+**Why:** User defined this as the standard secondary/dismiss button background, distinct from the primary accent-colored action button.
+
+**How to apply:** Any dismiss/cancel/secondary action button should use this background color with `PrimaryTextColor` foreground, capsule shape, same padding as primary buttons.

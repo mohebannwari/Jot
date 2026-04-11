@@ -1,0 +1,68 @@
+---
+description: "Audio recording + transcription + AI summary feature with anti-hallucination pipeline. Multi-session model refactored 2026-03-30, hallucination hardening 2026-03-31."
+alwaysApply: false
+---
+
+# Meeting Notes Feature (March 2026)
+
+Meeting notes feature built on `feature/meeting-notes` branch, **merged to main on 2026-03-29** (commit `adc1a60`). **Multi-session isolation refactored on 2026-03-30** (commit `7391d6e`). **Interactive action items added 2026-03-30** (commit `ca42792`). **AI hallucination hardening on 2026-03-31** (uncommitted) -- NLTokenizer chunking, grounding validation, transcript excerpt in final prompt.
+
+## Architecture
+
+Two distinct panels serve different lifecycle stages:
+
+1. **MeetingNotesFloatingPanel** (~589 lines) -- live recording: compact pill that expands to tabbed panel with Summary/Transcript/Notes tabs. Shows live transcription, loading shimmer during summary generation. Grounding score UI (items below 0.3 overlap get "Unverified" badge + reduced opacity).
+
+2. **MeetingNoteDetailPanel** (~613 lines) -- persisted display: top-level header ("Meeting Notes" + session count badge + dismiss), each session rendered as its own `SessionAccordion` with independent expand/collapse, tabs (Summary/Transcript/Notes), date/duration/language header. Interactive action item checkboxes with toggle persistence. Most recent session expanded by default.
+
+## AI Summary Pipeline (MeetingSummaryGenerator.swift, ~399 lines)
+
+Three-stage pipeline using Apple FoundationModels (on-device, ~4K token context):
+
+1. **Chunking** -- `NLTokenizer(unit: .sentence)` for robust boundary detection + 1-2 sentence overlap between chunks labeled as `[Context from previous segment: ...]`
+2. **Per-chunk summarization** -- `MeetingChunkSummary` @Generable with explicit anti-hallucination system instructions. Overlap context excluded from extraction.
+3. **Final synthesis** -- Three-section prompt: raw transcript excerpt (dynamic budget), transcript-derived intermediate notes, manual notes (supplementary only). Strengthened system instruction requires cross-checking against transcript.
+4. **Grounding validation** -- Post-generation keyword overlap scoring (0.0-1.0) per item against raw transcript. `GroundingInfo` struct on `MeetingSummaryDisplayResult`.
+
+**Anti-hallucination guardrails:**
+- NLTokenizer prevents mid-thought truncation (replaced crude `. ` splitting)
+- Chunk overlap for context continuity
+- Raw transcript excerpt in final prompt as grounding anchor
+- Manual notes structurally separated from transcript-derived content
+- All @Guide decorators tightened with explicit vocabulary constraints
+- "When uncertain, omit" directive in both stage instructions
+- Post-generation keyword overlap scoring with UI indicators
+
+## Data Model (refactored 2026-03-30)
+
+**`MeetingSession`** struct in `MeetingModels.swift`:
+- `id: UUID`, `date: Date`, `summary: String`, `transcript: String`
+- `duration: TimeInterval`, `language: String`, `manualNotes: String`
+
+**`Note`** model:
+- `isMeetingNote: Bool` + `meetingSessions: [MeetingSession]` (primary)
+- Legacy flat fields kept for Codable backward-compat; populated only during migration
+
+**`NoteEntity`** (SwiftData):
+- `meetingSessionsData: Data?` -- JSON-encoded `[MeetingSession]`
+- Lazy migration in `toNote()`: if `meetingSessionsData` is nil but flat fields exist, synthesizes one `MeetingSession` from them
+
+## Key Files
+- `Jot/Views/Components/MeetingNotesFloatingPanel.swift` -- live recording panel + grounding UI
+- `Jot/Views/Components/MeetingNoteDetailPanel.swift` -- persisted multi-session accordion panel
+- `Jot/Models/MeetingModels.swift` -- MeetingSession, MeetingTab, TranscriptSegment, @Generable types
+- `Jot/Models/MeetingSummaryGenerator.swift` -- chunked summarization + grounding validation
+- `Jot/Models/MeetingTranscriptionService.swift` -- Speech framework transcription
+- `Jot/Models/AudioRecorder.swift` -- AVAudioEngine recording with waveform bars
+
+## Save Flow (`saveMeetingNote()` in NoteDetailView+Actions.swift)
+Creates a new `MeetingSession` and appends to `note.meetingSessions`. No string concatenation. State consolidated to single `@State var savedMeetingSessions: [MeetingSession]` in NoteDetailView.
+
+## UI Details
+- Session dividers: `HandDrawnDividerLine` Shape (pseudo-random hash, irregular segments)
+- `NotesEditor` private wrapper: owns local `@State editableText`, fires `onChanged` callback
+- `SessionAccordion`: private inner struct, owns `@State isExpanded` + `@State selectedTab`
+- Interactive `MeetingCheckbox` toggles `[ ]`/`[x]` prefix in summary rich text, persists immediately
+
+## Color Token Rule
+Both MeetingNoteDetailPanel and AIResultPanel use: `colorScheme == .dark ? Color("DetailPaneColor") : .white`. Do NOT use `SurfaceElevatedColor` for these panels.

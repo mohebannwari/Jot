@@ -188,6 +188,13 @@ final class TabsContainerOverlayView: NSView {
         resizeHandleRight.onDrag = { [weak self] newWidth in
             self?.handleResizeWidth(to: newWidth)
         }
+        resizeHandleRight.onDoubleClick = { [weak self] in
+            // Snap tabs block to full container width on double-click right edge.
+            // Uses currentContainerWidth passed by coordinator before layout (per feedback_nshostingview_width_timing).
+            if let containerW = self?.currentContainerWidth, containerW > 0 {
+                self?.handleResizeWidth(to: containerW)
+            }
+        }
         resizeHandleBottom.onDrag = { [weak self] newHeight in
             self?.handleResizeHeight(to: newHeight)
         }
@@ -1337,6 +1344,7 @@ private final class _TabsResizeHandle: NSView {
     enum Direction { case right, bottom }
 
     var onDrag: ((CGFloat) -> Void)?
+    var onDoubleClick: (() -> Void)?  // Double-click right edge snaps to full containerWidth (setup-doubleclick-handles)
     let direction: Direction
 
     private var dragStart: CGFloat = 0
@@ -1369,6 +1377,12 @@ private final class _TabsResizeHandle: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
+        if event.clickCount == 2 && direction == .right {
+            // Double-click on right edge of tabs block snaps to full page width.
+            // Matches Callout/Code/Table patterns. Coordinator onWidthChanged persists.
+            onDoubleClick?()
+            return
+        }
         if direction == .right {
             dragStart = event.locationInWindow.x
             dragStartDimension = superview?.bounds.width ?? 0

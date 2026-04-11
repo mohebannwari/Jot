@@ -1,0 +1,24 @@
+---
+description: "NoteLinkCardAttachment must be in isImageParagraph branch, not isWebClipParagraph -- webClipParagraphStyle has maximumLineHeight cap that collapses block attachment height"
+alwaysApply: false
+---
+
+# Link card paragraph style classification
+
+New block-level NSTextAttachment subclasses must be classified in the `isImageParagraph` branch of `styleTodoParagraphs` (line ~7845), NOT the `isWebClipParagraph` branch.
+
+**Why:** `webClipParagraphStyle()` returns `baseParagraphStyle()` which sets `maximumLineHeight = scaledHeight + 4` (~20-24pt). This caps the layout manager's vertical allocation, overriding the attachment cell's `cellSize` height. The `isImageParagraph` branch applies a style with NO line height constraints (`paragraphSpacing=8`, `paragraphSpacingBefore=8` only), letting the layout manager use the full attachment cell height.
+
+**How to apply:** When adding any new block-level attachment type:
+
+1. Add it to `isImageParagraph` classification (line ~7845)
+2. Add it to `hasBlockAttachment` guard in typing redirection (line ~4861)
+3. Add it to `dragSelection` guard (line ~9955)
+4. Inject leading/trailing `\n` in the deserializer (same pattern as code blocks)
+
+All four registrations are required. Missing any one causes different symptoms:
+
+- Missing from `isImageParagraph`: card height collapses (maximumLineHeight cap)
+- Missing from `hasBlockAttachment`: typing enters block paragraph instead of redirecting
+- Missing from `dragSelection`: block can be drag-selected as text
+- Missing `\n` injection: card shares paragraph with adjacent text

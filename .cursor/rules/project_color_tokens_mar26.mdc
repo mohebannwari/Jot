@@ -1,0 +1,20 @@
+---
+description: "DetailPaneSurfaceColor token created for stone-900/200 surface pattern. Hardcoded RGB values replaced across 10 files with design tokens."
+alwaysApply: false
+---
+
+# Color token cleanup (March 2026)
+
+On 2026-03-26, hardcoded RGB color values were replaced with design tokens across the codebase.
+
+**Why:** Multiple files used raw `Color(red: 0.110, green: 0.098, blue: 0.090)` / `Color(red: 0.906, green: 0.898, blue: 0.894)` (stone-900/stone-200) for detail pane surfaces. These don't match the existing `DetailPaneColor` token (`#0C0A09` dark / `#E7E5E4` light), which is darker in dark mode.
+
+**How to apply:**
+
+New token: `DetailPaneSurfaceColor` (`#E7E5E4` light / `#1C1917` dark) in `Ressources/Assets.xcassets/`
+- Used for: header material bases, backlink pills, detail pane backgrounds, table overlay backgrounds, update panel gradients
+
+Existing token `DetailPaneColor` (`#E7E5E4` light / `#0C0A09` dark):
+- Used for: AI floating panels, NotePreviewCard, backlink container, archived note rows (dark value = stone-950, deeper than surface)
+
+`FloatingEditToolbar.swift`: `Color(hex: "#292524")` replaced with `Color("SecondaryBackgroundColor")`, dot divider replaced with `Color.primary.opacity(0.35)`

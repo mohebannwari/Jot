@@ -15,12 +15,26 @@ enum CommandMenuLayout {
     static let width: CGFloat = 150
     static let outerPadding: CGFloat = 12
     static let scrollIndicatorSize: CGFloat = 24
+    /// Top and bottom spacer inside the ScrollView (each side). Kept as a
+    /// named constant so the positioning math in `clampedCommandMenuPosition`
+    /// can reason about the menu's true rendered height.
+    static let scrollContentPadding: CGFloat = 4
 
     /// Height that fits up to `maxVisibleItems` rows — anything beyond scrolls.
     static func idealHeight(for itemCount: Int) -> CGFloat {
         guard itemCount > 0 else { return 0 }
         let visibleCount = min(itemCount, maxVisibleItems)
         return CGFloat(visibleCount) * itemHeight
+    }
+
+    /// Total rendered height of the menu card, including the ScrollView's
+    /// internal top/bottom spacers and the card's outer padding. This is
+    /// what positioning logic must use to compute above/below placement —
+    /// `idealHeight(for:)` alone under-counts by `scrollContentPadding * 2`
+    /// plus `outerPadding * 2`, which causes the menu to overlap the
+    /// anchor character when flipped above.
+    static func totalHeight(for itemCount: Int) -> CGFloat {
+        idealHeight(for: itemCount) + scrollContentPadding * 2 + outerPadding * 2
     }
 }
 
@@ -55,7 +69,7 @@ struct CommandMenu: View {
             ScrollViewReader { proxy in
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(spacing: 0) {
-                        Spacer().frame(height: 4)
+                        Spacer().frame(height: CommandMenuLayout.scrollContentPadding)
                         ForEach(Array(tools.enumerated()), id: \.element.rawValue) { index, tool in
                             Button {
                                 onSelect?(tool)
@@ -76,10 +90,10 @@ struct CommandMenu: View {
                             }
                             .buttonStyle(.plain)
                         }
-                        Spacer().frame(height: 4)
+                        Spacer().frame(height: CommandMenuLayout.scrollContentPadding)
                     }
                 }
-                .frame(height: visibleContentHeight + 8)
+                .frame(height: visibleContentHeight + CommandMenuLayout.scrollContentPadding * 2)
                 .modifier(ScrollBottomDetector(isAtBottom: $isAtBottom))
                 .onChange(of: selectedIndex) { _, newIndex in
                     withAnimation(.easeInOut(duration: 0.25)) {

@@ -1,0 +1,12 @@
+---
+description: "Never pkill/relaunch Jot after building — user relaunches via in-app updates panel"
+alwaysApply: true
+---
+
+# No app relaunch after build
+
+Never kill or relaunch Jot after a build. Only run `xcodebuild` to compile.
+
+**Why:** The app has a built-in updates panel that detects new builds. The user relaunches from there on their own terms.
+
+**How to apply:** After any `xcodebuild` invocation, stop. No `pkill`, no `open`, no `touch` on the .app bundle. Build and move on.

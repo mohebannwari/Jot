@@ -1,0 +1,12 @@
+---
+description: "Always use NSDataDetector for URL detection, never regex -- covers IDN, IPv6, bare domains, uncommon TLDs"
+alwaysApply: false
+---
+
+# URL detection via NSDataDetector
+
+Use `NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)` for URL detection. Never roll custom regex patterns for URLs.
+
+**Why:** A regex-based `isLikelyURL` was replaced on 2026-04-07 after it failed to recognize many valid URL forms (ports, query params, bare IPs, custom schemes, etc.). `NSDataDetector` is Apple's ICU-based text analysis engine -- the same one powering Data Detectors in Mail, Messages, and Safari. It handles all edge cases out of the box.
+
+**How to apply:** When checking if an entire string is a URL, verify `match.range == fullRange`. When extracting the first URL from a paragraph, use `firstMatch(in:)`. This is used in `convertSelectedTextToWebClip` (TodoEditorRepresentable.swift) which falls back to extracting the first URL if the entire selection isn't itself a URL.

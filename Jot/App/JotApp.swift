@@ -16,6 +16,7 @@ struct JotApp: App {
     @StateObject private var authManager = NoteAuthenticationManager()
     @StateObject private var undoToastManager = UndoToastManager()
     @StateObject private var updateManager = UpdateManager()
+    @StateObject private var meetingRecorderManager = MeetingRecorderManager()
     #if DEBUG
     @StateObject private var buildWatcher = BuildWatcherManager()
     #endif
@@ -117,6 +118,7 @@ struct JotApp: App {
                 .environmentObject(authManager)
                 .environmentObject(undoToastManager)
                 .environmentObject(updateManager)
+                .environmentObject(meetingRecorderManager)
                 #if DEBUG
                 .environmentObject(buildWatcher)
                 #endif

@@ -132,6 +132,13 @@ final class CalloutOverlayView: NSView {
         resizeHandle.onDrag = { [weak self] newWidth in
             self?.handleResize(to: newWidth)
         }
+        resizeHandle.onDoubleClick = { [weak self] in
+            // Double-click snaps to full container width. The coordinator's onWidthChanged
+            // will update attachment, invalidate layout, and persist. See setup-doubleclick-handles todo.
+            if let containerW = self?.currentContainerWidth, containerW > 0 {
+                self?.handleResize(to: containerW)
+            }
+        }
         addSubview(resizeHandle)
     }
 
@@ -401,6 +408,7 @@ extension CalloutOverlayView: NSTextFieldDelegate {
 private final class _CalloutResizeHandle: NSView {
 
     var onDrag: ((CGFloat) -> Void)?
+    var onDoubleClick: (() -> Void)?  // Supports double-click on right edge to snap to full container width (per user request for callout/code/tab blocks etc.)
 
     private var dragStartX: CGFloat = 0
     private var dragStartWidth: CGFloat = 0
@@ -426,6 +434,13 @@ private final class _CalloutResizeHandle: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
+        if event.clickCount == 2 {
+            // Double-click right edge snaps to full available page width (containerWidth).
+            // Matches existing pattern in CodeBlockOverlayView and NoteTableOverlayView.
+            // See feedback on double-click resize and TodoEditorRepresentable coordinator.
+            onDoubleClick?()
+            return
+        }
         dragStartX = event.locationInWindow.x
         dragStartWidth = superview?.bounds.width ?? 0
     }

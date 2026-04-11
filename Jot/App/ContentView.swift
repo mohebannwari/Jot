@@ -4777,6 +4777,7 @@ struct NoteListCard: View {
     @State private var renamingTitle = ""
     @FocusState private var isFieldFocused: Bool
     @Environment(\.colorScheme) private var colorScheme
+    @EnvironmentObject private var meetingRecorderManager: MeetingRecorderManager
 
     private var activeTextColor: Color {
         forceLightText ? Color(hex: "#1A1A1A") : Color("ButtonPrimaryTextColor")
@@ -5016,6 +5017,22 @@ struct NoteListCard: View {
                     }
             }
 
+            // Waveform indicator for notes with active background recording.
+            // When not hovered: waveform sits at the trailing edge (ellipsis position).
+            // When hovered: ellipsis appears at trailing edge, waveform shifts left.
+            if let recordingID = meetingRecorderManager.recordingNoteID,
+               recordingID == note.id,
+               !isActiveNote,
+               meetingRecorderManager.recordingState != .idle {
+                AudioWaveformIndicator(
+                    levels: meetingRecorderManager.levels,
+                    isPaused: meetingRecorderManager.recordingState == .paused
+                )
+                .frame(width: 18, height: 18)
+                .padding(.trailing, isHovered ? 0 : 2)
+                .animation(.jotHover, value: isHovered)
+            }
+
             Menu {
                 noteContextMenuContent
             } label: {
@@ -5029,9 +5046,11 @@ struct NoteListCard: View {
             }
             .buttonStyle(.plain)
             .onHover { isEllipsisHovered = $0 }
+            .frame(width: isHovered ? nil : 0)
             .opacity(isHovered ? 1 : 0)
             .allowsHitTesting(isHovered)
             .padding(.trailing, 2)
+            .clipped()
         }
         .animation(.jotHover, value: isHovered)
         .padding(8)

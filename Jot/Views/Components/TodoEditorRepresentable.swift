@@ -5435,20 +5435,35 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         private func showCommandMenuAtCursor(textView: NSTextView, insertLocation: Int) {
             // Get the rect for the cursor position to place the menu
             guard let layoutManager = textView.layoutManager,
-                let textContainer = textView.textContainer
+                textView.textContainer != nil
             else {
                 return
             }
 
-            // Calculate the glyph range for the insertion point
+            // Use the USED rect (not the line-fragment rect) so the cursor
+            // position is anchored to the drawn glyph bounds, not the
+            // allocated line box. The line-fragment rect includes line-height
+            // slack from `minimumLineHeight` / `lineHeightMultiple` above
+            // AND below the glyphs — with Relaxed line spacing on larger
+            // fonts, that slack can be 8–16pt on each side, which would
+            // otherwise push the menu that far from the `/`.
+            //
+            // Important: by using `usedRect.origin.y` as cursorY (not the
+            // fragment top), the SAME 4pt gap applies above and below the
+            // glyph. The SwiftUI layer does:
+            //   below: yPosition = cursorY + cursorHeight + menuGapBelow
+            //   above: yPosition = cursorY - menuHeight - menuGapAbove
+            // With cursorY = glyph top, cursorHeight = glyph height, and
+            // equal gaps, the menu lands at glyphBottom + 4 and glyphTop - 4
+            // respectively — visually symmetric.
             let glyphIndex = layoutManager.glyphIndexForCharacter(at: insertLocation)
-            let glyphRect = layoutManager.boundingRect(
-                forGlyphRange: NSRange(location: glyphIndex, length: 1), in: textContainer)
+            let lineFragRect = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
+            let usedRect = layoutManager.lineFragmentUsedRect(forGlyphAt: glyphIndex, effectiveRange: nil)
+            let glyphLocation = layoutManager.location(forGlyphAt: glyphIndex)
 
-            // Convert to text view's coordinate space
-            let cursorX = glyphRect.origin.x + textView.textContainerOrigin.x
-            let cursorY = glyphRect.origin.y + textView.textContainerOrigin.y
-            let cursorHeight = glyphRect.height
+            let cursorX = lineFragRect.origin.x + glyphLocation.x + textView.textContainerOrigin.x
+            let cursorY = usedRect.origin.y + textView.textContainerOrigin.y
+            let cursorHeight = usedRect.height
 
             // Send the raw cursor position in text-view-local coordinates.
             // The SwiftUI layer (clampedCommandMenuPosition) handles above/below
@@ -6842,6 +6857,9 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     overlay.onWidthChanged = { [weak textStorage, weak layoutManager, weak attachment, weak textView] newWidth in
                         guard let ts = textStorage, let lm = layoutManager, let att = attachment,
                               let tc = textView?.textContainer else { return }
+                        // Double-click right edge snaps to full container per user request (setup-doubleclick-handles).
+                        // Respects minWidth clamp. hasBeenUserResized-like flag not needed for callout (unlike code blocks).
+                        // Ensures styleTodoParagraphs isImageParagraph branch (~7989) and shouldChangeText guard (~4929) handle it.
                         let effMin = min(CalloutOverlayView.minWidth, tc.containerSize.width)
                         let clamped = max(effMin, min(newWidth, tc.containerSize.width))
                         let newHeight = CalloutOverlayView.heightForData(att.calloutData, width: clamped)
@@ -10486,35 +10504,17 @@ final class InlineNSTextView: NSTextView, QLPreviewPanelDataSource, QLPreviewPan
                 NotificationCenter.default.post(name: .hideCommandMenu, object: nil, userInfo: eidInfo)
             }
 
-            // Get the cursor position before insertion
-            let location = selectedRange().location
-
-            // Allow the "/" to be inserted first
+            // Allow the "/" to be inserted. The delegate's
+            // `shouldChangeTextInRange` handler (invoked by super.insertText)
+            // posts `.showCommandMenu` with the RAW cursor position + tight
+            // cursorHeight (see `showCommandMenuAtCursor`, line 5435). Do NOT
+            // post another notification here — the SwiftUI layer expects raw
+            // coords and adds `cursorHeight + menuGapBelow` itself. Previously
+            // this branch pre-computed `cursorY + cursorHeight + 4` (the below
+            // placement) and posted it, which then got the same offset added
+            // a SECOND time in the SwiftUI layer — pushing the menu roughly
+            // one line below where the "/" actually sits.
             super.insertText(string, replacementRange: replacementRange)
-
-            // Then show the command menu at that position
-            if actionDelegate != nil {
-                if let layoutManager = self.layoutManager,
-                    let textContainer = self.textContainer
-                {
-                    let glyphIndex = layoutManager.glyphIndexForCharacter(at: location)
-                    let glyphRect = layoutManager.boundingRect(
-                        forGlyphRange: NSRange(location: glyphIndex, length: 1),
-                        in: textContainer)
-
-                    let cursorX = glyphRect.origin.x + self.textContainerOrigin.x
-                    let cursorY = glyphRect.origin.y + self.textContainerOrigin.y
-                    let cursorHeight = glyphRect.height
-
-                    let menuPosition = CGPoint(x: cursorX, y: cursorY + cursorHeight + 4)
-
-                    NotificationCenter.default.post(
-                        name: .showCommandMenu,
-                        object: ["position": menuPosition, "slashLocation": location],
-                        userInfo: eidInfo
-                    )
-                }
-            }
             return
         }
 
