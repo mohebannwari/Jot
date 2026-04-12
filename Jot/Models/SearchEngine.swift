@@ -14,34 +14,43 @@ import Combine
 final class SearchEngine: ObservableObject {
     // Input
     @Published var query: String = ""
-    
+
     // Outputs
     @Published private(set) var results: [SearchHit] = []
-    @Published private(set) var recentQueries: [String]
-    
+    /// Combined LAST SEARCH rows (queries + opened targets), newest first, max `maxPaletteHistoryCount`.
+    @Published private(set) var paletteHistory: [SearchPaletteHistoryEntry]
+
     // Data
     private var allNotes: [Note] = []
     private var allFolders: [Folder] = []
     /// Cache stripped content to avoid re-stripping on every search keystroke
     private var strippedContentCache: [UUID: (hash: Int, stripped: String)] = [:]
-    
+
     // Internals
     private var cancellables = Set<AnyCancellable>()
     private let debounceMs: Int = 250
-    private let maxRecentQueries = 3
+    private static let maxPaletteHistoryCount = 5
     private let userDefaults: UserDefaults
+    /// Legacy keys — read once for migration, then cleared.
     private let recentQueriesKey: String
-    
+    private let recentOpenedFromSearchKey: String
+    private let paletteHistoryKey: String
+
     init(
         userDefaults: UserDefaults = .standard,
-        recentQueriesKey: String = "SearchEngine.recentQueries"
+        recentQueriesKey: String = "SearchEngine.recentQueries",
+        recentOpenedFromSearchKey: String = "SearchEngine.recentOpenedFromSearch",
+        paletteHistoryKey: String = "SearchEngine.paletteHistory"
     ) {
         self.userDefaults = userDefaults
         self.recentQueriesKey = recentQueriesKey
-        let persistedQueries = userDefaults.stringArray(forKey: recentQueriesKey) ?? []
-        self.recentQueries = SearchEngine.normalizedRecentQueries(
-            persistedQueries,
-            maxCount: maxRecentQueries
+        self.recentOpenedFromSearchKey = recentOpenedFromSearchKey
+        self.paletteHistoryKey = paletteHistoryKey
+        self.paletteHistory = SearchEngine.loadPaletteHistory(
+            userDefaults: userDefaults,
+            recentQueriesKey: recentQueriesKey,
+            recentOpenedFromSearchKey: recentOpenedFromSearchKey,
+            paletteHistoryKey: paletteHistoryKey
         )
 
         $query
@@ -60,11 +69,15 @@ final class SearchEngine: ObservableObject {
                 strippedContentCache[note.id] = nil
             }
         }
+        let validNoteIDs = Set(notes.map(\.id))
+        pruneRecentOpenedNoteTargets(validNoteIDs: validNoteIDs)
         performSearch()
     }
 
     func setFolders(_ folders: [Folder]) {
         allFolders = folders
+        let validFolderIDs = Set(folders.map(\.id))
+        pruneRecentOpenedFolderTargets(validFolderIDs: validFolderIDs)
         performSearch()
     }
 
@@ -72,13 +85,77 @@ final class SearchEngine: ObservableObject {
         let trimmed = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
-        recentQueries = SearchEngine.normalizedRecentQueries(
-            [trimmed] + recentQueries,
-            maxCount: maxRecentQueries
-        )
-        userDefaults.set(recentQueries, forKey: recentQueriesKey)
+        var next = paletteHistory
+        next.removeAll { entry in
+            guard let q = entry.queryText else { return false }
+            return q.compare(trimmed, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+        }
+        next.append(SearchPaletteHistoryEntry(queryText: trimmed))
+        paletteHistory = Self.sortedCappedHistory(next)
+        persistPaletteHistory()
     }
-    
+
+    /// Call when the user opens a note from the global search palette (in addition to `recordCommittedQuery`).
+    func recordOpenedFromSearch(note: Note) {
+        recordOpenedFromSearch(
+            RecentOpenedSearchTarget(kind: .note, entityID: note.id, title: note.title))
+    }
+
+    /// Call when the user opens a folder from the global search palette (in addition to `recordCommittedQuery`).
+    func recordOpenedFromSearch(folder: Folder) {
+        recordOpenedFromSearch(
+            RecentOpenedSearchTarget(kind: .folder, entityID: folder.id, title: folder.name))
+    }
+
+    private func recordOpenedFromSearch(_ entry: RecentOpenedSearchTarget) {
+        let trimmedTitle = entry.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedTitle.isEmpty else { return }
+        let normalizedEntry = RecentOpenedSearchTarget(
+            kind: entry.kind, entityID: entry.entityID, title: trimmedTitle)
+        var next = paletteHistory.filter { $0.openedTarget?.entityID != normalizedEntry.entityID }
+        next.append(SearchPaletteHistoryEntry(openedTarget: normalizedEntry))
+        paletteHistory = Self.sortedCappedHistory(next)
+        persistPaletteHistory()
+    }
+
+    /// Removes a stale row when the note/folder no longer exists (e.g. user tapped a ghost recent).
+    func removeRecentOpenedTarget(entityID: UUID) {
+        let filtered = paletteHistory.filter { $0.openedTarget?.entityID != entityID }
+        guard filtered.count != paletteHistory.count else { return }
+        paletteHistory = filtered
+        persistPaletteHistory()
+    }
+
+    private func persistPaletteHistory() {
+        if let data = try? JSONEncoder().encode(paletteHistory) {
+            userDefaults.set(data, forKey: paletteHistoryKey)
+        }
+    }
+
+    /// Drop note targets that no longer exist (folders left untouched so early `setNotes` does not wipe folder recents).
+    private func pruneRecentOpenedNoteTargets(validNoteIDs: Set<UUID>) {
+        let filtered = paletteHistory.filter { entry in
+            guard let t = entry.openedTarget else { return true }
+            if t.kind == .note { return validNoteIDs.contains(t.entityID) }
+            return true
+        }
+        guard filtered.count != paletteHistory.count else { return }
+        paletteHistory = filtered
+        persistPaletteHistory()
+    }
+
+    /// Drop folder targets that no longer exist (notes left untouched for the symmetric reason).
+    private func pruneRecentOpenedFolderTargets(validFolderIDs: Set<UUID>) {
+        let filtered = paletteHistory.filter { entry in
+            guard let t = entry.openedTarget else { return true }
+            if t.kind == .folder { return validFolderIDs.contains(t.entityID) }
+            return true
+        }
+        guard filtered.count != paletteHistory.count else { return }
+        paletteHistory = filtered
+        persistPaletteHistory()
+    }
+
     private func performSearch() {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
@@ -173,6 +250,65 @@ final class SearchEngine: ObservableObject {
         results = Array(hits.prefix(20))
     }
 
+    private static func sortedCappedHistory(_ entries: [SearchPaletteHistoryEntry]) -> [SearchPaletteHistoryEntry] {
+        let sorted = entries.sorted {
+            if $0.recordedAt != $1.recordedAt { return $0.recordedAt > $1.recordedAt }
+            return $0.id.uuidString > $1.id.uuidString
+        }
+        return Array(sorted.prefix(maxPaletteHistoryCount))
+    }
+
+    /// Loads unified history, or migrates legacy `recentQueries` + `recentOpenedFromSearch` once (then clears legacy keys).
+    private static func loadPaletteHistory(
+        userDefaults: UserDefaults,
+        recentQueriesKey: String,
+        recentOpenedFromSearchKey: String,
+        paletteHistoryKey: String
+    ) -> [SearchPaletteHistoryEntry] {
+        if let data = userDefaults.data(forKey: paletteHistoryKey),
+            let decoded = try? JSONDecoder().decode([SearchPaletteHistoryEntry].self, from: data),
+            !decoded.isEmpty
+        {
+            return sortedCappedHistory(decoded)
+        }
+
+        let legacyQueriesRaw = userDefaults.stringArray(forKey: recentQueriesKey) ?? []
+        let legacyQueries = normalizedRecentQueries(legacyQueriesRaw, maxCount: 50)
+        var legacyOpened: [RecentOpenedSearchTarget] = []
+        if let openedData = userDefaults.data(forKey: recentOpenedFromSearchKey),
+            let decoded = try? JSONDecoder().decode([RecentOpenedSearchTarget].self, from: openedData)
+        {
+            legacyOpened = normalizedRecentOpened(decoded, maxCount: 50)
+        }
+
+        let hadLegacy =
+            !legacyQueriesRaw.isEmpty || userDefaults.data(forKey: recentOpenedFromSearchKey) != nil
+        guard hadLegacy else { return [] }
+
+        var merged: [SearchPaletteHistoryEntry] = []
+        var time = Date().timeIntervalSince1970
+        for q in legacyQueries {
+            guard merged.count < maxPaletteHistoryCount else { break }
+            merged.append(
+                SearchPaletteHistoryEntry(
+                    recordedAt: Date(timeIntervalSince1970: time), queryText: q))
+            time -= 0.001
+        }
+        for o in legacyOpened {
+            guard merged.count < maxPaletteHistoryCount else { break }
+            merged.append(
+                SearchPaletteHistoryEntry(recordedAt: Date(timeIntervalSince1970: time), openedTarget: o))
+            time -= 0.001
+        }
+        let normalized = sortedCappedHistory(merged)
+        userDefaults.removeObject(forKey: recentQueriesKey)
+        userDefaults.removeObject(forKey: recentOpenedFromSearchKey)
+        if let data = try? JSONEncoder().encode(normalized) {
+            userDefaults.set(data, forKey: paletteHistoryKey)
+        }
+        return normalized
+    }
+
     private static func normalizedRecentQueries(_ queries: [String], maxCount: Int) -> [String] {
         var normalized: [String] = []
         for query in queries {
@@ -191,9 +327,61 @@ final class SearchEngine: ObservableObject {
         }
         return normalized
     }
+
+    private static func normalizedRecentOpened(
+        _ items: [RecentOpenedSearchTarget], maxCount: Int
+    ) -> [RecentOpenedSearchTarget] {
+        var seen = Set<UUID>()
+        var out: [RecentOpenedSearchTarget] = []
+        for item in items {
+            guard !seen.contains(item.entityID) else { continue }
+            seen.insert(item.entityID)
+            out.append(item)
+            if out.count == maxCount { break }
+        }
+        return out
+    }
 }
 
 // MARK: - Models
+
+/// A note or folder the user opened from global search, shown under LAST SEARCH with the correct icon.
+struct RecentOpenedSearchTarget: Codable, Equatable, Identifiable {
+    enum Kind: String, Codable {
+        case note
+        case folder
+    }
+
+    var kind: Kind
+    var entityID: UUID
+    var title: String
+
+    var id: UUID { entityID }
+}
+
+/// One row under LAST SEARCH: either a committed query string or a note/folder opened from the palette.
+struct SearchPaletteHistoryEntry: Codable, Equatable, Identifiable {
+    let id: UUID
+    var recordedAt: Date
+    var queryText: String?
+    var openedTarget: RecentOpenedSearchTarget?
+
+    var isQuery: Bool { queryText != nil }
+
+    init(id: UUID = UUID(), recordedAt: Date = Date(), queryText: String) {
+        self.id = id
+        self.recordedAt = recordedAt
+        self.queryText = queryText
+        self.openedTarget = nil
+    }
+
+    init(id: UUID = UUID(), recordedAt: Date = Date(), openedTarget: RecentOpenedSearchTarget) {
+        self.id = id
+        self.recordedAt = recordedAt
+        self.queryText = nil
+        self.openedTarget = openedTarget
+    }
+}
 
 struct SearchHit: Identifiable, Equatable {
     let id = UUID()

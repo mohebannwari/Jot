@@ -650,6 +650,12 @@ struct ContentView: View {
             .onReceive(NotificationCenter.default.publisher(for: .openSettings)) { _ in
                 presentSettings()
             }
+            .onReceive(NotificationCenter.default.publisher(for: .requestSplitViewFromCommandPalette)) { _ in
+                withAnimation(.jotSpring) {
+                    isSplitMenuVisible = false
+                    addNewSplit()
+                }
+            }
             .onReceive(NotificationCenter.default.publisher(for: .toggleVersionHistory)) { notification in
                 guard selectedNote != nil else { return }
                 let requestedPane: SplitPickerPane = (notification.object as? UUID) == splitEditorID ? .secondary : .primary
@@ -2629,8 +2635,10 @@ struct ContentView: View {
                 onFolderSelected: { folder in
                     openFolder(folder)
                 },
-                folders: folders
+                folders: folders,
+                notes: notesManager.notes
             )
+            .environmentObject(themeManager)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .padding(.top, 182)
         }

@@ -556,6 +556,8 @@ extension Notification.Name {
     static let togglePropertiesPanel = Notification.Name("togglePropertiesPanel")
     static let propertiesPanelToggleTodo = Notification.Name("propertiesPanelToggleTodo")
     static let checkForUpdates = Notification.Name("checkForUpdates")
+    static let requestSplitViewFromCommandPalette = Notification.Name(
+        "requestSplitViewFromCommandPalette")
 }
 
 // MARK: - AI Notification Names

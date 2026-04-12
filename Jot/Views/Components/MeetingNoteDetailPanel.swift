@@ -78,9 +78,8 @@ struct MeetingNoteDetailPanel: View {
                 .kerning(0.5)
 
             if sessions.count > 1 {
-                let pillColor = colorScheme == .dark
-                    ? Color(red: 0, green: 0.424, blue: 1.0)       // #006CFF
-                    : Color(red: 0, green: 0.345, blue: 0.827)     // #0058D3
+                // Multi-session badge uses accent so it stays on-token in both appearances (no hardcoded RGB).
+                let pillColor = Color("AccentColor")
                 Text("\(sessions.count) sessions")
                     .font(FontManager.metadata(size: 10, weight: .medium))
                     .foregroundColor(pillColor)
@@ -454,9 +453,10 @@ private struct NotesEditor: View {
             .scrollIndicators(.never)
             .padding(8)
             .frame(minHeight: 80, maxHeight: .infinity)
+            // Match `MeetingNotesFloatingPanel.contentBlock`: same inner chrome as the live recording notes tab.
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color("SurfaceElevatedColor"))
+                    .fill(notesEditorChromeFill)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -485,6 +485,10 @@ private struct NotesEditor: View {
 
     private var borderColor: Color {
         Color("BorderSubtleColor")
+    }
+
+    private var notesEditorChromeFill: Color {
+        colorScheme == .dark ? Color("DetailPaneColor") : Color.white
     }
 }
 
