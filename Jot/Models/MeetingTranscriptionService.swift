@@ -3,8 +3,9 @@
 //  Jot
 //
 //  Real-time speech-to-text for meeting note recording.
-//  Uses SpeechAnalyzer (macOS 26+) for on-device progressive transcription.
-//  Falls back to SFSpeechRecognizer for pre-26 targets.
+//  Uses SFSpeechRecognizer with on-device recognition. A SpeechAnalyzer
+//  (macOS 26+) path can be reintroduced when CI uses an SDK that exports
+//  SpeechTranscriber / AnalyzerInput (Xcode 16.4 + macOS 15 SDK does not).
 //
 
 import AVFoundation
@@ -50,10 +51,7 @@ final class MeetingTranscriptionService: ObservableObject {
         pendingBuffers = []
         isTranscribing = true
 
-        // v1: Use SFSpeechRecognizer for reliable transcription on all macOS versions.
-        // SpeechAnalyzer (macOS 26) requires AssetInventory model download which may
-        // not be complete. SFSpeechRecognizer with on-device recognition is the safe path.
-        // TODO: v2 -- add SpeechAnalyzer with proper asset lifecycle management.
+        // SFSpeechRecognizer with on-device recognition (builds on all SDKs GitHub Actions use).
         startSFSpeechRecognizerTranscription()
     }
 
@@ -131,122 +129,7 @@ final class MeetingTranscriptionService: ObservableObject {
     }
 }
 
-// MARK: - SpeechAnalyzer (macOS 26+)
-//
-// SpeechAnalyzer is part of the Speech framework (not a separate module).
-// It uses AnalyzerInput wrappers around AVAudioPCMBuffer, results come
-// from the transcriber's .results AsyncSequence, and the analyzer runs
-// analysis in parallel via analyzeSequence().
-
-@available(macOS 26.0, *)
-extension MeetingTranscriptionService {
-    fileprivate func startSpeechAnalyzerTranscription() {
-        let currentLocale = Locale.current
-        detectedLanguage = currentLocale.language.languageCode?.identifier ?? "en"
-
-        let transcriber = SpeechTranscriber(
-            locale: currentLocale,
-            preset: .progressiveTranscription
-        )
-
-        // Must verify assets are installed before using SpeechAnalyzer.
-        // Without this check, SpeechRecognizerWorker.preRunRecognition() hits
-        // a precondition failure (SIGTRAP) when the model isn't downloaded.
-        transcriptionTask = Task { [weak self] in
-            guard let self else { return }
-
-            // Check and install assets if needed
-            do {
-                if let installRequest = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
-                    // Assets not ready -- try to install, fall back if it takes too long
-                    try await installRequest.downloadAndInstall()
-                }
-            } catch {
-                // Assets unavailable -- fall back to SFSpeechRecognizer
-                await MainActor.run { [weak self] in
-                    self?.startSFSpeechRecognizerTranscription()
-                }
-                return
-            }
-
-            await MainActor.run { [weak self] in
-                self?.startSpeechAnalyzerAfterAssetCheck(transcriber: transcriber)
-            }
-        }
-    }
-
-    fileprivate func startSpeechAnalyzerAfterAssetCheck(transcriber: SpeechTranscriber) {
-        // Create the AnalyzerInput stream (wraps AVAudioPCMBuffer)
-        let (inputStream, inputContinuation) = AsyncStream.makeStream(of: AnalyzerInput.self)
-
-        // Store a buffer continuation that wraps buffers into AnalyzerInput
-        let (bufferStream, bufContinuation) = AsyncStream.makeStream(of: AVAudioPCMBuffer.self)
-        self.bufferContinuation = bufContinuation
-
-        let analyzer = SpeechAnalyzer(modules: [transcriber])
-
-        // Task 1: Forward AVAudioPCMBuffers -> AnalyzerInput stream
-        let forwardTask = Task {
-            for await buffer in bufferStream {
-                guard !Task.isCancelled else { break }
-                inputContinuation.yield(AnalyzerInput(buffer: buffer))
-            }
-            inputContinuation.finish()
-        }
-
-        // Task 2: Consume transcription results
-        let resultsTask = Task { [weak self] in
-            do {
-                for try await result in transcriber.results {
-                    guard !Task.isCancelled else { break }
-                    let text = String(result.text.characters)
-                    guard !text.isEmpty else { continue }
-
-                    await MainActor.run { [weak self] in
-                        guard let self else { return }
-                        let timestamp = self.recordingStartDate.map { Date().timeIntervalSince($0) } ?? 0
-
-                        // Update last non-final segment in place, or append new
-                        if let lastIndex = self.segments.indices.last, !self.segments[lastIndex].isFinal {
-                            self.segments[lastIndex].text = text
-                        } else {
-                            self.segments.append(TranscriptSegment(
-                                text: text,
-                                timestamp: timestamp,
-                                isFinal: false
-                            ))
-                        }
-                    }
-                }
-            } catch {
-                if !Task.isCancelled {
-                    await MainActor.run { [weak self] in
-                        self?.isTranscribing = false
-                    }
-                }
-            }
-        }
-
-        // Task 3: Run the analyzer (blocks until input finishes)
-        // Store as transcriptionTask so stopTranscription() can cancel it
-        transcriptionTask = Task {
-            do {
-                let _ = try await analyzer.analyzeSequence(inputStream)
-                try await analyzer.finalizeAndFinishThroughEndOfInput()
-            } catch {
-                if !Task.isCancelled {
-                    await MainActor.run { [weak self] in
-                        self?.isTranscribing = false
-                    }
-                }
-            }
-            forwardTask.cancel()
-            resultsTask.cancel()
-        }
-    }
-}
-
-// MARK: - SFSpeechRecognizer Fallback
+// MARK: - SFSpeechRecognizer
 
 extension MeetingTranscriptionService {
     fileprivate func startSFSpeechRecognizerTranscription() {
