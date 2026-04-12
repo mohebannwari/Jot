@@ -410,6 +410,37 @@ final class ThemeManager: ObservableObject {
 
     // MARK: - Tint
 
+    /// Shared hue wash used for pane surfaces and hover tooltips so tint reads
+    /// as one family across the app.
+    private func tintHueWashTarget(for colorScheme: ColorScheme) -> Color {
+        switch colorScheme {
+        case .light:
+            return Color(hue: tintHue, saturation: 0.10, brightness: 0.96)
+        case .dark:
+            return Color(hue: tintHue, saturation: 0.38, brightness: 0.16)
+        @unknown default:
+            return Color(hue: tintHue, saturation: 0.10, brightness: 0.96)
+        }
+    }
+
+    /// Blends any semantic base toward the app tint wash. When `tintIntensity == 0`
+    /// the base is returned untouched.
+    ///
+    /// **Availability:** Same rules as `tintedPaneSurface` — perceptual mix on
+    /// macOS 15+ / iOS 18+, sRGB blend fallback for older compile targets.
+    private func blendTowardAppTintWash(base: Color, colorScheme: ColorScheme) -> Color {
+        guard tintIntensity > 0 else { return base }
+        let target = tintHueWashTarget(for: colorScheme)
+        if #available(macOS 15.0, iOS 18.0, *) {
+            return base.mix(with: target, by: tintIntensity, in: .perceptual)
+        } else {
+            let baseNS = NSColor(base).usingColorSpace(.sRGB) ?? NSColor(base)
+            let targetNS = NSColor(target).usingColorSpace(.sRGB) ?? NSColor(target)
+            let blended = baseNS.blended(withFraction: CGFloat(tintIntensity), of: targetNS) ?? baseNS
+            return Color(nsColor: blended)
+        }
+    }
+
     /// Computes the app-wide pane surface color by blending the base
     /// `DetailPaneSurfaceColor` asset toward a hue-derived target in perceptual
     /// color space. The target is chosen based on the passed `colorScheme` so
@@ -427,27 +458,14 @@ final class ThemeManager: ObservableObject {
     /// The fallback does RGB (not perceptual) blending — acceptable because the
     /// fallback path never renders a production surface.
     func tintedPaneSurface(for colorScheme: ColorScheme) -> Color {
-        let base = Color("DetailPaneSurfaceColor")
-        guard tintIntensity > 0 else { return base }
+        blendTowardAppTintWash(base: Color("DetailPaneSurfaceColor"), colorScheme: colorScheme)
+    }
 
-        let target: Color
-        switch colorScheme {
-        case .light:
-            target = Color(hue: tintHue, saturation: 0.10, brightness: 0.96)
-        case .dark:
-            target = Color(hue: tintHue, saturation: 0.38, brightness: 0.16)
-        @unknown default:
-            target = Color(hue: tintHue, saturation: 0.10, brightness: 0.96)
-        }
-
-        if #available(macOS 15.0, iOS 18.0, *) {
-            return base.mix(with: target, by: tintIntensity, in: .perceptual)
-        } else {
-            let baseNS = NSColor(base).usingColorSpace(.sRGB) ?? NSColor(base)
-            let targetNS = NSColor(target).usingColorSpace(.sRGB) ?? NSColor(target)
-            let blended = baseNS.blended(withFraction: CGFloat(tintIntensity), of: targetNS) ?? baseNS
-            return Color(nsColor: blended)
-        }
+    /// Hover tooltip capsule fill: `TooltipBackgroundColor` blended with the
+    /// same tint wash as pane surfaces so toolbar and split-view tooltips match
+    /// the rest of the chrome.
+    func tintedTooltipBackground(for colorScheme: ColorScheme) -> Color {
+        blendTowardAppTintWash(base: Color("TooltipBackgroundColor"), colorScheme: colorScheme)
     }
 
     /// Restore hue + intensity to factory defaults.

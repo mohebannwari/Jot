@@ -8,6 +8,41 @@
 
 import SwiftUI
 
+// MARK: - Tooltip modifiers (app tint via ThemeManager)
+
+/// Solid hover tooltip capsule; background follows Settings tint (not Liquid Glass).
+private struct TooltipGlassModifier: ViewModifier {
+    @EnvironmentObject private var themeManager: ThemeManager
+    @Environment(\.colorScheme) private var colorScheme
+
+    func body(content: Content) -> some View {
+        let shape = Capsule()
+        content
+            .padding(.horizontal, 4)
+            .padding(.vertical, 3)
+            .background(themeManager.tintedTooltipBackground(for: colorScheme), in: shape)
+            .overlay(shape.stroke(Color.primary.opacity(0.12), lineWidth: 0.5))
+    }
+}
+
+/// Real `.glassEffect` on OS 26+ (no extra tint). Pre-26 uses the same tinted
+/// solid fill as `tooltipGlass()` so link/file pills still pick up the app wash.
+private struct LiquidGlassTooltipModifier<S: Shape>: ViewModifier {
+    let shape: S
+    @EnvironmentObject private var themeManager: ThemeManager
+    @Environment(\.colorScheme) private var colorScheme
+
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, macOS 26.0, *) {
+            content.glassEffect(.regular, in: shape)
+        } else {
+            content
+                .background(themeManager.tintedTooltipBackground(for: colorScheme), in: shape)
+                .overlay(shape.stroke(Color.primary.opacity(0.12), lineWidth: 0.5))
+        }
+    }
+}
+
 extension View {
     /// Applies a standard liquid glass surface inside the given shape, bounded to that shape.
     /// - On modern OS versions uses `glassEffect(..., in:)`.
@@ -70,36 +105,16 @@ extension View {
         }
     }
     
-    /// Applies a glass tooltip style without drop shadow.
-    /// - On modern OS: standard glass capsule, no shadow.
-    /// - On pre-26: white (light) / gray (dark) capsule with stroke, no shadow.
-    @ViewBuilder
+    /// Applies a solid tooltip capsule (no drop shadow) using the app tint from
+    /// `ThemeManager`. Requires `ThemeManager` in the environment.
     func tooltipGlass() -> some View {
-        let shape = Capsule()
-        self
-            .padding(.horizontal, 4)
-            .padding(.vertical, 3)
-            .background(tooltipBackgroundColor, in: shape)
-            .overlay(shape.stroke(Color.primary.opacity(0.12), lineWidth: 0.5))
+        modifier(TooltipGlassModifier())
     }
 
-    /// Applies a Liquid Glass tooltip style with a custom shape.
-    /// - On macOS 26+: real `.glassEffect()` in the given shape.
-    /// - On pre-26: solid tooltip background with stroke.
-    @ViewBuilder
+    /// Liquid Glass tooltip on iOS/macOS 26+ (untinted native glass). Older OS
+    /// uses the same tinted solid background as `tooltipGlass()`.
     func liquidGlassTooltip<S: Shape>(shape: S = Capsule()) -> some View {
-        if #available(macOS 26.0, *) {
-            self.glassEffect(.regular, in: shape)
-        } else {
-            self
-                .background(tooltipBackgroundColor, in: shape)
-                .overlay(shape.stroke(Color.primary.opacity(0.12), lineWidth: 0.5))
-        }
-    }
-
-    /// Tooltip background: white in light mode, contrasting gray in dark mode.
-    private var tooltipBackgroundColor: Color {
-        Color("TooltipBackgroundColor")
+        modifier(LiquidGlassTooltipModifier(shape: shape))
     }
 
     /// Applies a prominent glass effect for important UI elements.

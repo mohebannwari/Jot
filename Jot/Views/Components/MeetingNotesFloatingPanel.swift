@@ -57,10 +57,21 @@ struct MeetingNotesFloatingPanel: View {
     var body: some View {
         VStack(spacing: 8) {
             if showTabs {
+                // Staggered feel: tab strip leads, content follows (same spring as expand toggle).
                 tabBar
-                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .bottom)))
+                    .transition(
+                        .asymmetric(
+                            insertion: .opacity.combined(with: .scale(scale: 0.94, anchor: .top)),
+                            removal: .opacity.combined(with: .scale(scale: 0.98, anchor: .top))
+                        )
+                    )
                 contentBlock
-                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .bottom)))
+                    .transition(
+                        .asymmetric(
+                            insertion: .opacity.combined(with: .scale(scale: 0.96, anchor: .top)),
+                            removal: .opacity.combined(with: .scale(scale: 0.99, anchor: .top))
+                        )
+                    )
             }
             controlsSection
         }

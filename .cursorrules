@@ -1,0 +1,175 @@
+# Jot -- Cursor Rules
+
+macOS 26+ SwiftUI note-taking app with Apple Liquid Glass design system.
+Bundle ID: `com.mohebanwari.Jot`. Swift, SwiftUI, SwiftData, AppKit interop (NSTextView editor).
+
+---
+
+## Prohibited -- Read This First
+
+These rules are absolute. No exceptions. No rationalizations.
+
+1. **Never guess when debugging.** Every bug requires root cause investigation before any fix. Research the problem: read documentation, check entitlements, plist, build settings, sandbox permissions. If you catch yourself thinking "let me just try changing X" -- stop. You are about to waste time.
+2. **No log-based debugging.** Do not add `NSLog`, `print()`, `os_log`, or any temporary logging to diagnose issues. Research the problem, reason about the architecture, check system configuration.
+3. **No fix without root cause.** "I think it might be X" is not a root cause. A root cause is specific and verifiable: "The sandbox requires `com.apple.security.print` and this entitlement is missing."
+4. **Research the codebase before editing.** Never change code you haven't read. Read existing files, understand patterns, then edit.
+
+---
+
+## Build & Rebuild Workflow (CRITICAL)
+
+After making ANY code changes:
+
+```bash
+xcodebuild -project Jot.xcodeproj -scheme Jot -configuration Debug build -allowProvisioningUpdates 2>&1 | tail -8
+```
+
+**How it works:** Jot has a `BuildWatcherManager` (DEBUG only) that watches `Jot.debug.dylib` for changes. When xcodebuild replaces the binary while the app is running, an **update panel appears at the bottom of the left sidebar** (above Trash/Settings). The user relaunches from there -- on their own terms, when they're ready.
+
+### NEVER do any of the following after building:
+- `pkill Jot` or `killall Jot` -- DO NOT KILL THE APP
+- `open Jot.app` or `open -a Jot` -- DO NOT LAUNCH THE APP
+- `touch Jot.app` -- DO NOT TOUCH THE BUNDLE
+- Any process management commands targeting Jot
+- Tell the user they need to restart/relaunch manually -- they already know, the panel handles it
+- Skip the build step after code changes -- always build so the update panel appears
+
+### Correct flow:
+1. Make code changes
+2. Run `xcodebuild` Debug build (command above)
+3. Confirm `BUILD SUCCEEDED` in the output
+4. Tell user the build is ready -- they'll see the update panel and relaunch when ready
+5. Move on to the next task
+
+### Test builds:
+```bash
+# All tests
+xcodebuild -project Jot.xcodeproj -scheme Jot -destination 'platform=macOS' test
+
+# Specific test suite
+xcodebuild -project Jot.xcodeproj -scheme Jot -destination 'platform=macOS' \
+  -only-testing:JotTests/SpecificTests test -allowProvisioningUpdates
+```
+
+---
+
+## Architecture
+
+```
+Jot/
+  App/              # JotApp, ContentView (~5790 lines), AppDelegate, menu commands
+  Intents/          # App Intents for Shortcuts (create, open, search, append)
+  Models/           # Note, Folder, MeetingModels, SwiftData/
+  Views/
+    Components/     # Reusable UI (~60 files)
+      Renderers/    # File preview renderers (audio, image, PDF, text, video)
+    Screens/        # Full-screen views (NoteDetailView ~2011 lines)
+  Utils/            # ThemeManager, FontManager, Extensions, GlassEffects
+  Ressources/       # Assets.xcassets (semantic color sets)
+```
+
+### Key files by size (read before editing):
+- `TodoEditorRepresentable.swift` -- ~10901 lines, main NSTextView editor wrapper
+- `ContentView.swift` -- ~5790 lines, sidebar + split sessions + overlays + properties panel
+- `NoteDetailView.swift` -- ~2011 lines, note detail pane with meeting panel slots
+- `SimpleSwiftDataManager.swift` -- ~1320 lines, persistence + derived collections
+- `TodoRichTextEditor.swift` -- ~1087 lines, SwiftUI wrapper around TodoEditorRepresentable
+- `TextFormattingManager.swift` -- ~980 lines, formatting ops with undo
+
+### Patterns:
+- State: `@StateObject` / `@EnvironmentObject` (NotesManager, ThemeManager)
+- Persistence: `SimpleSwiftDataManager` (SwiftData)
+- `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` project-wide
+- View structure: props -> computed properties -> body
+- Editor blocks (code/callout/tabs/file previews): NSTextAttachment + NSView overlay pattern
+- Properties panel: always-present in HStack (width 0<->340), no conditional insertion
+
+---
+
+## Design System
+
+### Colors
+All semantic colors in `Jot/Ressources/Assets.xcassets/`. Use `Color("TokenName")` -- never hardcode hex values. Always support light and dark.
+
+Key tokens: `AccentColor`, `MainColor`, `PrimaryTextColor`, `SecondaryTextColor`, `BackgroundColor`, `CardBackgroundColor`, `SurfaceDefaultColor`, `SurfaceElevatedColor`, `BorderSubtleColor`, `ButtonPrimaryBgColor`, `ButtonPrimaryTextColor`, `ButtonSecondaryBgColor`, `IconSecondaryColor`, `TagBackgroundColor`, `TagTextColor`.
+
+Use `NSColor.labelColor` everywhere -- no hardcoded dark/light RGB tuples.
+
+### Typography
+FontManager API: `body()` (Charter 16), `heading()` (SF Pro 24 Medium), `metadata()` (SF Mono 12), `icon()` (SF Symbols 20).
+Body font is user-configurable: default (Charter), system (SF Pro), mono (SF Mono).
+
+### Spacing
+Canonical values: `4, 6, 8, 12, 16, 18, 24, 60`
+
+### Corner Radius
+Canonical values: `4, 8, 12, 16, 20, 24, Capsule`
+Concentric rule: outer container 16, inner = outer - padding.
+
+### Animations (Extensions.swift)
+`jotSpring` (0.35s, 0.82), `jotBounce` (0.3s), `jotSmoothFast` (0.2s), `jotHover` (0.25s, 0.75), `jotDragSnap` (0.18s, 0.9)
+
+### Liquid Glass (macOS 26+)
+Helpers in `GlassEffects.swift`: `liquidGlass(in:)`, `tintedLiquidGlass(in:tint:)`, `thinLiquidGlass(in:)`, `prominentGlassStyle()`, `glassID(_:in:)`.
+Rules: no glass-on-glass, floating elements only, fallback to `.ultraThinMaterial` (not solid fills).
+
+---
+
+## Code Rules
+
+- No hardcoded colors, spacing, or radii -- use design tokens
+- Check existing components before creating new ones
+- `NSColor.labelColor` everywhere -- no hardcoded dark/light RGB tuples
+- Never `.clipped()` or `.clipShape()` on parent containers unless explicitly requested
+- Rich text: `AttributedString` + `.richTextCapabilities()`
+- Lists: `LazyVGrid` for performance
+- URL detection: `NSDataDetector` only, never regex
+- Callout height: `NSCell.cellSize(forBounds:)`, never `boundingRect`
+- NSHostingView overlays must receive `containerWidth` BEFORE `rebuildHostingView()` runs
+- TextFormattingManager methods accept `NSTextView` (not NSTextStorage) for undo support
+- Blockquote style: `headIndent = 20`, `tailIndent = -4`, `lineBreakMode = .byWordWrapping`
+- New NSTextAttachment subclasses need guard registration in the attachment handling code
+- No `.animation()` on HStacks with conditional children -- causes performance issues
+- `.contentShape(Rectangle())` on overlays to prevent click-through
+- `updateNote()` deliberately drops caller's tags (autosave safety) -- tag writes must use `updateTags()`
+- XCTest `measure` blocks execute 10 iterations -- reset state inside the block
+- Editor `syncText` has 150ms debounce -- tests must call `flushPendingSerialization` after pumping run loop
+
+---
+
+## SVG Icon Rules
+
+Every `.imageset/Contents.json` must include:
+```json
+"properties": {
+  "template-rendering-intent": "template",
+  "preserves-vector-representation": true
+}
+```
+Without `preserves-vector-representation`, Xcode rasterizes SVGs as 1x bitmaps = blur on Retina.
+
+Stroke weight formula: `stroke-width = viewBox_size / 12` (target 1/12 ratio).
+
+Figma SVG cleanup: replace `var(--fill/stroke)` CSS variables with `black` for template rendering.
+
+---
+
+## Rich Text Serialization Format
+
+Tag syntax: `[[b]]...[[/b]]`, `[[i]]`, `[[u]]`, `[[s]]`, `[[h1-3]]`, `[[align:center/right/justify]]`, `[[color|hex]]`, `[x]`/`[ ]` (todos), `[[image|||filename]]`, `[[webclip|title|desc|url]]`, `[[linkcard|title|desc|url]]`, `[[file|type|stored|original|viewMode]]`, `[[link|...]]`
+
+Nesting order: align > heading/bold/italic > underline > strikethrough > color
+
+---
+
+## Git Conventions
+
+- Feature branches: `feature/batch-N-description`
+- CI: `.github/workflows/claude-code-review.yml` (PR review), `.github/workflows/claude.yml` (@claude mentions)
+
+---
+
+## Figma Source
+
+Design file: https://www.figma.com/design/BhVLOWG63LckTVCuO3q0Tv/Jot
+Use for: token verification, component specs, light/dark variants, Liquid Glass behavior.

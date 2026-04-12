@@ -317,6 +317,8 @@ struct FolderSection: View {
 
             Spacer(minLength: 8)
 
+            // Trailing actions: same reveal as NoteListCard — collapsed width + clip so
+            // ellipsis and “new note” slide in from the right on row hover (.jotHover).
             HStack(spacing: 12) {
                 Menu {
                     Button {
@@ -378,8 +380,11 @@ struct FolderSection: View {
                 .buttonStyle(.plain)
                 .subtleHoverScale(1.06)
             }
+            .frame(width: shouldShowActions ? nil : 0)
             .opacity(shouldShowActions ? 1 : 0)
             .allowsHitTesting(shouldShowActions)
+            .clipped()
+            .animation(.jotHover, value: shouldShowActions)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(8)

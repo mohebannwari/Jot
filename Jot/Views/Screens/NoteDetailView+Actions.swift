@@ -543,7 +543,7 @@ extension NoteDetailView {
         // Delegate to shared manager so the session persists when switching notes
         meetingRecorderManager.startRecording(for: note.id)
 
-        withAnimation(.jotSpring) {
+        withAnimation(.jotMeetingPanelPresent) {
             showMeetingPanel = true
         }
     }
@@ -612,7 +612,7 @@ extension NoteDetailView {
     func dismissMeetingPanel() {
         meetingRecorderManager.dismiss()
 
-        withAnimation(.jotSpring) {
+        withAnimation(.jotMeetingPanelDismiss) {
             showMeetingPanel = false
         }
     }

@@ -1,0 +1,25 @@
+---
+description: "After code changes, run xcodebuild so the in-app update panel appears for user to relaunch"
+alwaysApply: true
+---
+
+# Rebuild after code changes for update panel
+
+After making any code changes that the user wants to test, **always run a Debug build**:
+
+```bash
+cd /Users/mohebanwari/development/Jot && xcodebuild -project Jot.xcodeproj -scheme Jot -configuration Debug build -allowProvisioningUpdates 2>&1 | tail -8
+```
+
+**Why:** Jot has a `BuildWatcherManager` (DEBUG only) that watches `Jot.debug.dylib` for changes. When the binary updates while the app is running, an **update panel appears at the bottom of the left sidebar** (above Trash/Settings). The user relaunches from there.
+
+**Do NOT:**
+- Kill or relaunch the app directly (per `feedback_no_relaunch_after_build.mdc`)
+- Skip the build step after code changes
+- Assume the user will build manually
+
+**Flow:**
+1. Make code changes
+2. Run `xcodebuild` Debug build
+3. Confirm `BUILD SUCCEEDED`
+4. Tell user the build is ready — they'll see the update panel in the sidebar and relaunch when ready

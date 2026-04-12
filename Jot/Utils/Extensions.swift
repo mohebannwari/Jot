@@ -251,7 +251,7 @@ extension View {
 
 // MARK: - Glass Tooltip
 
-/// Liquid glass tooltip pill that appears on hover above or below the view.
+/// Solid tinted tooltip pill on hover; styling from `tooltipGlass()` in GlassEffects.
 private struct GlassTooltipModifier: ViewModifier {
     let label: String
     let edge: HorizontalAlignment
@@ -298,7 +298,7 @@ private struct GlassTooltipModifier: ViewModifier {
 }
 
 extension View {
-    /// Adds a liquid glass tooltip pill that appears instantly on hover.
+    /// Hover tooltip pill using the app tint (not Liquid Glass).
     func glassTooltip(_ label: String, edge: HorizontalAlignment = .center, below: Bool = false) -> some View {
         modifier(GlassTooltipModifier(label: label, edge: edge, below: below))
     }

@@ -984,32 +984,28 @@ struct NoteDetailView: View {
   private var meetingNotesFloatingOverlay: some View {
     Group {
       if showMeetingPanel {
-        GeometryReader { geometry in
-          let bottomPadding: CGFloat = 52
-
-          VStack {
-            Spacer()
-            MeetingNotesFloatingPanel(
-              transcriptionService: meetingRecorderManager.transcriptionService,
-              recordingState: meetingRecorderManager.recordingState,
-              duration: meetingRecorderManager.duration,
-              audioLevels: meetingRecorderManager.levels,
-              summaryResult: meetingRecorderManager.summaryResult,
-              isSummaryLoading: meetingRecorderManager.isSummaryLoading,
-              manualNotes: meetingRecorderManager.bindingManualNotes,
-              selectedTab: meetingRecorderManager.bindingSelectedTab,
-              onPause: { pauseMeetingRecording() },
-              onResume: { resumeMeetingRecording() },
-              onStop: { stopMeetingRecording() },
-              onSave: { saveMeetingNote() },
-              onDismiss: { dismissMeetingPanel() }
-            )
-            .padding(.bottom, bottomPadding)
-          }
-          .frame(maxWidth: .infinity)
-          .transition(.move(edge: .bottom).combined(with: .opacity))
-          .zIndex(160)
+        VStack {
+          Spacer()
+          MeetingNotesFloatingPanel(
+            transcriptionService: meetingRecorderManager.transcriptionService,
+            recordingState: meetingRecorderManager.recordingState,
+            duration: meetingRecorderManager.duration,
+            audioLevels: meetingRecorderManager.levels,
+            summaryResult: meetingRecorderManager.summaryResult,
+            isSummaryLoading: meetingRecorderManager.isSummaryLoading,
+            manualNotes: meetingRecorderManager.bindingManualNotes,
+            selectedTab: meetingRecorderManager.bindingSelectedTab,
+            onPause: { pauseMeetingRecording() },
+            onResume: { resumeMeetingRecording() },
+            onStop: { stopMeetingRecording() },
+            onSave: { saveMeetingNote() },
+            onDismiss: { dismissMeetingPanel() }
+          )
+          .padding(.bottom, 52)
         }
+        .frame(maxWidth: .infinity)
+        .transition(.meetingNotesFloatingPanel)
+        .zIndex(160)
       }
     }
     .allowsHitTesting(showMeetingPanel)
