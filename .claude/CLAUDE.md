@@ -3,7 +3,9 @@ description:
 alwaysApply: true
 ---
 
-# CLAUDE.md -- Jot
+# Jot -- agent instructions
+
+**Single source of truth:** edit **this file** (`.claude/CLAUDE.md`) only. Repository root `claude.md` and `AGENTS.md` are symbolic links to this file so Cursor, Claude Code, and other tools share identical instructions.
 
 iOS 26+ / macOS 26+ note-taking app in SwiftUI with Apple Liquid Glass design system.
 
@@ -97,8 +99,9 @@ Opus (escalation only -- not parallel, not fire-and-forget):
 ## Design System
 
 -> **Always reference `.claude/rules/design-system.md`** for all color, spacing, typography, radius, and effect tokens.
--> Figma source: https://www.figma.com/design/BhVLOWG63LckTVCuO3q0Tv/Jot
+-> Figma source: [https://www.figma.com/design/BhVLOWG63LckTVCuO3q0Tv/Jot](https://www.figma.com/design/BhVLOWG63LckTVCuO3q0Tv/Jot)
 -> Extract tokens for **both light and dark** themes. No exceptions.
+-> See the **Design Tokens** section below for the full token reference.
 -> **Always use the official Figma MCP plugin (`claude.ai Figma`) as the primary Figma tool.** Use `get_design_context`, `get_screenshot`, `get_metadata`, `get_variable_defs`, `search_design_system` for design tokens, component specs, and screenshots.
 
 ---
@@ -265,3 +268,246 @@ Workflows live at `.github/workflows/` -- this is a GitHub requirement and canno
 
 - `claude-code-review.yml` -- PR review bot
 - `claude.yml` -- responds to `@claude` mentions in issues/PRs
+
+---
+
+## Build & Launch
+
+```bash
+# Build
+xcodebuild -project Jot.xcodeproj -scheme Jot -configuration Debug build -allowProvisioningUpdates
+
+# Test
+xcodebuild -project Jot.xcodeproj -scheme Jot -destination 'platform=macOS' test
+
+# Test specific suite
+xcodebuild -project Jot.xcodeproj -scheme Jot -destination 'platform=macOS' \
+  -only-testing:JotTests/SpecificTests test -allowProvisioningUpdates
+```
+
+Check for compile errors before finalizing any implementation.
+
+**Do not relaunch the app after building.** The user handles relaunching via the in-app updates panel.
+
+---
+
+## Git Conventions
+
+- Feature branch per batch: `feature/batch-N-description`
+- Linear issues: DES-XXX series, updated to In Progress at start, Done at merge
+- CI: `claude-code-review.yml` (PR review bot), `claude.yml` (responds to @claude mentions)
+- Delete completed PRP files in cleanup step of each batch
+
+---
+
+## Screenshot Capture
+
+Only when explicitly requested. Never launch a new window.
+
+```bash
+WINDOW_ID=$(swift -e '
+import CoreGraphics
+let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as! [[String: Any]]
+for w in windows {
+    if (w["kCGWindowOwnerName"] as? String ?? "").contains("Jot") {
+        if let id = w["kCGWindowNumber"] as? Int { print(id); break }
+    }
+}
+')
+screencapture -l $WINDOW_ID /tmp/jot_window.png
+```
+
+Analyze against: alignment, spacing, sizing from design tokens, light/dark mode, Liquid Glass rendering, typography hierarchy, edge cases.
+
+---
+
+## Rich Text Serialization Format
+
+Reference (for `TodoRichTextEditor`):
+
+- `[[b]]...[[/b]]`, `[[i]]...[[/i]]`, `[[u]]...[[/u]]`, `[[s]]...[[/s]]` -- inline formatting
+- `[[h1]]...[[/h1]]`, `[[h2]]`, `[[h3]]` -- headings
+- `[[align:center/right/justify]]...[[/align]]` -- alignment
+- `[[color|hex]]...[[/color]]` -- custom color
+- `[x]` / `[ ]` -- todo checkboxes
+- `[[image|||filename]]`, `[[webclip|title|desc|url]]`, `[[file|...]]`, `[[link|...]]` -- attachments
+
+Nesting order: align > heading/bold/italic > underline > strikethrough > color
+
+---
+
+## Figma Source
+
+- Jot design file (always reference this):
+  [https://www.figma.com/design/BhVLOWG63LckTVCuO3q0Tv/Jot?node-id=0-1&p=f&t=Exr6XkLRSkF2tndZ-0](https://www.figma.com/design/BhVLOWG63LckTVCuO3q0Tv/Jot?node-id=0-1&p=f&t=Exr6XkLRSkF2tndZ-0)
+
+Suggested uses:
+
+- Verify tokens (colors, typography) before changing assets.
+- Align component specs (spacing, radii, effects) with the selected frame.
+- Use as the single source of truth for light/dark variants and Liquid Glass behavior.
+
+---
+
+## Design Tokens
+
+Single source of truth for design tokens. Extracted from Figma and xcassets.
+
+### Color Tokens
+
+All semantic colors live in `Jot/Ressources/Assets.xcassets/`. Reference by name in SwiftUI (`Color("TokenName")`). Always support both light and dark.
+
+| Token                          | Light                              | Dark                               |
+| ------------------------------ | ---------------------------------- | ---------------------------------- |
+| `AccentColor`                  | `#2563EB`                          | `#608DFA`                          |
+| `MainColor`                    | `#1A1A1A` (= ButtonPrimaryBgColor) | `#FFFFFF` (= ButtonPrimaryBgColor) |
+| `BackgroundColor`              | `#FFFFFF5C` (36% white)            | `#0C0A0908` (3% near-black)        |
+| `BlockContainerColor`          | `#D6D3D1` (stone-300)              | `#292524` (stone-800)              |
+| `BorderSubtleColor`            | `#1A1A1A17` (9% black)             | `#FFFFFF17` (9% white)             |
+| `ButtonPrimaryBgColor`         | `#1A1A1A`                          | `#FFFFFF`                          |
+| `ButtonPrimaryTextColor`       | `#FFFFFF`                          | `#1A1A1A`                          |
+| `ButtonSecondaryBgColor`       | `#D6D3D1` (stone-300)              | `#292524` (stone-800)              |
+| `CardBackgroundColor`          | `#FFFFFFB3` (70% white)            | `#1C1918B3` (70% dark)             |
+| `FolderBadgeBgColor`           | `#FFFFFF5C` (36% white)            | `#FFFFFF1F` (12% white)            |
+| `HoverBackgroundColor`         | `#D1D3D0`                          | `#444040`                          |
+| `IconSecondaryColor`           | `#1A1A1AB3` (70% black)            | `#A8A29E`                          |
+| `MenuButtonColor`              | `#1A1A1AB3` (70% black)            | `#FFFFFFB3` (70% white)            |
+| `PinnedBgColor`                | `#FEF08A` (amber)                  | `#854D0E` (amber-dark)             |
+| `PinnedIconColor`              | `#854D0E`                          | `#FEEF8A`                          |
+| `PrimaryTextColor`             | `#1A1A1A`                          | `#FFFFFF`                          |
+| `SearchInputBackgroundColor`   | `#FFFFFF`                          | `#1C1918`                          |
+| `SecondaryBackgroundColor`     | `#E7E6E4`                          | `#292524`                          |
+| `SecondaryTextColor`           | `#1A1A1AB3` (70% black)            | `#FFFFFFB3` (70% white)            |
+| `SettingsActiveTabColor`       | `#F5F4F4`                          | `#444040`                          |
+| `SettingsIconSecondaryColor`   | `#1A1A1AB3`                        | `#A8A29E`                          |
+| `SettingsOptionCardColor`      | `#E7E6E4`                          | `#0C0A09`                          |
+| `SettingsPanelPrimaryColor`    | `#FFFFFF5C` (36% white)            | `#1A1A1ACC` (80% black)            |
+| `SettingsPlaceholderTextColor` | `#1A1A1AB3`                        | `#FFFFFFB2`                        |
+| `SettingsPrimaryTextColor`     | `#1A1A1A`                          | `#FFFFFF`                          |
+| `SurfaceDefaultColor`          | `#FFFFFF`                          | `#1C1918`                          |
+| `SurfaceElevatedColor`         | `#F5F4F4`                          | `#292524`                          |
+| `SurfaceTranslucentColor`      | `#1A1A1A0F` (6% black)             | `#FFFFFF0F` (6% white)             |
+| `TagBackgroundColor`           | `#608DFA59` (35% accent)           | `#608DFA40` (25% accent)           |
+| `TagTextColor`                 | `#1A1A1A`                          | `#FFFFFF`                          |
+| `TertiaryTextColor`            | `#52525B`                          | `#A19FA9`                          |
+
+#### Primitive Colors (Figma Variables)
+
+```
+blue/500     #3B82F6
+red/500      #EF4444
+icon/blue    #3B82F6
+```
+
+### Typography
+
+All type uses **SF Pro**. Weights: Regular=400, Medium=500, SemiBold=600, Bold=700.
+
+#### Figma Type Scale
+
+| Style      | Size | Line Height | Tracking | Weights Available |
+| ---------- | ---- | ----------- | -------- | ----------------- |
+| Heading/H4 | 20   | 24          | -0.20    | Medium            |
+| Label-2    | 15   | 18          | -0.50    | Medium            |
+| Label-3    | 13   | 16          | -0.40    | Medium            |
+| Label-4    | 12   | 14          | -0.30    | Medium, SemiBold  |
+| Label-5    | 11   | 14          | -0.20    | Medium            |
+| Tiny       | 10   | 12          | 0        | Medium, SemiBold  |
+| Micro      | 9    | 10          | 0        | SemiBold, Bold    |
+
+#### FontManager API (code-level)
+
+Three font families: **Charter** (serif body), **SF Pro** (headings/UI), **SF Mono** (metadata/code).
+
+| Method       | SwiftUI                          | Size | Weight  | Notes                           |
+| ------------ | -------------------------------- | ---- | ------- | ------------------------------- |
+| `body()`     | `Font.custom("Charter", size:)`  | 16   | Regular | Follows `bodyFontStyle` setting |
+| `heading()`  | `Font.system(size:, weight:)`    | 24   | Medium  | Respects `bodyFontStyle`        |
+| `metadata()` | `Font.system(monospaced, size:)` | 12   | Medium  | Timestamps, dates               |
+| `icon()`     | `Font.system(size:)`             | 20   | Regular | SF Symbols                      |
+
+Body font style is user-configurable: `default` (Charter), `system` (SF Pro), `mono` (SF Mono).
+Line spacing presets: Compact (1.0x), Default (1.2x), Relaxed (1.5x) -- stored in `ThemeManager.lineSpacing`.
+
+### Spacing Scale
+
+Figma token name -> pt value:
+
+| Token  | Value |
+| ------ | ----- |
+| `zero` | 0     |
+| `xxs`  | 2     |
+| `xs2`  | 4     |
+| `xs`   | 8     |
+| `sm`   | 12    |
+| `base` | 16    |
+| `xl2`  | 32    |
+| `xl4`  | 48    |
+| `xl5`  | 60    |
+
+Canonical padding values in use: `4, 6, 8, 12, 16, 18, 24, 60`
+
+### Corner Radius Scale
+
+| Token  | Value         |
+| ------ | ------------- |
+| `none` | 0             |
+| `lg`   | 8             |
+| `xl`   | 12            |
+| `2xl`  | 16            |
+| `md`   | 20            |
+| `3xl`  | 24            |
+| `full` | 999 (capsule) |
+
+Canonical radius values in use: `4, 20, 24, Capsule`
+
+### Effects
+
+| Token          | Value                     |
+| -------------- | ------------------------- |
+| `bg-blur/tags` | Background blur, radius 4 |
+
+### Animations & Timing
+
+All in `Extensions.swift`:
+
+| Animation         | Response | Damping | Duration | Usage                              |
+| ----------------- | -------- | ------- | -------- | ---------------------------------- |
+| **jotSpring**     | 0.35s    | 0.82    | -        | Spring response for natural motion |
+| **jotBounce**     | -        | -       | 0.3s     | Bouncy easing                      |
+| **jotSmoothFast** | -        | -       | 0.2s     | Fast linear transitions            |
+| **jotHover**      | 0.25s    | 0.75    | -        | Hover state animations (subtle)    |
+| **jotDragSnap**   | 0.18s    | 0.9     | -        | Drag-release snap-to-grid effect   |
+
+### Liquid Glass Tokens (iOS 26+ / macOS 26+)
+
+Glass behavior is governed by native `.glassEffect()`. Not a color token -- a modifier.
+
+```swift
+// Standard
+.glassEffect()
+
+// Custom shape
+.glassEffect(.thin, in: RoundedRectangle(cornerRadius: 20))
+
+// Interactive
+.glassEffect(.regular.interactive(true))
+
+// Coordinated morphing
+.glassEffectID("toolbar", in: namespace)
+```
+
+**Rules:**
+
+- Apply to floating elements only (toolbars, cards, overlays)
+- Never stack glass on glass -- use `.implicit` display mode
+- Avoid in scrollable content
+- Use `.bouncy` / `.smooth` spring animations for state changes
+
+### Asset Catalog Locations
+
+| Content         | Path                              |
+| --------------- | --------------------------------- |
+| Semantic colors | `Jot/Ressources/Assets.xcassets/` |
+| Icons & images  | `Jot/Assets.xcassets/`            |
+| SVG icons       | `Jot/` (root-level .svg files)    |
