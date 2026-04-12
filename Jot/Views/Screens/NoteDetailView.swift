@@ -104,6 +104,11 @@ struct NoteDetailView: View {
   // The local meetingRecordingState, meetingAudioRecorder, meetingTranscriptionService
   // have been removed to avoid duplicate instances. The manager handles persistence.
   @State var showMeetingPanel: Bool = false
+  /// Drives the floating meeting panel's entrance/exit motion. SwiftUI's `.transition`
+  /// on this overlay often does not run when `MeetingRecorderManager` publishes many
+  /// `@Published` updates in the same turn as `showMeetingPanel` flips, so we animate
+  /// scale/offset/opacity explicitly instead of relying on `AnyTransition` alone.
+  @State var meetingPanelEntranceRevealed: Bool = false
 
   // Persisted meeting data (loaded from note, updated on save)
   @State var savedIsMeetingNote: Bool = false
@@ -651,10 +656,18 @@ struct NoteDetailView: View {
         // Restore meeting data for new note
         savedIsMeetingNote = note.isMeetingNote
         savedMeetingSessions = note.meetingSessions
-        // Auto-show the meeting panel if returning to the note with active recording
-        showMeetingPanel =
+        // Sync floating meeting panel to whether this note owns the active session.
+        // Always use the same curves as start/dismiss so switching notes does not snap the panel.
+        let shouldShowMeetingPanel =
           meetingRecorderManager.recordingNoteID == note.id
           && meetingRecorderManager.recordingState != .idle
+        if shouldShowMeetingPanel {
+          showMeetingPanel = true
+        } else {
+          withAnimation(.jotMeetingPanelDismiss) {
+            showMeetingPanel = false
+          }
+        }
         isPlacingSticker = false
         selectedStickerID = nil
         showVoiceRecorderOverlay = false
@@ -982,7 +995,7 @@ struct NoteDetailView: View {
 
   @ViewBuilder
   private var meetingNotesFloatingOverlay: some View {
-    Group {
+    ZStack {
       if showMeetingPanel {
         VStack {
           Spacer()
@@ -1004,11 +1017,31 @@ struct NoteDetailView: View {
           .padding(.bottom, 52)
         }
         .frame(maxWidth: .infinity)
-        .transition(.meetingNotesFloatingPanel)
+        // Mirrors `MeetingNotesFloatingPanelTransitionModifier` phases so motion matches
+        // the design (rise from below, scale from bottom) without relying on insertion
+        // transitions that were being skipped in this overlay chain.
+        .scaleEffect(meetingPanelEntranceRevealed ? 1 : 0.91, anchor: .bottom)
+        .offset(y: meetingPanelEntranceRevealed ? 0 : 48)
+        .opacity(meetingPanelEntranceRevealed ? 1 : 0)
         .zIndex(160)
       }
     }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
     .allowsHitTesting(showMeetingPanel)
+    .onChange(of: showMeetingPanel) { _, new in
+      if new {
+        // One frame at the "offscreen" pose, then animate on the next run loop so the
+        // transaction is not merged with `MeetingRecorderManager` bulk updates.
+        meetingPanelEntranceRevealed = false
+        DispatchQueue.main.async {
+          withAnimation(.jotMeetingPanelPresent) {
+            meetingPanelEntranceRevealed = true
+          }
+        }
+      } else {
+        meetingPanelEntranceRevealed = false
+      }
+    }
   }
 
   @ViewBuilder

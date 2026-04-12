@@ -540,10 +540,15 @@ extension NoteDetailView {
 
     @MainActor
     func startMeetingRecording() {
-        // Delegate to shared manager so the session persists when switching notes
+        // Delegate to shared manager so the session persists when switching notes.
+        // Defer showing the panel to the next run loop so `MeetingRecorderManager`'s
+        // synchronous `@Published` writes are not in the same transaction as the
+        // panel visibility toggle (which prevented `.transition` / overlay animations).
         meetingRecorderManager.startRecording(for: note.id)
-
-        withAnimation(.jotMeetingPanelPresent) {
+        DispatchQueue.main.async {
+            guard meetingRecorderManager.recordingNoteID == note.id,
+                meetingRecorderManager.recordingState != .idle
+            else { return }
             showMeetingPanel = true
         }
     }
@@ -610,9 +615,13 @@ extension NoteDetailView {
 
     @MainActor
     func dismissMeetingPanel() {
-        meetingRecorderManager.dismiss()
-
+        // Animate the same motion as removal in `MeetingNotesPanelTransition`, then
+        // tear down manager state after the dismiss curve finishes.
         withAnimation(.jotMeetingPanelDismiss) {
+            meetingPanelEntranceRevealed = false
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.28) {
+            meetingRecorderManager.dismiss()
             showMeetingPanel = false
         }
     }
