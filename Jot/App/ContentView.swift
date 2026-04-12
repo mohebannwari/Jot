@@ -5810,7 +5810,11 @@ private struct FloatingPanelTransitionModifier: ViewModifier {
 }
 
 #Preview {
-    ContentView()
-        .environmentObject(try! SimpleSwiftDataManager())
-        .environmentObject(ThemeManager())
+    Group {
+        if let previewStore = try? SimpleSwiftDataManager(inMemoryForTesting: true) {
+            ContentView()
+                .environmentObject(previewStore)
+                .environmentObject(ThemeManager())
+        }
+    }
 }

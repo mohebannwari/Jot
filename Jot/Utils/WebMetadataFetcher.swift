@@ -25,15 +25,33 @@ class WebMetadataFetcher: ObservableObject {
 
     private var activeFetchTask: Task<Void, Never>?
 
+    /// Remote fetches and WKWebView loads are limited to HTTP(S) so note content
+    /// cannot trigger loads of non-web URL schemes.
+    private nonisolated static func isAllowedRemoteURL(_ url: URL) -> Bool {
+        guard let scheme = url.scheme?.lowercased() else { return false }
+        return scheme == "http" || scheme == "https"
+    }
+
     func fetchMetadata(from urlString: String, completion: @escaping (WebMetadata) -> Void) {
         guard let url = URL(string: urlString) else {
             let domain = urlString.replacingOccurrences(of: "https://", with: "").replacingOccurrences(of: "http://", with: "")
             completion(WebMetadata(title: "Invalid URL", description: "Could not load website", domain: domain, url: urlString))
             return
         }
-        
+
         let domain = url.host ?? urlString
-        
+
+        guard Self.isAllowedRemoteURL(url) else {
+            completion(
+                WebMetadata(
+                    title: "Unsupported link",
+                    description: "Only HTTP and HTTPS pages can be previewed.",
+                    domain: domain,
+                    url: urlString
+                ))
+            return
+        }
+
         // Fetch metadata + generate a visual preview (snapshot) of the page
         activeFetchTask?.cancel()
         activeFetchTask = Task {
@@ -67,6 +85,9 @@ class WebMetadataFetcher: ObservableObject {
     }
     
     private func fetchBasicMetadata(from url: URL) async throws -> (title: String, description: String) {
+        guard Self.isAllowedRemoteURL(url) else {
+            throw URLError(.unsupportedURL)
+        }
         let request = URLRequest(url: url, timeoutInterval: 6.0)
         let (data, _) = try await URLSession.shared.data(for: request)
         
@@ -88,6 +109,7 @@ class WebMetadataFetcher: ObservableObject {
 
     // MARK: - WKWebView Snapshot (preferred when possible)
     private func snapshotWithWebView(from url: URL, size: CGSize = CGSize(width: 800, height: 520), timeout: TimeInterval = 8) async -> NSImage? {
+        guard Self.isAllowedRemoteURL(url) else { return nil }
         await MainActor.run(body: {}) // ensure MainActor
         return await withCheckedContinuation { continuation in
             let config = WKWebViewConfiguration()
@@ -218,6 +240,7 @@ class WebMetadataFetcher: ObservableObject {
     
     private func fetchFavicon(from urlString: String) async -> NSImage? {
         guard let url = URL(string: urlString),
+              Self.isAllowedRemoteURL(url),
               let host = url.host else { return nil }
         
         let faviconURLs = [

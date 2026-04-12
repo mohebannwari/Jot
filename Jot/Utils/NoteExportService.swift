@@ -220,11 +220,11 @@ final class NoteExportService {
         case .pdf:
             return await generatePreviewImage(for: note)
         case .markdown:
-            return await generateTextPreviewImage(buildMarkdownString(notes: [note]))
+            return generateTextPreviewImage(buildMarkdownString(notes: [note]))
         case .html:
-            return await generateTextPreviewImage(buildHTMLString(notes: [note], title: note.title))
+            return generateTextPreviewImage(buildHTMLString(notes: [note], title: note.title))
         case .plainText:
-            return await generateTextPreviewImage(buildPlainTextString(notes: [note]))
+            return generateTextPreviewImage(buildPlainTextString(notes: [note]))
         }
     }
 

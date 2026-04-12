@@ -22,7 +22,6 @@
 //
 
 import AppKit
-import CoreGraphics
 import SpriteKit
 
 @MainActor
@@ -44,13 +43,20 @@ enum GenieDismiss {
         completion: @escaping @MainActor () -> Void
     ) {
         guard let contentView = panel.contentView,
-              let screen = panel.screen ?? NSScreen.main,
-              let snapshot = windowSnapshot(of: panel) ?? snapshotImage(of: contentView)
-        else {
+              let screen = panel.screen ?? NSScreen.main else {
             panel.orderOut(nil)
             completion()
             return
         }
+
+        Task { @MainActor in
+            guard let snapshot = await PanelCompositorSnapshot.capture(
+                panel: panel, contentView: contentView)
+            else {
+                panel.orderOut(nil)
+                completion()
+                return
+            }
 
         let panelFrame = panel.frame
         let screenFrame = screen.frame
@@ -201,51 +207,7 @@ enum GenieDismiss {
                 }
             }
         }
-    }
-
-    // MARK: - Snapshot
-
-    /// Captures what the window server is actually drawing for `panel` —
-    /// including the Liquid Glass material, which lives in the window
-    /// server's compositor, not in the view's backing store. A plain
-    /// `cacheDisplay(in:to:)` on the contentView misses the glass pillow and
-    /// produces a flat transparent snapshot with only the text visible.
-    /// `CGWindowListCreateImage` goes through the window server so what you
-    /// see is what you get.
-    ///
-    /// Returns `nil` on failure; `run` falls back to the view-cache path.
-    private static func windowSnapshot(of panel: NSPanel) -> NSImage? {
-        let windowID = CGWindowID(panel.windowNumber)
-        guard windowID != 0 else { return nil }
-        guard let cgImage = CGWindowListCreateImage(
-            .null,                       // let the system use the window's own bounds
-            .optionIncludingWindow,
-            windowID,
-            [.boundsIgnoreFraming, .bestResolution]
-        ) else {
-            return nil
         }
-        // Size the NSImage to the panel's contentView bounds so the texture
-        // we hand SpriteKit has the same point-space dimensions the sprite
-        // node will use — avoids Retina double-scale in the warp grid.
-        let size = panel.contentView?.bounds.size
-            ?? NSSize(width: CGFloat(cgImage.width), height: CGFloat(cgImage.height))
-        return NSImage(cgImage: cgImage, size: size)
-    }
-
-    /// Fallback: renders `view` into an NSImage via the layer-backed
-    /// cacheDisplay path. Used only if `windowSnapshot` fails (e.g., the
-    /// window has no windowNumber yet). Will miss Liquid Glass material.
-    private static func snapshotImage(of view: NSView) -> NSImage? {
-        let bounds = view.bounds
-        guard bounds.width > 0, bounds.height > 0 else { return nil }
-        guard let rep = view.bitmapImageRepForCachingDisplay(in: bounds) else {
-            return nil
-        }
-        view.cacheDisplay(in: bounds, to: rep)
-        let image = NSImage(size: bounds.size)
-        image.addRepresentation(rep)
-        return image
     }
 
     // MARK: - Warp geometry

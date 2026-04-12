@@ -97,7 +97,7 @@ struct SettingsPage: View {
     }
 
     private enum FeedbackState {
-        case idle, sent
+        case idle, sent, sendFailed
     }
 
     private enum SettingsTab: CaseIterable {
@@ -1176,7 +1176,7 @@ struct SettingsPage: View {
                         feedbackTypePill(type)
                     }
                 }
-                .opacity(feedbackState == .sent ? 0 : 1)
+                .opacity((feedbackState == .sent || feedbackState == .sendFailed) ? 0 : 1)
 
                 Spacer()
 
@@ -1192,7 +1192,26 @@ struct SettingsPage: View {
 
     @ViewBuilder
     private var sendButton: some View {
-        if feedbackState == .sent {
+        if feedbackState == .sendFailed {
+            Button {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                    feedbackState = .idle
+                }
+            } label: {
+                Text("Could not send — tap to try again")
+                    .font(FontManager.heading(size: 13, weight: .medium))
+                    .tracking(-0.2)
+                    .foregroundColor(Color("ButtonPrimaryTextColor"))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(
+                        Capsule()
+                            .fill(Color("SettingsSelectionOrange"))
+                    )
+            }
+            .buttonStyle(.plain)
+            .macPointingHandCursor()
+        } else if feedbackState == .sent {
             HStack(spacing: 5) {
                 Image("IconCelebrate")
                     .renderingMode(.template)
@@ -1261,31 +1280,42 @@ struct SettingsPage: View {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try? JSONSerialization.data(withJSONObject: payload)
 
-        URLSession.shared.dataTask(with: request).resume()
+        URLSession.shared.dataTask(with: request) { _, response, error in
+            Task { @MainActor in
+                let http = response as? HTTPURLResponse
+                let ok = error == nil && http.map { (200..<300).contains($0.statusCode) } == true
+                guard ok else {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        feedbackState = .sendFailed
+                    }
+                    return
+                }
 
-        celebrateScale = 0
-        celebrateRotation = 0
-
-        withAnimation(.spring(response: 0.45, dampingFraction: 0.7)) {
-            feedbackState = .sent
-        }
-
-        withAnimation(.spring(response: 0.5, dampingFraction: 0.5).delay(0.15)) {
-            celebrateScale = 1.0
-            celebrateRotation = -15
-        }
-
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.6).delay(0.45)) {
-            celebrateRotation = 0
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                feedbackState = .idle
-                feedbackText = ""
                 celebrateScale = 0
+                celebrateRotation = 0
+
+                withAnimation(.spring(response: 0.45, dampingFraction: 0.7)) {
+                    feedbackState = .sent
+                }
+
+                withAnimation(.spring(response: 0.5, dampingFraction: 0.5).delay(0.15)) {
+                    celebrateScale = 1.0
+                    celebrateRotation = -15
+                }
+
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.6).delay(0.45)) {
+                    celebrateRotation = 0
+                }
+
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                        feedbackState = .idle
+                        feedbackText = ""
+                        celebrateScale = 0
+                    }
+                }
             }
-        }
+        }.resume()
     }
 
     // MARK: - Helpers

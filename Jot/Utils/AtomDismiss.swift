@@ -21,8 +21,8 @@
 //  the visual we were getting when AtomDissolveContainer tried to snapshot
 //  the panel's content directly.
 //
-//  The escape hatch is the same one GenieDismiss uses: CGWindowListCreateImage
-//  goes through the window server, so it captures the actual composed pixels
+//  The escape hatch matches GenieDismiss: ScreenCaptureKit captures compositor
+//  pixels (with a cacheDisplay fallback), so we get real composed pixels
 //  — including Liquid Glass material, NSTextView text, focus rings, and
 //  everything else that lives in the compositor rather than a view backing
 //  store. We feed that snapshot into AtomDissolveContainer as an `Image`
@@ -31,7 +31,6 @@
 //
 
 import AppKit
-import CoreGraphics
 import SwiftUI
 
 @MainActor
@@ -61,13 +60,20 @@ enum AtomDismiss {
         completion: @escaping @MainActor () -> Void
     ) {
         guard let contentView = panel.contentView,
-              let screen = panel.screen ?? NSScreen.main,
-              let snapshot = windowSnapshot(of: panel)
-        else {
+              let screen = panel.screen ?? NSScreen.main else {
             panel.orderOut(nil)
             completion()
             return
         }
+
+        Task { @MainActor in
+            guard let snapshot = await PanelCompositorSnapshot.capture(
+                panel: panel, contentView: contentView)
+            else {
+                panel.orderOut(nil)
+                completion()
+                return
+            }
 
         let panelFrame = panel.frame
         let screenFrame = screen.frame
@@ -135,33 +141,7 @@ enum AtomDismiss {
             panel.alphaValue = 1.0
             carrier.alphaValue = 1.0
         }
-    }
-
-    // MARK: - Snapshot
-
-    /// Captures what the window server is actually drawing for `panel` —
-    /// including Liquid Glass material and NSTextView content, which are
-    /// composited at the window-server level and are NOT in the view's
-    /// backing store. This is the same reason GenieDismiss uses
-    /// CGWindowListCreateImage; cacheDisplay and ImageRenderer both miss
-    /// this content and would produce a placeholder here.
-    private static func windowSnapshot(of panel: NSPanel) -> NSImage? {
-        let windowID = CGWindowID(panel.windowNumber)
-        guard windowID != 0 else { return nil }
-        guard let cgImage = CGWindowListCreateImage(
-            .null,
-            .optionIncludingWindow,
-            windowID,
-            [.boundsIgnoreFraming, .bestResolution]
-        ) else {
-            return nil
         }
-        // Size the NSImage to the panel's contentView bounds so the
-        // downstream AtomDissolveContainer operates in point space rather
-        // than Retina pixel space.
-        let size = panel.contentView?.bounds.size
-            ?? NSSize(width: CGFloat(cgImage.width), height: CGFloat(cgImage.height))
-        return NSImage(cgImage: cgImage, size: size)
     }
 }
 

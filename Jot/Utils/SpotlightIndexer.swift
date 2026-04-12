@@ -64,9 +64,13 @@ final class SpotlightIndexer {
             .filter { !$0.isDeleted && !$0.isArchived }
             .map { buildSearchableItem(for: $0) }
 
-        // Index on background -- CoreSpotlight upserts by uniqueIdentifier
+        // Index on background using the completion-handler API (async overload).
         Task.detached(priority: .utility) {
-            CSSearchableIndex.default().indexSearchableItems(items)
+            await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+                CSSearchableIndex.default().indexSearchableItems(items) { _ in
+                    cont.resume()
+                }
+            }
         }
     }
 }

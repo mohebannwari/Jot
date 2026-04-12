@@ -134,9 +134,14 @@ final class BuildWatcherManager: ObservableObject {
         // survives our termination.
         // Brief delay for SwiftData WAL flush before exit.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            // Pass the bundle path through the environment so the shell script
+            // never interpolates a user-influenced path into `-c` (quotes in path).
             let task = Process()
             task.executableURL = URL(fileURLWithPath: "/bin/sh")
-            task.arguments = ["-c", "sleep 0.5 && open \"\(appPath)\""]
+            var env = ProcessInfo.processInfo.environment
+            env["JOT_REOPEN_BUNDLE_PATH"] = appPath
+            task.environment = env
+            task.arguments = ["-c", "sleep 0.5 && exec /usr/bin/open \"$JOT_REOPEN_BUNDLE_PATH\""]
             try? task.run()
 
             exit(0)

@@ -3015,9 +3015,10 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             let codePasteDismissObserver = NotificationCenter.default.addObserver(
                 forName: .codePasteDismiss, object: nil, queue: .main
             ) { [weak self] notification in
-                let range = (notification.object as? [String: Any])?["range"] as? NSValue
+                let rangeValue = (notification.object as? [String: Any])?["range"] as? NSValue
+                let rangeToClear: NSRange? = rangeValue.map { $0.rangeValue }
                 Task { @MainActor [weak self] in
-                    if let r = range?.rangeValue { self?.clearCodePasteHighlight(range: r) }
+                    if let r = rangeToClear { self?.clearCodePasteHighlight(range: r) }
                 }
             }
 
@@ -3245,16 +3246,21 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             ) { [weak self] notification in
                 if let nid = notification.userInfo?["editorInstanceID"] as? UUID,
                    let myID = self?.editorInstanceID, nid != myID { return }
+                let isCommandMenuShowing = notification.userInfo?["isCommandMenuShowing"] as? Bool
+                let commandSlashLocation = notification.userInfo?["commandSlashLocation"] as? Int
+                let isURLPasteMenuShowing = notification.userInfo?["isURLPasteMenuShowing"] as? Bool
+                let isCodePasteMenuShowing = notification.userInfo?["isCodePasteMenuShowing"] as? Bool
+                let isNotePickerShowing = notification.userInfo?["isNotePickerShowing"] as? Bool
+                let notePickerAtLocation = notification.userInfo?["notePickerAtLocation"] as? Int
                 Task { @MainActor [weak self] in
                     guard let self = self,
                           let textView = self.textView as? InlineNSTextView else { return }
-                    let info = notification.userInfo
-                    if let v = info?["isCommandMenuShowing"] as? Bool { textView.isCommandMenuShowing = v }
-                    if let v = info?["commandSlashLocation"] as? Int { textView.commandSlashLocation = v }
-                    if let v = info?["isURLPasteMenuShowing"] as? Bool { textView.isURLPasteMenuShowing = v }
-                    if let v = info?["isCodePasteMenuShowing"] as? Bool { textView.isCodePasteMenuShowing = v }
-                    if let v = info?["isNotePickerShowing"] as? Bool { textView.isNotePickerShowing = v }
-                    if let v = info?["notePickerAtLocation"] as? Int { textView.notePickerAtLocation = v }
+                    if let v = isCommandMenuShowing { textView.isCommandMenuShowing = v }
+                    if let v = commandSlashLocation { textView.commandSlashLocation = v }
+                    if let v = isURLPasteMenuShowing { textView.isURLPasteMenuShowing = v }
+                    if let v = isCodePasteMenuShowing { textView.isCodePasteMenuShowing = v }
+                    if let v = isNotePickerShowing { textView.isNotePickerShowing = v }
+                    if let v = notePickerAtLocation { textView.notePickerAtLocation = v }
                 }
             }
 
@@ -4928,7 +4934,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                             || value is NoteCardSectionAttachment
                             || value is NoteDividerAttachment
                             || value is NoteLinkCardAttachment
-                            || (value is NoteFileAttachment && (value as! NoteFileAttachment).viewMode != .tag) {
+                            || ((value as? NoteFileAttachment).map { $0.viewMode != .tag } ?? false) {
                             hasBlockAttachment = true
                             stop.pointee = true
                         }
@@ -5912,7 +5918,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         }
 
         private func insertTextAtCursor(_ text: String) {
-            guard let textView = textView else { return }
+            guard textView != nil else { return }
             // Preserve intentional leading/trailing whitespace from AI output;
             // only skip completely blank text
             guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
@@ -6408,7 +6414,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         }
 
         private func syncText(editedRange: NSRange? = nil) {
-            guard let textView = textView, !readOnly else { return }
+            guard textView != nil, !readOnly else { return }
             isUpdating = true
             styleTodoParagraphs(editedRange: editedRange)
             isUpdating = false
@@ -6418,7 +6424,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             // binding update is deferred.
             serializeWorkItem?.cancel()
             let workItem = DispatchWorkItem { [weak self] in
-                guard let self, let _ = self.textView else { return }
+                guard let self, self.textView != nil else { return }
                 let serialized = self.serialize()
                 if serialized != self.lastSerialized {
                     self.lastSerialized = serialized
@@ -7997,7 +8003,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                                 || attachment is NoteTabsAttachment
                                 || attachment is NoteCardSectionAttachment
                                 || attachment is NoteLinkCardAttachment
-                                || (attachment is NoteFileAttachment && (attachment as! NoteFileAttachment).viewMode != .tag) {
+                                || ((attachment as? NoteFileAttachment).map { $0.viewMode != .tag } ?? false) {
                             isImageParagraph = true
                             stop.pointee = true
                         }

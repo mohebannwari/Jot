@@ -135,6 +135,20 @@ final class NoteImportService {
         )
     }
 
+    /// Resolves a path relative to `baseDir` and returns nil if the result escapes the
+    /// import folder (e.g. via `../`) after standardization and symlink resolution.
+    private func canonicalFileURLIfUnderBase(relativePath: String, baseDir: URL) -> URL? {
+        let decoded = relativePath.removingPercentEncoding ?? relativePath
+        if decoded.hasPrefix("/") { return nil }
+        let combined = baseDir.appendingPathComponent(decoded)
+        let abs = combined.standardizedFileURL.resolvingSymlinksInPath()
+        let base = baseDir.standardizedFileURL.resolvingSymlinksInPath()
+        let basePath = base.path
+        let absPath = abs.path
+        guard absPath == basePath || absPath.hasPrefix(basePath + "/") else { return nil }
+        return abs
+    }
+
     // MARK: - Converters
 
     private func convertTXT(at url: URL) -> (title: String, content: String)? {
@@ -383,13 +397,14 @@ final class NoteImportService {
             // Images: ![alt](path) — resolve local paths relative to .md dir
             for match in converted.matches(of: /!\[([^\]]*)\]\(([^)]+)\)/).reversed() {
                 let path = String(match.2)
-                let imageURL: URL
+                let imageURL: URL?
                 if let u = URL(string: path), u.scheme != nil {
                     imageURL = u
                 } else {
-                    imageURL = baseDir.appendingPathComponent(path)
+                    imageURL = canonicalFileURLIfUnderBase(relativePath: path, baseDir: baseDir)
                 }
-                if let filename = await ImageStorageManager.shared.saveImage(from: imageURL) {
+                guard let resolvedImageURL = imageURL else { continue }
+                if let filename = await ImageStorageManager.shared.saveImage(from: resolvedImageURL) {
                     converted = converted.replacing(
                         match.0, with: "[[image|||\(filename)]]"
                     )
@@ -399,15 +414,16 @@ final class NoteImportService {
             // CSV file links: [text](path.csv) — inline as table (Notion exports)
             if let csvMatch = converted.firstMatch(of: /\[([^\]]*)\]\(([^)]+\.csv)\)/) {
                 let csvPath = String(csvMatch.2)
-                let csvURL: URL
+                let csvURL: URL?
                 if let u = URL(string: csvPath), u.scheme != nil {
                     csvURL = u
                 } else {
                     let decoded = csvPath.removingPercentEncoding ?? csvPath
-                    csvURL = baseDir.appendingPathComponent(decoded)
+                    csvURL = canonicalFileURLIfUnderBase(relativePath: decoded, baseDir: baseDir)
                 }
-                if FileManager.default.fileExists(atPath: csvURL.path),
-                   let csvText = try? String(contentsOf: csvURL, encoding: .utf8) {
+                if let resolvedCsvURL = csvURL,
+                   FileManager.default.fileExists(atPath: resolvedCsvURL.path),
+                   let csvText = try? String(contentsOf: resolvedCsvURL, encoding: .utf8) {
                     let csvRows = csvText.components(separatedBy: .newlines).filter { !$0.isEmpty }
                     if !csvRows.isEmpty {
                         let parsedRows = csvRows.map { Self.parseCSVRow($0) }

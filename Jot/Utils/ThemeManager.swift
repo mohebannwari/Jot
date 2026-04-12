@@ -131,6 +131,10 @@ final class ThemeManager: ObservableObject {
     static let tintHueKey = "AppTintHue"
     static let tintIntensityKey = "AppTintIntensity"
 
+    /// Duplicated string literals for `nonisolated` UserDefaults reads (must stay equal to keys above).
+    private nonisolated static let tintHueUserDefaultsKey = "AppTintHue"
+    private nonisolated static let tintIntensityUserDefaultsKey = "AppTintIntensity"
+
     static let editorSettingsChangedNotification = Notification.Name("EditorSettingsChanged")
 
     /// Posted whenever tintHue or tintIntensity changes. NSView overlays
@@ -488,13 +492,13 @@ final class ThemeManager: ObservableObject {
     /// Safe to call from any thread and from NSView overlays that don't
     /// have access to an @EnvironmentObject ThemeManager reference.
     nonisolated static func currentTintHue() -> Double {
-        UserDefaults.standard.object(forKey: tintHueKey) as? Double ?? 0.55
+        UserDefaults.standard.object(forKey: tintHueUserDefaultsKey) as? Double ?? 0.55
     }
 
     /// Read the current persisted tint intensity directly from UserDefaults.
     /// See `currentTintHue()` for rationale.
     nonisolated static func currentTintIntensity() -> Double {
-        UserDefaults.standard.object(forKey: tintIntensityKey) as? Double ?? 0.0
+        UserDefaults.standard.object(forKey: tintIntensityUserDefaultsKey) as? Double ?? 0.0
     }
 
     /// NSColor variant of `tintedBlockContainer(for:)` for AppKit overlays

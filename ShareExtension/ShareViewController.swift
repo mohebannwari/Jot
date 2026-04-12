@@ -11,6 +11,13 @@ import UniformTypeIdentifiers
 
 class ShareViewController: NSViewController {
 
+    /// Caps share payloads so the app group JSON cannot grow without bound.
+    private enum SharePayloadLimits {
+        static let maxTextCharacters = 2_000_000
+        static let maxImageBytes = 32 * 1024 * 1024
+        static let maxBase64Characters = 36_000_000
+    }
+
     private var extractedShare: PendingShare?
     private let viewModel = ShareViewModel()
 
@@ -107,9 +114,22 @@ class ShareViewController: NSViewController {
                 return
             }
 
+            guard raw.count <= SharePayloadLimits.maxImageBytes else {
+                DispatchQueue.main.async {
+                    self?.markReady(share: PendingShare(type: .text, title: nil, content: "", imageData: nil, timestamp: Date()))
+                }
+                return
+            }
+
             // Resize if wider than 1200px
             let resized = Self.resizeImageData(raw, maxWidth: 1200)
             let base64 = resized.base64EncodedString()
+            guard base64.count <= SharePayloadLimits.maxBase64Characters else {
+                DispatchQueue.main.async {
+                    self?.markReady(share: PendingShare(type: .text, title: nil, content: "", imageData: nil, timestamp: Date()))
+                }
+                return
+            }
 
             let share = PendingShare(
                 type: .image,
@@ -126,13 +146,19 @@ class ShareViewController: NSViewController {
         attachment.loadItem(forTypeIdentifier: UTType.plainText.identifier) { [weak self] data, _ in
             let share: PendingShare
             if let text = data as? String {
-                let title = String(text.prefix(100)).components(separatedBy: "\n").first ?? "Shared Text"
-                share = PendingShare(type: .text, title: title, content: text, imageData: nil, timestamp: Date())
+                let clipped = Self.clampSharedText(text)
+                let title = String(clipped.prefix(100)).components(separatedBy: "\n").first ?? "Shared Text"
+                share = PendingShare(type: .text, title: title, content: clipped, imageData: nil, timestamp: Date())
             } else {
                 share = PendingShare(type: .text, title: nil, content: "", imageData: nil, timestamp: Date())
             }
             DispatchQueue.main.async { self?.markReady(share: share) }
         }
+    }
+
+    private static func clampSharedText(_ text: String) -> String {
+        guard text.count > SharePayloadLimits.maxTextCharacters else { return text }
+        return String(text.prefix(SharePayloadLimits.maxTextCharacters))
     }
 
     // MARK: - Image Resizing

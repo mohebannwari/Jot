@@ -45,6 +45,10 @@ nonisolated enum PendingShareManager {
         let filename = "\(UUID().uuidString).json"
         let fileURL = directory.appendingPathComponent(filename)
         let data = try JSONEncoder().encode(share)
+        // Second line of defense if the extension ever writes an oversized payload.
+        guard data.count <= 48 * 1024 * 1024 else {
+            throw PendingShareError.payloadTooLarge
+        }
         try data.write(to: fileURL, options: .atomic)
     }
 
@@ -80,11 +84,14 @@ nonisolated enum PendingShareManager {
 
 nonisolated enum PendingShareError: LocalizedError {
     case appGroupUnavailable
+    case payloadTooLarge
 
     var errorDescription: String? {
         switch self {
         case .appGroupUnavailable:
             return "App Group container is not available. Ensure the App Group entitlement is configured."
+        case .payloadTooLarge:
+            return "Shared content is too large to save."
         }
     }
 }

@@ -212,17 +212,21 @@ final class CardSectionOverlayView: NSView {
             guard matchesEditor(n), let self = self, let tv = focusedCardTV() else { return }
             guard let raw = n.userInfo?["tool"] as? String, let tool = EditTool(rawValue: raw) else { return }
             guard !excludedTools.contains(tool) else { return }
-            self.formatter.applyFormatting(to: tv, tool: tool)
-            self.styleCardParagraphs(tv)
-            self.syncCardContent(tv)
+            MainActor.assumeIsolated {
+                self.formatter.applyFormatting(to: tv, tool: tool)
+                self.styleCardParagraphs(tv)
+                self.syncCardContent(tv)
+            }
         })
 
         // 2. Font size
         formattingObservers.append(nc.addObserver(forName: .applyFontSize, object: nil, queue: .main) { [weak self] n in
             guard matchesEditor(n), let self = self, let tv = focusedCardTV() else { return }
             guard let size = n.userInfo?["size"] as? CGFloat else { return }
-            self.formatter.applyFontSize(size, to: tv, range: tv.selectedRange())
-            self.syncCardContent(tv)
+            MainActor.assumeIsolated {
+                self.formatter.applyFontSize(size, to: tv, range: tv.selectedRange())
+                self.syncCardContent(tv)
+            }
         })
 
         // 3. Font family
@@ -230,38 +234,48 @@ final class CardSectionOverlayView: NSView {
             guard matchesEditor(n), let self = self, let tv = focusedCardTV() else { return }
             guard let styleRaw = n.userInfo?["style"] as? String,
                   let style = BodyFontStyle(rawValue: styleRaw) else { return }
-            self.formatter.applyFontFamily(style, to: tv, range: tv.selectedRange())
-            self.syncCardContent(tv)
+            MainActor.assumeIsolated {
+                self.formatter.applyFontFamily(style, to: tv, range: tv.selectedRange())
+                self.syncCardContent(tv)
+            }
         })
 
         // 4. Text color
         formattingObservers.append(nc.addObserver(forName: .applyTextColor, object: nil, queue: .main) { [weak self] n in
             guard matchesEditor(n), let self = self, let tv = focusedCardTV() else { return }
             guard let hex = n.userInfo?["hex"] as? String else { return }
-            self.formatter.applyTextColor(hex: hex, range: tv.selectedRange(), to: tv)
-            self.syncCardContent(tv)
+            MainActor.assumeIsolated {
+                self.formatter.applyTextColor(hex: hex, range: tv.selectedRange(), to: tv)
+                self.syncCardContent(tv)
+            }
         })
 
         // 5. Remove text color
         formattingObservers.append(nc.addObserver(forName: .removeTextColor, object: nil, queue: .main) { [weak self] n in
             guard matchesEditor(n), let self = self, let tv = focusedCardTV() else { return }
-            self.formatter.removeTextColor(range: tv.selectedRange(), from: tv)
-            self.syncCardContent(tv)
+            MainActor.assumeIsolated {
+                self.formatter.removeTextColor(range: tv.selectedRange(), from: tv)
+                self.syncCardContent(tv)
+            }
         })
 
         // 6. Highlight color
         formattingObservers.append(nc.addObserver(forName: .applyHighlightColor, object: nil, queue: .main) { [weak self] n in
             guard matchesEditor(n), let self = self, let tv = focusedCardTV() else { return }
             guard let hex = n.userInfo?["hex"] as? String else { return }
-            self.formatter.applyHighlight(hex: hex, range: tv.selectedRange(), to: tv)
-            self.syncCardContent(tv)
+            MainActor.assumeIsolated {
+                self.formatter.applyHighlight(hex: hex, range: tv.selectedRange(), to: tv)
+                self.syncCardContent(tv)
+            }
         })
 
         // 7. Remove highlight
         formattingObservers.append(nc.addObserver(forName: .removeHighlightColor, object: nil, queue: .main) { [weak self] n in
             guard matchesEditor(n), let self = self, let tv = focusedCardTV() else { return }
-            self.formatter.removeHighlight(range: tv.selectedRange(), from: tv)
-            self.syncCardContent(tv)
+            MainActor.assumeIsolated {
+                self.formatter.removeHighlight(range: tv.selectedRange(), from: tv)
+                self.syncCardContent(tv)
+            }
         })
 
         // 8. Todo toolbar action (dispatched separately from .applyEditTool).
@@ -269,7 +283,9 @@ final class CardSectionOverlayView: NSView {
         // insertTodo's didChangeText() and handles serialization.
         formattingObservers.append(nc.addObserver(forName: .todoToolbarAction, object: nil, queue: .main) { [weak self] n in
             guard matchesEditor(n), let self = self, let tv = focusedCardTV() else { return }
-            self.formatter.applyFormatting(to: tv, tool: .todo)
+            MainActor.assumeIsolated {
+                self.formatter.applyFormatting(to: tv, tool: .todo)
+            }
         })
 
         // 9. AI: capture card selection for edit/translate.

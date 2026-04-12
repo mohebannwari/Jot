@@ -13,10 +13,17 @@ struct WebClipView: View {
     let domain: String
     let url: String?
 
+    /// Only web and mail links open from note content — blocks `file:` and other schemes.
+    private static func isAllowedExternalURL(_ url: URL) -> Bool {
+        guard let scheme = url.scheme?.lowercased() else { return false }
+        return scheme == "http" || scheme == "https" || scheme == "mailto"
+    }
+
     var body: some View {
         Button {
             if let urlString = url ?? URL(string: "https://\(domain)")?.absoluteString,
-                let url = URL(string: urlString)
+                let url = URL(string: urlString),
+                Self.isAllowedExternalURL(url)
             {
                 #if os(macOS)
                     NSWorkspace.shared.open(url)

@@ -10,9 +10,17 @@
 //  2. SF Pro Compact - for headings and note names
 //  3. SF Mono - for metadata like dates and timestamps
 
+import AppKit
+import Foundation
 import SwiftUI
 
-import AppKit
+// File-scope cache: `FontManager` is MainActor-isolated by default, so static storage on the
+// struct cannot be touched from `nonisolated` `bodyNS` / `headingNS` (AppKit layout threads).
+// `nonisolated(unsafe)` opts this pair out of actor isolation; the lock makes access safe.
+// Compiler: NSLock is Sendable so `nonisolated(unsafe)` is redundant on the lock alone; without
+// it, this `let` is main-actor-isolated and cannot be used from `nonisolated` `bodyNS`/`headingNS`.
+private nonisolated(unsafe) let fontManagerNSFontCacheLock = NSLock()
+private nonisolated(unsafe) var fontManagerNSFontCache: [String: NSFont] = [:]
 
 /// Centralized font manager providing consistent typography across the application
 struct FontManager {
@@ -22,11 +30,11 @@ struct FontManager {
 
     // MARK: - Font Cache
 
-    private static var fontCache: [String: NSFont] = [:]
-
     /// Call when body font style changes to clear stale cached fonts.
     static func invalidateFontCache() {
-        fontCache.removeAll()
+        fontManagerNSFontCacheLock.lock()
+        defer { fontManagerNSFontCacheLock.unlock() }
+        fontManagerNSFontCache.removeAll()
     }
 
     nonisolated private static func currentBodyFontStyle(
@@ -56,7 +64,9 @@ struct FontManager {
     /// NSFont version for AppKit components
     nonisolated static func bodyNS(size: CGFloat = 16, weight: Weight = .regular) -> NSFont {
         let key = "body-\(size)-\(weight)"
-        if let cached = fontCache[key] { return cached }
+        fontManagerNSFontCacheLock.lock()
+        defer { fontManagerNSFontCacheLock.unlock() }
+        if let cached = fontManagerNSFontCache[key] { return cached }
         let font: NSFont
         switch currentBodyFontStyle() {
         case .default:
@@ -76,7 +86,7 @@ struct FontManager {
         case .mono:
             font = NSFont.monospacedSystemFont(ofSize: size, weight: weight.toNSWeight())
         }
-        fontCache[key] = font
+        fontManagerNSFontCache[key] = font
         return font
     }
     
@@ -94,7 +104,9 @@ struct FontManager {
     /// with the surrounding text (Charter → Charter bold, Mono → monospaced, System → SF Pro).
     nonisolated static func headingNS(size: CGFloat = 24, weight: Weight = .medium) -> NSFont {
         let key = "heading-\(size)-\(weight)"
-        if let cached = fontCache[key] { return cached }
+        fontManagerNSFontCacheLock.lock()
+        defer { fontManagerNSFontCacheLock.unlock() }
+        if let cached = fontManagerNSFontCache[key] { return cached }
         let font: NSFont
         switch currentBodyFontStyle() {
         case .default:
@@ -111,7 +123,7 @@ struct FontManager {
         case .mono:
             font = NSFont.monospacedSystemFont(ofSize: size, weight: weight.toNSWeight())
         }
-        fontCache[key] = font
+        fontManagerNSFontCache[key] = font
         return font
     }
 

@@ -1,0 +1,21 @@
+# Runs compile + unit tests on macOS (SwiftUI / AppKit targets do not build on Ubuntu).
+name: macOS Xcode Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-test:
+    runs-on: macos-15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build
+        run: xcodebuild -project Jot.xcodeproj -scheme Jot -destination 'platform=macOS' -configuration Debug build CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO
+
+      - name: Test
+        run: xcodebuild -project Jot.xcodeproj -scheme Jot -destination 'platform=macOS' -configuration Debug test CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO
