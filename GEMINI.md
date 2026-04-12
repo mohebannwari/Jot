@@ -16,15 +16,18 @@ iOS 26+ / macOS 26+ note-taking app in SwiftUI with Apple Liquid Glass design sy
 ---
 
 ## Design System
+
 → **Always reference `.claude/rules/design-system.md`** for all color, spacing, typography, radius, and effect tokens.
-→ Figma source: https://www.figma.com/design/BhVLOWG63LckTVCuO3q0Tv/Jot
+→ Figma source: [https://www.figma.com/design/BhVLOWG63LckTVCuO3q0Tv/Jot](https://www.figma.com/design/BhVLOWG63LckTVCuO3q0Tv/Jot)
 → Extract tokens for **both light and dark** themes. No exceptions.
 → Use **Figma MCP tools** (`mcp_figma_get_variable_defs`, `mcp_figma_get_design_context`) before any UI work to ensure precise accuracy.
 
 ---
 
 ## Context Engineering
+
 Before any feature implementation:
+
 1. Write `INITIAL.md` describing the feature.
 2. Formulate a plan in `PRPs/` (following the project's existing PRP structure).
 3. Execute the PRP systematically, validating each step.
@@ -44,25 +47,30 @@ Before any feature implementation:
 ---
 
 ## Build Commands
+
 ```bash
 xcodebuild -project Jot.xcodeproj -scheme Jot -configuration Debug build
 xcodebuild -project Jot.xcodeproj -scheme Jot -destination 'platform=macOS' test
 xcodebuild -project Jot.xcodeproj -scheme Jot clean
 ```
+
 Check for compile errors before finalizing any implementation.
 
 **After every build, kill the running instance and launch the new binary:**
+
 ```bash
 pkill -x Jot 2>/dev/null
 touch ~/Library/Developer/Xcode/DerivedData/Jot-*/Build/Products/Debug/Jot.app
 killall iconservicesagent 2>/dev/null || true
 sleep 1 && open ~/Library/Developer/Xcode/DerivedData/Jot-*/Build/Products/Debug/Jot.app
 ```
-*(Note: Replace `Jot-*` with the actual DerivedData path. This forces macOS to flush the icon cache so the correct icon renders immediately).*
+
+*(Note: Replace `Jot-`* with the actual DerivedData path. This forces macOS to flush the icon cache so the correct icon renders immediately).*
 
 ---
 
 ## Architecture
+
 ```
 Jot/
 ├── App/              # JotApp.swift, ContentView.swift
@@ -75,6 +83,7 @@ Jot/
 ```
 
 **Patterns:**
+
 - State: `@StateObject` / `@EnvironmentObject` (NotesManager, ThemeManager)
 - Persistence: `SimpleSwiftDataManager`
 - View structure: props → computed properties → body
@@ -86,12 +95,15 @@ Jot/
 ---
 
 ## Liquid Glass (iOS 26+ / macOS 26+)
+
 Variants (from the `Glass` type):
+
 - `.regular` — default for toolbars, buttons, navigation (adapts to any content)
 - `.clear` — floating controls over media (photos, maps); needs bold foreground
 - `.identity` — disables glass conditionally (cleaner than if/else branching)
 
 Modifiers (chain on any variant):
+
 - `.tint(color)` — semantic coloring integrated into the glass material
 - `.interactive()` — scaling, bounce, shimmer on press (interactive elements only)
 
@@ -100,6 +112,7 @@ Shapes: `Capsule()` (default), `RoundedRectangle(cornerRadius:)`, `Circle()`, `.
 Morphing: `.glassEffectID(id, in: namespace)` inside `GlassEffectContainer`
 
 Helpers (in `GlassEffects.swift`):
+
 - `liquidGlass(in:)` — standard interactive glass
 - `tintedLiquidGlass(in:tint:)` — glass with native `.tint()` color
 - `thinLiquidGlass(in:)` — plain glass without interactivity
@@ -133,6 +146,7 @@ screencapture -l $WINDOW_ID /tmp/jot_window.png
 ```
 
 When requested, analyze against:
+
 - Alignment, spacing, and sizing from `.claude/rules/design-system.md` tokens
 - Light and dark mode correctness
 - Liquid Glass rendering and layering
@@ -144,22 +158,27 @@ When requested, analyze against:
 ## SVG Icon Rules
 
 ### Asset Catalog — Required Properties
+
 Every `.imageset/Contents.json` **must** include both flags in `properties`:
+
 ```json
 "properties": {
   "template-rendering-intent": "template",
   "preserves-vector-representation": true
 }
 ```
+
 Without `preserves-vector-representation`, Xcode rasterizes SVGs as 1x bitmaps at build time. On Retina displays those bitmaps scale up = blur. **Always verify this when adding new icon assets.**
 
 ### Stroke Weight — Consistency Formula
+
 Icons in the app come from different Figma grid sizes. When displayed at the same frame size in SwiftUI, stroke weights must be normalized so all icons look visually equal weight.
 
 **Target stroke ratio: `1/12` of viewBox size (≈ 0.0833)**
 
+
 | Figma grid | Correct stroke-width | Formula |
-|------------|----------------------|---------|
+| ---------- | -------------------- | ------- |
 | 10 × 10    | 0.833                | 10 ÷ 12 |
 | 12 × 12    | 1.0                  | 12 ÷ 12 |
 | 15 × 15    | 1.25                 | 15 ÷ 12 |
@@ -168,11 +187,13 @@ Icons in the app come from different Figma grid sizes. When displayed at the sam
 | 20 × 20    | 1.667                | 20 ÷ 12 |
 | 24 × 24    | 2.0                  | 24 ÷ 12 |
 
+
 When exporting or editing an SVG, calculate: `stroke-width = viewBox_size ÷ 12`.
 
 Icons that deviate from this ratio will appear thinner or heavier than their siblings when scaled to the same SwiftUI frame. Fix the SVG source, not the frame size.
 
 ### SVG Rotation in SwiftUI
+
 Figma may export SVGs in the wrong orientation. To rotate (e.g., horizontal to vertical):
 `.frame(width: W, height: H).rotationEffect(.degrees(90)).frame(width: H, height: W)`
 First frame renders at native proportions, rotation flips visually, second frame constrains layout space.
@@ -180,7 +201,9 @@ First frame renders at native proportions, rotation flips visually, second frame
 ---
 
 ## Bug Workflow
+
 When a bug is reported, **do not attempt to fix it immediately.** Instead:
+
 1. Write a test that reproduces the bug (the test must fail).
 2. Fix the bug and prove the fix with the now-passing test.
 3. Only declare the bug fixed when the reproduction test passes.
@@ -188,6 +211,7 @@ When a bug is reported, **do not attempt to fix it immediately.** Instead:
 ---
 
 ## Code Rules
+
 - No hardcoded colors, spacing, or radii — use design tokens.
 - Check existing components before creating new ones.
 - Rich text: `AttributedString` + `.richTextCapabilities()`.
@@ -198,6 +222,9 @@ When a bug is reported, **do not attempt to fix it immediately.** Instead:
 ---
 
 ## CI / GitHub Actions
+
 Workflows live at `.github/workflows/` — this is a GitHub requirement and cannot move.
+
 - `claude-code-review.yml` — PR review bot
 - `claude.yml` — responds to AI mentions in issues/PRs
+

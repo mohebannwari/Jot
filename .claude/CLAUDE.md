@@ -1,7 +1,8 @@
 ---
-description:
+
+## description:
+
 alwaysApply: true
----
 
 # Jot -- agent instructions
 
@@ -16,11 +17,8 @@ iOS 26+ / macOS 26+ note-taking app in SwiftUI with Apple Liquid Glass design sy
 These rules are absolute. No exceptions. No rationalizations. No "just this once."
 
 1. **Never guess when debugging.** Every bug -- regardless of how trivial, minor, or "obvious" it seems -- requires root cause investigation before any fix is attempted. Dispatch subagents to research the problem. Read documentation. Check entitlements, plists, build settings, sandbox permissions. The cost of one proper investigation is always less than four wrong guesses. If you catch yourself thinking "let me just try changing X," stop. You are about to waste time.
-
 2. **No log-based debugging.** Do not add `NSLog`, `print()`, `os_log`, or any temporary logging statements to diagnose issues. Logs pollute the codebase, require rebuild-relaunch cycles, and encourage guess-and-check instead of thinking. Use subagents to research the problem, read Apple documentation via Context7/WebSearch, check system configuration (entitlements, plist, sandbox), and reason about the architecture. If you need runtime observation, use Xcode's debugger, not log statements.
-
 3. **No fix without root cause.** Proposing a fix before identifying the root cause is prohibited. "I think it might be X" is not a root cause. A root cause is: "The app sandbox requires `com.apple.security.print` for `NSPrintOperation` to function, and this entitlement is missing from Jot.entitlements." Specificity or silence.
-
 4. **No unsolicited test runs, NSLog, or background monitoring.** Whatever model is selected: do not start test instances of the app or project (dev servers, simulators, preview hosts, or similar) unless the user explicitly asks. Do not add `NSLog` or other logging for diagnostics (rule 2 stands). Do not run or leave background monitoring of builds, processes, logs, or environment state unless the user explicitly requests it.
 
 ---
@@ -56,11 +54,13 @@ Defined in `.claude/rules/workflow.md` (auto-ingested). Covers build commands, l
 
 ### Model Hierarchy
 
+
 | Model      | Role                       | When to use                                                                                                                                                 |
 | ---------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Opus**   | Lead agent (user-selected) | The hardest problems -- deep architecture decisions, ambiguous cross-cutting requirements, designs that need genuine reasoning. User selects Opus manually. |
 | **Opus**   | Default lead agent         | Implementation, planning, multi-file edits, most features.                                                                                                  |
 | **Sonnet** | Fire-and-forget worker     | Single-purpose lookups that have no business in the main context. Spin it and move on.                                                                      |
+
 
 ### Fire & Forget -- Delegation Rules
 
@@ -120,6 +120,7 @@ Before any feature implementation:
 
 **Always invoke the right skill before acting:**
 
+
 | Task                            | Skills                                                                                                      |
 | ------------------------------- | ----------------------------------------------------------------------------------------------------------- |
 | New feature                     | `superpowers:brainstorming` -> `superpowers:writing-plans` -> `superpowers:test-driven-development`         |
@@ -130,6 +131,7 @@ Before any feature implementation:
 | Icons (Web/RN)                  | Always download from Figma via `figma-design` -- never use placeholders unless explicitly told              |
 | Completion                      | `superpowers:verification-before-completion` -> `superpowers:requesting-code-review`                        |
 | Multi-task                      | `superpowers:dispatching-parallel-agents`                                                                   |
+
 
 **MCP / Plugin priority:**
 
@@ -222,12 +224,14 @@ Without `preserves-vector-representation`, Xcode rasterizes SVGs as 1x bitmaps a
 
 Target stroke ratio: `1/12` of viewBox size. Calculate: `stroke-width = viewBox_size / 12`.
 
+
 | Figma grid | Correct stroke-width |
 | ---------- | -------------------- |
 | 10 x 10    | 0.833                |
 | 12 x 12    | 1.0                  |
 | 16 x 16    | 1.333                |
 | 24 x 24    | 2.0                  |
+
 
 Icons that deviate from this ratio will appear thinner or heavier than their siblings when scaled to the same SwiftUI frame. Fix the SVG source, not the frame size.
 
@@ -339,7 +343,7 @@ Nesting order: align > heading/bold/italic > underline > strikethrough > color
 ## Figma Source
 
 - Jot design file (always reference this):
-  [https://www.figma.com/design/BhVLOWG63LckTVCuO3q0Tv/Jot?node-id=0-1&p=f&t=Exr6XkLRSkF2tndZ-0](https://www.figma.com/design/BhVLOWG63LckTVCuO3q0Tv/Jot?node-id=0-1&p=f&t=Exr6XkLRSkF2tndZ-0)
+[https://www.figma.com/design/BhVLOWG63LckTVCuO3q0Tv/Jot?node-id=0-1&p=f&t=Exr6XkLRSkF2tndZ-0](https://www.figma.com/design/BhVLOWG63LckTVCuO3q0Tv/Jot?node-id=0-1&p=f&t=Exr6XkLRSkF2tndZ-0)
 
 Suggested uses:
 
@@ -356,6 +360,7 @@ Single source of truth for design tokens. Extracted from Figma and xcassets.
 ### Color Tokens
 
 All semantic colors live in `Jot/Ressources/Assets.xcassets/`. Reference by name in SwiftUI (`Color("TokenName")`). Always support both light and dark.
+
 
 | Token                          | Light                              | Dark                               |
 | ------------------------------ | ---------------------------------- | ---------------------------------- |
@@ -391,6 +396,7 @@ All semantic colors live in `Jot/Ressources/Assets.xcassets/`. Reference by name
 | `TagTextColor`                 | `#1A1A1A`                          | `#FFFFFF`                          |
 | `TertiaryTextColor`            | `#52525B`                          | `#A19FA9`                          |
 
+
 #### Primitive Colors (Figma Variables)
 
 ```
@@ -405,6 +411,7 @@ All type uses **SF Pro**. Weights: Regular=400, Medium=500, SemiBold=600, Bold=7
 
 #### Figma Type Scale
 
+
 | Style      | Size | Line Height | Tracking | Weights Available |
 | ---------- | ---- | ----------- | -------- | ----------------- |
 | Heading/H4 | 20   | 24          | -0.20    | Medium            |
@@ -415,9 +422,11 @@ All type uses **SF Pro**. Weights: Regular=400, Medium=500, SemiBold=600, Bold=7
 | Tiny       | 10   | 12          | 0        | Medium, SemiBold  |
 | Micro      | 9    | 10          | 0        | SemiBold, Bold    |
 
+
 #### FontManager API (code-level)
 
 Three font families: **Charter** (serif body), **SF Pro** (headings/UI), **SF Mono** (metadata/code).
+
 
 | Method       | SwiftUI                          | Size | Weight  | Notes                           |
 | ------------ | -------------------------------- | ---- | ------- | ------------------------------- |
@@ -426,12 +435,14 @@ Three font families: **Charter** (serif body), **SF Pro** (headings/UI), **SF Mo
 | `metadata()` | `Font.system(monospaced, size:)` | 12   | Medium  | Timestamps, dates               |
 | `icon()`     | `Font.system(size:)`             | 20   | Regular | SF Symbols                      |
 
+
 Body font style is user-configurable: `default` (Charter), `system` (SF Pro), `mono` (SF Mono).
 Line spacing presets: Compact (1.0x), Default (1.2x), Relaxed (1.5x) -- stored in `ThemeManager.lineSpacing`.
 
 ### Spacing Scale
 
 Figma token name -> pt value:
+
 
 | Token  | Value |
 | ------ | ----- |
@@ -445,9 +456,11 @@ Figma token name -> pt value:
 | `xl4`  | 48    |
 | `xl5`  | 60    |
 
+
 Canonical padding values in use: `4, 6, 8, 12, 16, 18, 24, 60`
 
 ### Corner Radius Scale
+
 
 | Token  | Value         |
 | ------ | ------------- |
@@ -459,17 +472,21 @@ Canonical padding values in use: `4, 6, 8, 12, 16, 18, 24, 60`
 | `3xl`  | 24            |
 | `full` | 999 (capsule) |
 
+
 Canonical radius values in use: `4, 20, 24, Capsule`
 
 ### Effects
+
 
 | Token          | Value                     |
 | -------------- | ------------------------- |
 | `bg-blur/tags` | Background blur, radius 4 |
 
+
 ### Animations & Timing
 
 All in `Extensions.swift`:
+
 
 | Animation         | Response | Damping | Duration | Usage                              |
 | ----------------- | -------- | ------- | -------- | ---------------------------------- |
@@ -478,6 +495,7 @@ All in `Extensions.swift`:
 | **jotSmoothFast** | -        | -       | 0.2s     | Fast linear transitions            |
 | **jotHover**      | 0.25s    | 0.75    | -        | Hover state animations (subtle)    |
 | **jotDragSnap**   | 0.18s    | 0.9     | -        | Drag-release snap-to-grid effect   |
+
 
 ### Liquid Glass Tokens (iOS 26+ / macOS 26+)
 
@@ -506,8 +524,11 @@ Glass behavior is governed by native `.glassEffect()`. Not a color token -- a mo
 
 ### Asset Catalog Locations
 
+
 | Content         | Path                              |
 | --------------- | --------------------------------- |
 | Semantic colors | `Jot/Ressources/Assets.xcassets/` |
 | Icons & images  | `Jot/Assets.xcassets/`            |
 | SVG icons       | `Jot/` (root-level .svg files)    |
+
+

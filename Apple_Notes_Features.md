@@ -115,4 +115,4 @@
 
 ---
 
-_Sources: Apple Support, MacRumors, 9to5Mac, Geeky Gadgets (compiled April 2026)_
+*Sources: Apple Support, MacRumors, 9to5Mac, Geeky Gadgets (compiled April 2026)*
