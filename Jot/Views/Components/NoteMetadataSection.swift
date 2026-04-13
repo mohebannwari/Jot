@@ -9,6 +9,10 @@
 
 import SwiftUI
 
+#if os(macOS)
+import AppKit
+#endif
+
 struct NoteMetadataSection: View {
     let note: Note
     var folder: Folder?
@@ -91,8 +95,10 @@ struct NoteMetadataSection: View {
 
     private struct ParsedAttachment: Identifiable {
         let id: Int
-        let originalName: String
+        /// Filename on disk under `ImageStorageManager` or `FileAttachmentStorageManager`.
+        let storedFilename: String
         let displayLabel: String
+        let isImage: Bool
     }
 
     private static func parseAttachments(from content: String) -> [ParsedAttachment] {
@@ -103,8 +109,13 @@ struct NoteMetadataSection: View {
             for i in 1..<parts.count {
                 let inner = parts[i].components(separatedBy: "]]").first ?? ""
                 let fields = inner.components(separatedBy: "|")
+                // [[file|typeId|storedFilename|originalName(|viewMode)]]
                 if fields.count >= 3 {
-                    results.append(ParsedAttachment(id: results.count, originalName: fields[2], displayLabel: fields[2]))
+                    let stored = fields[1]
+                    let label = fields[2]
+                    results.append(
+                        ParsedAttachment(id: results.count, storedFilename: stored, displayLabel: label, isImage: false)
+                    )
                 }
             }
         }
@@ -112,8 +123,12 @@ struct NoteMetadataSection: View {
         if content.contains("[[image|||") {
             let parts = content.components(separatedBy: "[[image|||")
             for i in 1..<parts.count {
-                let filename = parts[i].components(separatedBy: "]]").first ?? "image"
-                results.append(ParsedAttachment(id: results.count, originalName: filename, displayLabel: filename))
+                let raw = parts[i].components(separatedBy: "]]").first ?? "image"
+                // [[image|||foo.jpg|||0.3300]] — only the first segment is the stored filename.
+                let stored = raw.components(separatedBy: "|||").first ?? raw
+                results.append(
+                    ParsedAttachment(id: results.count, storedFilename: stored, displayLabel: stored, isImage: true)
+                )
             }
         }
 
@@ -134,6 +149,19 @@ struct NoteMetadataSection: View {
             .replacingOccurrences(of: "http://", with: "")
             .replacingOccurrences(of: "www.", with: "")
             .components(separatedBy: "/").first ?? urlString
+    }
+
+    /// Opens the stored image or file attachment in the user’s default app (same intent as the pill affordance).
+    private func openAttachmentInWorkspace(_ attachment: ParsedAttachment) {
+        #if os(macOS)
+        let url: URL? =
+            attachment.isImage
+            ? ImageStorageManager.shared.getImageURL(for: attachment.storedFilename)
+            : FileAttachmentStorageManager.shared.fileURL(for: attachment.storedFilename)
+        if let url {
+            NSWorkspace.shared.open(url)
+        }
+        #endif
     }
 
     /// Secondary pill/panel surface inside the Properties panel. Routes through
@@ -167,7 +195,7 @@ struct NoteMetadataSection: View {
                         .background(Color("SurfaceTranslucentColor"), in: Circle())
                 }
                 .buttonStyle(.plain)
-                .macPointingHandCursor()
+                .propertiesPanelPointingHandCursor()
 
                 Spacer()
             }
@@ -305,15 +333,16 @@ struct NoteMetadataSection: View {
     private var tagsValue: some View {
         FlowLayout(spacing: 6) {
             ForEach(note.tags, id: \.self) { tag in
-                HStack(spacing: 4) {
-                    Text(tag)
-                        .font(.system(size: 11, weight: .medium))
-                        .tracking(-0.2)
-                        .foregroundColor(Color("PrimaryTextColor"))
+                // One tappable pill (matches link/attachment affordance; shows hand cursor on the whole chip).
+                Button {
+                    onUpdateTags?(note.tags.filter { $0 != tag })
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(tag)
+                            .font(.system(size: 11, weight: .medium))
+                            .tracking(-0.2)
+                            .foregroundColor(Color("PrimaryTextColor"))
 
-                    Button {
-                        onUpdateTags?(note.tags.filter { $0 != tag })
-                    } label: {
                         Image("IconCrossMedium")
                             .renderingMode(.template)
                             .resizable()
@@ -321,11 +350,13 @@ struct NoteMetadataSection: View {
                             .frame(width: 12, height: 12)
                             .foregroundColor(Color("PrimaryTextColor").opacity(0.5))
                     }
-                    .buttonStyle(.plain)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(todoContainerColor, in: Capsule())
+                    .contentShape(Capsule())
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(todoContainerColor, in: Capsule())
+                .buttonStyle(.plain)
+                .propertiesPanelPointingHandCursor()
             }
 
             // Add tag: inline field or plus button
@@ -364,7 +395,7 @@ struct NoteMetadataSection: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .macPointingHandCursor()
+                .propertiesPanelPointingHandCursor()
             }
         }
     }
@@ -424,7 +455,7 @@ struct NoteMetadataSection: View {
                 .contentShape(Capsule())
             }
             .buttonStyle(.plain)
-            .macPointingHandCursor()
+            .propertiesPanelPointingHandCursor()
         }
     }
 
@@ -448,7 +479,7 @@ struct NoteMetadataSection: View {
                     }
                 }
                 .buttonStyle(.plain)
-                .macPointingHandCursor()
+                .propertiesPanelPointingHandCursor()
             }
         }
         .padding(8)
@@ -554,7 +585,7 @@ struct NoteMetadataSection: View {
                         .background(Color("LinkPillColor"), in: Capsule())
                     }
                     .buttonStyle(.plain)
-                    .macPointingHandCursor()
+                    .propertiesPanelPointingHandCursor()
                 }
             }
         }
@@ -570,29 +601,36 @@ struct NoteMetadataSection: View {
         } else {
             FlowLayout(spacing: 4) {
                 ForEach(attachments) { attachment in
-                    HStack(spacing: 4) {
-                        Image("IconFileLink")
-                            .renderingMode(.template)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 14, height: 14)
+                    Button {
+                        openAttachmentInWorkspace(attachment)
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image("IconFileLink")
+                                .renderingMode(.template)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 14, height: 14)
 
-                        Text(attachment.displayLabel)
-                            .font(.system(size: 11, weight: .medium))
-                            .tracking(-0.2)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                            .frame(maxWidth: 160)
+                            Text(attachment.displayLabel)
+                                .font(.system(size: 11, weight: .medium))
+                                .tracking(-0.2)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .frame(maxWidth: 160)
 
-                        Image("IconArrowRightUpCircle")
-                            .renderingMode(.template)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 14, height: 14)
+                            Image("IconArrowRightUpCircle")
+                                .renderingMode(.template)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 14, height: 14)
+                        }
+                        .foregroundColor(Color("ButtonPrimaryTextColor"))
+                        .padding(4)
+                        .background(Color("ButtonPrimaryBgColor"), in: Capsule())
+                        .contentShape(Capsule())
                     }
-                    .foregroundColor(Color("ButtonPrimaryTextColor"))
-                    .padding(4)
-                    .background(Color("ButtonPrimaryBgColor"), in: Capsule())
+                    .buttonStyle(.plain)
+                    .propertiesPanelPointingHandCursor()
                 }
             }
         }
@@ -628,7 +666,7 @@ struct NoteMetadataSection: View {
                     .background(Color("NotelinkPillBgColor"), in: Capsule())
                 }
                 .buttonStyle(.plain)
-                .macPointingHandCursor()
+                .propertiesPanelPointingHandCursor()
             }
         }
     }
@@ -653,3 +691,23 @@ struct NoteMetadataSection: View {
             .foregroundColor(Color("TertiaryTextColor"))
     }
 }
+
+#if os(macOS)
+private extension View {
+    /// `NSCursor` push/pop — cursor rects from `macPointingHandCursor()` are unreliable inside nested
+    /// `ScrollView`/`NSScrollView`, so Properties uses this for every clickable control in the panel.
+    func propertiesPanelPointingHandCursor() -> some View {
+        onHover { hovering in
+            if hovering {
+                NSCursor.pointingHand.push()
+            } else {
+                NSCursor.pop()
+            }
+        }
+    }
+}
+#else
+private extension View {
+    func propertiesPanelPointingHandCursor() -> some View { self }
+}
+#endif

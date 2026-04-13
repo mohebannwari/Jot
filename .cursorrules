@@ -16,30 +16,23 @@ These rules are absolute. No exceptions. No rationalizations.
 
 ---
 
-## Build & Rebuild Workflow (CRITICAL)
+## Build & Launch
 
-After making ANY code changes:
+**When to run `xcodebuild`:** Only when the user explicitly asks for a build, wants the DEBUG in-app update flow, asks you to verify compilation, or wants tests run. **Do not** run a Debug build automatically after every code change.
+
+**Optional — user asked for the sidebar update panel:** From repo root:
 
 ```bash
 xcodebuild -project Jot.xcodeproj -scheme Jot -configuration Debug build -allowProvisioningUpdates 2>&1 | tail -8
 ```
 
-**How it works:** Jot has a `BuildWatcherManager` (DEBUG only) that watches `Jot.debug.dylib` for changes. When xcodebuild replaces the binary while the app is running, an **update panel appears at the bottom of the left sidebar** (above Trash/Settings). The user relaunches from there -- on their own terms, when they're ready.
+**How the update panel works:** `BuildWatcherManager` (DEBUG) watches `Jot.debug.dylib`. When a new build lands while Jot is running, an **update panel can appear at the bottom of the left sidebar**. The user relaunches from there. Details and trigger phrases: `.cursor/rules/feedback_rebuild_for_update_panel.mdc` (only when the user requests that flow).
 
-### NEVER do any of the following after building:
+### NEVER do any of the following after a build:
 - `pkill Jot` or `killall Jot` -- DO NOT KILL THE APP
 - `open Jot.app` or `open -a Jot` -- DO NOT LAUNCH THE APP
 - `touch Jot.app` -- DO NOT TOUCH THE BUNDLE
-- Any process management commands targeting Jot
-- Tell the user they need to restart/relaunch manually -- they already know, the panel handles it
-- Skip the build step after code changes -- always build so the update panel appears
-
-### Correct flow:
-1. Make code changes
-2. Run `xcodebuild` Debug build (command above)
-3. Confirm `BUILD SUCCEEDED` in the output
-4. Tell user the build is ready -- they'll see the update panel and relaunch when ready
-5. Move on to the next task
+- Any process management commands targeting Jot to force a restart
 
 ### Test builds:
 ```bash

@@ -1,25 +1,20 @@
 ---
-description: "After code changes, run xcodebuild so the in-app update panel appears for user to relaunch"
-alwaysApply: true
+description: "Explicit user request only: Debug xcodebuild so BuildWatcherManager shows the in-app sidebar update panel. Triggers when the user asks to rebuild for the update panel, refresh the running DEBUG app, or run xcodebuild for the sidebar prompt — not for routine edits."
+alwaysApply: false
 ---
 
-# Rebuild after code changes for update panel
+# Rebuild for in-app update panel (explicit user request only)
 
-After making any code changes that the user wants to test, **always run a Debug build**:
+**Scope:** This guidance applies **only** when the user clearly asks for this workflow. Typical phrases: “rebuild for the update panel”, “run xcodebuild so I get the sidebar update”, “refresh the running app with a build”, “build so I can relaunch from Jot”.
+
+**Default:** After normal code edits, **do not** run `xcodebuild` unless the user requested a build, asked you to verify compilation, asked for tests, or used one of the phrases above. Routine implementation work does **not** imply an automatic rebuild.
+
+When the user **did** request this, run a Debug build from the repository root (trimmed log tail keeps output short):
 
 ```bash
 cd /Users/mohebanwari/development/Jot && xcodebuild -project Jot.xcodeproj -scheme Jot -configuration Debug build -allowProvisioningUpdates 2>&1 | tail -8
 ```
 
-**Why:** Jot has a `BuildWatcherManager` (DEBUG only) that watches `Jot.debug.dylib` for changes. When the binary updates while the app is running, an **update panel appears at the bottom of the left sidebar** (above Trash/Settings). The user relaunches from there.
+**Why:** Jot’s `BuildWatcherManager` (DEBUG only) watches `Jot.debug.dylib`. When the binary updates while the app is running, an **update panel can appear at the bottom of the left sidebar** (above Trash/Settings). The user relaunches from there.
 
-**Do NOT:**
-- Kill or relaunch the app directly (per `feedback_no_relaunch_after_build.mdc`)
-- Skip the build step after code changes
-- Assume the user will build manually
-
-**Flow:**
-1. Make code changes
-2. Run `xcodebuild` Debug build
-3. Confirm `BUILD SUCCEEDED`
-4. Tell user the build is ready — they'll see the update panel in the sidebar and relaunch when ready
+**After the build:** Follow `feedback_no_relaunch_after_build.mdc` — no killing the app, no `open`, no `touch` on the bundle. Confirm `BUILD SUCCEEDED`, tell the user the build is ready, and that they can use the update panel when they want.

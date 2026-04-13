@@ -49,7 +49,7 @@ struct FloatingSearch: View {
     var onArchiveOrRestoreSelectedNote: () -> Void = {}
     var onResumeSparkleDeferredUpdate: () -> Void = {}
     var onResumeDevDeferredRelaunch: () -> Void = {}
-    /// Matches command-palette Zen (sidebar hidden): meeting header becomes “Exit zen mode”.
+    /// Matches command-palette Zen (sidebar hidden): meeting header becomes “Exit Zen Mode”.
     var isZenMode: Bool = false
 
     @EnvironmentObject private var themeManager: ThemeManager
@@ -429,7 +429,7 @@ struct FloatingSearch: View {
                     Button {
                         onToggleSidebar()
                     } label: {
-                        meetingPickNoteHeaderLabel(title: "Exit zen mode")
+                        meetingPickNoteHeaderLabel(title: "Exit Zen Mode")
                     }
                     .buttonStyle(.plain)
                     .macPointingHandCursor()
@@ -451,7 +451,7 @@ struct FloatingSearch: View {
         }
     }
 
-    /// Shared meeting-picker header: same leading icon for “Start recording in:” and “Exit zen mode”.
+    /// Shared meeting-picker header: same leading icon for “Start recording in:” and “Exit Zen Mode”.
     private func meetingPickNoteHeaderLabel(title: String) -> some View {
         HStack(spacing: 8) {
             Image("IconMeetingNotes")
@@ -591,7 +591,7 @@ struct FloatingSearch: View {
             index: 6,
             iconName: "IconZenMode",
             // Same wording as meeting-picker header when the sidebar is hidden (⌘. toggles either way).
-            title: isZenMode ? "Exit zen mode" : "Zen Mode",
+            title: isZenMode ? "Exit Zen Mode" : "Zen Mode",
             isEnabled: true,
             trailing: { sidebarStyleShortcutLabel("\u{2318}.") })
         quickActionRow(

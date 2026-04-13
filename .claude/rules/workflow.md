@@ -21,9 +21,9 @@ xcodebuild -project Jot.xcodeproj -scheme Jot -destination 'platform=macOS' \
   -only-testing:JotTests/SpecificTests test -allowProvisioningUpdates
 ```
 
-Check for compile errors before finalizing any implementation.
+**When to build:** Run `xcodebuild` when the user asks for a build, wants the DEBUG update-panel flow (Cursor: `feedback_rebuild_for_update_panel.mdc`), when running tests, or when they asked you to confirm the project compiles. Do **not** run a Debug build automatically after every edit.
 
-**Do not relaunch the app after building.** The user handles relaunching via the in-app updates panel.
+**After any build:** Do **not** relaunch the app (`pkill`, `open`, touching the `.app` bundle). The user can use the in-app update prompt in DEBUG when they choose.
 
 ---
 
@@ -39,6 +39,7 @@ Check for compile errors before finalizing any implementation.
 ## Context Engineering
 
 Before any feature implementation:
+
 1. Write `INITIAL.md` describing the feature
 2. `/generate-prp INITIAL.md` to create a Product Requirements Prompt
 3. `/execute-prp PRPs/feature-name.md` to begin implementation
@@ -71,6 +72,7 @@ Analyze against: alignment, spacing, sizing from design tokens, light/dark mode,
 ## Rich Text Serialization Format
 
 Reference (for `TodoRichTextEditor`):
+
 - `[[b]]...[[/b]]`, `[[i]]...[[/i]]`, `[[u]]...[[/u]]`, `[[s]]...[[/s]]` -- inline formatting
 - `[[h1]]...[[/h1]]`, `[[h2]]`, `[[h3]]` -- headings
 - `[[align:center/right/justify]]...[[/align]]` -- alignment

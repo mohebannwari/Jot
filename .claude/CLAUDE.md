@@ -313,9 +313,23 @@ xcodebuild -project Jot.xcodeproj -scheme Jot -destination 'platform=macOS' \
   -only-testing:JotTests/SpecificTests test -allowProvisioningUpdates
 ```
 
-Check for compile errors before finalizing any implementation.
+**When to run builds:** Use `xcodebuild` when the user explicitly asks for a build, when they want the DEBUG in-app update flow (phrases like “rebuild for the update panel”, “refresh the running app”), when running tests, or when they asked you to confirm the project compiles. **Do not** run a Debug build automatically after every code change.
 
-**Do not relaunch the app after building.** The user handles relaunching via the in-app updates panel.
+### DEBUG update panel (only when the user requests this flow)
+
+When the user asks to rebuild so a **running DEBUG** instance can pick up changes, run from the repo root (short tail keeps logs readable):
+
+```bash
+cd /Users/mohebanwari/development/Jot && xcodebuild -project Jot.xcodeproj -scheme Jot -configuration Debug build -allowProvisioningUpdates 2>&1 | tail -8
+```
+
+**Why:** `BuildWatcherManager` (DEBUG only) watches `Jot.debug.dylib`. When the binary updates while the app is running, an **update panel can appear at the bottom of the left sidebar** (above Trash/Settings). The user relaunches from there.
+
+**After any build — never:** `pkill` / `killall` Jot, `open` the app, `touch` the `.app` bundle, or otherwise force a relaunch. Same policy as `.cursor/rules/feedback_no_relaunch_after_build.mdc`.
+
+**When the user requested this flow:** (1) run the command above, (2) confirm `BUILD SUCCEEDED`, (3) tell them the build is ready and they can use the sidebar update panel when they want.
+
+Cursor mirrors this opt-in rule in `.cursor/rules/feedback_rebuild_for_update_panel.mdc` (`alwaysApply: false`).
 
 ---
 

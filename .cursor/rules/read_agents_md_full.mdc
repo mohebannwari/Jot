@@ -15,7 +15,7 @@ alwaysApply: true
 
 1. **Use a full-file read** (e.g. editor Read tool on `AGENTS.md` from line 1 through end of file). Go **sequentially** from start to finish — **every line**, in order — no jumping to a middle section because it “seems” relevant. If the file is large, use continued reads until you reach EOF.
 2. **Do not** substitute memory, old chat context, or a partial summary for having read the current file on disk.
-3. **Do not** skip sections because the user’s message sounds small or unrelated. Workflow rules (Superpowers, prohibitions, build/relaunch, design system, etc.) apply **regardless** of request type.
+3. **Do not** skip sections because the user’s message sounds small or unrelated. Workflow rules (Superpowers, prohibitions, when-to-build / no forced relaunch after builds, design system, etc.) apply **regardless** of request type.
 4. After reading, **follow** the workflows and constraints defined there (including mandatory feature pipeline and tool/skill ordering) unless the user explicitly overrides a *specific* point in this message.
 
 ## Why
