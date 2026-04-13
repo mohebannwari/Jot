@@ -5,6 +5,7 @@
 //  Data model for tabs containers embedded in the rich text editor.
 //
 
+import CoreGraphics
 import Foundation
 
 struct TabPane {
@@ -17,6 +18,8 @@ struct TabsContainerData {
     var panes: [TabPane]
     var activeIndex: Int
     var containerHeight: CGFloat
+    /// When non-nil, the block uses this width clamped to the text container; `nil` means full container width (same idea as `CalloutData.preferredContentWidth`).
+    var preferredContentWidth: CGFloat?
 
     static let defaultHeight: CGFloat = 222
     static let minHeight: CGFloat = 100
@@ -37,7 +40,8 @@ struct TabsContainerData {
         TabsContainerData(
             panes: [TabPane(name: "Tab 1", content: "")],
             activeIndex: 0,
-            containerHeight: defaultHeight
+            containerHeight: defaultHeight,
+            preferredContentWidth: nil
         )
     }
 
@@ -69,8 +73,11 @@ struct TabsContainerData {
 
     // MARK: - Serialization
 
+    private static let markupLocale = Locale(identifier: "en_US_POSIX")
+
     // Old format: [[tabs|activeIndex|height|Name1\tName2]]content1\t\tcontent2[[/tabs]]
     // New format: [[tabs|activeIndex|height|Name1\tName2|color1\tcolor2]]content1\t\tcontent2[[/tabs]]
+    // Width (optional 5th header field, after colors): ...|color1\tcolor2|WW.WW]]  (POSIX decimal; omitted when full container width)
 
     // INVARIANT: pane.content and pane.name must always be escaped via Self.escape()
     // before joining. The escape function converts real tabs to \t, preventing content
@@ -79,7 +86,12 @@ struct TabsContainerData {
         let names = panes.map { Self.escape($0.name) }.joined(separator: "\t")
         let colors = panes.map { $0.colorHex ?? "" }.joined(separator: "\t")
         let contents = panes.map { Self.escape($0.content) }.joined(separator: "\t\t")
-        return "[[tabs|\(activeIndex)|\(Int(containerHeight))|\(names)|\(colors)]]\(contents)[[/tabs]]"
+        var header = "\(activeIndex)|\(Int(containerHeight))|\(names)|\(colors)"
+        if let w = preferredContentWidth {
+            let widthStr = String(format: "%.2f", locale: Self.markupLocale, Double(w))
+            header += "|\(widthStr)"
+        }
+        return "[[tabs|\(header)]]\(contents)[[/tabs]]"
     }
 
     static func deserialize(from text: String) -> TabsContainerData? {
@@ -88,7 +100,7 @@ struct TabsContainerData {
         guard let closeBracket = afterPrefix.range(of: "]]") else { return nil }
 
         let header = String(afterPrefix[afterPrefix.startIndex..<closeBracket.lowerBound])
-        let parts = header.split(separator: "|", maxSplits: 3, omittingEmptySubsequences: false)
+        let parts = header.split(separator: "|", maxSplits: 4, omittingEmptySubsequences: false)
         guard parts.count >= 3 else { return nil }
 
         guard let activeIdx = Int(parts[0]) else { return nil }
@@ -96,12 +108,26 @@ struct TabsContainerData {
 
         let names = String(parts[2]).components(separatedBy: "\t").map { unescape($0) }
 
-        // Colors (optional 4th field — backward compatible)
+        // Colors (4th field) and optional preferred width (5th field) — backward compatible.
         let colors: [String?]
-        if parts.count >= 4 {
-            colors = String(parts[3]).components(separatedBy: "\t").map { $0.isEmpty ? nil : $0 }
-        } else {
+        var preferredContentWidth: CGFloat?
+        switch parts.count {
+        case 3:
             colors = names.map { _ in nil }
+            preferredContentWidth = nil
+        case 4:
+            colors = String(parts[3]).components(separatedBy: "\t").map { $0.isEmpty ? nil : $0 }
+            preferredContentWidth = nil
+        case 5:
+            colors = String(parts[3]).components(separatedBy: "\t").map { $0.isEmpty ? nil : $0 }
+            let widthField = String(parts[4])
+            if let w = Double(widthField) {
+                preferredContentWidth = CGFloat(w)
+            } else {
+                preferredContentWidth = nil
+            }
+        default:
+            return nil
         }
 
         let contentStart = closeBracket.upperBound
@@ -126,7 +152,12 @@ struct TabsContainerData {
 
         let clampedIndex = min(activeIdx, panes.count - 1)
         let clampedHeight = max(minHeight, min(maxHeight, height))
-        return TabsContainerData(panes: panes, activeIndex: clampedIndex, containerHeight: clampedHeight)
+        return TabsContainerData(
+            panes: panes,
+            activeIndex: clampedIndex,
+            containerHeight: clampedHeight,
+            preferredContentWidth: preferredContentWidth
+        )
     }
 
     // MARK: - Escape helpers

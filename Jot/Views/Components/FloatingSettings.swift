@@ -283,7 +283,7 @@ struct SettingsPage: View {
                         // sits in a trailing column so its height does not sit between title and subtitle.
                         HStack(alignment: .top, spacing: 12) {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Floating note")
+                                Text("Floating Note")
                                     .font(FontManager.heading(size: 13, weight: .medium))
                                     .tracking(-0.2)
                                     .foregroundColor(Color("SettingsPrimaryTextColor"))
@@ -318,7 +318,7 @@ struct SettingsPage: View {
 
                         HStack(alignment: .top, spacing: 12) {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text("Start meeting session")
+                                Text("Start Meeting Session")
                                     .font(FontManager.heading(size: 13, weight: .medium))
                                     .tracking(-0.2)
                                     .foregroundColor(Color("SettingsPrimaryTextColor"))

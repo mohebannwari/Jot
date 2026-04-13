@@ -12,6 +12,30 @@ import SwiftUI
 import AppKit
 #endif
 
+/// Horizontal edge fade for the expanded, scrollable strip only. When collapsed, no mask is applied so
+/// `glassTooltip` overlays can draw above the bar (a mask clips to layout bounds even if it is solid white).
+private struct NoteToolsBarExpandedFadeMask: ViewModifier {
+    let isExpanded: Bool
+
+    func body(content: Content) -> some View {
+        Group {
+            if isExpanded {
+                content.mask {
+                    HStack(spacing: 0) {
+                        LinearGradient(colors: [.clear, .white], startPoint: .leading, endPoint: .trailing)
+                            .frame(width: 10)
+                        Rectangle().fill(.white)
+                        LinearGradient(colors: [.white, .clear], startPoint: .leading, endPoint: .trailing)
+                            .frame(width: 10)
+                    }
+                }
+            } else {
+                content
+            }
+        }
+    }
+}
+
 struct NoteToolsBar: View {
     let note: Note
     var editorInstanceID: UUID? = nil
@@ -23,6 +47,15 @@ struct NoteToolsBar: View {
     private let iconSize: CGFloat = 15
 
     var body: some View {
+        toolbarScrollArea
+            .modifier(NoteToolsBarExpandedFadeMask(isExpanded: isExpanded))
+            .padding(.horizontal, isExpanded ? -10 : 0)
+            .padding(.top, -40)
+            .preference(key: ToolbarExpandedPreferenceKey.self, value: isExpanded)
+            .animation(.jotSpring, value: isExpanded)
+    }
+
+    private var toolbarScrollArea: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 2) {
             // MARK: - Primary actions (always visible)
@@ -162,25 +195,6 @@ struct NoteToolsBar: View {
         .frame(maxWidth: isExpanded ? max(paneWidth - (aiToolsExpanded ? 260 : 80), 200) : .infinity)
         .fixedSize(horizontal: !isExpanded, vertical: true)
         .padding(.horizontal, isExpanded ? 10 : 0)
-        .mask(
-            Group {
-                if isExpanded {
-                    HStack(spacing: 0) {
-                        LinearGradient(colors: [.clear, .white], startPoint: .leading, endPoint: .trailing)
-                            .frame(width: 10)
-                        Rectangle().fill(.white)
-                        LinearGradient(colors: [.white, .clear], startPoint: .leading, endPoint: .trailing)
-                            .frame(width: 10)
-                    }
-                } else {
-                    Rectangle().fill(.white)
-                }
-            }
-        )
-        .padding(.horizontal, isExpanded ? -10 : 0)
-        .padding(.top, -40)
-        .preference(key: ToolbarExpandedPreferenceKey.self, value: isExpanded)
-        .animation(.jotSpring, value: isExpanded)
     }
 
     // MARK: - Helpers

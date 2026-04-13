@@ -6,11 +6,16 @@
 //  controls at bottom. Starts as a compact collapsed pill, expands to show
 //  Transcript/Notes tabs (and Summary tab after wrap-up).
 //
+//  Micro-pill: while recording/paused, user can shrink to a tight status chip
+//  (intrinsic width, no extra horizontal slack). Toggle uses a normal spring +
+//  scale/opacity transition — not a single-tree height collapse, which broke
+//  layout (content shrinking, phantom padding, wide empty capsule).
+//
 
 import SwiftUI
 
 struct MeetingNotesFloatingPanel: View {
-    @ObservedObject var transcriptionService: MeetingTranscriptionService
+    let transcriptionService: MeetingTranscriptionService
     let recordingState: MeetingRecordingState
     let duration: TimeInterval
     let audioLevels: [Float]
@@ -26,8 +31,10 @@ struct MeetingNotesFloatingPanel: View {
     let onDismiss: () -> Void
 
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
     @EnvironmentObject private var themeManager: ThemeManager
     @State private var isExpanded = false
+    @State private var isMicroPillMinimized = false
     @State private var showStopConfirmation = false
     @State private var showDismissConfirmation = false
 
@@ -43,10 +50,20 @@ struct MeetingNotesFloatingPanel: View {
     private var isComplete: Bool { recordingState == .complete }
     private var isProcessing: Bool { recordingState == .processing }
 
-    /// Tabs + content are visible when expanded or post-recording
-    private var showTabs: Bool { isExpanded || isProcessing || isComplete }
+    /// Tabs + content hidden in micro-pill; otherwise same as classic expand rules.
+    private var showTabs: Bool {
+        !isMicroPillMinimized && (isExpanded || isProcessing || isComplete)
+    }
 
-    /// Summary tab only available after wrap-up (processing or complete)
+    /// Tight chip: recording/paused only, user chose minimize.
+    private var isMicroPillActive: Bool {
+        isMicroPillMinimized && (recordingState == .recording || recordingState == .paused)
+    }
+
+    private var meetingMorphAnimation: Animation {
+        accessibilityReduceMotion ? .easeInOut(duration: 0.16) : .jotMeetingPanelMorph
+    }
+
     private var visibleTabs: [MeetingTab] {
         if isProcessing || isComplete {
             return MeetingTab.allCases
@@ -54,10 +71,87 @@ struct MeetingNotesFloatingPanel: View {
         return [.transcript, .notes]
     }
 
+    /// One-shot glow must not attach separately to micro vs full chrome — switching branches
+    /// recreated the modifier and fired `onAppear` again. A single glow on this stable shell
+    /// runs once per panel lifetime (i.e. a recording session while the overlay is up).
+    private var intelligenceGlowMode: GlowMode {
+        isSummaryLoading ? .continuous : .oneShot
+    }
+
     var body: some View {
+        Group {
+            if isMicroPillActive {
+                microPillChrome
+                    .transition(microPillTransition)
+            } else {
+                fullPanelChrome
+                    .transition(fullPanelTransition)
+            }
+        }
+        .animation(meetingMorphAnimation, value: isMicroPillActive)
+        .appleIntelligenceGlow(cornerRadius: panelRadius, mode: intelligenceGlowMode)
+        .alert("Stop Recording?", isPresented: $showStopConfirmation) {
+            Button("Stop", role: .destructive, action: onStop)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This will end the recording and generate a summary. This action cannot be undone.")
+        }
+        .alert("Discard Recording?", isPresented: $showDismissConfirmation) {
+            Button("Discard", role: .destructive, action: onDismiss)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The current recording session and any transcript will be permanently lost.")
+        }
+        .onChange(of: recordingState) { _, new in
+            if new != .recording && new != .paused {
+                isMicroPillMinimized = false
+            }
+        }
+    }
+
+    // MARK: - Micro pill (intrinsic width — no spacers)
+
+    private var microPillChrome: some View {
+        HStack(spacing: 8) {
+            AudioWaveformIndicator(
+                levels: audioLevels,
+                isPaused: recordingState == .paused
+            )
+            .frame(width: 18, height: 18)
+
+            Text(statusLabel)
+                .font(FontManager.heading(size: 11, weight: .medium))
+                .foregroundColor(Color("PrimaryTextColor"))
+
+            // Same typography as `recordingControls` / `processingControls` timer (SF Mono + tabular digits).
+            Text(formattedDuration)
+                .font(FontManager.metadata(size: 12, weight: .medium))
+                .foregroundColor(Color("PrimaryTextColor"))
+                .monospacedDigit()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .fixedSize(horizontal: true, vertical: false)
+        .clipShape(RoundedRectangle(cornerRadius: panelRadius, style: .continuous))
+        .modifier(MeetingPanelBackgroundModifier(
+            cornerRadius: panelRadius,
+            panelBackground: Color("SurfaceElevatedColor"),
+            borderColor: Color("BorderSubtleColor")
+        ))
+        .macPointingHandCursor()
+        .onTapGesture {
+            withAnimation(meetingMorphAnimation) {
+                isMicroPillMinimized = false
+                isExpanded = true
+            }
+        }
+    }
+
+    // MARK: - Full panel (classic layout from pre-regression build)
+
+    private var fullPanelChrome: some View {
         VStack(spacing: 8) {
             if showTabs {
-                // Staggered feel: tab strip leads, content follows (same spring as expand toggle).
                 tabBar
                     .transition(
                         .asymmetric(
@@ -84,22 +178,18 @@ struct MeetingNotesFloatingPanel: View {
             panelBackground: Color("SurfaceElevatedColor"),
             borderColor: Color("BorderSubtleColor")
         ))
-        .appleIntelligenceGlow(
-            cornerRadius: panelRadius,
-            mode: isSummaryLoading ? .continuous : .oneShot
-        )
-        .alert("Stop Recording?", isPresented: $showStopConfirmation) {
-            Button("Stop", role: .destructive, action: onStop)
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This will end the recording and generate a summary. This action cannot be undone.")
-        }
-        .alert("Discard Recording?", isPresented: $showDismissConfirmation) {
-            Button("Discard", role: .destructive, action: onDismiss)
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("The current recording session and any transcript will be permanently lost.")
-        }
+    }
+
+    private var microPillTransition: AnyTransition {
+        let insert = AnyTransition.scale(scale: 0.92, anchor: .bottom).combined(with: .opacity)
+        let remove = AnyTransition.opacity
+        return .asymmetric(insertion: insert, removal: remove)
+    }
+
+    private var fullPanelTransition: AnyTransition {
+        let insert = AnyTransition.scale(scale: 0.96, anchor: .bottom).combined(with: .opacity)
+        let remove = AnyTransition.opacity.combined(with: .scale(scale: 0.96, anchor: .bottom))
+        return .asymmetric(insertion: insert, removal: remove)
     }
 
     // MARK: - Tab Bar
@@ -179,7 +269,6 @@ struct MeetingNotesFloatingPanel: View {
         let isPaused = recordingState == .paused
 
         return VStack(spacing: 8) {
-            // Info bar: waveform + status + timer
             HStack(spacing: 8) {
                 AudioWaveformIndicator(
                     levels: audioLevels,
@@ -200,9 +289,7 @@ struct MeetingNotesFloatingPanel: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
 
-            // Action buttons row
             HStack(spacing: 4) {
-                // Pause or Resume (flex)
                 if isPaused {
                     tintedActionButton(
                         icon: "IconPlayCircle",
@@ -219,7 +306,6 @@ struct MeetingNotesFloatingPanel: View {
                     )
                 }
 
-                // Stop (flex) — guarded with confirmation
                 tintedActionButton(
                     icon: "StopCircle",
                     iconSize: 15,
@@ -227,14 +313,13 @@ struct MeetingNotesFloatingPanel: View {
                     action: { showStopConfirmation = true }
                 )
 
-                // Dismiss (square) — guarded with confirmation
+                // Order: dismiss → expand/collapse → micro-pill minimize
                 squareButton(
                     icon: "IconCrossMedium",
                     iconSize: 10,
                     action: { showDismissConfirmation = true }
                 )
 
-                // Expand / Minimize (square)
                 squareButton(
                     icon: isExpanded ? "IconMinimize45" : "IconExpand45",
                     iconSize: 10,
@@ -244,11 +329,21 @@ struct MeetingNotesFloatingPanel: View {
                         }
                     }
                 )
+
+                squareButton(
+                    icon: "IconMeetingPillMinimize",
+                    iconSize: 10,
+                    action: {
+                        withAnimation(meetingMorphAnimation) {
+                            isMicroPillMinimized = true
+                        }
+                    }
+                )
             }
         }
     }
 
-    // MARK: - Processing Controls (escape hatch via dismiss)
+    // MARK: - Processing Controls
 
     private var processingControls: some View {
         HStack(spacing: 8) {
@@ -448,55 +543,13 @@ struct MeetingNotesFloatingPanel: View {
         .padding(12)
     }
 
-    // MARK: - Transcript Tab
+    // MARK: - Transcript Tab (isolated observation — avoids whole-panel invalidation)
 
     private var transcriptTabContent: some View {
-        ScrollViewReader { proxy in
-            ScrollView(.vertical, showsIndicators: false) {
-                LazyVStack(alignment: .leading, spacing: 6) {
-                    ForEach(transcriptionService.segments) { segment in
-                        HStack(alignment: .top, spacing: 8) {
-                            Text(formatTimestamp(segment.timestamp))
-                                .font(FontManager.metadata(size: 10, weight: .medium))
-                                .foregroundColor(Color("TertiaryTextColor"))
-                                .monospacedDigit()
-                                .frame(width: 36, alignment: .trailing)
-
-                            Text(segment.text)
-                                .font(FontManager.body(size: 13))
-                                .foregroundColor(
-                                    segment.isFinal
-                                        ? Color("PrimaryTextColor")
-                                        : Color("SecondaryTextColor")
-                                )
-                                .lineSpacing(2)
-                                .opacity(segment.isFinal ? 1.0 : 0.7)
-                        }
-                        .id(segment.id)
-                    }
-
-                    if transcriptionService.segments.isEmpty {
-                        Text(
-                            recordingState == .idle
-                                ? "Transcript will appear here once recording starts."
-                                : "Listening..."
-                        )
-                        .font(FontManager.body(size: 13))
-                        .foregroundColor(Color("TertiaryTextColor"))
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(12)
-            }
-            .onChange(of: transcriptionService.segments.count) { _, _ in
-                if let lastID = transcriptionService.segments.last?.id {
-                    withAnimation(.easeOut(duration: 0.2)) {
-                        proxy.scrollTo(lastID, anchor: .bottom)
-                    }
-                }
-            }
-        }
+        MeetingFloatingPanelTranscriptTabContent(
+            transcriptionService: transcriptionService,
+            recordingState: recordingState
+        )
     }
 
     // MARK: - Notes Tab
@@ -522,7 +575,6 @@ struct MeetingNotesFloatingPanel: View {
 
     // MARK: - Reusable Button Components
 
-    /// Full-width tinted capsule button with icon (pause, play, stop)
     private func tintedActionButton(
         icon: String,
         iconSize: CGFloat,
@@ -546,7 +598,6 @@ struct MeetingNotesFloatingPanel: View {
         .subtleHoverScale(1.1)
     }
 
-    /// Fixed-size secondary capsule button (X, expand/minimize)
     private func squareButton(
         icon: String,
         iconSize: CGFloat,
@@ -589,8 +640,64 @@ struct MeetingNotesFloatingPanel: View {
         }
         return String(format: "%02d:%02d", minutes, seconds)
     }
+}
 
-    private func formatTimestamp(_ timestamp: TimeInterval) -> String {
+// MARK: - Transcript tab (isolated observation)
+
+private struct MeetingFloatingPanelTranscriptTabContent: View {
+    @ObservedObject var transcriptionService: MeetingTranscriptionService
+    let recordingState: MeetingRecordingState
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.vertical, showsIndicators: false) {
+                LazyVStack(alignment: .leading, spacing: 6) {
+                    ForEach(transcriptionService.segments) { segment in
+                        HStack(alignment: .top, spacing: 8) {
+                            Text(Self.formatTimestamp(segment.timestamp))
+                                .font(FontManager.metadata(size: 10, weight: .medium))
+                                .foregroundColor(Color("TertiaryTextColor"))
+                                .monospacedDigit()
+                                .frame(width: 36, alignment: .trailing)
+
+                            Text(segment.text)
+                                .font(FontManager.body(size: 13))
+                                .foregroundColor(
+                                    segment.isFinal
+                                        ? Color("PrimaryTextColor")
+                                        : Color("SecondaryTextColor")
+                                )
+                                .lineSpacing(2)
+                                .opacity(segment.isFinal ? 1.0 : 0.7)
+                        }
+                        .id(segment.id)
+                    }
+
+                    if transcriptionService.segments.isEmpty {
+                        Text(
+                            recordingState == .idle
+                                ? "Transcript will appear here once recording starts."
+                                : "Listening..."
+                        )
+                        .font(FontManager.body(size: 13))
+                        .foregroundColor(Color("TertiaryTextColor"))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+            }
+            .onChange(of: transcriptionService.segments.count) { _, _ in
+                if let lastID = transcriptionService.segments.last?.id {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        proxy.scrollTo(lastID, anchor: .bottom)
+                    }
+                }
+            }
+        }
+    }
+
+    private static func formatTimestamp(_ timestamp: TimeInterval) -> String {
         let minutes = Int(timestamp) / 60
         let seconds = Int(timestamp) % 60
         return String(format: "%d:%02d", minutes, seconds)

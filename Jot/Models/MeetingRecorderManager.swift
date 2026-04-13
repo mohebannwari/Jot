@@ -19,6 +19,8 @@ import AVFoundation
 @MainActor
 final class MeetingRecorderManager: ObservableObject {
 
+    private var cancellables = Set<AnyCancellable>()
+
     @Published var recordingNoteID: UUID? = nil
     @Published var recordingState: MeetingRecordingState = .idle
     @Published var levels: [Float] = []
@@ -39,12 +41,24 @@ final class MeetingRecorderManager: ObservableObject {
         self.transcriptionService = MeetingTranscriptionService()
         self.summaryGenerator = MeetingSummaryGenerator()
 
-        // Wire levels to published property for sidebar and panel
+        // Throttle level meters so SwiftUI is not invalidated at audio-buffer rates (was causing
+        // heavy relayout with Liquid Glass + matchedGeometry on the meeting panel and sidebar).
         self.audioRecorder.$levels
-            .assign(to: &$levels)
+            .receive(on: DispatchQueue.main)
+            .throttle(for: .milliseconds(80), scheduler: DispatchQueue.main, latest: true)
+            .sink { [weak self] next in
+                self?.levels = next
+            }
+            .store(in: &cancellables)
 
+        // Duration timer ticks every 200ms; UI only needs ~2 Hz for mm:ss display.
         self.audioRecorder.$duration
-            .assign(to: &$duration)
+            .receive(on: DispatchQueue.main)
+            .throttle(for: .milliseconds(500), scheduler: DispatchQueue.main, latest: true)
+            .sink { [weak self] next in
+                self?.duration = next
+            }
+            .store(in: &cancellables)
 
         // Initial setup for meeting mode
         self.audioRecorder.setMeetingMode(true)

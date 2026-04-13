@@ -1702,6 +1702,9 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         /// Coalesces rapid overlay update requests (resize, scroll, layout
         /// completion) into a single pass on the next main-queue turn.
         private var pendingOverlayUpdate: DispatchWorkItem?
+        /// After `updateIfNeeded` replaces storage, overlay frames must wait until SwiftUI/AppKit
+        /// finish the current layout transaction — otherwise glyph rects stay wrong for a frame (G4).
+        private var pendingPostNoteSwitchOverlayWork: DispatchWorkItem?
 
         /// Coalesces overlay update requests so multiple triggers
         /// (updateNSView, didCompleteLayoutFor, boundsDidChange) within
@@ -1713,17 +1716,38 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                       let tv = self.textView else { return }
                 self.isUpdatingOverlays = true
                 defer { self.isUpdatingOverlays = false }
-                self.updateImageOverlays(in: tv)
-                self.updateTableOverlays(in: tv)
-                self.updateCalloutOverlays(in: tv)
-                self.updateCodeBlockOverlays(in: tv)
-                self.updateTabsOverlays(in: tv)
-                self.updateCardSectionOverlays(in: tv)
-                self.updateLinkCardOverlays(in: tv)
-                self.updateFilePreviewOverlays(in: tv)
+                self.performSynchronizedOverlayLayoutPass(in: tv)
             }
             pendingOverlayUpdate = work
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: work)
+        }
+
+        /// Forces text layout to finish, then updates every overlay **without** implicit
+        /// NSView/CALayer animations. Note switches used to skip `ensureLayout` (unlike
+        /// `applyInitialText`), so glyph rects were stale for the first overlay frame —
+        /// combined with SwiftUI layout transactions that produced visible slide/crop glitches.
+        private func performSynchronizedOverlayLayoutPass(in textView: NSTextView) {
+            if let lm = textView.layoutManager, let tc = textView.textContainer {
+                lm.ensureLayout(for: tc)
+            }
+            textView.layoutSubtreeIfNeeded()
+
+            NSAnimationContext.beginGrouping()
+            NSAnimationContext.current.duration = 0
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+
+            updateImageOverlays(in: textView)
+            updateTableOverlays(in: textView)
+            updateCalloutOverlays(in: textView)
+            updateCodeBlockOverlays(in: textView)
+            updateTabsOverlays(in: textView)
+            updateCardSectionOverlays(in: textView)
+            updateLinkCardOverlays(in: textView)
+            updateFilePreviewOverlays(in: textView)
+
+            CATransaction.commit()
+            NSAnimationContext.endGrouping()
         }
 
         private static let inlineImageCache: NSCache<NSString, NSImage> = {
@@ -2541,11 +2565,16 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             tabsOverlays.removeAll()
             cardSectionOverlays.values.forEach { $0.removeFromSuperview() }
             cardSectionOverlays.removeAll()
+            linkCardOverlays.values.forEach { $0.removeFromSuperview() }
+            linkCardOverlays.removeAll()
+            linkCardThumbnailLoadAttempted.removeAll()
             filePreviewOverlays.values.forEach { $0.removeFromSuperview() }
             filePreviewOverlays.removeAll()
         }
 
         deinit {
+            pendingOverlayUpdate?.cancel()
+            pendingPostNoteSwitchOverlayWork?.cancel()
             imageLoadTasks.values.forEach { $0.cancel() }
             imageLoadTasks.removeAll()
             nonisolated(unsafe) let manager = typingAnimationManager
@@ -3835,14 +3864,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             // If applyInitialText couldn't create overlays, do it now.
             if needsDeferredOverlaySetup {
                 needsDeferredOverlaySetup = false
-                updateImageOverlays(in: textView)
-                updateTableOverlays(in: textView)
-                updateCalloutOverlays(in: textView)
-                updateCodeBlockOverlays(in: textView)
-                updateTabsOverlays(in: textView)
-                updateCardSectionOverlays(in: textView)
-                updateLinkCardOverlays(in: textView)
-
+                performSynchronizedOverlayLayoutPass(in: textView)
             }
         }
 
@@ -4728,18 +4750,9 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             textView.needsLayout = true
 
             isUpdating = false
-            // Create image overlays. updateImageOverlays now falls back to
-            // the text view itself as host when there's no enclosingScrollView,
-            // so this works even during makeNSView before the view hierarchy exists.
-            // Mark deferred so completeDeferredSetup can upgrade the host later
-            // if an NSScrollView appears (better coordinate system).
-            updateImageOverlays(in: textView)
-            updateTableOverlays(in: textView)
-            updateCalloutOverlays(in: textView)
-            updateCodeBlockOverlays(in: textView)
-            updateTabsOverlays(in: textView)
-            updateCardSectionOverlays(in: textView)
-            updateLinkCardOverlays(in: textView)
+            // Create image overlays. Host may be the text view until `completeDeferredSetup`.
+            // Use the same synchronized layout + no-animation path as note switches.
+            performSynchronizedOverlayLayoutPass(in: textView)
 
             needsDeferredOverlaySetup = true
         }
@@ -4770,6 +4783,13 @@ struct TodoEditorRepresentable: NSViewRepresentable {
 
             guard text != lastSerialized else { return }
 
+            // Tear down stale chrome before new text lands; cancel debounced passes that
+            // would otherwise reconcile against the wrong note mid-transaction (G4).
+            pendingOverlayUpdate?.cancel()
+            pendingOverlayUpdate = nil
+            pendingPostNoteSwitchOverlayWork?.cancel()
+            pendingPostNoteSwitchOverlayWork = nil
+
             let selectedRange = textView.selectedRange()
 
             typingAnimationManager?.clearAllAnimations()
@@ -4785,14 +4805,21 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             textView.setSelectedRange(selectedRange)
 
             isUpdating = false
-            // Ensure overlays are created for deserialized attachments
-            updateImageOverlays(in: textView)
-            updateTableOverlays(in: textView)
-            updateCalloutOverlays(in: textView)
-            updateCodeBlockOverlays(in: textView)
-            updateTabsOverlays(in: textView)
-            updateCardSectionOverlays(in: textView)
-            updateLinkCardOverlays(in: textView)
+
+            // Drop every overlay view immediately so the user never sees the *previous* note's
+            // callout/table/chrome parented on the new storage for a frame (wrong glyph mapping).
+            removeAllOverlays()
+
+            // Defer rebuild to the next main-queue turn so `textContainer`/`textView` geometry
+            // matches the SwiftUI layout pass that triggered the binding change (fixes slide/crop).
+            let overlayWork = DispatchWorkItem { [weak self] in
+                guard let self, let tv = self.textView else { return }
+                self.pendingPostNoteSwitchOverlayWork = nil
+                tv.window?.layoutIfNeeded()
+                self.performSynchronizedOverlayLayoutPass(in: tv)
+            }
+            pendingPostNoteSwitchOverlayWork = overlayWork
+            DispatchQueue.main.async(execute: overlayWork)
 
         }
 
@@ -6070,7 +6097,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 isUpdating = false
             }
 
-            updateTableOverlays(in: textView)
+            performSynchronizedOverlayLayoutPass(in: textView)
             syncText()
         }
 
@@ -6163,11 +6190,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 isUpdating = false
             }
 
-            updateCalloutOverlays(in: textView)
-            updateCodeBlockOverlays(in: textView)
-            updateTabsOverlays(in: textView)
-            updateCardSectionOverlays(in: textView)
-            updateLinkCardOverlays(in: textView)
+            performSynchronizedOverlayLayoutPass(in: textView)
 
             syncText()
         }
@@ -6227,10 +6250,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 isUpdating = false
             }
 
-            updateCodeBlockOverlays(in: textView)
-            updateTabsOverlays(in: textView)
-            updateCardSectionOverlays(in: textView)
-            updateLinkCardOverlays(in: textView)
+            performSynchronizedOverlayLayoutPass(in: textView)
             syncText()
         }
 
@@ -6239,8 +6259,15 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         private func makeTabsAttachment(tabsData: TabsContainerData) -> NSMutableAttributedString {
             var containerWidth = textView?.textContainer?.containerSize.width ?? TabsContainerOverlayView.minWidth
             if containerWidth < 1 { containerWidth = TabsContainerOverlayView.minWidth }
+            let effectiveMin = min(TabsContainerOverlayView.minWidth, containerWidth)
+            let tabsWidth: CGFloat
+            if let pref = tabsData.preferredContentWidth {
+                tabsWidth = max(effectiveMin, min(containerWidth, pref))
+            } else {
+                tabsWidth = containerWidth
+            }
             let height = TabsContainerOverlayView.totalHeight(for: tabsData)
-            let size = CGSize(width: containerWidth, height: height)
+            let size = CGSize(width: tabsWidth, height: height)
 
             let attachment = NoteTabsAttachment(tabsData: tabsData)
             attachment.attachmentCell = CodeBlockSizeAttachmentCell(size: size)
@@ -6289,7 +6316,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 isUpdating = false
             }
 
-            updateTabsOverlays(in: textView)
+            performSynchronizedOverlayLayoutPass(in: textView)
             syncText()
         }
 
@@ -6348,8 +6375,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 isUpdating = false
             }
 
-            updateCardSectionOverlays(in: textView)
-            updateLinkCardOverlays(in: textView)
+            performSynchronizedOverlayLayoutPass(in: textView)
             syncText()
         }
 
@@ -7137,7 +7163,11 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 let effectiveMin = min(TabsContainerOverlayView.minWidth, containerW)
                 let currentWidth = attachment.bounds.width
                 let expectedHeight = TabsContainerOverlayView.totalHeight(for: attachment.tabsData)
-                let atMinFromDeserialization = currentWidth <= effectiveMin && containerW > effectiveMin
+                // Without `preferredContentWidth`, min-width during deserialize is ambiguous; do not
+                // expand to full container if the user explicitly chose the minimum width.
+                let atMinFromDeserialization =
+                    currentWidth <= effectiveMin && containerW > effectiveMin
+                    && attachment.tabsData.preferredContentWidth == nil
                 let needsCorrection = currentWidth < effectiveMin
                     || currentWidth > containerW
                     || abs(attachment.bounds.height - expectedHeight) > 1
@@ -7236,6 +7266,10 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                         let effMin = min(TabsContainerOverlayView.minWidth, tc.containerSize.width)
                         let clamped = max(effMin, min(newWidth, tc.containerSize.width))
                         let newSize = CGSize(width: clamped, height: att.bounds.height)
+                        let cw = tc.containerSize.width
+                        var nextTabs = att.tabsData
+                        nextTabs.preferredContentWidth = abs(clamped - cw) < 1 ? nil : clamped
+                        att.tabsData = nextTabs
                         att.attachmentCell = CodeBlockSizeAttachmentCell(size: newSize)
                         att.bounds = CGRect(origin: .zero, size: newSize)
                         let fr = NSRange(location: 0, length: ts.length)
@@ -7245,7 +7279,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                                 stop.pointee = true
                             }
                         }
-                        self.syncText()
+                        // Match callout: avoid syncText on every drag tick (reduces block glitches).
                     }
 
                     // ── onHeightChanged ──
@@ -7268,6 +7302,19 @@ struct TodoEditorRepresentable: NSViewRepresentable {
 
                     hostView.addSubview(overlay)
                     tabsOverlays[id] = overlay
+                }
+
+                if readOnly {
+                    overlay.onDataChanged = nil
+                    overlay.onDeleteTabs = nil
+                    overlay.onWidthChanged = nil
+                    overlay.onHeightChanged = nil
+                    overlay.onResizeWidthGestureEnded = nil
+                } else {
+                    overlay.onResizeWidthGestureEnded = { [weak self] in
+                        guard let self else { return }
+                        self.syncText()
+                    }
                 }
 
                 overlay.currentContainerWidth = containerW

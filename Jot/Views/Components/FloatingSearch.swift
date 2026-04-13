@@ -175,7 +175,7 @@ struct FloatingSearch: View {
     }
 
     private var archiveOrRestoreQuickActionTitle: String {
-        commandPaletteSelectedNote?.isArchived == true ? "Restore" : "Archive note"
+        commandPaletteSelectedNote?.isArchived == true ? "Restore Note" : "Archive Note"
     }
 
     private var archiveOrRestoreQuickActionIcon: String {
@@ -560,13 +560,13 @@ struct FloatingSearch: View {
         quickActionRow(
             index: 1,
             iconName: "IconFloatingNote",
-            title: "Floating note",
+            title: "Floating Note",
             isEnabled: true,
             trailing: { sidebarStyleShortcutLabel(quickNoteShortcutDisplay) })
         quickActionRow(
             index: 2,
             iconName: "IconMicrophoneSparkle",
-            title: "Start meeting session in a Note",
+            title: "Start Meeting Session in a Note",
             isEnabled: true,
             trailing: { sidebarStyleShortcutLabel(startMeetingSessionShortcutDisplay) })
         quickActionRow(
@@ -578,19 +578,20 @@ struct FloatingSearch: View {
         quickActionRow(
             index: 4,
             iconName: "IconSplit",
-            title: "New Splitview",
+            title: "New Split View",
             isEnabled: true,
             trailing: { EmptyView() })
         quickActionRow(
             index: 5,
             iconName: selectedNote?.isPinned == true ? "IconUnpin" : "IconThumbtack",
-            title: selectedNote?.isPinned == true ? "Unpin note" : "Pin note",
+            title: selectedNote?.isPinned == true ? "Unpin Note" : "Pin Note",
             isEnabled: selectedNote != nil,
             trailing: { EmptyView() })
         quickActionRow(
             index: 6,
             iconName: "IconZenMode",
-            title: "Zen mode",
+            // Same wording as meeting-picker header when the sidebar is hidden (⌘. toggles either way).
+            title: isZenMode ? "Exit zen mode" : "Zen Mode",
             isEnabled: true,
             trailing: { sidebarStyleShortcutLabel("\u{2318}.") })
         quickActionRow(

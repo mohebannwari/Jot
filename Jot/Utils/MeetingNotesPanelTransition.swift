@@ -14,6 +14,9 @@ extension Animation {
     /// Large floating surface (meeting notes overlay): smooth settle, minimal overshoot.
     static let jotMeetingPanelPresent = Animation.spring(response: 0.52, dampingFraction: 0.88)
 
+    /// Compact / expanded chrome ↔ micro-pill: related to present spring, slightly snappier for in-place morph.
+    static let jotMeetingPanelMorph = Animation.spring(response: 0.44, dampingFraction: 0.88)
+
     /// Meeting overlay dismiss: short ease, little bounce — exits softer than they enter.
     static let jotMeetingPanelDismiss = Animation.smooth(duration: 0.26)
 }
