@@ -60,6 +60,7 @@ struct FloatingSearch: View {
     @State private var selectedResultIndex: Int = 0
     @State private var paletteMode: CommandPaletteMode = .root
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
 
     /// Figma command palette width (node 2780:4006): 562pt minimum.
     private let surfaceWidth: CGFloat = 562
@@ -101,6 +102,25 @@ struct FloatingSearch: View {
         static let appear = Animation.bouncy(duration: 0.35)
         static let disappear = Animation.snappy(duration: 0.24)
         static let resultHover = Animation.spring(response: 0.25, dampingFraction: 0.86)
+        /// Quick actions ↔ meeting note picker: spring paired with symmetric scale+opacity (same in/out; `.slide` is asymmetric and reverses by insert vs remove).
+        static let paletteSwap = Animation.spring(duration: 0.38, bounce: 0.28)
+    }
+
+    /// Center-scaled crossfade — identical forward/back; avoids `.slide`’s leading/trailing flip when two branches swap.
+    private var paletteSwapTransition: AnyTransition {
+        if accessibilityReduceMotion {
+            .opacity
+        } else {
+            .scale(scale: 0.96, anchor: .center).combined(with: .opacity)
+        }
+    }
+
+    private func withPaletteSwapAnimation(_ updates: () -> Void) {
+        if accessibilityReduceMotion {
+            updates()
+        } else {
+            withAnimation(SearchAnimations.paletteSwap, updates)
+        }
     }
 
     private var trimmedSearch: String {
@@ -248,7 +268,7 @@ struct FloatingSearch: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .floatingSearchSwitchToMeetingPickNote)) { _ in
             guard isPresented else { return }
-            withAnimation(SearchAnimations.appear) {
+            withPaletteSwapAnimation {
                 paletteMode = .meetingPickNote
                 selectedResultIndex = 0
                 searchText = ""
@@ -389,10 +409,14 @@ struct FloatingSearch: View {
                 .fill(Color("BorderSubtleColor"))
                 .frame(height: 0.5)
 
-            if paletteMode == .meetingPickNote {
-                meetingPickNoteBlock
-            } else {
-                rootQuickActionsAndLastSearchBlock
+            Group {
+                if paletteMode == .meetingPickNote {
+                    meetingPickNoteBlock
+                        .transition(paletteSwapTransition)
+                } else {
+                    rootQuickActionsAndLastSearchBlock
+                        .transition(paletteSwapTransition)
+                }
             }
         }
     }
@@ -415,10 +439,6 @@ struct FloatingSearch: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
-
-            Rectangle()
-                .fill(Color("BorderSubtleColor"))
-                .frame(height: 0.5)
 
             VStack(spacing: 0) {
                 ForEach(Array(meetingPickChoices.enumerated()), id: \.element.id) {
@@ -1035,7 +1055,9 @@ struct FloatingSearch: View {
     /// Escape / macOS exit command: leave meeting sub-palette first, then dismiss.
     private func handlePaletteEscapeKey() {
         if paletteMode == .meetingPickNote {
-            paletteMode = .root
+            withPaletteSwapAnimation {
+                paletteMode = .root
+            }
         } else {
             dismissSearch()
         }
@@ -1049,11 +1071,15 @@ struct FloatingSearch: View {
             // “Start recording in:” behind an empty results strip or footer-only UI.
             searchText = ""
             engine.query = ""
-            paletteMode = .meetingPickNote
+            withPaletteSwapAnimation {
+                paletteMode = .meetingPickNote
+            }
             openIntent = .commandPaletteRoot
         } else {
             searchText = engine.query
-            paletteMode = .root
+            withPaletteSwapAnimation {
+                paletteMode = .root
+            }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
             isSearchFocused = true
@@ -1133,8 +1159,10 @@ struct FloatingSearch: View {
             #endif
             dismissSearch()
         case 2:
-            paletteMode = .meetingPickNote
-            selectedResultIndex = 0
+            withPaletteSwapAnimation {
+                paletteMode = .meetingPickNote
+                selectedResultIndex = 0
+            }
         case 3:
             NotificationCenter.default.post(name: .createNewFolder, object: nil)
             dismissSearch()

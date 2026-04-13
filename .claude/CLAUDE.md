@@ -116,21 +116,45 @@ Before any feature implementation:
 
 ---
 
+## Features -- New Feature Development (mandatory)
+
+**This applies to every new feature implementation.** The **Superpowers** plugin skills define the canonical pipeline. **You must invoke, trigger, and execute them one by one in the order below** -- no skipping, batching, or reordering. Treat each step as complete only when its outcomes exist (questions answered, worktree ready, plan written, subagent work done, tests red-green, review done, branch finished).
+
+**How skills relate to commands:** Superpowers is built so skills can **fire on context match** (no slash-command required in some setups). That is **automatic surfacing**, not permission to omit a phase. For feature work, still **walk the list top to bottom** and ensure each skill’s work actually runs.
+
+### Superpowers pipeline (strict order)
+
+
+| Step | Skill                                        | What to do                                                                                                                   |
+| ---- | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| 1    | `superpowers:brainstorming`                  | Refine the spec with clarifying questions until requirements are unambiguous.                                                |
+| 2    | `superpowers:using-git-worktrees`            | Use an isolated branch workspace per task (worktree per task, not shared dirty trees).                                       |
+| 3    | `superpowers:writing-plans`                  | Break the design into **2–5 minute** tasks; each task should be small enough to implement and verify independently.          |
+| 4    | `superpowers:subagent-driven-development`    | **Dispatch a fresh subagent per task**; do not accumulate unbounded context in the lead agent for implementation grunt work. |
+| 5    | `superpowers:test-driven-development`        | **Red–Green–Refactor** is enforced: failing test first, then implementation, then cleanup.                                   |
+| 6    | `superpowers:requesting-code-review`         | **Two-stage review per task** before treating the task as done.                                                              |
+| 7    | `superpowers:finishing-a-development-branch` | Close the loop: **merge, open/land PR, or discard** -- never leave the branch in an ambiguous state.                         |
+
+
+**Context Engineering** (`INITIAL.md`, PRP generate/execute) remains the artifact path for this repo; run it **in service of** the Superpowers pipeline (planning inputs for step 1 and step 3), not as a substitute for any Superpowers step.
+
+---
+
 ## Tool Calling & Skills
 
 **Always invoke the right skill before acting:**
 
 
-| Task                            | Skills                                                                                                      |
-| ------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| New feature                     | `superpowers:brainstorming` -> `superpowers:writing-plans` -> `superpowers:test-driven-development`         |
-| Bug                             | `debugging` skill (reproduce-first -- see Bug Workflow below)                                               |
-| Design / UI from Figma (Swift)  | `figma-to-swiftui` -> `figma-design` -> `frontend-design` (invoke all three -- Swift/SwiftUI projects only) |
-| Design / UI from Figma (Web/RN) | `figma-design` -> `frontend-design` (invoke both -- web, React Native, websites, any non-Swift project)     |
-| Icons (Swift)                   | Always download from Figma via `figma-to-swiftui` -- never use placeholders unless explicitly told          |
-| Icons (Web/RN)                  | Always download from Figma via `figma-design` -- never use placeholders unless explicitly told              |
-| Completion                      | `superpowers:verification-before-completion` -> `superpowers:requesting-code-review`                        |
-| Multi-task                      | `superpowers:dispatching-parallel-agents`                                                                   |
+| Task                            | Skills                                                                                                                                                                                                                                                                           |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| New feature                     | **Full Superpowers pipeline in order** -- see **Features -- New Feature Development**: `brainstorming` -> `using-git-worktrees` -> `writing-plans` -> `subagent-driven-development` -> `test-driven-development` -> `requesting-code-review` -> `finishing-a-development-branch` |
+| Bug                             | `debugging` skill (reproduce-first -- see Bug Workflow below)                                                                                                                                                                                                                    |
+| Design / UI from Figma (Swift)  | `figma-to-swiftui` -> `figma-design` -> `frontend-design` (invoke all three -- Swift/SwiftUI projects only)                                                                                                                                                                      |
+| Design / UI from Figma (Web/RN) | `figma-design` -> `frontend-design` (invoke both -- web, React Native, websites, any non-Swift project)                                                                                                                                                                          |
+| Icons (Swift)                   | Always download from Figma via `figma-to-swiftui` -- never use placeholders unless explicitly told                                                                                                                                                                               |
+| Icons (Web/RN)                  | Always download from Figma via `figma-design` -- never use placeholders unless explicitly told                                                                                                                                                                                   |
+| Completion                      | `superpowers:verification-before-completion` -> `superpowers:requesting-code-review`                                                                                                                                                                                             |
+| Multi-task                      | `superpowers:dispatching-parallel-agents`                                                                                                                                                                                                                                        |
 
 
 **MCP / Plugin priority:**

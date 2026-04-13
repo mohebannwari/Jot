@@ -1,8 +1,6 @@
 ---
-description: "SVGs downloaded from Figma MCP asset URLs contain CSS variables that Xcode cannot parse -- must be replaced before adding to asset catalog"
-alwaysApply: false
+alwaysApply: true
 ---
-
 # Figma SVG CSS variable cleanup
 
 When downloading SVG icons from Figma MCP (`get_design_context` asset URLs), the SVGs contain CSS custom properties that Xcode's asset catalog cannot interpret:

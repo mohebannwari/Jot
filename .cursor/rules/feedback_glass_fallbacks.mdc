@@ -1,11 +1,6 @@
 ---
-description: "Pre-26 glass fallbacks must use .ultraThinMaterial (not solid colors) for translucency. Window must be transparent on ALL versions. BackdropBlurView uses .behindWindow blending."
-globs:
-  - "Jot/Utils/GlassEffects.swift"
-  - "Jot/Views/Components/FloatingSearch.swift"
-alwaysApply: false
+alwaysApply: true
 ---
-
 # Glass effect fallback patterns for pre-macOS 26
 
 Glass effect fallbacks for pre-macOS 26 must provide actual translucency, not solid opaque fills.
