@@ -39,6 +39,9 @@ final class CalloutOverlayView: NSView {
     var onDataChanged:  ((CalloutData) -> Void)?
     var onDeleteCallout: (() -> Void)?
     var onWidthChanged: ((CGFloat) -> Void)?
+    /// Invoked once when a resize gesture completes (drag release or double-click snap).
+    /// Keeps `syncText()` off the hot path so `styleTodoParagraphs` / binding churn does not flash the whole note during drag.
+    var onResizeGestureEnded: (() -> Void)?
     /// Width of the callout block content (attachment width). Layout uses this instead of
     /// `bounds.width` because `bounds.width` includes `resizeHitOutset` for hit testing.
     var contentLayoutWidth: CGFloat = 0
@@ -140,11 +143,15 @@ final class CalloutOverlayView: NSView {
         resizeHandle.onDrag = { [weak self] newWidth in
             self?.handleResize(to: newWidth)
         }
+        resizeHandle.onDragEnd = { [weak self] in
+            self?.onResizeGestureEnded?()
+        }
         resizeHandle.onDoubleClick = { [weak self] in
             // Double-click snaps to full container width. The coordinator's onWidthChanged
             // will update attachment, invalidate layout, and persist. See setup-doubleclick-handles todo.
             if let containerW = self?.currentContainerWidth, containerW > 0 {
                 self?.handleResize(to: containerW)
+                self?.onResizeGestureEnded?()
             }
         }
         addSubview(resizeHandle)
@@ -420,9 +427,12 @@ private final class _CalloutResizeHandle: NSView {
 
     var onDrag: ((CGFloat) -> Void)?
     var onDoubleClick: (() -> Void)?  // Supports double-click on right edge to snap to full container width (per user request for callout/code/tab blocks etc.)
+    /// Called on mouse up after the user actually dragged (not plain click / double-click).
+    var onDragEnd: (() -> Void)?
 
     private var dragStartX: CGFloat = 0
     private var dragStartWidth: CGFloat = 0
+    private var didDragThisGesture = false
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -452,6 +462,7 @@ private final class _CalloutResizeHandle: NSView {
             onDoubleClick?()
             return
         }
+        didDragThisGesture = false
         dragStartX = event.locationInWindow.x
         // Use content width, not overlay bounds.width (bounds include resizeHitOutset on the right).
         if let overlay = superview as? CalloutOverlayView {
@@ -464,11 +475,17 @@ private final class _CalloutResizeHandle: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
+        didDragThisGesture = true
         let delta = event.locationInWindow.x - dragStartX
         onDrag?(dragStartWidth + delta)
     }
 
-    override func mouseUp(with event: NSEvent) { }
+    override func mouseUp(with event: NSEvent) {
+        if didDragThisGesture {
+            didDragThisGesture = false
+            onDragEnd?()
+        }
+    }
 }
 
 // MARK: - Chip Button (type picker trigger)

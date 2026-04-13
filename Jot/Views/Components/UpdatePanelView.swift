@@ -13,10 +13,8 @@ struct UpdatePanelView: View {
     let variant: UpdatePanelVariant
     var onRelaunch: () -> Void = {}
     var onRemindLater: () -> Void = {}
-    var isEmbeddedInGlass: Bool = false
 
     @Environment(\.colorScheme) private var colorScheme
-    @State private var isPreparingRelaunch = false
 
     private let cornerRadius: CGFloat = 22
     // SettingsThemeAuto is 2528×1684 px — keep this ratio locked so the image
@@ -33,12 +31,7 @@ struct UpdatePanelView: View {
             }
             .padding(8)
 
-            // Button section or download progress
-            if isPreparingRelaunch {
-                downloadProgressSection
-            } else {
-                buttonSection
-            }
+            buttonSection
         }
         .padding(8)
         .background { backgroundLayer }
@@ -61,24 +54,13 @@ struct UpdatePanelView: View {
     private func bgImageLayout(_ size: CGSize) -> (w: CGFloat, h: CGFloat, x: CGFloat, y: CGFloat) {
         // Anchor everything to panel WIDTH so the image scales uniformly and
         // never distorts when the panel is narrower in the floating sidebar.
-        // y-offsets are pre-computed from the 240 pt Figma design:
-        //   relaunch:    original y = 179 * -1.4537 = -260 pt → -260/240 = -1.084 × w
-        //   downloading: original y = 153 * -1.7816 = -273 pt → -273/240 = -1.136 × w
+        // y-offset is pre-computed from the 240 pt Figma design:
+        //   relaunch: original y = 179 * -1.4537 = -260 pt → -260/240 = -1.084 × w
         let w = size.width
         let h = size.height
-        var imgW: CGFloat
-        var x: CGFloat
-        var designedY: CGFloat
-
-        if isPreparingRelaunch {
-            imgW = w * 2.659
-            x = w * -0.2025
-            designedY = w * -1.136
-        } else {
-            imgW = w * 2.7458
-            x = w * -0.2342
-            designedY = w * -1.084
-        }
+        let imgW = w * 2.7458
+        let x = w * -0.2342
+        let designedY = w * -1.084
 
         let imgH = imgW / imageAspectRatio
         // Ensure image bottom edge reaches container bottom
@@ -114,7 +96,7 @@ struct UpdatePanelView: View {
             .renderingMode(.template)
             .resizable()
             .scaledToFit()
-            .frame(width: 28, height: 33)
+            .frame(width: 24, height: 24)
             .foregroundStyle(Color("PrimaryTextColor"))
     }
 
@@ -122,8 +104,8 @@ struct UpdatePanelView: View {
 
     private var headerSection: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Update to version \(variantVersion)")
-                .font(.system(size: 15, weight: .medium))
+            Text("Update App — \(variantVersion)")
+                .font(FontManager.heading(size: 15, weight: .medium))
                 .tracking(-0.5)
                 .lineLimit(1)
                 .foregroundStyle(Color("PrimaryTextColor"))
@@ -132,14 +114,14 @@ struct UpdatePanelView: View {
             case .downloading:
                 HStack(spacing: 6) {
                     BrailleLoader(pattern: .orbit, size: 11)
-                    Text("Downloading update...")
-                        .font(.system(size: 12, weight: .medium))
+                    Text("Downloading update…")
+                        .font(FontManager.heading(size: 12, weight: .medium))
                         .tracking(-0.3)
                         .foregroundStyle(Color("SecondaryTextColor"))
                 }
             case .relaunch:
-                Text("Ready to install")
-                    .font(.system(size: 12, weight: .medium))
+                Text("Relaunch to finish installing")
+                    .font(FontManager.heading(size: 12, weight: .medium))
                     .tracking(-0.3)
                     .foregroundStyle(Color("SecondaryTextColor"))
             }
@@ -163,16 +145,8 @@ struct UpdatePanelView: View {
         case .relaunch:
             VStack(spacing: 8) {
                 ShimmerButton(
-                    label: "Download & Relaunch",
-                    action: {
-                        withAnimation(.jotSpring) {
-                            isPreparingRelaunch = true
-                        }
-                        Task { @MainActor in
-                            try? await Task.sleep(for: .seconds(12))
-                            onRelaunch()
-                        }
-                    }
+                    label: "Relaunch to update",
+                    action: onRelaunch
                 )
 
                 Button(action: onRemindLater) {
@@ -184,98 +158,6 @@ struct UpdatePanelView: View {
                         .padding(.vertical, 8)
                 }
                 .buttonStyle(.plain)
-            }
-        }
-    }
-
-    // MARK: - Download Progress
-
-    @ViewBuilder
-    private var downloadProgressSection: some View {
-        let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
-        let content = VStack(spacing: 4) {
-            Text("DOWNLOADING...")
-                .font(FontManager.metadata(size: 11, weight: .medium))
-                .foregroundStyle(Color("PrimaryTextColor"))
-                .kerning(0.5)
-
-            BrailleTrailBar(duration: 10)
-        }
-        .padding(8)
-
-        if isEmbeddedInGlass {
-            content
-                .background(.thinMaterial, in: shape)
-                .overlay(shape.stroke(Color.primary.opacity(0.10), lineWidth: 0.5))
-                .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
-        } else {
-            content
-                .thinLiquidGlass(in: shape)
-                .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .top)))
-        }
-    }
-}
-
-// MARK: - Braille Cascade Bar
-
-private struct BrailleTrailBar: View {
-    var duration: TimeInterval = 12
-
-    private let helixFrames = BraillePattern.helix.frames
-    private let barHeight: CGFloat = 16
-
-    @State private var frameIndex: Int = 0
-    @State private var fillProgress: CGFloat = 0
-    @State private var animationTask: Task<Void, Never>?
-
-    var body: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .leading) {
-                // Cascade braille characters filling the entire bar
-                HStack(spacing: 0) {
-                    ForEach(0..<tileCount(for: geo.size.width), id: \.self) { i in
-                        let tileFrame = (frameIndex + i * 3) % helixFrames.count
-                        Text(helixFrames[tileFrame])
-                            .font(.system(size: 10, weight: .medium, design: .monospaced))
-                            .frame(maxWidth: .infinity)
-                    }
-                }
-                .frame(width: geo.size.width, height: geo.size.height, alignment: .leading)
-                .foregroundStyle(Color.accentColor)
-                // Clip to the fill progress width
-                .mask(alignment: .leading) {
-                    Rectangle()
-                        .frame(width: geo.size.width * fillProgress)
-                }
-            }
-        }
-        .frame(height: barHeight)
-        .background(Color("BorderSubtleColor").opacity(0.15))
-        .clipShape(Capsule())
-        .onAppear { startAnimation() }
-        .onDisappear { animationTask?.cancel() }
-    }
-
-    private func tileCount(for width: CGFloat) -> Int {
-        let tileWidth: CGFloat = 28
-        return max(1, Int(ceil(width / tileWidth)))
-    }
-
-    private func startAnimation() {
-        animationTask?.cancel()
-
-        // Fill progress: 0 -> 1 over the duration
-        // Use linear so the bar fills uniformly and completes before relaunch
-        withAnimation(.linear(duration: duration)) {
-            fillProgress = 1
-        }
-
-        // Cascade frame cycling
-        animationTask = Task { @MainActor in
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(BraillePattern.helix.nativeInterval))
-                guard !Task.isCancelled else { return }
-                frameIndex = (frameIndex + 1) % helixFrames.count
             }
         }
     }

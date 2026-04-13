@@ -76,24 +76,34 @@ struct FloatingEditToolbar: View {
 
     @Environment(\.colorScheme) private var colorScheme
 
+    /// Matches the tabs block content body (`TabsContainerOverlayView.blocksColor` /
+    /// Figma bg/blocks): `SurfaceDefaultColor` in light (white) and
+    /// `DetailPaneColor` in dark (#0C0A09). Drop shadow stays on the capsule layer.
     private var pillBg: Color {
-        colorScheme == .dark
-            ? Color("SecondaryBackgroundColor")
-            : .white
+        switch colorScheme {
+        case .light:
+            Color("SurfaceDefaultColor")
+        case .dark:
+            Color("DetailPaneColor")
+        @unknown default:
+            Color("SurfaceDefaultColor")
+        }
     }
 
     private var pillTextColor: Color {
         colorScheme == .dark ? .white : Color("PrimaryTextColor")
     }
 
-    private var pillShadowColor: Color {
-        colorScheme == .dark
-            ? Color.black.opacity(0.5)
-            : Color.black.opacity(0.12)
-    }
-
-    private var pillShadowRadius: CGFloat {
-        colorScheme == .dark ? 3 : 2
+    /// Picker capsule fill; subtle shadow only in light mode (none in dark).
+    @ViewBuilder
+    private func pickerPillCapsuleBackground() -> some View {
+        if colorScheme == .dark {
+            Capsule().fill(pillBg)
+        } else {
+            Capsule()
+                .fill(pillBg)
+                .shadow(color: Color.black.opacity(0.12), radius: 2, x: 0, y: 1)
+        }
     }
 
     var body: some View {
@@ -206,11 +216,7 @@ struct FloatingEditToolbar: View {
             .padding(.vertical, 8)
         }
         .buttonStyle(.plain)
-        .background(
-            Capsule()
-                .fill(pillBg)
-                .shadow(color: pillShadowColor, radius: pillShadowRadius, x: 0, y: 1)
-        )
+        .background(pickerPillCapsuleBackground())
         .background(GeometryReader { geo in
             Color.clear.preference(key: PillOffsetKey.self, value: [.textOptions: geo.frame(in: .named("toolbar")).midX])
         })
@@ -254,11 +260,7 @@ struct FloatingEditToolbar: View {
             .padding(.vertical, 8)
         }
         .buttonStyle(.plain)
-        .background(
-            Capsule()
-                .fill(pillBg)
-                .shadow(color: pillShadowColor, radius: pillShadowRadius, x: 0, y: 1)
-        )
+        .background(pickerPillCapsuleBackground())
         .background(GeometryReader { geo in
             Color.clear.preference(key: PillOffsetKey.self, value: [.fontSize: geo.frame(in: .named("toolbar")).midX])
         })
@@ -291,11 +293,7 @@ struct FloatingEditToolbar: View {
             .padding(.vertical, 8)
         }
         .buttonStyle(.plain)
-        .background(
-            Capsule()
-                .fill(pillBg)
-                .shadow(color: pillShadowColor, radius: pillShadowRadius, x: 0, y: 1)
-        )
+        .background(pickerPillCapsuleBackground())
         .background(GeometryReader { geo in
             Color.clear.preference(key: PillOffsetKey.self, value: [.fontFamily: geo.frame(in: .named("toolbar")).midX])
         })
@@ -325,11 +323,7 @@ struct FloatingEditToolbar: View {
             .padding(.vertical, 8)
         }
         .buttonStyle(.plain)
-        .background(
-            Capsule()
-                .fill(pillBg)
-                .shadow(color: pillShadowColor, radius: pillShadowRadius, x: 0, y: 1)
-        )
+        .background(pickerPillCapsuleBackground())
         .background(GeometryReader { geo in
             Color.clear.preference(key: PillOffsetKey.self, value: [.color: geo.frame(in: .named("toolbar")).midX])
         })

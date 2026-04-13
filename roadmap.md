@@ -93,6 +93,7 @@ These features are acknowledged gaps but not planned for immediate implementatio
 
 ## Excluded (Not Planned)
 
+
 | Feature                           | Reason                                       |
 | --------------------------------- | -------------------------------------------- |
 | iCloud Sync                       | Jot is fully local by design                 |
@@ -101,6 +102,7 @@ These features are acknowledged gaps but not planned for immediate implementatio
 | Handwriting Search                | No drawing layer to search                   |
 | Apple Watch Support               | macOS-only app                               |
 | Phone Call Recording              | iOS-only feature                             |
+
 
 ---
 
@@ -125,3 +127,4 @@ Phase 4 (Future Exploration)
   9. Widgets
   10. Siri Integration
 ```
+

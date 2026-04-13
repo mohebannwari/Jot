@@ -26,6 +26,13 @@ struct QuickNoteHotKey: Codable, Equatable {
         modifiers: UInt32(controlKey | shiftKey)
     )
 
+    /// Default global shortcut to open the command palette in “pick a note for meeting” mode.
+    /// ⌃⇧M — mnemonic “meeting”; kept distinct from Quick Notes (⌃⇧J).
+    static let defaultStartMeetingSession = QuickNoteHotKey(
+        keyCode: UInt32(kVK_ANSI_M),
+        modifiers: UInt32(controlKey | shiftKey)
+    )
+
     /// True if the hotkey has at least one modifier. Required for a valid global
     /// hotkey — pure letter keys would block normal typing system-wide.
     var hasAnyModifier: Bool {
@@ -103,6 +110,15 @@ extension QuickNoteHotKey {
     /// need to install the hotkey before ThemeManager is constructed.
     static func loadFromStandardDefaults() -> QuickNoteHotKey? {
         guard let data = UserDefaults.standard.data(forKey: ThemeManager.quickNoteHotKeyKey),
+              let decoded = try? JSONDecoder().decode(QuickNoteHotKey.self, from: data) else {
+            return nil
+        }
+        return decoded
+    }
+
+    /// Same pattern as `loadFromStandardDefaults` for the Start meeting session chord.
+    static func loadStartMeetingSessionFromStandardDefaults() -> QuickNoteHotKey? {
+        guard let data = UserDefaults.standard.data(forKey: ThemeManager.startMeetingSessionHotKeyKey),
               let decoded = try? JSONDecoder().decode(QuickNoteHotKey.self, from: data) else {
             return nil
         }

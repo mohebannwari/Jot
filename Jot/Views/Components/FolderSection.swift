@@ -319,6 +319,7 @@ struct FolderSection: View {
 
             // Trailing actions: same reveal as NoteListCard — collapsed width + clip so
             // ellipsis and “new note” slide in from the right on row hover (.jotHover).
+            // Spacing matches `NoteListCard` waveform ↔ ellipsis (`sidebarTrailingAuxiliarySpacing`).
             HStack(spacing: 12) {
                 Menu {
                     Button {
@@ -369,7 +370,8 @@ struct FolderSection: View {
                     HapticManager.shared.buttonTap()
                     onCreateNoteInFolder(folder.id)
                 } label: {
-                    Image("IconNoteText")
+                    // Match sidebar “New Note” (square + pencil).
+                    Image("IconEditSmall2")
                         .renderingMode(.template)
                         .resizable()
                         .scaledToFit()

@@ -2,7 +2,8 @@
 //  GlobalHotKeyManager.swift
 //  Jot
 //
-//  Thin Swift wrapper around Carbon's RegisterEventHotKey. One hotkey at a time.
+//  Thin Swift wrapper around Carbon's RegisterEventHotKey. Supports multiple
+//  simultaneous global shortcuts (Quick Note panel, Start meeting session, …).
 //  Works under the macOS sandbox without any entitlement, because Carbon hotkey
 //  registration goes through the WindowServer's registered-hotkey table — not
 //  the accessibility APIs that NSEvent.addGlobalMonitorForEvents would require.
@@ -14,18 +15,21 @@ import AppKit
 import Carbon.HIToolbox
 import os
 
+/// Identifies which feature owns a Carbon `EventHotKeyID.id` within this process.
+enum GlobalHotKeySlot: UInt32, CaseIterable {
+    case quickNote = 1
+    case startMeetingSession = 2
+}
+
 final class GlobalHotKeyManager {
 
     static let shared = GlobalHotKeyManager()
 
-    /// Called on the main queue when the registered hotkey fires.
-    var onFire: (() -> Void)?
-
-    private var hotKeyRef: EventHotKeyRef?
+    private var hotKeyRefs: [UInt32: EventHotKeyRef] = [:]
+    private var handlers: [UInt32: () -> Void] = [:]
     private var eventHandlerRef: EventHandlerRef?
     /// FourCharCode "JOTQ" — must be unique across all hotkey registrations in the process.
     private let signature: OSType = 0x4A4F5451
-    private let hotKeyID: UInt32 = 1
     private let logger = Logger(subsystem: "com.jot", category: "GlobalHotKeyManager")
 
     private init() {
@@ -33,7 +37,9 @@ final class GlobalHotKeyManager {
     }
 
     deinit {
-        uninstall()
+        for slot in GlobalHotKeySlot.allCases {
+            unregister(slot: slot)
+        }
         if let handler = eventHandlerRef {
             RemoveEventHandler(handler)
         }
@@ -41,18 +47,23 @@ final class GlobalHotKeyManager {
 
     // MARK: - Public API
 
-    /// Install a hotkey. If one is already installed, it is replaced.
+    /// Main-queue callback when the chord for `slot` fires. Pass `nil` to detach.
+    func setHandler(_ handler: (() -> Void)?, for slot: GlobalHotKeySlot) {
+        handlers[slot.rawValue] = handler
+    }
+
+    /// Install or replace the hotkey for `slot`. Other slots are untouched.
     /// Returns true if registration succeeded.
     @discardableResult
-    func install(_ hotKey: QuickNoteHotKey) -> Bool {
-        uninstall()
+    func register(_ hotKey: QuickNoteHotKey, slot: GlobalHotKeySlot) -> Bool {
+        unregister(slot: slot)
 
         guard hotKey.hasAnyModifier else {
             logger.warning("Refusing to install hotkey with no modifiers (keyCode: \(hotKey.keyCode))")
             return false
         }
 
-        let eventHotKeyID = EventHotKeyID(signature: signature, id: hotKeyID)
+        let eventHotKeyID = EventHotKeyID(signature: signature, id: slot.rawValue)
         var ref: EventHotKeyRef?
         let status = RegisterEventHotKey(
             hotKey.keyCode,
@@ -63,27 +74,21 @@ final class GlobalHotKeyManager {
             &ref
         )
         if status == noErr, let ref = ref {
-            hotKeyRef = ref
-            logger.info("Installed global hotkey: \(hotKey.displayString)")
+            hotKeyRefs[slot.rawValue] = ref
+            logger.info("Installed global hotkey [\(slot.rawValue)]: \(hotKey.displayString)")
             return true
         } else {
-            logger.error("Failed to install global hotkey \(hotKey.displayString): OSStatus \(status)")
+            logger.error("Failed to install global hotkey \(hotKey.displayString) slot \(slot.rawValue): OSStatus \(status)")
             return false
         }
     }
 
-    /// Unregister the current hotkey, if any.
-    func uninstall() {
-        if let ref = hotKeyRef {
+    /// Unregister one slot only.
+    func unregister(slot: GlobalHotKeySlot) {
+        let id = slot.rawValue
+        if let ref = hotKeyRefs.removeValue(forKey: id) {
             UnregisterEventHotKey(ref)
-            hotKeyRef = nil
         }
-    }
-
-    /// Replace the current hotkey with a new one. Shorthand for uninstall + install.
-    @discardableResult
-    func replace(with newHotKey: QuickNoteHotKey) -> Bool {
-        install(newHotKey)
     }
 
     // MARK: - Carbon event handler
@@ -110,12 +115,12 @@ final class GlobalHotKeyManager {
             )
             guard status == noErr,
                   hkID.signature == manager.signature,
-                  hkID.id == manager.hotKeyID else {
+                  manager.hotKeyRefs[hkID.id] != nil else {
                 return noErr
             }
 
             DispatchQueue.main.async {
-                manager.onFire?()
+                manager.handlers[hkID.id]?()
             }
             return noErr
         }

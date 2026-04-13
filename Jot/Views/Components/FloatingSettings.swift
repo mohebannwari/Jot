@@ -274,42 +274,80 @@ struct SettingsPage: View {
                     }
                 }
 
-                // Shortcuts
+                // Shortcuts (grouped card matches Sort options: 22pt radius via settingsGroupedCard).
                 VStack(alignment: .leading, spacing: 12) {
                     sectionLabel("Shortcuts")
 
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack(alignment: .center) {
-                            Text("Quick Notes")
-                                .font(FontManager.heading(size: 13, weight: .semibold))
-                                .foregroundColor(Color("PrimaryTextColor"))
+                    settingsGroupedCard {
+                        // Same title/subtitle spacing as settingsCheckbox (VStack spacing 2). The recorder
+                        // sits in a trailing column so its height does not sit between title and subtitle.
+                        HStack(alignment: .top, spacing: 12) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Floating note")
+                                    .font(FontManager.heading(size: 13, weight: .medium))
+                                    .tracking(-0.2)
+                                    .foregroundColor(Color("SettingsPrimaryTextColor"))
 
-                            Spacer()
+                                Text(
+                                    "Open a floating note panel from any app using a global keyboard shortcut."
+                                )
+                                .font(FontManager.heading(size: 11, weight: .regular))
+                                .foregroundColor(Color("SettingsPlaceholderTextColor"))
+                                .fixedSize(horizontal: false, vertical: true)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
 
                             HotKeyRecorderView(
                                 hotKey: $themeManager.quickNoteHotKey,
                                 onChange: { newHotKey in
                                     if let hk = newHotKey {
-                                        return GlobalHotKeyManager.shared.replace(with: hk)
+                                        let other =
+                                            themeManager.startMeetingSessionHotKey
+                                            ?? QuickNoteHotKey.defaultStartMeetingSession
+                                        if hk == other { return false }
+                                        return GlobalHotKeyManager.shared.register(hk, slot: .quickNote)
                                     } else {
-                                        GlobalHotKeyManager.shared.uninstall()
+                                        GlobalHotKeyManager.shared.unregister(slot: .quickNote)
                                         return true
                                     }
                                 }
                             )
+                            // Optical alignment with the 13pt title line (checkbox row nudges the glyph 2pt).
+                            .padding(.top, 2)
                         }
-                        .padding(.vertical, 12)
-                        .padding(.horizontal, 14)
-                        .background(
-                            Capsule(style: .continuous)
-                                .fill(colorScheme == .light ? Color.white : Color("SettingsOptionCardColor"))
-                        )
 
-                        Text("Open a floating note panel from any app using a global keyboard shortcut.")
-                            .font(FontManager.heading(size: 11, weight: .regular))
-                            .foregroundColor(Color("SettingsPlaceholderTextColor"))
-                            .fixedSize(horizontal: false, vertical: true)
-                            .padding(.horizontal, 14)
+                        HStack(alignment: .top, spacing: 12) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Start meeting session")
+                                    .font(FontManager.heading(size: 13, weight: .medium))
+                                    .tracking(-0.2)
+                                    .foregroundColor(Color("SettingsPrimaryTextColor"))
+
+                                Text(
+                                    "Open Jot's command palette in pick-a-note-for-meeting mode from any app."
+                                )
+                                .font(FontManager.heading(size: 11, weight: .regular))
+                                .foregroundColor(Color("SettingsPlaceholderTextColor"))
+                                .fixedSize(horizontal: false, vertical: true)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                            HotKeyRecorderView(
+                                hotKey: $themeManager.startMeetingSessionHotKey,
+                                onChange: { newHotKey in
+                                    if let hk = newHotKey {
+                                        let other = themeManager.quickNoteHotKey ?? QuickNoteHotKey.default
+                                        if hk == other { return false }
+                                        return GlobalHotKeyManager.shared.register(
+                                            hk, slot: .startMeetingSession)
+                                    } else {
+                                        GlobalHotKeyManager.shared.unregister(slot: .startMeetingSession)
+                                        return true
+                                    }
+                                }
+                            )
+                            .padding(.top, 2)
+                        }
                     }
                 }
 
@@ -689,20 +727,20 @@ struct SettingsPage: View {
             VStack(alignment: .leading, spacing: 8) {
                 settingsGroupedCard {
                     tintRow(
-                        title: "Hue",
-                        caption: "Choose a tint color"
-                    ) {
-                        HueGradientSlider(value: $themeManager.tintHue)
-                            .frame(width: 140)
-                    }
-
-                    tintRow(
                         title: "Intensity",
                         caption: "Control how strongly the tint is applied",
                         trailing: "\(Int((themeManager.tintIntensity * 100).rounded()))%"
                     ) {
                         Slider(value: $themeManager.tintIntensity, in: 0...1)
                             .tint(Color("AccentColor"))
+                            .frame(width: 140)
+                    }
+
+                    tintRow(
+                        title: "Hue",
+                        caption: "Choose a tint color"
+                    ) {
+                        HueGradientSlider(value: $themeManager.tintHue)
                             .frame(width: 140)
                     }
                 }

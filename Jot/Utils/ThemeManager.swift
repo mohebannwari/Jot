@@ -125,6 +125,8 @@ final class ThemeManager: ObservableObject {
 
     // Quick Notes feature keys
     static let quickNoteHotKeyKey = "QuickNoteHotKey"
+    /// Global shortcut to open command palette in meeting “pick a note” mode.
+    static let startMeetingSessionHotKeyKey = "StartMeetingSessionHotKey"
     static let quickNotesFolderIDKey = "QuickNotesFolderID"
 
     // Appearance tint keys
@@ -287,6 +289,19 @@ final class ThemeManager: ObservableObject {
         }
     }
 
+    /// Global shortcut: open main window command palette in meeting pick-note state.
+    @Published var startMeetingSessionHotKey: QuickNoteHotKey? {
+        didSet {
+            guard hasFinishedInitialization else { return }
+            if let hk = startMeetingSessionHotKey,
+               let data = try? JSONEncoder().encode(hk) {
+                userDefaults.set(data, forKey: Self.startMeetingSessionHotKeyKey)
+            } else {
+                userDefaults.removeObject(forKey: Self.startMeetingSessionHotKeyKey)
+            }
+        }
+    }
+
     /// Hue of the app-wide tint, 0...1 (maps to 0...360 degrees).
     /// Defaults to 0.55 (blue-ish) on first launch so the rainbow picker
     /// thumb lands somewhere pleasant — but `tintIntensity = 0` means
@@ -377,6 +392,13 @@ final class ThemeManager: ObservableObject {
             self.quickNoteHotKey = decoded
         } else {
             self.quickNoteHotKey = .default
+        }
+
+        if let data = userDefaults.data(forKey: Self.startMeetingSessionHotKeyKey),
+           let decoded = try? JSONDecoder().decode(QuickNoteHotKey.self, from: data) {
+            self.startMeetingSessionHotKey = decoded
+        } else {
+            self.startMeetingSessionHotKey = .defaultStartMeetingSession
         }
 
         // didSet doesn't fire during init for plain stored properties — apply

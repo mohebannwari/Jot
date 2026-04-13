@@ -10,13 +10,47 @@ import SwiftUI
 import AppKit
 #endif
 
+/// How the main-window command palette opens when `isPresented` becomes true.
+enum FloatingSearchOpenIntent: Equatable {
+    case commandPaletteRoot
+    case startMeetingSessionPickNote
+}
+
+/// One selectable row in meeting pick mode (current note + recents).
+private struct MeetingPickChoice: Identifiable {
+    let id: UUID
+    let note: Note
+    let isCurrentNoteOption: Bool
+}
+
+/// Root command palette vs. meeting “pick a note to record” sub-state (Figma 2795:4389).
+private enum CommandPaletteMode: Equatable {
+    case root
+    case meetingPickNote
+}
+
 struct FloatingSearch: View {
     @ObservedObject var engine: SearchEngine
     @Binding var isPresented: Bool
+    @Binding var openIntent: FloatingSearchOpenIntent
     let onNoteSelected: (Note) -> Void
+    /// Opens the note and starts a meeting recording session (command palette meeting flow).
+    var onNoteSelectedStartMeeting: (Note) -> Void = { _ in }
     var onFolderSelected: ((Folder) -> Void)? = nil
     var folders: [Folder] = []
     var notes: [Note] = []
+    /// Sidebar / list selection — drives Pin vs Unpin row.
+    var selectedNote: Note? = nil
+    var deferredSparkleUpdateVersion: String? = nil
+    var deferredDevRelaunchVersion: String? = nil
+    var onToggleSidebar: () -> Void = {}
+    var onTogglePin: () -> Void = {}
+    /// Archives the selected note when active, or restores it when `isArchived` (same row as command palette).
+    var onArchiveOrRestoreSelectedNote: () -> Void = {}
+    var onResumeSparkleDeferredUpdate: () -> Void = {}
+    var onResumeDevDeferredRelaunch: () -> Void = {}
+    /// Matches command-palette Zen (sidebar hidden): meeting header becomes “Exit zen mode”.
+    var isZenMode: Bool = false
 
     @EnvironmentObject private var themeManager: ThemeManager
     @State private var searchText = ""
@@ -24,15 +58,30 @@ struct FloatingSearch: View {
     @Namespace private var searchNamespace
     @State private var hoveredResultID: SearchHit.ID?
     @State private var selectedResultIndex: Int = 0
+    @State private var paletteMode: CommandPaletteMode = .root
     @Environment(\.colorScheme) private var colorScheme
 
     /// Figma command palette width (node 2780:4006): 562pt minimum.
     private let surfaceWidth: CGFloat = 562
     private let surfaceCornerRadius: CGFloat = 22
     private let resultItemCornerRadius: CGFloat = 12
-    private let quickActionRowCount = 5
+    /// Fixed quick actions in root mode (excluding optional deferred-update lead row).
+    private let rootStandardQuickActionCount = 9
     /// Shared vertical slot so the magnifier, placeholder/caret, and clear control align (plain TextField has extra cell insets).
     private let searchFieldLineHeight: CGFloat = 18
+
+    /// Pre–macOS 26 command palette shell fill — same tokens as the tabs block text body
+    /// (`TabsContainerOverlayView.blocksColor` / `FloatingEditToolbar.pillBg` / Figma `bg/blocks`).
+    private var searchPanelPreGlassFill: Color {
+        switch colorScheme {
+        case .light:
+            Color("SurfaceDefaultColor")
+        case .dark:
+            Color("DetailPaneColor")
+        @unknown default:
+            Color("SurfaceDefaultColor")
+        }
+    }
 
     /// macOS: legacy thick scrollbar for the **results** list only (see `FloatingSearchScrollViewLegacyScrollers`).
     /// Not used on the quick-actions list: `NSScrollView` legacy style reserves a right gutter while SwiftUI
@@ -66,16 +115,95 @@ struct FloatingSearch: View {
         !trimmedSearch.isEmpty && !engine.results.isEmpty
     }
 
-    private var paletteHistoryCount: Int {
-        engine.paletteHistory.count
+    /// Sparkle takes precedence over DEBUG build-watcher when both are set.
+    private var deferredUpdateRowVersion: String? {
+        deferredSparkleUpdateVersion ?? deferredDevRelaunchVersion
+    }
+
+    private var deferredUpdateUsesSparkleHandler: Bool {
+        deferredSparkleUpdateVersion != nil
+    }
+
+    private var hasDeferredUpdateRow: Bool {
+        deferredUpdateRowVersion != nil
+    }
+
+    /// LAST SEARCH rows only when that section is visible (root + empty query + history).
+    private var paletteHistoryRowCount: Int {
+        guard paletteMode == .root, isEmptyQuery, !engine.paletteHistory.isEmpty else { return 0 }
+        return engine.paletteHistory.count
+    }
+
+    private var deferredUpdateSlotCount: Int {
+        hasDeferredUpdateRow ? 1 : 0
+    }
+
+    /// Root palette: nine quick actions + optional deferred “Update App” (under Settings) + LAST SEARCH.
+    private var rootPaletteSelectableRowCount: Int {
+        rootStandardQuickActionCount + deferredUpdateSlotCount + paletteHistoryRowCount
+    }
+
+    /// Deferred update row sits immediately after the nine standard quick actions (Figma 2795:4600).
+    private var deferredUpdateRowSelectableIndex: Int {
+        rootStandardQuickActionCount
+    }
+
+    /// Sidebar selection with fresh `isArchived` / `isPinned` from `notes` when available.
+    private var commandPaletteSelectedNote: Note? {
+        guard let sel = selectedNote else { return nil }
+        return notes.first(where: { $0.id == sel.id }) ?? sel
+    }
+
+    private var archiveOrRestoreQuickActionTitle: String {
+        commandPaletteSelectedNote?.isArchived == true ? "Restore" : "Archive note"
+    }
+
+    private var archiveOrRestoreQuickActionIcon: String {
+        commandPaletteSelectedNote?.isArchived == true ? "IconStepBack" : "IconArchive1"
+    }
+
+    private var isArchiveOrRestoreQuickActionEnabled: Bool {
+        guard let n = commandPaletteSelectedNote else { return false }
+        return !n.isDeleted
+    }
+
+    /// First selectable index for LAST SEARCH rows (after quick actions + optional update row).
+    private var paletteHistorySectionStartIndex: Int {
+        rootStandardQuickActionCount + deferredUpdateSlotCount
+    }
+
+    /// Meeting pick: optional **current note** row (when one is selected) plus up to five other recents.
+    private var meetingPickChoices: [MeetingPickChoice] {
+        var rows: [MeetingPickChoice] = []
+        if let sel = selectedNote {
+            let fresh = notes.first(where: { $0.id == sel.id }) ?? sel
+            if !fresh.isDeleted && !fresh.isArchived {
+                rows.append(
+                    MeetingPickChoice(id: fresh.id, note: fresh, isCurrentNoteOption: true))
+            }
+        }
+        let excluded = Set(rows.map(\.id))
+        let active = notes.filter {
+            !$0.isDeleted && !$0.isArchived && !excluded.contains($0.id)
+        }
+        let byRecency = active.sorted { $0.date > $1.date }
+        for note in byRecency.prefix(5) {
+            rows.append(MeetingPickChoice(id: note.id, note: note, isCurrentNoteOption: false))
+        }
+        return rows
     }
 
     private var totalPaletteRows: Int {
-        quickActionRowCount + paletteHistoryCount
+        if showResults { return engine.results.count }
+        guard isEmptyQuery else { return 0 }
+        if paletteMode == .meetingPickNote {
+            return meetingPickChoices.count
+        }
+        return rootPaletteSelectableRowCount
     }
 
     private var showLastSearchSection: Bool {
-        isEmptyQuery && !engine.paletteHistory.isEmpty
+        paletteMode == .root && isEmptyQuery && !engine.paletteHistory.isEmpty
     }
 
     private var maxResultsHeight: CGFloat {
@@ -110,9 +238,24 @@ struct FloatingSearch: View {
                 selectedResultIndex = min(selectedResultIndex, max(0, totalPaletteRows - 1))
             }
         }
+        .onChange(of: paletteMode) { _, _ in
+            selectedResultIndex = 0
+        }
         .onAppear {
             if isPresented {
                 prepareForPresentation()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .floatingSearchSwitchToMeetingPickNote)) { _ in
+            guard isPresented else { return }
+            withAnimation(SearchAnimations.appear) {
+                paletteMode = .meetingPickNote
+                selectedResultIndex = 0
+                searchText = ""
+                engine.query = ""
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                isSearchFocused = true
             }
         }
     }
@@ -133,7 +276,7 @@ struct FloatingSearch: View {
                     .contentShape(RoundedRectangle(cornerRadius: surfaceCornerRadius, style: .continuous))
                     #if os(macOS)
                     .onExitCommand {
-                        dismissSearch()
+                        handlePaletteEscapeKey()
                     }
                     #endif
             }
@@ -142,23 +285,19 @@ struct FloatingSearch: View {
                 .padding(.horizontal, 4)
                 .padding(.vertical, 3)
                 .background(
-                    .ultraThinMaterial,
-                    in: RoundedRectangle(cornerRadius: surfaceCornerRadius, style: .continuous)
-                )
-                .background(
-                    Color("SecondaryBackgroundColor").opacity(0.5),
-                    in: RoundedRectangle(cornerRadius: surfaceCornerRadius, style: .continuous)
+                    RoundedRectangle(cornerRadius: surfaceCornerRadius, style: .continuous)
+                        .fill(searchPanelPreGlassFill)
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: surfaceCornerRadius, style: .continuous)
-                        .stroke(Color.primary.opacity(0.12), lineWidth: 0.5)
+                        .stroke(Color("BorderSubtleColor"), lineWidth: 0.5)
                 )
                 .shadow(color: .black.opacity(0.08), radius: 8, y: 2)
                 .frame(width: surfaceWidth)
                 .contentShape(RoundedRectangle(cornerRadius: surfaceCornerRadius, style: .continuous))
                 #if os(macOS)
                 .onExitCommand {
-                    dismissSearch()
+                    handlePaletteEscapeKey()
                 }
                 #endif
         }
@@ -220,7 +359,7 @@ struct FloatingSearch: View {
                     return .handled
                 }
                 .onKeyPress(.escape) {
-                    dismissSearch()
+                    handlePaletteEscapeKey()
                     return .handled
                 }
 
@@ -250,54 +389,209 @@ struct FloatingSearch: View {
                 .fill(Color("BorderSubtleColor"))
                 .frame(height: 0.5)
 
-            VStack(spacing: 0) {
-                VStack(spacing: 0) {
-                    quickActionRow(
-                        index: 0,
-                        iconName: "IconNoteText",
-                        title: "New Note",
-                        trailing: { sidebarStyleShortcutLabel("\u{2318}N") })
-
-                    quickActionRow(
-                        index: 1,
-                        iconName: "IconEditSmall2",
-                        title: "Quick Note",
-                        trailing: { sidebarStyleShortcutLabel(quickNoteShortcutDisplay) })
-
-                    quickActionRow(
-                        index: 2,
-                        iconName: "IconFolderAddRight",
-                        title: "New Folder",
-                        trailing: { EmptyView() })
-
-                    quickActionRow(
-                        index: 3,
-                        iconName: "IconSplit",
-                        title: "New Splitview",
-                        trailing: { EmptyView() })
-
-                    quickActionRow(
-                        index: 4,
-                        iconName: "IconSettingsGear1",
-                        title: "Settings",
-                        trailing: { sidebarStyleShortcutLabel("\u{2318},") })
-                }
-                .padding(8)
-
-                if showLastSearchSection {
-                    Rectangle()
-                        .fill(Color("BorderSubtleColor"))
-                        .frame(height: 0.5)
-                    lastSearchSectionContent
-                }
+            if paletteMode == .meetingPickNote {
+                meetingPickNoteBlock
+            } else {
+                rootQuickActionsAndLastSearchBlock
             }
         }
+    }
+
+    @ViewBuilder
+    private var meetingPickNoteBlock: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Group {
+                if isZenMode {
+                    Button {
+                        onToggleSidebar()
+                    } label: {
+                        meetingPickNoteHeaderLabel(title: "Exit zen mode")
+                    }
+                    .buttonStyle(.plain)
+                    .macPointingHandCursor()
+                } else {
+                    meetingPickNoteHeaderLabel(title: "Start recording in:")
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+
+            Rectangle()
+                .fill(Color("BorderSubtleColor"))
+                .frame(height: 0.5)
+
+            VStack(spacing: 0) {
+                ForEach(Array(meetingPickChoices.enumerated()), id: \.element.id) {
+                    offset, choice in
+                    meetingPickNoteRow(
+                        note: choice.note, index: offset, isCurrentNoteOption: choice.isCurrentNoteOption)
+                }
+            }
+            .padding(8)
+        }
+    }
+
+    /// Shared meeting-picker header: same leading icon for “Start recording in:” and “Exit zen mode”.
+    private func meetingPickNoteHeaderLabel(title: String) -> some View {
+        HStack(spacing: 8) {
+            Image("IconMeetingNotes")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .foregroundColor(Color("SecondaryTextColor"))
+                .frame(width: 15, height: 15)
+
+            Text(title)
+                .font(FontManager.heading(size: 13, weight: .medium))
+                .tracking(-0.4)
+                .foregroundColor(Color("SecondaryTextColor"))
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .contentShape(Rectangle())
+    }
+
+    private func meetingPickNoteRow(note: Note, index: Int, isCurrentNoteOption: Bool) -> some View {
+        let isSelected = isEmptyQuery && !showResults && selectedResultIndex == index
+        let title =
+            note.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? "Untitled" : note.title
+        return Button {
+            openNoteStartingMeeting(note)
+        } label: {
+            HStack(spacing: 8) {
+                Image("IconNoteText")
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .foregroundColor(Color("SecondaryTextColor"))
+                    .frame(width: 15, height: 15)
+
+                Text(title)
+                    .font(FontManager.heading(size: 13, weight: .medium))
+                    .tracking(-0.4)
+                    .foregroundColor(Color("PrimaryTextColor"))
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                // Current-note row: label on the trailing edge (metadata, all caps).
+                if isCurrentNoteOption {
+                    Text("CURRENT NOTE")
+                        .font(FontManager.metadata(size: 11, weight: .medium))
+                        .foregroundColor(Color("SecondaryTextColor"))
+                        .lineLimit(1)
+                }
+            }
+            .padding(8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background {
+                Capsule()
+                    .fill(Color("HoverBackgroundColor"))
+                    .opacity(isSelected ? 1 : 0)
+            }
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            if hovering, isEmptyQuery, !showResults {
+                selectedResultIndex = index
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var rootQuickActionsAndLastSearchBlock: some View {
+        VStack(spacing: 0) {
+            VStack(spacing: 0) {
+                // Figma: quick actions through Settings, then Update App (2795:4600), then LAST SEARCH.
+                rootStandardQuickActionRows
+                if hasDeferredUpdateRow {
+                    deferredUpdateQuickRow(index: deferredUpdateRowSelectableIndex)
+                }
+            }
+            .padding(8)
+
+            if showLastSearchSection {
+                Rectangle()
+                    .fill(Color("BorderSubtleColor"))
+                    .frame(height: 0.5)
+                lastSearchSectionContent
+            }
+        }
+    }
+
+    private func deferredUpdateQuickRow(index: Int) -> some View {
+        quickActionRow(
+            index: index,
+            iconName: "IconUpdateDownload",
+            title: "Update App",
+            isEnabled: true,
+            trailing: { EmptyView() })
+    }
+
+    @ViewBuilder
+    private var rootStandardQuickActionRows: some View {
+        quickActionRow(
+            index: 0,
+            iconName: "IconEditSmall2",
+            title: "New Note",
+            isEnabled: true,
+            trailing: { sidebarStyleShortcutLabel("\u{2318}N") })
+        quickActionRow(
+            index: 1,
+            iconName: "IconFloatingNote",
+            title: "Floating note",
+            isEnabled: true,
+            trailing: { sidebarStyleShortcutLabel(quickNoteShortcutDisplay) })
+        quickActionRow(
+            index: 2,
+            iconName: "IconMicrophoneSparkle",
+            title: "Start meeting session in a Note",
+            isEnabled: true,
+            trailing: { sidebarStyleShortcutLabel(startMeetingSessionShortcutDisplay) })
+        quickActionRow(
+            index: 3,
+            iconName: "IconFolderAddRight",
+            title: "New Folder",
+            isEnabled: true,
+            trailing: { EmptyView() })
+        quickActionRow(
+            index: 4,
+            iconName: "IconSplit",
+            title: "New Splitview",
+            isEnabled: true,
+            trailing: { EmptyView() })
+        quickActionRow(
+            index: 5,
+            iconName: selectedNote?.isPinned == true ? "IconUnpin" : "IconThumbtack",
+            title: selectedNote?.isPinned == true ? "Unpin note" : "Pin note",
+            isEnabled: selectedNote != nil,
+            trailing: { EmptyView() })
+        quickActionRow(
+            index: 6,
+            iconName: "IconZenMode",
+            title: "Zen mode",
+            isEnabled: true,
+            trailing: { sidebarStyleShortcutLabel("\u{2318}.") })
+        quickActionRow(
+            index: 7,
+            iconName: archiveOrRestoreQuickActionIcon,
+            title: archiveOrRestoreQuickActionTitle,
+            isEnabled: isArchiveOrRestoreQuickActionEnabled,
+            trailing: { EmptyView() })
+        quickActionRow(
+            index: 8,
+            iconName: "IconSettingsGear1",
+            title: "Settings",
+            isEnabled: true,
+            trailing: { sidebarStyleShortcutLabel("\u{2318},") })
     }
 
     private func quickActionRow<Trailing: View>(
         index: Int,
         iconName: String,
         title: String,
+        isEnabled: Bool,
         @ViewBuilder trailing: () -> Trailing
     ) -> some View {
         let isSelected = isEmptyQuery && !showResults && selectedResultIndex == index
@@ -337,8 +631,10 @@ struct FloatingSearch: View {
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .opacity(isEnabled ? 1 : 0.45)
         .onHover { hovering in
-            if hovering, isEmptyQuery, !showResults {
+            if hovering, isEmptyQuery, !showResults, isEnabled {
                 selectedResultIndex = index
             }
         }
@@ -347,6 +643,11 @@ struct FloatingSearch: View {
     /// Same shortcut styling as `sidebarMenuItem` in ContentView (metadata text, no Figma keycap assets).
     private var quickNoteShortcutDisplay: String {
         (themeManager.quickNoteHotKey ?? QuickNoteHotKey.default).displayString
+    }
+
+    private var startMeetingSessionShortcutDisplay: String {
+        (themeManager.startMeetingSessionHotKey ?? QuickNoteHotKey.defaultStartMeetingSession)
+            .displayString
     }
 
     @ViewBuilder
@@ -371,7 +672,7 @@ struct FloatingSearch: View {
 
             VStack(spacing: 0) {
                 ForEach(Array(engine.paletteHistory.enumerated()), id: \.element.id) { offset, entry in
-                    let rowIndex = quickActionRowCount + offset
+                    let rowIndex = paletteHistorySectionStartIndex + offset
                     if entry.isQuery, let q = entry.queryText {
                         stringRecentRow(query: q, index: rowIndex)
                     } else if let target = entry.openedTarget {
@@ -510,13 +811,13 @@ struct FloatingSearch: View {
                             .fill(Color("SurfaceElevatedColor"))
                         Text("esc")
                             .font(FontManager.metadata(size: 9, weight: .semibold))
-                            .foregroundColor(Color("PrimaryTextColor"))
+                            .foregroundColor(Color("SecondaryTextColor"))
                     }
                     .frame(width: 24, height: 15)
                     .compositingGroup()
                     .floatingSearchKeycapShadows()
 
-                    Text("Close")
+                    Text(paletteMode == .meetingPickNote ? "Back" : "Close")
                         .font(FontManager.metadata(size: 11, weight: .semibold))
                         .textCase(.uppercase)
                         .foregroundColor(Color("SecondaryTextColor"))
@@ -554,7 +855,7 @@ struct FloatingSearch: View {
                 .fill(Color("SurfaceElevatedColor"))
             Image(systemName: "return.left")
                 .font(.system(size: 7, weight: .semibold))
-                .foregroundStyle(Color("PrimaryTextColor"))
+                .foregroundStyle(Color("SecondaryTextColor"))
         }
         .frame(width: 15, height: 15)
         .compositingGroup()
@@ -726,13 +1027,34 @@ struct FloatingSearch: View {
                 searchText = ""
                 engine.query = ""
                 isSearchFocused = false
+                paletteMode = .root
             }
         }
     }
 
+    /// Escape / macOS exit command: leave meeting sub-palette first, then dismiss.
+    private func handlePaletteEscapeKey() {
+        if paletteMode == .meetingPickNote {
+            paletteMode = .root
+        } else {
+            dismissSearch()
+        }
+    }
+
     private func prepareForPresentation() {
-        searchText = engine.query
         selectedResultIndex = 0
+        if openIntent == .startMeetingSessionPickNote {
+            // Must clear query before showing meeting pick: `quickActionsAndRecentsBlock` only renders
+            // when `isEmptyQuery`; restoring `engine.query` would leave the field non-empty and hide
+            // “Start recording in:” behind an empty results strip or footer-only UI.
+            searchText = ""
+            engine.query = ""
+            paletteMode = .meetingPickNote
+            openIntent = .commandPaletteRoot
+        } else {
+            searchText = engine.query
+            paletteMode = .root
+        }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
             isSearchFocused = true
         }
@@ -783,41 +1105,97 @@ struct FloatingSearch: View {
         }
     }
 
+    private func openNoteStartingMeeting(_ note: Note) {
+        onNoteSelectedStartMeeting(note)
+        dismissSearch()
+    }
+
     private func activateQuickAction(at index: Int) {
+        if hasDeferredUpdateRow, index == deferredUpdateRowSelectableIndex {
+            if deferredUpdateUsesSparkleHandler {
+                onResumeSparkleDeferredUpdate()
+            } else {
+                onResumeDevDeferredRelaunch()
+            }
+            dismissSearch()
+            return
+        }
+
+        guard index >= 0, index < rootStandardQuickActionCount else { return }
+
         switch index {
         case 0:
             NotificationCenter.default.post(name: .createNewNote, object: nil)
+            dismissSearch()
         case 1:
             #if os(macOS)
             QuickNoteWindowController.shared.showPanel()
             #endif
+            dismissSearch()
         case 2:
-            NotificationCenter.default.post(name: .createNewFolder, object: nil)
+            paletteMode = .meetingPickNote
+            selectedResultIndex = 0
         case 3:
-            NotificationCenter.default.post(name: .requestSplitViewFromCommandPalette, object: nil)
+            NotificationCenter.default.post(name: .createNewFolder, object: nil)
+            dismissSearch()
         case 4:
+            NotificationCenter.default.post(name: .requestSplitViewFromCommandPalette, object: nil)
+            dismissSearch()
+        case 5:
+            guard selectedNote != nil else { return }
+            onTogglePin()
+            dismissSearch()
+        case 6:
+            onToggleSidebar()
+            dismissSearch()
+        case 7:
+            guard isArchiveOrRestoreQuickActionEnabled else { return }
+            onArchiveOrRestoreSelectedNote()
+            dismissSearch()
+        case 8:
             NotificationCenter.default.post(name: .openSettings, object: nil)
+            dismissSearch()
         default:
             break
         }
-        dismissSearch()
     }
 
     private func activatePaletteRow(at index: Int) {
         guard isEmptyQuery, !showResults else { return }
-        if index < quickActionRowCount {
+        if paletteMode == .meetingPickNote {
+            guard index >= 0, index < meetingPickChoices.count else { return }
+            openNoteStartingMeeting(meetingPickChoices[index].note)
+            return
+        }
+
+        if hasDeferredUpdateRow, index == deferredUpdateRowSelectableIndex {
+            if deferredUpdateUsesSparkleHandler {
+                onResumeSparkleDeferredUpdate()
+            } else {
+                onResumeDevDeferredRelaunch()
+            }
+            dismissSearch()
+            return
+        }
+
+        let historyCount = paletteHistoryRowCount
+        let historyStart = paletteHistorySectionStartIndex
+        if index >= historyStart, index < historyStart + historyCount {
+            let historyIndex = index - historyStart
+            guard historyIndex < engine.paletteHistory.count else { return }
+            let entry = engine.paletteHistory[historyIndex]
+            if entry.isQuery, let q = entry.queryText {
+                applyRecentQuery(q)
+                return
+            }
+            if let target = entry.openedTarget {
+                openRecentTarget(target)
+            }
+            return
+        }
+
+        if index < rootStandardQuickActionCount {
             activateQuickAction(at: index)
-            return
-        }
-        let historyIndex = index - quickActionRowCount
-        guard historyIndex >= 0, historyIndex < engine.paletteHistory.count else { return }
-        let entry = engine.paletteHistory[historyIndex]
-        if entry.isQuery, let q = entry.queryText {
-            applyRecentQuery(q)
-            return
-        }
-        if let target = entry.openedTarget {
-            openRecentTarget(target)
         }
     }
 
@@ -851,6 +1229,12 @@ struct FloatingSearch: View {
 
     private func selectResult(_ result: SearchHit) {
         engine.recordCommittedQuery(searchText)
+        if paletteMode == .meetingPickNote, let note = result.note {
+            engine.recordOpenedFromSearch(note: note)
+            onNoteSelectedStartMeeting(note)
+            dismissSearch()
+            return
+        }
         if let note = result.note {
             engine.recordOpenedFromSearch(note: note)
             onNoteSelected(note)
@@ -868,6 +1252,12 @@ struct FloatingSearch: View {
         let result = engine.results[selectedResultIndex]
         if recordQuery {
             engine.recordCommittedQuery(searchText)
+        }
+        if paletteMode == .meetingPickNote, let note = result.note {
+            engine.recordOpenedFromSearch(note: note)
+            onNoteSelectedStartMeeting(note)
+            dismissSearch()
+            return
         }
         if let note = result.note {
             engine.recordOpenedFromSearch(note: note)

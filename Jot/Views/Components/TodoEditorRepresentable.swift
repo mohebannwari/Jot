@@ -112,6 +112,10 @@ struct AttachmentMarkup {
 extension Notification.Name {
     static let textSelectionChanged = Notification.Name("TextSelectionChanged")
     static let editorDidBecomeFirstResponder = Notification.Name("EditorDidBecomeFirstResponder")
+    /// Drains debounced editor `serialize()` into the SwiftUI `editedContent` binding before note-switch
+    /// saves read `@State` (see `NoteDetailView.onChange(of: note.id)`).
+    static let jotFlushEditorSerializationBeforeNoteSwitch = Notification.Name(
+        "jotFlushEditorSerializationBeforeNoteSwitch")
 }
 
 // MARK: - Typing Animation Layout Manager
@@ -3341,6 +3345,21 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 }
             }
 
+            let flushSerializationBeforeNoteSwitch = NotificationCenter.default.addObserver(
+                forName: .jotFlushEditorSerializationBeforeNoteSwitch,
+                object: nil,
+                queue: .main
+            ) { [weak self] notification in
+                guard let self else { return }
+                guard let nid = notification.userInfo?["editorInstanceID"] as? UUID,
+                      let myID = self.editorInstanceID,
+                      nid == myID
+                else { return }
+                MainActor.assumeIsolated {
+                    self.flushPendingSerialization()
+                }
+            }
+
             observers = [
                 windowKey,
                 insertTodo, insertLink, convertToWebClip, insertFileLink, insertVoiceTranscript, insertImage, applyTool, applyCommandMenuTool,
@@ -3354,6 +3373,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 applyFontSize, applyFontFamily,
                 settingsObserver, syncMenuState, printNote, quickLookTrigger, quickLookHoverTrigger,
                 fileExtractTrigger,
+                flushSerializationBeforeNoteSwitch,
             ]
         }
 
@@ -6057,10 +6077,16 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         // MARK: - Callout Insertion
 
         private func makeCalloutAttachment(calloutData: CalloutData, initialWidth: CGFloat? = nil) -> NSMutableAttributedString {
-            // Fill container width; minimum 400pt
+            // Full container width when `preferredContentWidth` is nil; otherwise clamp stored width to container.
             var containerWidth = textView?.textContainer?.containerSize.width ?? CalloutOverlayView.minWidth
             if containerWidth < 1 { containerWidth = CalloutOverlayView.minWidth }
-            let calloutWidth = containerWidth
+            let effectiveMin = min(CalloutOverlayView.minWidth, containerWidth)
+            let calloutWidth: CGFloat
+            if let pref = calloutData.preferredContentWidth {
+                calloutWidth = max(effectiveMin, min(containerWidth, pref))
+            } else {
+                calloutWidth = containerWidth
+            }
 
             let calloutHeight = CalloutOverlayView.heightForData(calloutData, width: calloutWidth)
 
@@ -6767,19 +6793,25 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 let id = ObjectIdentifier(attachment)
                 seenIDs.insert(id)
 
-                // Clamp width to valid range; preserve user-resized width if within bounds
+                // Restore the width from the model once the text container has its real size.
+                // `makeCalloutAttachment` may deserialize while the container is still at the
+                // temporary 400pt bootstrap width; if we only clamp invalid widths, custom widths
+                // never expand back to their persisted size after layout settles.
                 let containerW = max(textContainer.containerSize.width, 100)
                 let effectiveMinCallout = min(CalloutOverlayView.minWidth, containerW)
                 let currentWidth = attachment.bounds.width
-                let needsWidthCorrection = currentWidth < effectiveMinCallout || currentWidth > containerW
-                let correctedWidth = needsWidthCorrection
-                    ? max(effectiveMinCallout, min(containerW, currentWidth))
-                    : currentWidth
+                let desiredWidth: CGFloat
+                if let preferredWidth = attachment.calloutData.preferredContentWidth {
+                    desiredWidth = max(effectiveMinCallout, min(containerW, preferredWidth))
+                } else {
+                    desiredWidth = containerW
+                }
+                let widthDrift = abs(currentWidth - desiredWidth) > 1
                 let expectedHeight = CalloutOverlayView.heightForData(
-                    attachment.calloutData, width: correctedWidth)
+                    attachment.calloutData, width: desiredWidth)
                 let heightDrift = abs(attachment.bounds.height - expectedHeight) > 1
-                if needsWidthCorrection || heightDrift {
-                    let newSize = CGSize(width: correctedWidth, height: expectedHeight)
+                if widthDrift || heightDrift {
+                    let newSize = CGSize(width: desiredWidth, height: expectedHeight)
                     attachment.attachmentCell = CalloutSizeAttachmentCell(size: newSize)
                     attachment.bounds = CGRect(origin: .zero, size: newSize)
                     layoutManager.invalidateLayout(forCharacterRange: range, actualCharacterRange: nil)
@@ -6853,8 +6885,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                         self.syncText()
                     }
 
-                    overlay.onWidthChanged = { [weak textStorage, weak layoutManager, weak attachment, weak textView] newWidth in
-                        guard let ts = textStorage, let lm = layoutManager, let att = attachment,
+                    overlay.onWidthChanged = { [weak self, weak textStorage, weak layoutManager, weak attachment, weak textView] newWidth in
+                        guard let self = self, let ts = textStorage, let lm = layoutManager, let att = attachment,
                               let tc = textView?.textContainer else { return }
                         // Double-click right edge snaps to full container per user request (setup-doubleclick-handles).
                         // Respects minWidth clamp. hasBeenUserResized-like flag not needed for callout (unlike code blocks).
@@ -6865,6 +6897,11 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                         let newSize = CGSize(width: clamped, height: newHeight)
                         att.attachmentCell = CalloutSizeAttachmentCell(size: newSize)
                         att.bounds = CGRect(origin: .zero, size: newSize)
+                        // Persist width in `CalloutData` so serialize() round-trips; nil when flush with container (short markup).
+                        let cw = tc.containerSize.width
+                        var nextData = att.calloutData
+                        nextData.preferredContentWidth = abs(clamped - cw) < 1 ? nil : clamped
+                        att.calloutData = nextData
                         let fr = NSRange(location: 0, length: ts.length)
                         ts.enumerateAttribute(.attachment, in: fr, options: []) { val, charRange, stop in
                             if val as AnyObject === att {
@@ -6872,6 +6909,11 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                                 stop.pointee = true
                             }
                         }
+                        // Do not call `syncText()` here: it runs `styleTodoParagraphs` and schedules
+                        // overlay/binding work on every drag tick, which flashes the whole note body.
+                        // Width lives in textStorage + `CalloutData`; `onResizeGestureEnded` runs one
+                        // debounced `syncText()` after drag or double-click snap; note-switch flush still
+                        // serializes live storage synchronously.
                     }
 
                     hostView.addSubview(overlay)
@@ -6883,6 +6925,13 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     overlay.onDataChanged = nil
                     overlay.onDeleteCallout = nil
                     overlay.onWidthChanged = nil
+                    overlay.onResizeGestureEnded = nil
+                } else {
+                    // (Re)wire every pass so overlays created before this callback existed still persist width on gesture end.
+                    overlay.onResizeGestureEnded = { [weak self] in
+                        guard let self else { return }
+                        self.syncText()
+                    }
                 }
 
                 overlay.currentContainerWidth = containerW
@@ -8265,7 +8314,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 } else if let tableAttachment = attributes[.attachment] as? NoteTableAttachment {
                     output.append(tableAttachment.tableData.serialize())
                 } else if let calloutAttachment = attributes[.attachment] as? NoteCalloutAttachment {
-                    output.append(calloutAttachment.calloutData.serialize())
+                    let ser = calloutAttachment.calloutData.serialize()
+                    output.append(ser)
                 } else if let codeBlockAttachment = attributes[.attachment] as? NoteCodeBlockAttachment {
                     output.append(codeBlockAttachment.codeBlockData.serialize())
                 } else if let tabsAttachment = attributes[.attachment] as? NoteTabsAttachment {

@@ -18,11 +18,19 @@ final class BuildWatcherManager: ObservableObject {
 
     @Published private(set) var isUpdateAvailable: Bool = false
     @Published private(set) var buildVersion: String = ""
+    /// Command palette row when the dev relaunch panel was dismissed via "Remind me later" or suppressed.
+    @Published private(set) var deferredDevRelaunchVersion: String?
 
     // MARK: - Private State
 
     private var watchSource: DispatchSourceFileSystemObject?
     private var suppressTask: Task<Void, Never>?
+
+    private static let deferredRelaunchVersionKey = "DevBuildWatcherDeferredRelaunchVersion"
+
+    init() {
+        deferredDevRelaunchVersion = UserDefaults.standard.string(forKey: Self.deferredRelaunchVersionKey)
+    }
 
     // MARK: - Lifecycle
 
@@ -89,12 +97,16 @@ final class BuildWatcherManager: ObservableObject {
         // Check suppress window from "Remind me later"
         if let stored = UserDefaults.standard.object(forKey: Self.remindLaterKey) as? Date {
             if Date().timeIntervalSince(stored) < Self.suppressInterval {
+                let version = readVersionFromNewBinary()
+                UserDefaults.standard.set(version, forKey: Self.deferredRelaunchVersionKey)
+                deferredDevRelaunchVersion = version
                 return
             }
             UserDefaults.standard.removeObject(forKey: Self.remindLaterKey)
         }
 
         let version = readVersionFromNewBinary()
+        clearDeferredDevRelaunch()
         withAnimation(.jotSpring) {
             buildVersion = version
             isUpdateAvailable = true
@@ -107,6 +119,11 @@ final class BuildWatcherManager: ObservableObject {
         UserDefaults.standard.set(Date(), forKey: Self.remindLaterKey)
         suppressTask?.cancel()
 
+        if !buildVersion.isEmpty {
+            UserDefaults.standard.set(buildVersion, forKey: Self.deferredRelaunchVersionKey)
+            deferredDevRelaunchVersion = buildVersion
+        }
+
         withAnimation(.jotSpring) {
             isUpdateAvailable = false
         }
@@ -116,6 +133,7 @@ final class BuildWatcherManager: ObservableObject {
             try? await Task.sleep(for: .seconds(Self.suppressInterval))
             guard let self, !Task.isCancelled else { return }
             UserDefaults.standard.removeObject(forKey: Self.remindLaterKey)
+            self.clearDeferredDevRelaunch()
             withAnimation(.jotSpring) {
                 self.isUpdateAvailable = true
             }
@@ -123,6 +141,8 @@ final class BuildWatcherManager: ObservableObject {
     }
 
     func relaunch() {
+        clearDeferredDevRelaunch()
+
         // Force autosave so no user data is lost
         NotificationCenter.default.post(name: .forceSaveNote, object: nil)
 
@@ -166,6 +186,11 @@ final class BuildWatcherManager: ObservableObject {
             return "new build"
         }
         return version
+    }
+
+    private func clearDeferredDevRelaunch() {
+        UserDefaults.standard.removeObject(forKey: Self.deferredRelaunchVersionKey)
+        deferredDevRelaunchVersion = nil
     }
 
     deinit {

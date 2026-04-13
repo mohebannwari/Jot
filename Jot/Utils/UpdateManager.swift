@@ -14,6 +14,8 @@ final class UpdateManager: NSObject, ObservableObject {
     @Published private(set) var isUpdateAvailable: Bool = false
     @Published private(set) var isDownloading: Bool = false
     @Published private(set) var updateVersion: String = ""
+    /// Shown in the command palette after the user taps "Remind me later" on the relaunch panel.
+    @Published private(set) var deferredInstallReminderVersion: String?
     @Published var showUpToDateAlert: Bool = false
     @Published var showUpdateErrorAlert: Bool = false
 
@@ -25,6 +27,7 @@ final class UpdateManager: NSObject, ObservableObject {
     private var checkForUpdatesObserver: AnyCancellable?
 
     private static let remindLaterKey = "SparkleRemindLaterTimestamp"
+    private static let deferredInstallVersionKey = "SparkleDeferredInstallVersion"
     private static let suppressInterval: TimeInterval = 4 * 60 * 60 // 4 hours
 
     // MARK: - Init
@@ -42,6 +45,8 @@ final class UpdateManager: NSObject, ObservableObject {
 
         super.init()
         bridge.owner = self
+
+        deferredInstallReminderVersion = UserDefaults.standard.string(forKey: Self.deferredInstallVersionKey)
 
         do {
             try updater.start()
@@ -65,6 +70,8 @@ final class UpdateManager: NSObject, ObservableObject {
     }
 
     func relaunch() {
+        clearDeferredInstallReminder()
+
         // 1. Force autosave so no user data is lost
         NotificationCenter.default.post(name: .forceSaveNote, object: nil)
 
@@ -78,12 +85,27 @@ final class UpdateManager: NSObject, ObservableObject {
 
     func remindLater() {
         UserDefaults.standard.set(Date(), forKey: Self.remindLaterKey)
+        if !updateVersion.isEmpty {
+            UserDefaults.standard.set(updateVersion, forKey: Self.deferredInstallVersionKey)
+            deferredInstallReminderVersion = updateVersion
+        }
         replyHandler?(.dismiss)
         replyHandler = nil
 
         withAnimation(.jotSpring) {
             isUpdateAvailable = false
         }
+    }
+
+    /// User chose "install" from the global search palette after deferring the sidebar panel.
+    func resumeDeferredUpdateFromCommandPalette() {
+        guard deferredInstallReminderVersion != nil else { return }
+        checkForUpdates()
+    }
+
+    private func clearDeferredInstallReminder() {
+        UserDefaults.standard.removeObject(forKey: Self.deferredInstallVersionKey)
+        deferredInstallReminderVersion = nil
     }
 
     // MARK: - Internal (called by UserDriverBridge)
@@ -97,6 +119,7 @@ final class UpdateManager: NSObject, ObservableObject {
             return
         }
         UserDefaults.standard.removeObject(forKey: Self.remindLaterKey)
+        clearDeferredInstallReminder()
 
         replyHandler = reply
         withAnimation(.jotSpring) {
@@ -114,6 +137,8 @@ final class UpdateManager: NSObject, ObservableObject {
     }
 
     fileprivate func handleUpdateDismissed() {
+        // Do not clear `deferredInstallReminderVersion` here — "Remind me later" dismisses
+        // the flow but the palette should keep offering the deferred install row.
         withAnimation(.jotSpring) {
             isUpdateAvailable = false
             isDownloading = false

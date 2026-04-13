@@ -538,19 +538,38 @@ extension NoteDetailView {
 
     // MARK: - Meeting Notes
 
+    /// Shows or hides the floating meeting panel when this note owns (or stops owning) the
+    /// shared `MeetingRecorderManager` session. Called from `onChange(of: note.id)` and from
+    /// `recordingNoteID` / `recordingState` so the panel appears when recording starts from the
+    /// command palette while **already viewing that note** — in that case `note.id` does not
+    /// change, so the note-switch handler alone never runs.
+    @MainActor
+    func applyMeetingPanelVisibilityForActiveSession() {
+        let shouldShow =
+            meetingRecorderManager.recordingNoteID == note.id
+            && meetingRecorderManager.recordingState != .idle
+
+        if shouldShow {
+            // Defer presenting one turn so panel entrance does not merge with the same
+            // transaction as the manager’s @Published updates (matches `startMeetingRecording`).
+            DispatchQueue.main.async {
+                guard meetingRecorderManager.recordingNoteID == note.id,
+                    meetingRecorderManager.recordingState != .idle
+                else { return }
+                showMeetingPanel = true
+            }
+        } else if showMeetingPanel {
+            withAnimation(.jotMeetingPanelDismiss) {
+                showMeetingPanel = false
+            }
+        }
+    }
+
     @MainActor
     func startMeetingRecording() {
         // Delegate to shared manager so the session persists when switching notes.
-        // Defer showing the panel to the next run loop so `MeetingRecorderManager`'s
-        // synchronous `@Published` writes are not in the same transaction as the
-        // panel visibility toggle (which prevented `.transition` / overlay animations).
         meetingRecorderManager.startRecording(for: note.id)
-        DispatchQueue.main.async {
-            guard meetingRecorderManager.recordingNoteID == note.id,
-                meetingRecorderManager.recordingState != .idle
-            else { return }
-            showMeetingPanel = true
-        }
+        applyMeetingPanelVisibilityForActiveSession()
     }
 
     @MainActor

@@ -271,7 +271,7 @@ struct NoteDetailView: View {
     VStack(alignment: .leading, spacing: 8) {
       HStack(spacing: 6) {
         Text(noteDateString)
-          .font(FontManager.metadata(size: 11, weight: .medium))
+          .jotMetadataLabelTypography()
           .foregroundColor(Color("SecondaryTextColor"))
           .kerning(-0.25)
 
@@ -281,7 +281,7 @@ struct NoteDetailView: View {
             .frame(width: 2, height: 2)
 
           Text("Archived")
-            .font(FontManager.metadata(size: 11, weight: .medium))
+            .jotMetadataLabelTypography()
             .foregroundColor(Color("SecondaryTextColor"))
             .kerning(-0.25)
         }
@@ -580,6 +580,9 @@ struct NoteDetailView: View {
       }
       .onChange(of: note.id) { oldNoteID, newNoteID in
         autosaveWorkItem?.cancel()
+        // Serialization flush before reading `editedContent` for the outgoing save is posted from
+        // `ContentView` *before* `selectedNote` changes so the live coordinator still exists (see
+        // `postEditorSerializationFlush` and `.jotFlushEditorSerializationBeforeNoteSwitch`).
         // Capture old-note state for deferred save — don't block the switch path
         // with synchronous SwiftData I/O (fetch + save + recomputeDerivedNotes).
         let contentWithAI =
@@ -657,17 +660,7 @@ struct NoteDetailView: View {
         savedIsMeetingNote = note.isMeetingNote
         savedMeetingSessions = note.meetingSessions
         // Sync floating meeting panel to whether this note owns the active session.
-        // Always use the same curves as start/dismiss so switching notes does not snap the panel.
-        let shouldShowMeetingPanel =
-          meetingRecorderManager.recordingNoteID == note.id
-          && meetingRecorderManager.recordingState != .idle
-        if shouldShowMeetingPanel {
-          showMeetingPanel = true
-        } else {
-          withAnimation(.jotMeetingPanelDismiss) {
-            showMeetingPanel = false
-          }
-        }
+        applyMeetingPanelVisibilityForActiveSession()
         isPlacingSticker = false
         selectedStickerID = nil
         showVoiceRecorderOverlay = false
@@ -692,6 +685,12 @@ struct NoteDetailView: View {
           }
         }
 
+      }
+      .onChange(of: meetingRecorderManager.recordingNoteID) { _, _ in
+        applyMeetingPanelVisibilityForActiveSession()
+      }
+      .onChange(of: meetingRecorderManager.recordingState) { _, _ in
+        applyMeetingPanelVisibilityForActiveSession()
       }
       .onReceive(NotificationCenter.default.publisher(for: .forceSaveNote)) { _ in
         autosaveWorkItem?.cancel()

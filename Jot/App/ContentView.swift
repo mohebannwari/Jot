@@ -227,6 +227,7 @@ struct ContentView: View {
     @EnvironmentObject private var authManager: NoteAuthenticationManager
     @EnvironmentObject private var undoToastManager: UndoToastManager
     @EnvironmentObject private var updateManager: UpdateManager
+    @EnvironmentObject private var meetingRecorderManager: MeetingRecorderManager
     #if DEBUG
     @EnvironmentObject private var buildWatcher: BuildWatcherManager
     #endif
@@ -239,6 +240,7 @@ struct ContentView: View {
     @State private var isSidebarAnimating = false
     @State private var isPropertiesPanelAnimating = false
     @State private var isSearchPresented = false
+    @State private var floatingSearchOpenIntent: FloatingSearchOpenIntent = .commandPaletteRoot
     @State private var isSettingsPresented = false
     @State private var expandedFolderIDs: Set<UUID> = []
     @State private var expandedArchivedFolderIDs: Set<UUID> = []
@@ -389,6 +391,9 @@ struct ContentView: View {
         if let activeSession = valid.first(where: { $0.id == activeSplitID }),
            let primaryID = activeSession.primaryNoteID,
            let note = notesManager.notes.first(where: { $0.id == primaryID }) {
+            if let cur = selectedNote?.id, cur != note.id {
+                postEditorSerializationFlushAllVisibleEditors()
+            }
             selectedNote = note
             selectedNoteIDs = [note.id]
         }
@@ -464,6 +469,9 @@ struct ContentView: View {
         guard let session = splitSessions.first(where: {
             $0.primaryNoteID == note.id || $0.secondaryNoteID == note.id
         }) else { return }
+        if let cur = selectedNote?.id, cur != note.id {
+            postEditorSerializationFlushAllVisibleEditors()
+        }
         activeSplitID = session.id
         isSplitViewVisible = true
         selectedNote = note
@@ -548,6 +556,9 @@ struct ContentView: View {
     private func navigateToNote(_ noteID: UUID) {
         guard let target = notesManager.notes.first(where: { $0.id == noteID }) else { return }
         discardPreviousNoteIfEmpty(switching: target)
+        if let cur = selectedNote?.id, cur != target.id {
+            postEditorSerializationFlushAllVisibleEditors()
+        }
         selectedNote = target
         selectedNoteIDs = [target.id]
     }
@@ -654,6 +665,26 @@ struct ContentView: View {
                 withAnimation(.jotSpring) {
                     isSplitMenuVisible = false
                     addNewSplit()
+                }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .openMeetingSessionCommandPalette)) { _ in
+                // Global shortcut may fire while another app is frontmost; bring Jot forward
+                // so the command palette is visible and receives keyboard focus.
+                NSApp.activate(ignoringOtherApps: true)
+                if let window = NSApp.mainWindow ?? NSApp.keyWindow {
+                    window.makeKeyAndOrderFront(nil)
+                }
+                // Intent + `prepareForPresentation` can race: `onChange(isPresented)` may read
+                // `openIntent` before the parent binding updates, landing in the root branch and
+                // restoring `engine.query`. Always re-apply meeting mode on the next main turn so
+                // the global chord reliably shows “Start recording in:” (palette open or closed).
+                floatingSearchOpenIntent = .startMeetingSessionPickNote
+                if !isSearchPresented {
+                    isSearchPresented = true
+                }
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(
+                        name: .floatingSearchSwitchToMeetingPickNote, object: nil)
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .toggleVersionHistory)) { notification in
@@ -1422,10 +1453,12 @@ struct ContentView: View {
                 withAnimation(.jotSpring) {
                     guard let idx = activeSplitIndex else { return }
                     if isPrimary {
+                        postEditorSerializationFlushAllVisibleEditors()
                         splitSessions[idx].primaryNoteID = note.id
                         selectedNote = note
                         selectedNoteIDs = [note.id]
                     } else {
+                        postEditorSerializationFlush(editorInstanceID: splitEditorID)
                         splitSessions[idx].secondaryNoteID = note.id
                     }
                     if splitSessions[idx].isComplete {
@@ -1730,7 +1763,7 @@ struct ContentView: View {
                 .padding(.top, 4)
                 .padding(.bottom, 4)
 
-                // Update panel (production — Sparkle)
+                // Update panel (production — Sparkle) — above Trash / Settings (matches floating sidebar).
                 if updateManager.isUpdateAvailable {
                     UpdatePanelView(
                         variant: .relaunch(version: updateManager.updateVersion),
@@ -1738,12 +1771,14 @@ struct ContentView: View {
                         onRemindLater: { updateManager.remindLater() }
                     )
                     .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .padding(.top, 8)
                     .padding(.bottom, 8)
                 } else if updateManager.isDownloading {
                     UpdatePanelView(
                         variant: .downloading(version: updateManager.updateVersion)
                     )
                     .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .padding(.top, 8)
                     .padding(.bottom, 8)
                 }
 
@@ -1756,6 +1791,7 @@ struct ContentView: View {
                         onRemindLater: { buildWatcher.remindLater() }
                     )
                     .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .padding(.top, 8)
                     .padding(.bottom, 8)
                 }
                 #endif
@@ -1771,6 +1807,7 @@ struct ContentView: View {
                 sidebarMenuItem(assetName: "IconSettingsGear1", label: "Settings", shortcut: "\u{2318},", isActive: isSettingsPresented) {
                     presentSettings()
                 }
+
             }
             .padding(.top, sidebarMenuTop)
             .frame(width: sidebarDesignColumnWidth, alignment: .leading)
@@ -2212,7 +2249,8 @@ struct ContentView: View {
 
     private var sidebarMenuContainer: some View {
         VStack(spacing: 0) {
-            sidebarMenuItem(assetName: "IconNoteText", label: "New Note", shortcut: "\u{2318}N") {
+            // Square + pencil (IconEditSmall2) — avoids the folded-corner doc glyph (IconNoteText) that reads like “paper + arrow”.
+            sidebarMenuItem(assetName: "IconEditSmall2", label: "New Note", shortcut: "\u{2318}N") {
                 createAndOpenNewNote()
             }
             sidebarMenuItem(assetName: "IconMagnifyingGlass", label: "Search", shortcut: "\u{2318}K") {
@@ -2564,6 +2602,7 @@ struct ContentView: View {
     private func presentSearch() {
         withAnimation(.easeInOut(duration: 0.18)) {
             isSettingsPresented = false
+            floatingSearchOpenIntent = .commandPaletteRoot
             isSearchPresented = true
         }
     }
@@ -2600,6 +2639,9 @@ struct ContentView: View {
     private func finishImport(_ imported: [Note]) {
         importProgress = nil
         if let first = imported.first {
+            if let cur = selectedNote?.id, cur != first.id {
+                postEditorSerializationFlushAllVisibleEditors()
+            }
             selectedNote = first
             selectedNoteIDs = [first.id]
         }
@@ -2629,14 +2671,56 @@ struct ContentView: View {
             FloatingSearch(
                 engine: searchEngine,
                 isPresented: $isSearchPresented,
+                openIntent: $floatingSearchOpenIntent,
                 onNoteSelected: { note in
                     openNote(note)
+                },
+                onNoteSelectedStartMeeting: { note in
+                    openNoteAndStartMeeting(note)
                 },
                 onFolderSelected: { folder in
                     openFolder(folder)
                 },
                 folders: folders,
-                notes: notesManager.notes
+                notes: notesManager.notes,
+                selectedNote: selectedNote,
+                deferredSparkleUpdateVersion: updateManager.deferredInstallReminderVersion,
+                deferredDevRelaunchVersion: {
+                    #if DEBUG
+                    return buildWatcher.deferredDevRelaunchVersion
+                    #else
+                    return nil
+                    #endif
+                }(),
+                onToggleSidebar: { toggleSidebar() },
+                onTogglePin: {
+                    if let id = selectedNote?.id {
+                        notesManager.togglePin(id: id)
+                    }
+                },
+                onArchiveOrRestoreSelectedNote: {
+                    guard let id = selectedNote?.id else { return }
+                    let isArchived =
+                        notesManager.notes.first(where: { $0.id == id })?.isArchived
+                        ?? selectedNote?.isArchived
+                        ?? false
+                    if isArchived {
+                        unarchiveNotes(Set([id]))
+                    } else {
+                        archiveNotes(Set([id]))
+                    }
+                },
+                onResumeSparkleDeferredUpdate: {
+                    updateManager.resumeDeferredUpdateFromCommandPalette()
+                    isSearchPresented = false
+                },
+                onResumeDevDeferredRelaunch: {
+                    #if DEBUG
+                    isSearchPresented = false
+                    buildWatcher.relaunch()
+                    #endif
+                },
+                isZenMode: !isSidebarVisible
             )
             .environmentObject(themeManager)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -2749,7 +2833,7 @@ struct ContentView: View {
                 toggleSidebar(to: true)
             }
 
-            sidebarTopBarIcon(assetName: "IconNoteText") {
+            sidebarTopBarIcon(assetName: "IconEditSmall2") {
                 createAndOpenNewNote()
             }
             .opacity(isFloatingSidebarVisible ? 0 : 1)
@@ -2804,15 +2888,13 @@ struct ContentView: View {
                 UpdatePanelView(
                     variant: .relaunch(version: updateManager.updateVersion),
                     onRelaunch: { updateManager.relaunch() },
-                    onRemindLater: { updateManager.remindLater() },
-                    isEmbeddedInGlass: true
+                    onRemindLater: { updateManager.remindLater() }
                 )
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 .padding(.bottom, 8)
             } else if updateManager.isDownloading {
                 UpdatePanelView(
-                    variant: .downloading(version: updateManager.updateVersion),
-                    isEmbeddedInGlass: true
+                    variant: .downloading(version: updateManager.updateVersion)
                 )
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 .padding(.bottom, 8)
@@ -2824,8 +2906,7 @@ struct ContentView: View {
                 UpdatePanelView(
                     variant: .relaunch(version: buildWatcher.buildVersion),
                     onRelaunch: { buildWatcher.relaunch() },
-                    onRemindLater: { buildWatcher.remindLater() },
-                    isEmbeddedInGlass: true
+                    onRemindLater: { buildWatcher.remindLater() }
                 )
                 .transition(.move(edge: .bottom).combined(with: .opacity))
                 .padding(.bottom, 8)
@@ -3016,7 +3097,7 @@ struct ContentView: View {
                     .padding(.vertical, 4)
                     .background(
                         Capsule()
-                            .fill(colorScheme == .dark ? Color(white: 0.18) : Color(white: 0.93))
+                            .fill(Color("SecondaryBackgroundColor"))
                     )
 
                 if !version.title.isEmpty {
@@ -3279,9 +3360,7 @@ struct ContentView: View {
             : Color("SecondaryTextColor")
         let cardFill: Color = isActive
             ? (colorScheme == .dark ? .white : .black)
-            : colorScheme == .dark
-                ? Color(red: 26/255, green: 26/255, blue: 26/255).opacity(0.48)
-                : Color.white.opacity(0.6)
+            : Color("SecondaryBackgroundColor")
 
         return Button {
             if isSettingsPresented {
@@ -3291,6 +3370,9 @@ struct ContentView: View {
             isSplitViewVisible = true
             if let primaryID = session.primaryNoteID,
                let pNote = notesManager.notes.first(where: { $0.id == primaryID }) {
+                if let cur = selectedNote?.id, cur != pNote.id {
+                    postEditorSerializationFlushAllVisibleEditors()
+                }
                 selectedNote = pNote
                 selectedNoteIDs = [pNote.id]
             }
@@ -3572,10 +3654,12 @@ struct ContentView: View {
                         withAnimation(.jotSpring) {
                             guard let idx = activeSplitIndex else { return }
                             if pane == .primary {
+                                postEditorSerializationFlushAllVisibleEditors()
                                 splitSessions[idx].primaryNoteID = note.id
                                 selectedNote = note
                                 selectedNoteIDs = [note.id]
                             } else {
+                                postEditorSerializationFlush(editorInstanceID: splitEditorID)
                                 splitSessions[idx].secondaryNoteID = note.id
                             }
                             splitPickerOverlayPane = nil
@@ -3650,6 +3734,7 @@ struct ContentView: View {
         } else {
             if let secID = split.secondaryNoteID,
                let secNote = notesManager.notes.first(where: { $0.id == secID }) {
+                postEditorSerializationFlushAllVisibleEditors()
                 selectedNote = secNote
                 selectedNoteIDs = [secNote.id]
             }
@@ -3664,6 +3749,7 @@ struct ContentView: View {
         } else {
             if let secID = split.secondaryNoteID,
                let secNote = notesManager.notes.first(where: { $0.id == secID }) {
+                postEditorSerializationFlushAllVisibleEditors()
                 selectedNote = secNote
                 selectedNoteIDs = [secNote.id]
             }
@@ -3673,6 +3759,8 @@ struct ContentView: View {
 
     private func moveSplitToOtherSide() {
         guard let idx = activeSplitIndex else { return }
+        postEditorSerializationFlush(editorInstanceID: primaryEditorID)
+        postEditorSerializationFlush(editorInstanceID: splitEditorID)
         let oldPrimary = splitSessions[idx].primaryNoteID
         let oldSecondary = splitSessions[idx].secondaryNoteID
         splitSessions[idx].primaryNoteID = oldSecondary
@@ -3734,9 +3822,18 @@ struct ContentView: View {
         if selectedNote?.id == updated.id {
             selectedNote = updated
         }
+        // Sidebar rows use `isSelected` (muted capsule) vs `isActiveNote` (bright capsule).
+        // Never insert the saved note into `selectedNoteIDs` when it is not the focused
+        // note: debounced autosave of the note the user just left arrives after `openNote`
+        // already moved `selectedNote`, and the old branch `insert(updated.id)` left that
+        // id in the set — so the previous row stayed “selected” while the new one was active.
         if selectedNoteIDs.isEmpty {
-            selectedNoteIDs = [updated.id]
-        } else if !selectedNoteIDs.contains(updated.id) {
+            if let focusedID = selectedNote?.id {
+                selectedNoteIDs = [focusedID]
+            } else {
+                selectedNoteIDs = [updated.id]
+            }
+        } else if selectedNote?.id == updated.id, !selectedNoteIDs.contains(updated.id) {
             selectedNoteIDs.insert(updated.id)
         }
         selectionAnchorID = selectionAnchorID ?? updated.id
@@ -3744,6 +3841,22 @@ struct ContentView: View {
 
     private func saveSplitNote(_ updated: Note) {
         notesManager.updateNote(updated)
+    }
+
+    private func postEditorSerializationFlush(editorInstanceID: UUID) {
+        NotificationCenter.default.post(
+            name: .jotFlushEditorSerializationBeforeNoteSwitch,
+            object: nil,
+            userInfo: ["editorInstanceID": editorInstanceID]
+        )
+    }
+
+    /// Both split panes stay mounted while visible; flush each editor that may hold the outgoing note.
+    private func postEditorSerializationFlushAllVisibleEditors() {
+        postEditorSerializationFlush(editorInstanceID: primaryEditorID)
+        if isSplitViewVisible, activeSplit?.isComplete == true {
+            postEditorSerializationFlush(editorInstanceID: splitEditorID)
+        }
     }
 
     private func restoreNoteVersion(_ version: NoteVersion, for note: Note) {
@@ -3760,6 +3873,7 @@ struct ContentView: View {
 
         // Force the editor to reload with restored content
         selectedNote = updated
+        selectedNoteIDs = [updated.id]
     }
 
     /// Silently discard the currently selected note if it has no title and no content.
@@ -3799,6 +3913,9 @@ struct ContentView: View {
             authManager.cancelRelock(for: freshNote.id)
         }
 
+        if let prev = selectedNote, prev.id != freshNote.id {
+            postEditorSerializationFlushAllVisibleEditors()
+        }
         selectedNote = freshNote
         selectedNoteIDs = [freshNote.id]
         selectionAnchorID = freshNote.id
@@ -3809,6 +3926,12 @@ struct ContentView: View {
         if focusEditor {
             requestEditorFocus()
         }
+    }
+
+    /// Command palette “Start meeting session” flow: open the note, then start recording on the shared manager.
+    private func openNoteAndStartMeeting(_ note: Note) {
+        openNote(note)
+        meetingRecorderManager.startRecording(for: note.id)
     }
 
     private func openFolder(_ folder: Folder, withHaptic: Bool = true) {
@@ -3858,6 +3981,9 @@ struct ContentView: View {
             expandedFolderIDs.insert(folderID)
         }
 
+        if let cur = selectedNote?.id, cur != note.id {
+            postEditorSerializationFlushAllVisibleEditors()
+        }
         if animated {
             withAnimation(.jotSpring) {
                 selectedNote = note
@@ -4212,6 +4338,9 @@ struct ContentView: View {
     private func openNoteByID(_ noteID: UUID) {
         guard let note = notesManager.notes.first(where: { $0.id == noteID }) else { return }
         discardPreviousNoteIfEmpty(switching: note)
+        if let cur = selectedNote?.id, cur != note.id {
+            postEditorSerializationFlushAllVisibleEditors()
+        }
         withAnimation(.jotSpring) {
             selectedNote = note
             selectedNoteIDs = [note.id]
@@ -4256,6 +4385,9 @@ struct ContentView: View {
                             content: "[[image|||\(filename)]]"
                         )
                         try? FileManager.default.removeItem(at: tempURL)
+                        if let cur = selectedNote?.id, cur != note.id {
+                            postEditorSerializationFlushAllVisibleEditors()
+                        }
                         withAnimation(.jotSpring) {
                             selectedNote = note
                             selectedNoteIDs = [note.id]
@@ -4268,6 +4400,9 @@ struct ContentView: View {
 
         // Select the last non-image note (images handle their own selection in the Task)
         if let note = lastNote {
+            if let cur = selectedNote?.id, cur != note.id {
+                postEditorSerializationFlushAllVisibleEditors()
+            }
             withAnimation(.jotSpring) {
                 selectedNote = note
                 selectedNoteIDs = [note.id]
@@ -4298,6 +4433,9 @@ struct ContentView: View {
         }
 
         let targetNote = notes[targetIndex]
+        if let cur = selectedNote?.id, cur != targetNote.id {
+            postEditorSerializationFlushAllVisibleEditors()
+        }
         withAnimation(.jotSpring) {
             selectedNote = targetNote
             selectedNoteIDs = [targetNote.id]
@@ -4375,30 +4513,42 @@ struct ContentView: View {
     private func reconcileSelectionWithCurrentNotes(_ notes: [Note]? = nil) {
         let source = notes ?? notesManager.notes
         let validIDs = Set(source.map(\.id))
+        // Archived notes are removed from `notes` but still exist in the library. Selection
+        // and the detail pane must keep honoring them; otherwise any `notes` publish (autosave,
+        // resort) runs `synchronizeDetailPaneWithSelection` with active-only IDs and
+        // `NoteSelectionPolicy` falls back to the newest active note while the archive row
+        // still looks selected.
+        let archivedIDs = Set(notesManager.archivedNotes.map(\.id))
+        let persistedNoteIDs = validIDs.union(archivedIDs)
 
-        selectedNoteIDs.formIntersection(validIDs)
-        pendingDeleteNoteIDs.formIntersection(validIDs)
-        pendingMoveNoteIDs.formIntersection(validIDs)
+        selectedNoteIDs.formIntersection(persistedNoteIDs)
+        pendingDeleteNoteIDs.formIntersection(persistedNoteIDs)
+        pendingMoveNoteIDs.formIntersection(persistedNoteIDs)
         notesPendingExport = notesPendingExport.compactMap { exportNote in
             source.first(where: { $0.id == exportNote.id })
+                ?? notesManager.archivedNotes.first(where: { $0.id == exportNote.id })
         }
 
         if notesPendingExport.isEmpty {
             isBatchExportSheetPresented = false
         }
 
-        if let selectionAnchorID, !validIDs.contains(selectionAnchorID) {
+        if let selectionAnchorID, !persistedNoteIDs.contains(selectionAnchorID) {
             self.selectionAnchorID = selectedNoteIDs.first
         }
 
-        if let selectedID = selectedNote?.id, !validIDs.contains(selectedID) {
+        if let selectedID = selectedNote?.id, !persistedNoteIDs.contains(selectedID) {
+            postEditorSerializationFlushAllVisibleEditors()
             selectedNote = nil
         }
 
         guard isInitialDataReady else {
-            if let selectedID = selectedNote?.id,
-               let updated = source.first(where: { $0.id == selectedID }) {
-                selectedNote = updated
+            if let selectedID = selectedNote?.id {
+                if let updated = source.first(where: { $0.id == selectedID }) {
+                    selectedNote = updated
+                } else if let archived = notesManager.archivedNotes.first(where: { $0.id == selectedID }) {
+                    selectedNote = archived
+                }
             }
             return
         }
@@ -4440,13 +4590,32 @@ struct ContentView: View {
         )
     }
 
+    /// Active notes plus any archived notes referenced by the current selection/detail state.
+    /// Required so `resolvePreferredActiveNote` can resolve an archived `selectedNote` when
+    /// the primary `notes` array excludes archived items.
+    private func detailPaneResolutionNotes(activeNotes: [Note]) -> [Note] {
+        var idsNeeded = selectedNoteIDs
+        if let id = selectedNote?.id { idsNeeded.insert(id) }
+        if let selectionAnchorID { idsNeeded.insert(selectionAnchorID) }
+        guard !idsNeeded.isEmpty else { return activeNotes }
+        var pool = activeNotes
+        for archived in notesManager.archivedNotes where idsNeeded.contains(archived.id) {
+            pool.append(archived)
+        }
+        return pool
+    }
+
     private func synchronizeDetailPaneWithSelection(
         in notes: [Note]? = nil,
         requestFocusIfSelectionChanges: Bool = false
     ) {
         let source = notes ?? notesManager.notes
+        let resolutionPool = detailPaneResolutionNotes(activeNotes: source)
 
-        guard let resolvedNote = resolvePreferredActiveNote(in: source) else {
+        guard let resolvedNote = resolvePreferredActiveNote(in: resolutionPool) else {
+            if selectedNote != nil {
+                postEditorSerializationFlushAllVisibleEditors()
+            }
             selectedNote = nil
             selectedNoteIDs.removeAll()
             selectionAnchorID = nil
@@ -4458,6 +4627,9 @@ struct ContentView: View {
         }
 
         let previousID = selectedNote?.id
+        if let prev = previousID, prev != resolvedNote.id {
+            postEditorSerializationFlushAllVisibleEditors()
+        }
         selectedNote = resolvedNote
 
         if selectedNoteIDs.isEmpty || !selectedNoteIDs.contains(resolvedNote.id) {
@@ -4787,6 +4959,13 @@ struct NoteListCard: View {
     @Environment(\.colorScheme) private var colorScheme
     @EnvironmentObject private var meetingRecorderManager: MeetingRecorderManager
 
+    /// Same as `FolderSection` folder row: `HStack(spacing:)` between ellipsis and “new note”.
+    private static let sidebarTrailingAuxiliarySpacing: CGFloat = 12
+    /// Section headers use `IconChevron*` at 15×15; folder actions use 15×15 — keep one column.
+    private static let sidebarTrailingIconSize: CGFloat = 15
+    /// `ellipsis` glyph is slightly right in its box; shift left so the middle dot matches the chevron column.
+    private static let sidebarEllipsisGlyphOffsetX: CGFloat = -2
+
     private var activeTextColor: Color {
         forceLightText ? Color(hex: "#1A1A1A") : Color("ButtonPrimaryTextColor")
     }
@@ -5025,10 +5204,11 @@ struct NoteListCard: View {
                     }
             }
 
-            // Waveform + ellipsis trailing group. Uses a zero-spacing HStack so
-            // the waveform sits flush at the trailing edge when the ellipsis is hidden.
-            // On hover the ellipsis expands and the waveform shifts left naturally.
-            HStack(spacing: 4) {
+            // Trailing: recording waveform (when active) + ellipsis menu. Spacing matches
+            // `FolderSection` folder row (`HStack(spacing: 12)` between ellipsis and new-note).
+            // Ellipsis uses a 15×15 slot like `IconChevronTopSmall` in section headers so the
+            // middle dot lines up that column; slight negative X offsets the SF Symbol glyph.
+            HStack(spacing: NoteListCard.sidebarTrailingAuxiliarySpacing) {
                 if let recordingID = meetingRecorderManager.recordingNoteID,
                    recordingID == note.id,
                    !isActiveNote,
@@ -5037,7 +5217,10 @@ struct NoteListCard: View {
                         levels: meetingRecorderManager.levels,
                         isPaused: meetingRecorderManager.recordingState == .paused
                     )
-                    .frame(width: 16, height: 16)
+                    .frame(
+                        width: NoteListCard.sidebarTrailingIconSize,
+                        height: NoteListCard.sidebarTrailingIconSize
+                    )
                 }
 
                 Menu {
@@ -5048,7 +5231,12 @@ struct NoteListCard: View {
                         .foregroundColor(isActiveNote
                             ? activeTextColor.opacity(isEllipsisHovered ? 1.0 : 0.7)
                             : secondaryTextColor.opacity(isEllipsisHovered ? 1.0 : 0.7))
-                        .frame(width: 12, height: 12)
+                        // Align optical center with 15×15 sidebar icons (chevron, folder actions).
+                        .offset(x: NoteListCard.sidebarEllipsisGlyphOffsetX)
+                        .frame(
+                            width: NoteListCard.sidebarTrailingIconSize,
+                            height: NoteListCard.sidebarTrailingIconSize
+                        )
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)

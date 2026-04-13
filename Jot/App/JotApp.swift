@@ -60,14 +60,21 @@ struct JotApp: App {
         // Install Cmd+P handler at NSEvent level (bypasses SwiftUI/macOS print validation)
         PrintKeyHandler.shared.install()
 
-        // Install the Quick Notes global hotkey. Reads the stored chord from
-        // UserDefaults directly so this works regardless of ThemeManager's
-        // construction order. Falls back to the factory default on first launch.
-        let storedHotKey = QuickNoteHotKey.loadFromStandardDefaults() ?? .default
-        GlobalHotKeyManager.shared.onFire = {
+        // Global hotkeys: read chords from UserDefaults so registration works before
+        // ThemeManager exists. Factory defaults apply on first launch.
+        let quickNoteChord = QuickNoteHotKey.loadFromStandardDefaults() ?? .default
+        GlobalHotKeyManager.shared.setHandler({
             QuickNoteWindowController.shared.showPanel()
-        }
-        GlobalHotKeyManager.shared.install(storedHotKey)
+        }, for: .quickNote)
+        _ = GlobalHotKeyManager.shared.register(quickNoteChord, slot: .quickNote)
+
+        let meetingChord =
+            QuickNoteHotKey.loadStartMeetingSessionFromStandardDefaults()
+            ?? .defaultStartMeetingSession
+        GlobalHotKeyManager.shared.setHandler({
+            NotificationCenter.default.post(name: .openMeetingSessionCommandPalette, object: nil)
+        }, for: .startMeetingSession)
+        _ = GlobalHotKeyManager.shared.register(meetingChord, slot: .startMeetingSession)
     }
 
     /// Clean up temporary files that may have accumulated from previous sessions

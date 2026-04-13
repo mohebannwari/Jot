@@ -10,6 +10,11 @@ enum NoteSelectionCommandAction: String {
 
 extension Notification.Name {
     static let noteSelectionCommandTriggered = Notification.Name("noteSelectionCommandTriggered")
+    /// Global shortcut: present command palette in meeting pick-note mode.
+    static let openMeetingSessionCommandPalette = Notification.Name("openMeetingSessionCommandPalette")
+    /// Palette already open: switch to meeting pick-note without toggling presentation (onChange would not fire).
+    static let floatingSearchSwitchToMeetingPickNote = Notification.Name(
+        "floatingSearchSwitchToMeetingPickNote")
 }
 
 struct NoteSelectionCommands: Commands {

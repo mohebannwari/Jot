@@ -1,0 +1,10 @@
+---
+description: Metadata / monospaced label typography — size and casing
+alwaysApply: true
+---
+
+# Metadata font (`FontManager.metadata`)
+
+- **Default size:** **11pt** unless a Figma spec or explicit product request says otherwise.
+- **Static labels:** Any `Text` that uses the metadata font for UI labels (dates, tags, shortcuts, section hints) must use **all caps**, e.g. `jotMetadataLabelTypography(size:weight:)` on `View` (see `FontManager.swift`), or `.font(FontManager.metadata(...))` plus `.textCase(.uppercase)`.
+- **User input:** Do **not** apply all caps to `TextField`, `TextEditor`, or other controls where the user types free text — keep metadata font for monospace only if needed, without `.textCase(.uppercase)` on the field.

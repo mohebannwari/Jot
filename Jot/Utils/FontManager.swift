@@ -128,10 +128,14 @@ struct FontManager {
     }
 
     // MARK: - Metadata Fonts (SF Mono)
-    
-    /// Metadata font using SF Mono for dates, timestamps, and technical info
-    /// Use for: Dates, timestamps, metadata, monospaced technical text
-    static func metadata(size: CGFloat = 12, weight: Weight = .medium) -> Font {
+
+    /// Monospaced metadata (dates, shortcuts, technical labels).
+    ///
+    /// **Design system:** For static `Text` labels, default to **11pt** and apply
+    /// `jotMetadataLabelTypography(size:weight:)` so copy is **all caps**.
+    /// Use a non-default `size` only when a screen or Figma spec explicitly requires it.
+    /// Do **not** force all caps on `TextField` / user-typed content.
+    static func metadata(size: CGFloat = 11, weight: Weight = .medium) -> Font {
         return Font.system(size: size, weight: weight.toSwiftUIWeight(), design: .monospaced)
     }
 
@@ -142,8 +146,8 @@ struct FontManager {
         Font.system(size: size, weight: weight.toSwiftUIWeight(), design: .default)
     }
     
-    /// NSFont version for AppKit metadata
-    static func metadataNS(size: CGFloat = 12, weight: Weight = .medium) -> NSFont {
+    /// NSFont version for AppKit metadata (same defaults as ``metadata(size:weight:)``).
+    static func metadataNS(size: CGFloat = 11, weight: Weight = .medium) -> NSFont {
         return NSFont.monospacedSystemFont(ofSize: size, weight: weight.toNSWeight())
     }
     
@@ -189,5 +193,21 @@ struct FontManager {
             case .bold: return "Bold"
             }
         }
+    }
+}
+
+// MARK: - Metadata label styling (SwiftUI)
+
+extension View {
+    /// Monospaced metadata **labels**: 11pt (unless overridden) and **all caps** per design system.
+    ///
+    /// Use for `Text` only. Do **not** apply to `TextField` / `TextEditor` where the user types
+    /// sentence-case content — use `.font(FontManager.metadata(...))` there without all caps.
+    func jotMetadataLabelTypography(
+        size: CGFloat = 11,
+        weight: FontManager.Weight = .medium
+    ) -> some View {
+        font(FontManager.metadata(size: size, weight: weight))
+            .textCase(.uppercase)
     }
 }
