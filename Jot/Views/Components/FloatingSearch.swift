@@ -54,6 +54,8 @@ struct FloatingSearch: View {
 
     @EnvironmentObject private var themeManager: ThemeManager
     @State private var searchText = ""
+    /// Bumped whenever the palette should (re)capture the native search field’s first responder; drives `FloatingSearchNativeTextField` without spamming retries on every keystroke.
+    @State private var commandPaletteNativeFocusGeneration: UInt64 = 0
     @FocusState private var isSearchFocused: Bool
     @Namespace private var searchNamespace
     @State private var hoveredResultID: SearchHit.ID?
@@ -69,7 +71,10 @@ struct FloatingSearch: View {
     /// Fixed quick actions in root mode (excluding optional deferred-update lead row).
     private let rootStandardQuickActionCount = 9
     /// Shared vertical slot so the magnifier, placeholder/caret, and clear control align (plain TextField has extra cell insets).
-    private let searchFieldLineHeight: CGFloat = 18
+    /// On macOS the focused field is edited by AppKit’s field editor, so leave headroom and apply the 1.5pt optical shift inside the native editor rect.
+    private let searchFieldLineHeight: CGFloat = 22
+    /// Inset for the results `ScrollView` document so overlay scroll thumbs don’t cover trailing shortcuts and folder labels.
+    private let resultsScrollTrailingGutter: CGFloat = 18
 
     /// Pre–macOS 26 command palette shell fill — same tokens as the tabs block text body
     /// (`TabsContainerOverlayView.blocksColor` / `FloatingEditToolbar.pillBg` / Figma `bg/blocks`).
@@ -84,9 +89,8 @@ struct FloatingSearch: View {
         }
     }
 
-    /// macOS: legacy thick scrollbar for the **results** list only (see `FloatingSearchScrollViewLegacyScrollers`).
-    /// Not used on the quick-actions list: `NSScrollView` legacy style reserves a right gutter while SwiftUI
-    /// still sizes the document full-width, which clips trailing shortcut labels (e.g. ⌘N).
+    /// macOS: nudge the results `NSScrollView` toward legacy scrollers when AppKit exposes one (see `FloatingSearchScrollViewLegacyScrollers`).
+    /// SwiftUI often still paints overlay scrubbers on top of the document; `resultsScrollTrailingGutter` keeps trailing row content clear.
     @ViewBuilder
     private var resultsScrollViewLegacyScrollerProbe: some View {
         #if os(macOS)
@@ -131,8 +135,81 @@ struct FloatingSearch: View {
         trimmedSearch.isEmpty
     }
 
-    private var showResults: Bool {
-        !trimmedSearch.isEmpty && !engine.results.isEmpty
+    /// Root palette: typed query with at least one matching command and/or note/folder hit.
+    private var showMixedQueryResults: Bool {
+        guard paletteMode == .root, !trimmedSearch.isEmpty else { return false }
+        return !filteredRootQuickActionIndices.isEmpty || !engine.results.isEmpty
+    }
+
+    /// Meeting pick mode: typed query with note search hits (commands stay hidden; picker is for notes).
+    private var showNoteSearchResultsOnly: Bool {
+        guard paletteMode == .meetingPickNote, !trimmedSearch.isEmpty else { return false }
+        return !engine.results.isEmpty
+    }
+
+    /// Any scrollable hit list below the search field (commands + notes, or meeting search only).
+    private var showResultsPanel: Bool {
+        showMixedQueryResults || showNoteSearchResultsOnly
+    }
+
+    /// Quick actions whose titles/keywords match the current query (palette order, root mode only).
+    private var filteredRootQuickActionIndices: [Int] {
+        guard paletteMode == .root, !trimmedSearch.isEmpty else { return [] }
+        let q = trimmedSearch
+        var indices: [Int] = []
+        for idx in 0..<rootStandardQuickActionCount where rootQuickActionMatchesSearch(index: idx, query: q) {
+            indices.append(idx)
+        }
+        if hasDeferredUpdateRow, "Update App".localizedStandardContains(q) {
+            indices.append(deferredUpdateRowSelectableIndex)
+        }
+        return indices
+    }
+
+    /// Whether any searchable string for this quick action contains the query (diacritic/case insensitive).
+    private func rootQuickActionMatchesSearch(index: Int, query: String) -> Bool {
+        for term in rootQuickActionSearchKeywords(for: index) where term.localizedStandardContains(query) {
+            return true
+        }
+        return false
+    }
+
+    /// Titles plus common aliases so typing e.g. “floating” or “preferences” still finds commands.
+    private func rootQuickActionSearchKeywords(for index: Int) -> [String] {
+        switch index {
+        case 0:
+            return ["New Note"]
+        case 1:
+            return ["Floating Note", "Quick Note", "Quick Capture", "Floating Panel"]
+        case 2:
+            return ["Start Meeting Session in a Note", "Meeting", "Recording", "Session"]
+        case 3:
+            return ["New Folder", "Folder"]
+        case 4:
+            return ["New Split View", "Split View", "Split"]
+        case 5:
+            return [
+                selectedNote?.isPinned == true ? "Unpin Note" : "Pin Note",
+                "Pin",
+                "Unpin",
+            ]
+        case 6:
+            return [
+                isZenMode ? "Exit Zen Mode" : "Zen Mode",
+                "Zen",
+                "Focus",
+            ]
+        case 7:
+            return [
+                archiveOrRestoreQuickActionTitle,
+                "Archive",
+                "Restore",
+            ]
+        case 8:
+            return ["Settings", "Preferences"]
+        default:
+            return []
+        }
     }
 
     /// Sparkle takes precedence over DEBUG build-watcher when both are set.
@@ -214,7 +291,12 @@ struct FloatingSearch: View {
     }
 
     private var totalPaletteRows: Int {
-        if showResults { return engine.results.count }
+        if showMixedQueryResults {
+            return filteredRootQuickActionIndices.count + engine.results.count
+        }
+        if showNoteSearchResultsOnly {
+            return engine.results.count
+        }
         guard isEmptyQuery else { return 0 }
         if paletteMode == .meetingPickNote {
             return meetingPickChoices.count
@@ -227,7 +309,7 @@ struct FloatingSearch: View {
     }
 
     private var maxResultsHeight: CGFloat {
-        if showResults { return 280 }
+        if showResultsPanel { return 280 }
         return 0
     }
 
@@ -249,7 +331,7 @@ struct FloatingSearch: View {
         .onChange(of: engine.results) { _, _ in
             selectedResultIndex = 0
         }
-        .onChange(of: showResults) { _, isShowing in
+        .onChange(of: showResultsPanel) { _, isShowing in
             if isShowing {
                 hoveredResultID = nil
                 selectedResultIndex = 0
@@ -274,9 +356,7 @@ struct FloatingSearch: View {
                 searchText = ""
                 engine.query = ""
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                isSearchFocused = true
-            }
+            kickCommandPaletteNativeSearchFocus()
         }
     }
 
@@ -332,7 +412,7 @@ struct FloatingSearch: View {
                 quickActionsAndRecentsBlock
             }
 
-            if showResults {
+            if showResultsPanel {
                 Rectangle()
                     .fill(Color("BorderSubtleColor"))
                     .frame(height: 0.5)
@@ -356,32 +436,7 @@ struct FloatingSearch: View {
                 .frame(width: 15, height: 15)
                 .frame(height: searchFieldLineHeight, alignment: .center)
 
-            // Standard line leading (not FontManager.heading’s .tight) so AppKit’s single-line cell centers like the 15×15 icon.
-            TextField("Search anything…", text: $searchText)
-                .font(Font.system(size: 11, weight: .medium, design: .default).leading(.standard))
-                .tracking(-0.2)
-                .foregroundColor(Color("PrimaryTextColor"))
-                .focused($isSearchFocused)
-                .textFieldStyle(.plain)
-                .multilineTextAlignment(.leading)
-                .frame(height: searchFieldLineHeight, alignment: .center)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .onKeyPress(.downArrow) {
-                    navigateKeyboard(direction: .down)
-                    return .handled
-                }
-                .onKeyPress(.upArrow) {
-                    navigateKeyboard(direction: .up)
-                    return .handled
-                }
-                .onKeyPress(.return) {
-                    handleReturnKey()
-                    return .handled
-                }
-                .onKeyPress(.escape) {
-                    handlePaletteEscapeKey()
-                    return .handled
-                }
+            searchFieldInput
 
             if !trimmedSearch.isEmpty {
                 Button(action: clearSearchText) {
@@ -397,7 +452,59 @@ struct FloatingSearch: View {
                 .frame(height: searchFieldLineHeight, alignment: .center)
             }
         }
-        .padding(16)
+        // +1 / −1 vs symmetric 16: shifts the whole row down slightly; the native macOS field applies its own 1.5pt editor-rect offset inside the 22pt slot.
+        .padding(.horizontal, 16)
+        .padding(.top, 17)
+        .padding(.bottom, 15)
+    }
+
+    @ViewBuilder
+    private var searchFieldInput: some View {
+        #if os(macOS)
+        FloatingSearchNativeTextField(
+            text: $searchText,
+            isFocused: Binding(
+                get: { isSearchFocused },
+                set: { isSearchFocused = $0 }
+            ),
+            focusGeneration: commandPaletteNativeFocusGeneration,
+            placeholder: "Search anything…",
+            verticalOffset: 1.5,
+            onMoveDown: { navigateKeyboard(direction: .down) },
+            onMoveUp: { navigateKeyboard(direction: .up) },
+            onSubmit: { handleReturnKey() },
+            onCancel: { handlePaletteEscapeKey() }
+        )
+        .frame(height: searchFieldLineHeight, alignment: .center)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        #else
+        // Standard line leading (not FontManager.heading’s .tight) so the field centers like the 15×15 icon.
+        TextField("Search anything…", text: $searchText)
+            .font(Font.system(size: 11, weight: .medium, design: .default).leading(.standard))
+            .tracking(-0.2)
+            .foregroundColor(Color("PrimaryTextColor"))
+            .focused($isSearchFocused)
+            .textFieldStyle(.plain)
+            .multilineTextAlignment(.leading)
+            .frame(height: searchFieldLineHeight, alignment: .center)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .onKeyPress(.downArrow) {
+                navigateKeyboard(direction: .down)
+                return .handled
+            }
+            .onKeyPress(.upArrow) {
+                navigateKeyboard(direction: .up)
+                return .handled
+            }
+            .onKeyPress(.return) {
+                handleReturnKey()
+                return .handled
+            }
+            .onKeyPress(.escape) {
+                handlePaletteEscapeKey()
+                return .handled
+            }
+        #endif
     }
 
     // MARK: - Quick actions + LAST SEARCH (empty query only)
@@ -472,7 +579,7 @@ struct FloatingSearch: View {
     }
 
     private func meetingPickNoteRow(note: Note, index: Int, isCurrentNoteOption: Bool) -> some View {
-        let isSelected = isEmptyQuery && !showResults && selectedResultIndex == index
+        let isSelected = isEmptyQuery && !showResultsPanel && selectedResultIndex == index
         let title =
             note.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             ? "Untitled" : note.title
@@ -513,7 +620,7 @@ struct FloatingSearch: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering in
-            if hovering, isEmptyQuery, !showResults {
+            if hovering, isEmptyQuery, !showResultsPanel {
                 selectedResultIndex = index
             }
         }
@@ -540,72 +647,103 @@ struct FloatingSearch: View {
         }
     }
 
-    private func deferredUpdateQuickRow(index: Int) -> some View {
+    private func deferredUpdateQuickRow(index: Int, combinedListSelectionIndex: Int? = nil) -> some View {
         quickActionRow(
             index: index,
             iconName: "IconUpdateDownload",
             title: "Update App",
             isEnabled: true,
+            combinedListSelectionIndex: combinedListSelectionIndex,
             trailing: { EmptyView() })
+    }
+
+    /// Single root quick action by palette index (0…8). Deferred “Update App” uses `deferredUpdateQuickRow` separately.
+    @ViewBuilder
+    private func rootPaletteQuickActionRow(paletteIndex: Int, combinedListSelectionIndex: Int? = nil) -> some View {
+        switch paletteIndex {
+        case 0:
+            quickActionRow(
+                index: 0,
+                iconName: "IconEditSmall2",
+                title: "New Note",
+                isEnabled: true,
+                combinedListSelectionIndex: combinedListSelectionIndex,
+                trailing: { sidebarStyleShortcutLabel("\u{2318}N") })
+        case 1:
+            quickActionRow(
+                index: 1,
+                iconName: "IconFloatingNote",
+                title: "Floating Note",
+                isEnabled: true,
+                combinedListSelectionIndex: combinedListSelectionIndex,
+                trailing: { sidebarStyleShortcutLabel(quickNoteShortcutDisplay) })
+        case 2:
+            quickActionRow(
+                index: 2,
+                iconName: "IconMicrophoneSparkle",
+                title: "Start Meeting Session in a Note",
+                isEnabled: true,
+                combinedListSelectionIndex: combinedListSelectionIndex,
+                trailing: { sidebarStyleShortcutLabel(startMeetingSessionShortcutDisplay) })
+        case 3:
+            quickActionRow(
+                index: 3,
+                iconName: "IconFolderAddRight",
+                title: "New Folder",
+                isEnabled: true,
+                combinedListSelectionIndex: combinedListSelectionIndex,
+                trailing: { EmptyView() })
+        case 4:
+            quickActionRow(
+                index: 4,
+                iconName: "IconSplit",
+                title: "New Split View",
+                isEnabled: true,
+                combinedListSelectionIndex: combinedListSelectionIndex,
+                trailing: { EmptyView() })
+        case 5:
+            quickActionRow(
+                index: 5,
+                iconName: selectedNote?.isPinned == true ? "IconUnpin" : "IconThumbtack",
+                title: selectedNote?.isPinned == true ? "Unpin Note" : "Pin Note",
+                isEnabled: selectedNote != nil,
+                combinedListSelectionIndex: combinedListSelectionIndex,
+                trailing: { EmptyView() })
+        case 6:
+            quickActionRow(
+                index: 6,
+                iconName: "IconZenMode",
+                // Same wording as meeting-picker header when the sidebar is hidden (⌘. toggles either way).
+                title: isZenMode ? "Exit Zen Mode" : "Zen Mode",
+                isEnabled: true,
+                combinedListSelectionIndex: combinedListSelectionIndex,
+                trailing: { sidebarStyleShortcutLabel("\u{2318}.") })
+        case 7:
+            quickActionRow(
+                index: 7,
+                iconName: archiveOrRestoreQuickActionIcon,
+                title: archiveOrRestoreQuickActionTitle,
+                isEnabled: isArchiveOrRestoreQuickActionEnabled,
+                combinedListSelectionIndex: combinedListSelectionIndex,
+                trailing: { EmptyView() })
+        case 8:
+            quickActionRow(
+                index: 8,
+                iconName: "IconSettingsGear1",
+                title: "Settings",
+                isEnabled: true,
+                combinedListSelectionIndex: combinedListSelectionIndex,
+                trailing: { sidebarStyleShortcutLabel("\u{2318},") })
+        default:
+            EmptyView()
+        }
     }
 
     @ViewBuilder
     private var rootStandardQuickActionRows: some View {
-        quickActionRow(
-            index: 0,
-            iconName: "IconEditSmall2",
-            title: "New Note",
-            isEnabled: true,
-            trailing: { sidebarStyleShortcutLabel("\u{2318}N") })
-        quickActionRow(
-            index: 1,
-            iconName: "IconFloatingNote",
-            title: "Floating Note",
-            isEnabled: true,
-            trailing: { sidebarStyleShortcutLabel(quickNoteShortcutDisplay) })
-        quickActionRow(
-            index: 2,
-            iconName: "IconMicrophoneSparkle",
-            title: "Start Meeting Session in a Note",
-            isEnabled: true,
-            trailing: { sidebarStyleShortcutLabel(startMeetingSessionShortcutDisplay) })
-        quickActionRow(
-            index: 3,
-            iconName: "IconFolderAddRight",
-            title: "New Folder",
-            isEnabled: true,
-            trailing: { EmptyView() })
-        quickActionRow(
-            index: 4,
-            iconName: "IconSplit",
-            title: "New Split View",
-            isEnabled: true,
-            trailing: { EmptyView() })
-        quickActionRow(
-            index: 5,
-            iconName: selectedNote?.isPinned == true ? "IconUnpin" : "IconThumbtack",
-            title: selectedNote?.isPinned == true ? "Unpin Note" : "Pin Note",
-            isEnabled: selectedNote != nil,
-            trailing: { EmptyView() })
-        quickActionRow(
-            index: 6,
-            iconName: "IconZenMode",
-            // Same wording as meeting-picker header when the sidebar is hidden (⌘. toggles either way).
-            title: isZenMode ? "Exit Zen Mode" : "Zen Mode",
-            isEnabled: true,
-            trailing: { sidebarStyleShortcutLabel("\u{2318}.") })
-        quickActionRow(
-            index: 7,
-            iconName: archiveOrRestoreQuickActionIcon,
-            title: archiveOrRestoreQuickActionTitle,
-            isEnabled: isArchiveOrRestoreQuickActionEnabled,
-            trailing: { EmptyView() })
-        quickActionRow(
-            index: 8,
-            iconName: "IconSettingsGear1",
-            title: "Settings",
-            isEnabled: true,
-            trailing: { sidebarStyleShortcutLabel("\u{2318},") })
+        ForEach(0..<rootStandardQuickActionCount, id: \.self) { paletteIndex in
+            rootPaletteQuickActionRow(paletteIndex: paletteIndex, combinedListSelectionIndex: nil)
+        }
     }
 
     private func quickActionRow<Trailing: View>(
@@ -613,9 +751,15 @@ struct FloatingSearch: View {
         iconName: String,
         title: String,
         isEnabled: Bool,
+        combinedListSelectionIndex: Int? = nil,
         @ViewBuilder trailing: () -> Trailing
     ) -> some View {
-        let isSelected = isEmptyQuery && !showResults && selectedResultIndex == index
+        let isSelected: Bool = {
+            if let listIndex = combinedListSelectionIndex {
+                return showMixedQueryResults && selectedResultIndex == listIndex
+            }
+            return isEmptyQuery && !showResultsPanel && selectedResultIndex == index
+        }()
         return Button {
             activateQuickAction(at: index)
         } label: {
@@ -655,7 +799,10 @@ struct FloatingSearch: View {
         .disabled(!isEnabled)
         .opacity(isEnabled ? 1 : 0.45)
         .onHover { hovering in
-            if hovering, isEmptyQuery, !showResults, isEnabled {
+            guard hovering, isEnabled else { return }
+            if let listIndex = combinedListSelectionIndex, showMixedQueryResults {
+                selectedResultIndex = listIndex
+            } else if isEmptyQuery, !showResultsPanel {
                 selectedResultIndex = index
             }
         }
@@ -707,7 +854,7 @@ struct FloatingSearch: View {
     }
 
     private func stringRecentRow(query: String, index: Int) -> some View {
-        let isSelected = isEmptyQuery && !showResults && selectedResultIndex == index
+        let isSelected = isEmptyQuery && !showResultsPanel && selectedResultIndex == index
         return Button {
             applyRecentQuery(query)
         } label: {
@@ -737,14 +884,14 @@ struct FloatingSearch: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering in
-            if hovering, isEmptyQuery, !showResults {
+            if hovering, isEmptyQuery, !showResultsPanel {
                 selectedResultIndex = index
             }
         }
     }
 
     private func openedTargetRow(target: RecentOpenedSearchTarget, index: Int) -> some View {
-        let isSelected = isEmptyQuery && !showResults && selectedResultIndex == index
+        let isSelected = isEmptyQuery && !showResultsPanel && selectedResultIndex == index
         let iconName = target.kind == .folder ? "IconFolder2" : "IconNoteText"
         // Match sidebar: tinted folder icon when the folder has a custom color (LAST SEARCH).
         let leadingIconColor: Color = {
@@ -782,7 +929,7 @@ struct FloatingSearch: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering in
-            if hovering, isEmptyQuery, !showResults {
+            if hovering, isEmptyQuery, !showResultsPanel {
                 selectedResultIndex = index
             }
         }
@@ -883,17 +1030,33 @@ struct FloatingSearch: View {
         .floatingSearchKeycapShadows()
     }
 
-    // MARK: - Results (unchanged behavior)
+    // MARK: - Results (note/folder hits, plus filtered commands when the query is non-empty)
 
     @ViewBuilder
     private var resultsSection: some View {
         ScrollView {
             VStack(spacing: 0) {
                 resultsScrollViewLegacyScrollerProbe
-                ForEach(Array(engine.results.enumerated()), id: \.element.id) { index, result in
-                    resultRow(result, index: index)
+                if showMixedQueryResults {
+                    ForEach(Array(filteredRootQuickActionIndices.enumerated()), id: \.offset) { pair in
+                        let listOffset = pair.offset
+                        let paletteIndex = pair.element
+                        if hasDeferredUpdateRow, paletteIndex == deferredUpdateRowSelectableIndex {
+                            deferredUpdateQuickRow(
+                                index: paletteIndex, combinedListSelectionIndex: listOffset)
+                        } else {
+                            rootPaletteQuickActionRow(
+                                paletteIndex: paletteIndex, combinedListSelectionIndex: listOffset)
+                        }
+                    }
+                }
+                ForEach(Array(engine.results.enumerated()), id: \.element.id) { resultIndex, result in
+                    let selectionIndex = filteredRootQuickActionIndices.count + resultIndex
+                    resultRow(result, selectionIndex: selectionIndex)
                 }
             }
+            // Keep ⌘-style shortcuts and folder metadata left of vertical scroll indicators (overlay scrubbers).
+            .padding(.trailing, resultsScrollTrailingGutter)
         }
         .scrollIndicators(.visible)
         .frame(maxHeight: maxResultsHeight)
@@ -905,9 +1068,9 @@ struct FloatingSearch: View {
         return folders.first(where: { $0.id == folderID })
     }
 
-    private func resultRow(_ result: SearchHit, index: Int) -> some View {
+    private func resultRow(_ result: SearchHit, selectionIndex: Int) -> some View {
         let isHovered = hoveredResultID == result.id
-        let isSelected = selectedResultIndex == index
+        let isSelected = selectedResultIndex == selectionIndex
         let hasPreview = result.type == .content
         // Folder name lives on the title row (Figma 2785:4587); only content preview adds a second line.
         let isMultiLine = hasPreview
@@ -1002,7 +1165,7 @@ struct FloatingSearch: View {
             withAnimation(SearchAnimations.resultHover) {
                 hoveredResultID = hovering ? result.id : (hoveredResultID == result.id ? nil : hoveredResultID)
                 if hovering {
-                    selectedResultIndex = index
+                    selectedResultIndex = selectionIndex
                 }
             }
         }
@@ -1082,8 +1245,23 @@ struct FloatingSearch: View {
                 paletteMode = .root
             }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+        kickCommandPaletteNativeSearchFocus()
+    }
+
+    /// Ensures the macOS AppKit-backed palette field can become first responder after overlay layout, Liquid Glass, and window key state settle.
+    private func kickCommandPaletteNativeSearchFocus() {
+        isSearchFocused = true
+        commandPaletteNativeFocusGeneration &+= 1
+        // Next tick: SwiftUI has usually committed the `NSHostingView` subtree by then.
+        DispatchQueue.main.async {
             isSearchFocused = true
+            commandPaletteNativeFocusGeneration &+= 1
+        }
+        // Late pass: catches races where the field’s `window` or key status flips a few frames after presentation.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+            guard isPresented else { return }
+            isSearchFocused = true
+            commandPaletteNativeFocusGeneration &+= 1
         }
     }
 
@@ -1099,7 +1277,15 @@ struct FloatingSearch: View {
         guard !trimmed.isEmpty else { return }
 
         engine.recordCommittedQuery(trimmed)
-        if !engine.results.isEmpty {
+        if showMixedQueryResults {
+            let cmds = filteredRootQuickActionIndices
+            if selectedResultIndex < cmds.count {
+                activateQuickAction(at: cmds[selectedResultIndex])
+            } else if !engine.results.isEmpty {
+                let resultIndex = selectedResultIndex - cmds.count
+                selectSearchHit(at: resultIndex, recordQuery: false)
+            }
+        } else if !engine.results.isEmpty {
             selectCurrentResult(recordQuery: false)
         }
     }
@@ -1190,7 +1376,7 @@ struct FloatingSearch: View {
     }
 
     private func activatePaletteRow(at index: Int) {
-        guard isEmptyQuery, !showResults else { return }
+        guard isEmptyQuery, !showResultsPanel else { return }
         if paletteMode == .meetingPickNote {
             guard index >= 0, index < meetingPickChoices.count else { return }
             openNoteStartingMeeting(meetingPickChoices[index].note)
@@ -1229,7 +1415,7 @@ struct FloatingSearch: View {
     }
 
     private func handleReturnKey() {
-        if showResults {
+        if showMixedQueryResults || showNoteSearchResultsOnly {
             commitCurrentSearch()
         } else if isEmptyQuery, totalPaletteRows > 0 {
             activatePaletteRow(at: selectedResultIndex)
@@ -1244,7 +1430,9 @@ struct FloatingSearch: View {
     }
 
     private func navigateKeyboard(direction: NavigationDirection) {
-        if showResults {
+        if showMixedQueryResults {
+            navigateMixedQueryResults(direction: direction)
+        } else if showNoteSearchResultsOnly {
             navigateResults(direction: direction)
         } else if isEmptyQuery, totalPaletteRows > 0 {
             switch direction {
@@ -1253,6 +1441,29 @@ struct FloatingSearch: View {
             case .up:
                 selectedResultIndex = max(selectedResultIndex - 1, 0)
             }
+        }
+    }
+
+    /// Arrow keys when both command matches and note hits are listed (commands first).
+    private func navigateMixedQueryResults(direction: NavigationDirection) {
+        let cmdCount = filteredRootQuickActionIndices.count
+        let total = cmdCount + engine.results.count
+        guard total > 0 else { return }
+
+        switch direction {
+        case .down:
+            selectedResultIndex = min(selectedResultIndex + 1, total - 1)
+        case .up:
+            selectedResultIndex = max(selectedResultIndex - 1, 0)
+        }
+
+        if selectedResultIndex >= cmdCount {
+            let ri = selectedResultIndex - cmdCount
+            if ri < engine.results.count {
+                hoveredResultID = engine.results[ri].id
+            }
+        } else {
+            hoveredResultID = nil
         }
     }
 
@@ -1277,8 +1488,12 @@ struct FloatingSearch: View {
     private func selectCurrentResult(recordQuery: Bool = true) {
         guard !engine.results.isEmpty,
               selectedResultIndex < engine.results.count else { return }
+        selectSearchHit(at: selectedResultIndex, recordQuery: recordQuery)
+    }
 
-        let result = engine.results[selectedResultIndex]
+    private func selectSearchHit(at resultIndex: Int, recordQuery: Bool) {
+        guard resultIndex >= 0, resultIndex < engine.results.count else { return }
+        let result = engine.results[resultIndex]
         if recordQuery {
             engine.recordCommittedQuery(searchText)
         }
@@ -1327,9 +1542,285 @@ private extension View {
 }
 
 #if os(macOS)
-/// SwiftUI’s `ScrollView` uses an `NSScrollView` with overlay scrubbers by default. Walking up from a
-/// zero-size view in the document view applies `scrollerStyle = .legacy` (thick thumb) and disables autohide.
-/// Use only where trailing edge content does not need the full width (legacy scrollers reserve gutter space).
+/// Palette input uses a native AppKit text field so the placeholder and the active field editor share the same vertical rect.
+private struct FloatingSearchNativeTextField: NSViewRepresentable {
+    @Binding var text: String
+    @Binding var isFocused: Bool
+    let focusGeneration: UInt64
+    let placeholder: String
+    let verticalOffset: CGFloat
+    let onMoveDown: () -> Void
+    let onMoveUp: () -> Void
+    let onSubmit: () -> Void
+    let onCancel: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    func makeNSView(context: Context) -> FloatingSearchAppKitTextField {
+        let field = FloatingSearchAppKitTextField()
+        field.cell = FloatingSearchTextFieldCell(textCell: "")
+        field.delegate = context.coordinator
+        configure(field)
+        context.coordinator.field = field
+        let coordinator = context.coordinator
+        field.onWindowChange = { [weak coordinator, weak field] in
+            guard let coordinator, let field else { return }
+            coordinator.handleWindowChanged(field: field)
+        }
+        return field
+    }
+
+    func updateNSView(_ nsView: FloatingSearchAppKitTextField, context: Context) {
+        context.coordinator.parent = self
+        configure(nsView)
+        if nsView.stringValue != text {
+            nsView.stringValue = text
+        }
+        context.coordinator.handleUpdate(field: nsView, focusGeneration: focusGeneration)
+        if let editor = nsView.currentEditor() {
+            context.coordinator.configure(editor: editor)
+        }
+    }
+
+    private func configure(_ field: FloatingSearchAppKitTextField) {
+        let font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        let primaryText = NSColor(named: "PrimaryTextColor") ?? .labelColor
+        field.verticalTextOffset = verticalOffset
+        field.font = font
+        field.textColor = primaryText
+        field.placeholderString = placeholder
+        field.alignment = .left
+        field.isEditable = true
+        field.isSelectable = true
+        field.isBordered = false
+        field.isBezeled = false
+        field.drawsBackground = false
+        field.backgroundColor = .clear
+        field.focusRingType = .none
+        field.lineBreakMode = .byTruncatingTail
+        field.maximumNumberOfLines = 1
+        field.usesSingleLineMode = true
+        field.isAutomaticTextCompletionEnabled = false
+        field.cell?.wraps = false
+        field.cell?.isScrollable = true
+        field.cell?.lineBreakMode = .byTruncatingTail
+        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        field.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, NSTextFieldDelegate {
+        var parent: FloatingSearchNativeTextField
+        weak var field: FloatingSearchAppKitTextField?
+        /// Work items for the multi-shot first responder capture; cancelled whenever a new capture session starts.
+        private var pendingFirstResponderWork: [DispatchWorkItem] = []
+        /// Last `focusGeneration` we scheduled a capture for — avoids restarting capture on every keystroke (`text` updates).
+        private var lastScheduledFocusGeneration: UInt64?
+
+        init(parent: FloatingSearchNativeTextField) {
+            self.parent = parent
+        }
+
+        /// True when this `NSTextField` (or its shared field editor) is actually first responder.
+        private static func fieldHasInsertionFocus(_ field: NSTextField) -> Bool {
+            guard let window = field.window else { return false }
+            if window.firstResponder === field {
+                return true
+            }
+            if let editor = field.currentEditor() {
+                return window.firstResponder === editor
+            }
+            return false
+        }
+
+        /// `makeFirstResponder` is unreliable if the palette’s window is not key yet (overlay + transitions).
+        private static func activateHostWindow(for field: NSTextField) {
+            guard let window = field.window else { return }
+            if !window.isKeyWindow {
+                window.makeKey()
+            }
+            if !NSApp.isActive {
+                NSApp.activate(ignoringOtherApps: true)
+            }
+        }
+
+        func handleUpdate(field: FloatingSearchAppKitTextField, focusGeneration: UInt64) {
+            self.field = field
+
+            // We intentionally do NOT gate on `parent.isFocused` here. The native field only exists while the palette
+            // is presented (it's inside an `if isPresented` branch in `searchInput`), so field existence already means
+            // "should be focused." The freshly-created Binding can read stale `false` during the first render
+            // transaction after `isPresented` flips, and canceling pending work on that stale read erased the
+            // retry cascade we just scheduled — which produced a ~1s delay before focus landed via the next kick pass.
+
+            if Self.fieldHasInsertionFocus(field) {
+                cancelPendingFirstResponderWork()
+                return
+            }
+
+            // Only start a new multi-shot session when the palette explicitly bumped the generation, otherwise
+            // typing would cancel/restart capture constantly via `updateNSView`.
+            if lastScheduledFocusGeneration != focusGeneration {
+                lastScheduledFocusGeneration = focusGeneration
+                scheduleFirstResponderCapture(field: field)
+            } else if pendingFirstResponderWork.isEmpty {
+                // Generation unchanged (e.g. layout finished) but we still never got focus — try one more wave.
+                scheduleFirstResponderCapture(field: field)
+            }
+        }
+
+        /// Called when the representable is finally attached to a window (SwiftUI often sets `window` after first layout).
+        ///
+        /// The native field only exists while the palette is presented (it lives inside an `if isPresented` branch
+        /// in `searchInput`), so "attached to a window" already implies "palette is shown, should be focused." We
+        /// intentionally omit a `parent.isFocused` guard here: during the first render transaction after
+        /// `isPresented` flips to `true`, the freshly-created `Binding(get: { isSearchFocused })` can read stale
+        /// `false` before SwiftUI commits the `isSearchFocused = true` update, which would otherwise cause the
+        /// palette to open without keyboard focus and force the user to click before typing.
+        func handleWindowChanged(field: FloatingSearchAppKitTextField) {
+            guard field.window != nil else { return }
+            if Self.fieldHasInsertionFocus(field) {
+                cancelPendingFirstResponderWork()
+                return
+            }
+            scheduleFirstResponderCapture(field: field)
+        }
+
+        private func scheduleFirstResponderCapture(field: FloatingSearchAppKitTextField) {
+            cancelPendingFirstResponderWork()
+            let delays: [TimeInterval] = [0, 0.02, 0.05, 0.09, 0.16, 0.26, 0.42]
+            for delay in delays {
+                let work = DispatchWorkItem { [weak field] in
+                    // Field existence is a stronger signal than `parent.isFocused`: the NSView is only ever in the
+                    // tree while the palette is presented, and `parent.isFocused` can race with view remount during
+                    // the initial presentation transaction (see `handleWindowChanged` comment).
+                    guard let field else { return }
+                    if Coordinator.fieldHasInsertionFocus(field) { return }
+                    guard field.window != nil else { return }
+                    Coordinator.activateHostWindow(for: field)
+                    _ = field.window?.makeFirstResponder(field)
+                }
+                pendingFirstResponderWork.append(work)
+                if delay == 0 {
+                    DispatchQueue.main.async(execute: work)
+                } else {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+                }
+            }
+        }
+
+        private func cancelPendingFirstResponderWork() {
+            for item in pendingFirstResponderWork {
+                item.cancel()
+            }
+            pendingFirstResponderWork.removeAll()
+        }
+
+        func controlTextDidBeginEditing(_ notification: Notification) {
+            if !parent.isFocused {
+                parent.isFocused = true
+            }
+            if let editor = (notification.object as? NSTextField)?.currentEditor() {
+                configure(editor: editor)
+            }
+        }
+
+        func controlTextDidChange(_ notification: Notification) {
+            guard let field = notification.object as? NSTextField else { return }
+            if parent.text != field.stringValue {
+                parent.text = field.stringValue
+            }
+            if let editor = field.currentEditor() {
+                configure(editor: editor)
+            }
+        }
+
+        func controlTextDidEndEditing(_ notification: Notification) {
+            if parent.isFocused {
+                parent.isFocused = false
+            }
+        }
+
+        func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            switch commandSelector {
+            case #selector(NSResponder.moveDown(_:)):
+                parent.onMoveDown()
+                return true
+            case #selector(NSResponder.moveUp(_:)):
+                parent.onMoveUp()
+                return true
+            case #selector(NSResponder.insertNewline(_:)):
+                parent.onSubmit()
+                return true
+            case #selector(NSResponder.cancelOperation(_:)):
+                parent.onCancel()
+                return true
+            default:
+                return false
+            }
+        }
+
+        func configure(editor: NSText) {
+            guard let editor = editor as? NSTextView else { return }
+            var typingAttributes = editor.typingAttributes
+            typingAttributes[.font] = NSFont.systemFont(ofSize: 11, weight: .medium)
+            typingAttributes[.kern] = -0.2
+            typingAttributes[.foregroundColor] = NSColor(named: "PrimaryTextColor") ?? .labelColor
+            editor.typingAttributes = typingAttributes
+            editor.textColor = NSColor(named: "PrimaryTextColor") ?? .labelColor
+        }
+    }
+}
+
+/// NSTextField still uses a shared field editor; shifting the cell rects keeps placeholder and I-beam in the same native coordinate space.
+private final class FloatingSearchAppKitTextField: NSTextField {
+    /// Fired whenever the view is reparented so we can retry `makeFirstResponder` after SwiftUI attaches a `window`.
+    var onWindowChange: (() -> Void)?
+
+    var verticalTextOffset: CGFloat = 0 {
+        didSet {
+            (cell as? FloatingSearchTextFieldCell)?.verticalOffset = verticalTextOffset
+        }
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        onWindowChange?()
+    }
+}
+
+private final class FloatingSearchTextFieldCell: NSTextFieldCell {
+    var verticalOffset: CGFloat = 0
+
+    private func adjustedRect(_ rect: NSRect) -> NSRect {
+        var adjusted = rect
+        adjusted.origin.y += verticalOffset
+        adjusted.size.height = max(0, adjusted.size.height - verticalOffset)
+        return adjusted
+    }
+
+    /// Canonical vertically-centered `NSTextFieldCell` pattern: `drawingRect` is the single source of truth for the
+    /// content frame, and `edit` / `select` route through it so the field editor lands at the same offset as the
+    /// placeholder. An earlier implementation gated this on an `isEditingOrSelecting` flag, which caused the base
+    /// (unshifted) rect to leak through during `super.edit(_:)` — the insertion bar and typed text appeared ~1.5pt
+    /// higher than the placeholder the moment focus landed.
+    override func drawingRect(forBounds rect: NSRect) -> NSRect {
+        adjustedRect(super.drawingRect(forBounds: rect))
+    }
+
+    override func edit(withFrame rect: NSRect, in controlView: NSView, editor textObj: NSText, delegate: Any?, event: NSEvent?) {
+        super.edit(withFrame: drawingRect(forBounds: rect), in: controlView, editor: textObj, delegate: delegate, event: event)
+    }
+
+    override func select(withFrame rect: NSRect, in controlView: NSView, editor textObj: NSText, delegate: Any?, start selStart: Int, length selLength: Int) {
+        super.select(withFrame: drawingRect(forBounds: rect), in: controlView, editor: textObj, delegate: delegate, start: selStart, length: selLength)
+    }
+}
+
+/// SwiftUI’s `ScrollView` is backed by `NSScrollView`; when found, prefer legacy scrollers for a stable track.
+/// Document trailing padding (`resultsScrollTrailingGutter`) still avoids overlay thumbs covering row chrome.
 private struct FloatingSearchScrollViewLegacyScrollers: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
