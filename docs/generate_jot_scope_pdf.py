@@ -102,7 +102,7 @@ def main() -> None:
     for line in caps:
         story.append(Paragraph(f"&bull; {line}", bullet))
 
-    story.append(Paragraph("2. Near-term roadmap (from roadmap.md)", h2))
+    story.append(Paragraph("2. Near-term roadmap (Linear DES-301)", h2))
     story.append(
         Paragraph(
             "<b>Not implemented yet:</b> Smart folders (saved filter predicates in sidebar). "
@@ -147,7 +147,7 @@ def main() -> None:
     story.append(Paragraph("5. References in repo", h2))
     story.append(
         Paragraph(
-            "README.md (feature list), roadmap.md (phases and backlog), "
+            "README.md (feature list), Linear DES-301 (phases and backlog), "
             "docs/plans/ONBOARDING_PLAN.md (full feature inventory), "
             ".claude/CLAUDE.md / AGENTS.md (architecture and conventions), "
             "Jot/Intents/*.swift (Shortcuts surface area).",

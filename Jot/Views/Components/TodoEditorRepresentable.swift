@@ -1047,7 +1047,8 @@ struct NotelinkPillView: View {
                 .frame(width: 14, height: 14)
         }
         .foregroundColor(.black)
-        .padding(4)
+        .padding(.horizontal, FontManager.InlineEditorPillRasterPadding.horizontal)
+        .padding(.vertical, FontManager.InlineEditorPillRasterPadding.vertical)
         .background(Color("NotelinkPillBgColor"), in: Capsule())
         .fixedSize()
         .onHover { inside in
@@ -1080,7 +1081,8 @@ struct FileLinkPillView: View {
         }
         // Match properties-panel file pills: untinted ButtonPrimary* tokens.
         .foregroundColor(Color("ButtonPrimaryTextColor"))
-        .padding(4)
+        .padding(.horizontal, FontManager.InlineEditorPillRasterPadding.horizontal)
+        .padding(.vertical, FontManager.InlineEditorPillRasterPadding.vertical)
         .background(Color("ButtonPrimaryBgColor"), in: Capsule())
         .fixedSize()
         .onHover { inside in
@@ -1411,7 +1413,10 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         textView.drawsBackground = false
         // Use Charter for body text as per design requirements
         textView.font = FontManager.bodyNS(size: ThemeManager.currentBodyFontSize(), weight: .regular)
-        textView.textContainerInset = NSSize(width: 28, height: 16)
+        // Slightly taller vertical inset so rasterized pill attachments (notelinks, file links)
+        // that extend above the body cap height stay inside the text view instead of clipping
+        // against the scroll clip view or stacked panels above the editor.
+        textView.textContainerInset = NSSize(width: 28, height: 20)
         textView.linkTextAttributes = [
             .underlineStyle: 0,
             .underlineColor: NSColor.clear,
@@ -1722,6 +1727,33 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: work)
         }
 
+        // #region agent log
+        private static let jotDebugSessionPath = "/Users/mohebanwari/development/Jot/.cursor/debug-182eaa.log"
+        /// NDJSON lines for debug session `182eaa` (do not log PII).
+        private static func jotAgentDebugNDJSON(hypothesisId: String, location: String, message: String, data: [String: Any]) {
+            var payload: [String: Any] = [
+                "sessionId": "182eaa",
+                "timestamp": Int(Date().timeIntervalSince1970 * 1000),
+                "hypothesisId": hypothesisId,
+                "location": location,
+                "message": message,
+                "data": data
+            ]
+            guard JSONSerialization.isValidJSONObject(payload),
+                  let json = try? JSONSerialization.data(withJSONObject: payload),
+                  let line = String(data: json, encoding: .utf8) else { return }
+            let path = jotDebugSessionPath
+            if !FileManager.default.fileExists(atPath: path) {
+                FileManager.default.createFile(atPath: path, contents: nil)
+            }
+            let url = URL(fileURLWithPath: path)
+            guard let handle = try? FileHandle(forWritingTo: url) else { return }
+            defer { try? handle.close() }
+            try? handle.seekToEnd()
+            try? handle.write(contentsOf: Data((line + "\n").utf8))
+        }
+        // #endregion
+
         /// Forces text layout to finish, then updates every overlay **without** implicit
         /// NSView/CALayer animations. Note switches used to skip `ensureLayout` (unlike
         /// `applyInitialText`), so glyph rects were stale for the first overlay frame —
@@ -1988,7 +2020,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
 
         private func makeNotelinkAttachment(noteID: String, noteTitle: String) -> NSMutableAttributedString {
             let displayScale = NSScreen.main?.backingScaleFactor ?? 2.0
-            let cacheKey = "notelink|\(noteTitle)|\(currentColorScheme)|\(displayScale)" as NSString
+            // Bump token when ``FontManager.InlineEditorPillRasterPadding`` or offset math changes so cached bitmaps refresh.
+            let cacheKey = "notelink|ipr1|\(noteTitle)|\(currentColorScheme)|\(displayScale)" as NSString
 
             let attachment = NotelinkAttachment(noteID: noteID, noteTitle: noteTitle)
 
@@ -5025,9 +5058,19 @@ struct TodoEditorRepresentable: NSViewRepresentable {
 
             // Check for "/" to trigger command menu
             if replacementString == "/" {
-                // Show command menu at cursor position
-                showCommandMenuAtCursor(
-                    textView: textView, insertLocation: affectedCharRange.location)
+                // Defer menu placement to the next run-loop turn so the "/" is already
+                // in `textStorage` and `layoutManager` reflects it. Measuring inside
+                // `shouldChangeText` (before the change commits) uses the pre-insert
+                // layout; at the document tail that often yields a zero / wrong glyph
+                // rect, which posts CGPoint near the origin — SwiftUI then draws the
+                // menu at the top while `updateCommandMenuPlaceholder` (after sync)
+                // correctly tracks the real slash.
+                let slashIndex = affectedCharRange.location
+                let tv = textView
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else { return }
+                    self.showCommandMenuAtCursor(textView: tv, slashCharacterIndex: slashIndex)
+                }
                 return true  // Allow the "/" to be typed
             }
 
@@ -5476,53 +5519,85 @@ struct TodoEditorRepresentable: NSViewRepresentable {
 
         // MARK: - Command Menu Handling
 
-        /// Shows the command menu at the current cursor position
-        /// Positions menu close to cursor with viewport bounds awareness
-        private func showCommandMenuAtCursor(textView: NSTextView, insertLocation: Int) {
-            // Get the rect for the cursor position to place the menu
+        /// Shows the command menu anchored to the "/" character at `slashCharacterIndex`.
+        /// Call only after that character exists in `textStorage` (layout must include the slash).
+        private func showCommandMenuAtCursor(textView: NSTextView, slashCharacterIndex: Int) {
             guard let layoutManager = textView.layoutManager,
-                textView.textContainer != nil
+                let textContainer = textView.textContainer,
+                let textStorage = textView.textStorage,
+                slashCharacterIndex >= 0,
+                slashCharacterIndex < textStorage.length
             else {
                 return
             }
 
-            // Use the USED rect (not the line-fragment rect) so the cursor
-            // position is anchored to the drawn glyph bounds, not the
-            // allocated line box. The line-fragment rect includes line-height
-            // slack from `minimumLineHeight` / `lineHeightMultiple` above
-            // AND below the glyphs — with Relaxed line spacing on larger
-            // fonts, that slack can be 8–16pt on each side, which would
-            // otherwise push the menu that far from the `/`.
-            //
-            // Important: by using `usedRect.origin.y` as cursorY (not the
-            // fragment top), the SAME 4pt gap applies above and below the
-            // glyph. The SwiftUI layer does:
-            //   below: yPosition = cursorY + cursorHeight + menuGapBelow
-            //   above: yPosition = cursorY - menuHeight - menuGapAbove
-            // With cursorY = glyph top, cursorHeight = glyph height, and
-            // equal gaps, the menu lands at glyphBottom + 4 and glyphTop - 4
-            // respectively — visually symmetric.
-            let glyphIndex = layoutManager.glyphIndexForCharacter(at: insertLocation)
-            let lineFragRect = layoutManager.lineFragmentRect(forGlyphAt: glyphIndex, effectiveRange: nil)
-            let usedRect = layoutManager.lineFragmentUsedRect(forGlyphAt: glyphIndex, effectiveRange: nil)
-            let glyphLocation = layoutManager.location(forGlyphAt: glyphIndex)
+            let slashChar = (textStorage.string as NSString).substring(
+                with: NSRange(location: slashCharacterIndex, length: 1))
+            guard slashChar == "/" else { return }
 
-            let cursorX = lineFragRect.origin.x + glyphLocation.x + textView.textContainerOrigin.x
-            let cursorY = usedRect.origin.y + textView.textContainerOrigin.y
-            let cursorHeight = usedRect.height
+            layoutManager.ensureLayout(for: textContainer)
 
-            // Send the raw cursor position in text-view-local coordinates.
-            // The SwiftUI layer (clampedCommandMenuPosition) handles above/below
-            // placement using the actual viewport geometry, same pattern as the
-            // floating toolbar's submenu positioning.
-            let menuPosition = CGPoint(x: cursorX, y: cursorY)
+            // Match `updateCommandMenuPlaceholder`: bounding rect of the "/" glyph in
+            // the text container, then shift by `textContainerOrigin` into text-view
+            // coordinates. The pre-commit `lineFragmentUsedRect` path disagreed with
+            // this at the end of long documents and could collapse toward (0,0).
+            let glyphIndex = layoutManager.glyphIndexForCharacter(at: slashCharacterIndex)
+            let slashRect = layoutManager.boundingRect(
+                forGlyphRange: NSRange(location: glyphIndex, length: 1),
+                in: textContainer
+            )
+
+            let cursorX = slashRect.origin.x + textView.textContainerOrigin.x
+            let cursorY = slashRect.origin.y + textView.textContainerOrigin.y
+            let cursorHeight = max(slashRect.height, 1)
+
+            let visibleRect = textView.visibleRect
+            /// Breathing room between the "/" line and the command menu (above or below).
+            let menuVerticalGap: CGFloat = 10
+            /// Tight inset when clamping into a narrow visible rect (horizontal squeeze).
+            let menuEdgeGap: CGFloat = 4
+            let safetyMargin: CGFloat = 20
+            let menuHeight = CommandMenuLayout.totalHeight(for: CommandMenuLayout.maxVisibleItems)
+            let menuWidth = CommandMenuLayout.width + CommandMenuLayout.outerPadding * 2
+
+            let cursorBottomY = cursorY + cursorHeight
+            let spaceBelow = visibleRect.maxY - cursorBottomY
+            let shouldShowAbove = spaceBelow < (menuHeight + menuVerticalGap + safetyMargin)
+
+            var xPosition = cursorX
+            var yPosition: CGFloat
+            if shouldShowAbove {
+                yPosition = cursorY - menuHeight - menuVerticalGap
+            } else {
+                yPosition = cursorY + cursorHeight + menuVerticalGap
+            }
+
+            let minX = visibleRect.minX + safetyMargin
+            let maxX = visibleRect.maxX - menuWidth - safetyMargin
+            if minX <= maxX {
+                xPosition = min(max(xPosition, minX), maxX)
+            } else {
+                xPosition = max(visibleRect.minX + menuEdgeGap, visibleRect.maxX - menuWidth - menuEdgeGap)
+            }
+
+            let minY = visibleRect.minY + safetyMargin
+            let maxY = visibleRect.maxY - menuHeight - safetyMargin
+            if minY <= maxY {
+                yPosition = min(max(yPosition, minY), maxY)
+            } else {
+                yPosition = max(
+                    visibleRect.minY + menuVerticalGap,
+                    visibleRect.maxY - menuHeight - menuVerticalGap)
+            }
+
+            let menuPosition = CGPoint(x: xPosition, y: yPosition)
 
             NotificationCenter.default.post(
                 name: .showCommandMenu,
                 object: [
-                    "position": menuPosition,
+                    "position": NSValue(point: menuPosition),
                     "cursorHeight": cursorHeight,
-                    "slashLocation": insertLocation,
+                    "slashLocation": slashCharacterIndex,
                     "needsSpace": false
                 ],
                 userInfo: editorInstanceID.map { ["editorInstanceID": $0] }
@@ -6200,7 +6275,13 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         private func makeCodeBlockAttachment(codeBlockData: CodeBlockData) -> NSMutableAttributedString {
             var containerWidth = textView?.textContainer?.containerSize.width ?? CodeBlockOverlayView.minWidth
             if containerWidth < 1 { containerWidth = CodeBlockOverlayView.minWidth }
-            let blockWidth = containerWidth
+            let effectiveMin = min(CodeBlockOverlayView.minWidth, containerWidth)
+            let blockWidth: CGFloat
+            if let pref = codeBlockData.preferredContentWidth {
+                blockWidth = max(effectiveMin, min(containerWidth, pref))
+            } else {
+                blockWidth = containerWidth
+            }
             let blockHeight = CodeBlockOverlayView.heightForData(codeBlockData, width: blockWidth)
             let size = CGSize(width: blockWidth, height: blockHeight)
             let attachment = NoteCodeBlockAttachment(codeBlockData: codeBlockData)
@@ -7001,25 +7082,36 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 let id = ObjectIdentifier(attachment)
                 seenIDs.insert(id)
 
-                // Clamp width to valid range; use dynamic height based on content.
-                // Only auto-expand when hasBeenUserResized == false AND width is below minimum.
-                // Once user has resized, their width is respected.
+                // Restore width from `preferredContentWidth` once the container is valid (same pattern as callouts).
                 let containerW = max(textContainer.containerSize.width, 100)
                 let effectiveMinCode = min(CodeBlockOverlayView.minWidth, containerW)
+                let desiredWidth: CGFloat
+                if let pref = attachment.codeBlockData.preferredContentWidth {
+                    desiredWidth = max(effectiveMinCode, min(containerW, pref))
+                } else {
+                    desiredWidth = containerW
+                }
                 let currentWidth = attachment.bounds.width
-                let expectedHeight = CodeBlockOverlayView.heightForData(attachment.codeBlockData, width: currentWidth)
-                let needsInitialWidth = currentWidth < effectiveMinCode && !attachment.hasBeenUserResized
-                let needsWidthClamp = currentWidth > containerW
-                let needsHeightUpdate = abs(attachment.bounds.height - expectedHeight) > 1
-                if needsInitialWidth || needsWidthClamp || needsHeightUpdate {
-                    let correctedWidth: CGFloat
-                    if needsInitialWidth {
-                        correctedWidth = containerW
-                    } else {
-                        correctedWidth = max(effectiveMinCode, min(containerW, currentWidth))
-                    }
-                    let correctedHeight = CodeBlockOverlayView.heightForData(attachment.codeBlockData, width: correctedWidth)
-                    let newSize = CGSize(width: correctedWidth, height: correctedHeight)
+                let expectedHeight = CodeBlockOverlayView.heightForData(attachment.codeBlockData, width: desiredWidth)
+                let widthDrift = abs(currentWidth - desiredWidth) > 1
+                let heightDrift = abs(attachment.bounds.height - expectedHeight) > 1
+                if widthDrift || heightDrift {
+                    // #region agent log
+                    Self.jotAgentDebugNDJSON(
+                        hypothesisId: "H5",
+                        location: "TodoEditorRepresentable.updateCodeBlockOverlays",
+                        message: "codeBlockCorrection",
+                        data: [
+                            "oid": String(describing: ObjectIdentifier(attachment)),
+                            "widthDrift": widthDrift,
+                            "heightDrift": heightDrift,
+                            "desiredW": Double(desiredWidth),
+                            "currentW": Double(currentWidth),
+                            "currentH": Double(attachment.bounds.height),
+                            "expectedH": Double(expectedHeight)
+                        ])
+                    // #endregion
+                    let newSize = CGSize(width: desiredWidth, height: expectedHeight)
                     attachment.attachmentCell = CodeBlockSizeAttachmentCell(size: newSize)
                     attachment.bounds = CGRect(origin: .zero, size: newSize)
                     layoutManager.invalidateLayout(forCharacterRange: range, actualCharacterRange: nil)
@@ -7102,6 +7194,10 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                         att.hasBeenUserResized = true
                         let effMin = min(CodeBlockOverlayView.minWidth, tc.containerSize.width)
                         let clamped = max(effMin, min(newWidth, tc.containerSize.width))
+                        let cw = tc.containerSize.width
+                        var next = att.codeBlockData
+                        next.preferredContentWidth = abs(clamped - cw) < 1 ? nil : clamped
+                        att.codeBlockData = next
                         let newHeight = CodeBlockOverlayView.heightForData(att.codeBlockData, width: clamped)
                         let newSize = CGSize(width: clamped, height: newHeight)
                         att.attachmentCell = CodeBlockSizeAttachmentCell(size: newSize)
@@ -7124,6 +7220,12 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     overlay.onDataChanged = nil
                     overlay.onDeleteCodeBlock = nil
                     overlay.onWidthChanged = nil
+                    overlay.onResizeGestureEnded = nil
+                } else {
+                    overlay.onResizeGestureEnded = { [weak self] in
+                        guard let self else { return }
+                        self.syncText()
+                    }
                 }
 
                 overlay.currentContainerWidth = containerW
@@ -7173,6 +7275,21 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     || abs(attachment.bounds.height - expectedHeight) > 1
                     || atMinFromDeserialization
                 if needsCorrection {
+                    // #region agent log
+                    Self.jotAgentDebugNDJSON(
+                        hypothesisId: "H2",
+                        location: "TodoEditorRepresentable.updateTabsOverlays",
+                        message: "tabsNeedsCorrection",
+                        data: [
+                            "oid": String(describing: ObjectIdentifier(attachment)),
+                            "dataContainerH": Double(attachment.tabsData.containerHeight),
+                            "boundsW": Double(currentWidth),
+                            "boundsH": Double(attachment.bounds.height),
+                            "expectedH": Double(expectedHeight),
+                            "atMinDeserialize": atMinFromDeserialization,
+                            "containerW": Double(containerW)
+                        ])
+                    // #endregion
                     let correctedWidth: CGFloat
                     if atMinFromDeserialization {
                         correctedWidth = containerW
@@ -7285,6 +7402,16 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     // ── onHeightChanged ──
                     overlay.onHeightChanged = { [weak self, weak textStorage, weak layoutManager, weak attachment] newHeight in
                         guard let self = self, let ts = textStorage, let lm = layoutManager, let att = attachment else { return }
+                        // #region agent log
+                        Self.jotAgentDebugNDJSON(
+                            hypothesisId: "H4",
+                            location: "TodoEditorRepresentable.tabsOnHeightChanged",
+                            message: "heightResize",
+                            data: [
+                                "oid": String(describing: ObjectIdentifier(att)),
+                                "newBodyHeight": Double(newHeight)
+                            ])
+                        // #endregion
                         att.tabsData.containerHeight = newHeight
                         let totalH = TabsContainerOverlayView.totalHeight(for: att.tabsData)
                         let newSize = CGSize(width: att.bounds.width, height: totalH)
@@ -8366,6 +8493,17 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 } else if let codeBlockAttachment = attributes[.attachment] as? NoteCodeBlockAttachment {
                     output.append(codeBlockAttachment.codeBlockData.serialize())
                 } else if let tabsAttachment = attributes[.attachment] as? NoteTabsAttachment {
+                    // #region agent log
+                    Self.jotAgentDebugNDJSON(
+                        hypothesisId: "H1",
+                        location: "TodoEditorRepresentable.serialize",
+                        message: "tabsAttachmentEmit",
+                        data: [
+                            "oid": String(describing: ObjectIdentifier(tabsAttachment)),
+                            "containerHeight": Double(tabsAttachment.tabsData.containerHeight),
+                            "serializePrefix": String(tabsAttachment.tabsData.serialize().prefix(140))
+                        ])
+                    // #endregion
                     output.append(tabsAttachment.tabsData.serialize())
                 } else if let cardSectionAttachment = attributes[.attachment] as? NoteCardSectionAttachment {
                     output.append(cardSectionAttachment.cardSectionData.serialize())
@@ -9005,6 +9143,16 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     if let closingRange = remaining.range(of: "[[/tabs]]") {
                         let tabsText = String(remaining[remaining.startIndex..<closingRange.upperBound])
                         if let tabsData = TabsContainerData.deserialize(from: tabsText) {
+                            // #region agent log
+                            Self.jotAgentDebugNDJSON(
+                                hypothesisId: "H3",
+                                location: "TodoEditorRepresentable.deserialize",
+                                message: "tabsParsed",
+                                data: [
+                                    "containerHeight": Double(tabsData.containerHeight),
+                                    "tabsTextPrefix": String(tabsText.prefix(120))
+                                ])
+                            // #endregion
                             let baseAttributes = Self.baseTypingAttributes(for: currentColorScheme)
                             if result.length > 0,
                                let lastScalar = result.string.unicodeScalars.last,
@@ -9457,9 +9605,18 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             return baseParagraphStyle()
         }
         
+        /// Positions rasterized pill images on the body baseline row. Pure cap-height centering
+        /// drifts from the paragraph line box used by ``baseParagraphStyle()``; blending the two
+        /// plus sub-point constants aligns SF capsules with Charter line metrics after ImageRenderer.
         static func imageTagVerticalOffset(for height: CGFloat) -> CGFloat {
-            let offset = (textFont.capHeight - height) / 2
-            return offset
+            let spacing = ThemeManager.currentLineSpacing()
+            let paragraphLine = baseLineHeight * spacing.multiplier / 1.2
+            let cap = textFont.capHeight
+            let centeredOnCap = (cap - height) / 2.0
+            let centeredOnLine = (paragraphLine - height) / 2.0
+            let blended = centeredOnCap * 0.4375 + centeredOnLine * 0.5625
+            let opticalFineTune: CGFloat = 0.09375
+            return blended + opticalFineTune
         }
 
         private static func headingLevel(for font: NSFont) -> TextFormattingManager.HeadingLevel? {
@@ -10609,16 +10766,9 @@ final class InlineNSTextView: NSTextView, QLPreviewPanelDataSource, QLPreviewPan
                 NotificationCenter.default.post(name: .hideCommandMenu, object: nil, userInfo: eidInfo)
             }
 
-            // Allow the "/" to be inserted. The delegate's
-            // `shouldChangeTextInRange` handler (invoked by super.insertText)
-            // posts `.showCommandMenu` with the RAW cursor position + tight
-            // cursorHeight (see `showCommandMenuAtCursor`, line 5435). Do NOT
-            // post another notification here — the SwiftUI layer expects raw
-            // coords and adds `cursorHeight + menuGapBelow` itself. Previously
-            // this branch pre-computed `cursorY + cursorHeight + 4` (the below
-            // placement) and posted it, which then got the same offset added
-            // a SECOND time in the SwiftUI layer — pushing the menu roughly
-            // one line below where the "/" actually sits.
+            // Allow the "/" to be inserted. `shouldChangeTextIn` schedules
+            // `showCommandMenuAtCursor` on the next run loop after the slash is
+            // in storage (see Coordinator). Do not post `.showCommandMenu` here.
             super.insertText(string, replacementRange: replacementRange)
             return
         }

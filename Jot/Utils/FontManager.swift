@@ -45,6 +45,13 @@ struct FontManager {
         return BodyFontStyle(rawValue: rawValue) ?? .default
     }
 
+    /// Horizontal / vertical padding for ImageRenderer capsule pills inlined in the rich text editor
+    /// (notelinks, file links, file-attachment tags). Fractional vertical values trim bitmap slack vs. Charter line metrics.
+    enum InlineEditorPillRasterPadding {
+        public static let horizontal: CGFloat = 4
+        public static let vertical: CGFloat = 3.4375
+    }
+
     // MARK: - Body Text Fonts (Charter)
 
     /// Primary body text font using Charter
@@ -150,7 +157,45 @@ struct FontManager {
     static func metadataNS(size: CGFloat = 11, weight: Weight = .medium) -> NSFont {
         return NSFont.monospacedSystemFont(ofSize: size, weight: weight.toNSWeight())
     }
-    
+
+    // MARK: - Layout metrics (AppKit text measurement)
+
+    /// Single source for line height when matching SwiftUI spacing to AppKit layout.
+    nonisolated static func defaultLineHeight(for font: NSFont) -> CGFloat {
+        // `defaultLineHeight(for:)` is an instance method on AppKit's `NSLayoutManager`.
+        NSLayoutManager().defaultLineHeight(for: font)
+    }
+
+    // MARK: - Note detail title (NoteDetailView)
+
+    /// Point size for the multi-line note title field — keep scroll insets and fonts in sync.
+    nonisolated static let noteDetailTitlePointSize: CGFloat = 32
+
+    /// Sticky header, toolbars, and compact labels in ``NoteDetailView``.
+    nonisolated static let noteDetailOverlayHeadingSize: CGFloat = 12
+
+    /// Secondary section titles inside note chrome (e.g. proofread blocks).
+    nonisolated static let noteDetailAuxiliaryHeadingSize: CGFloat = 20
+
+    /// SwiftUI font for the note title ``TextField``. Omits ``.leading(.tight)`` from ``heading(...)``
+    /// so wrapped lines and tall capitals are not clipped by overly tight line metrics.
+    static func noteDetailTitleFont(weight: Weight = .medium) -> Font {
+        Font.system(size: noteDetailTitlePointSize, weight: weight.toSwiftUIWeight(), design: .default)
+    }
+
+    /// Top padding for ``NoteDetailView`` scroll content above the metadata row.
+    /// Uses AppKit line metrics (not magic constants) so changing ``noteDetailTitlePointSize`` or
+    /// metadata size updates the gutter. macOS windows often report zero SwiftUI safe-area inset,
+    /// so title ascender slop is folded into the formula instead of reading ``safeAreaInsets``.
+    nonisolated static func noteDetailEditorScrollTopInset() -> CGFloat {
+        let meta = NSFont.monospacedSystemFont(ofSize: 11, weight: .medium)
+        let titleFont = NSFont.systemFont(ofSize: noteDetailTitlePointSize, weight: .medium)
+        let metadataLine = defaultLineHeight(for: meta)
+        let titleLine = defaultLineHeight(for: titleFont)
+        let titleAscenderSlop = max(0, titleLine - titleFont.capHeight - 4)
+        return metadataLine + 36 + titleAscenderSlop
+    }
+
     // MARK: - Weight Enum
     
     /// Font weight enumeration for consistent weight handling across platforms

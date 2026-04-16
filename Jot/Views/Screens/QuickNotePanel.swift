@@ -342,8 +342,12 @@ struct QuickNotePanelView: View {
         .font(FontManager.metadata(size: 11, weight: .medium))
         .foregroundColor(Color("SecondaryTextColor"))
     }
+    // Horizontal inset matches the body editor (20). Bottom inset matches
+    // that same gutter so the Save capsule aligns visually with the panel
+    // corners; top stays slightly tighter against the editor scroll view.
     .padding(.horizontal, 20)
-    .padding(.vertical, 14)
+    .padding(.top, 14)
+    .padding(.bottom, 20)
   }
 
   /// The Save button is also the Cmd+Return accelerator — one button serves

@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-09
 **Status:** Approved
-**Roadmap:** Phase 2, Feature 3 (`roadmap.md`)
+**Roadmap:** Phase 2, Feature 3 (see Linear [DES-301](https://linear.app/mohebanw/issue/DES-301/backlog-jot-feature-roadmap-apple-notes-gap-analysis))
 
 ---
 
@@ -26,7 +26,7 @@ A single user-configurable global hotkey (default `⌃⌥⌘N`) that spawns a mi
 
 ### 1. Hotkey subsystem
 
-**`QuickNoteHotKey`** — `Codable` value type stored in UserDefaults as JSON.
+`**QuickNoteHotKey**` — `Codable` value type stored in UserDefaults as JSON.
 
 ```swift
 struct QuickNoteHotKey: Codable, Equatable {
@@ -38,7 +38,7 @@ struct QuickNoteHotKey: Codable, Equatable {
 
 UserDefaults key: `"jot.quickNote.hotkey"`. Default on first launch: `⌃⌥⌘N` (`keyCode: 0x2D (kVK_ANSI_N)`, `modifiers: cmdKey | optionKey | controlKey`).
 
-**`GlobalHotKeyManager`** — singleton wrapping one `EventHotKeyRef` and one `EventHandlerRef`.
+`**GlobalHotKeyManager**` — singleton wrapping one `EventHotKeyRef` and one `EventHandlerRef`.
 
 ```swift
 final class GlobalHotKeyManager {
@@ -57,7 +57,7 @@ C callback dispatches to `onFire` on the main queue via `DispatchQueue.main.asyn
 
 ### 2. Panel subsystem
 
-**`QuickNotePanelWindow`** — `NSPanel` subclass.
+`**QuickNotePanelWindow`** — `NSPanel` subclass.
 
 ```swift
 final class QuickNotePanelWindow: NSPanel {
@@ -73,7 +73,7 @@ final class QuickNotePanelWindow: NSPanel {
 - **Initial size:** `480 × 320` pt, centered on the screen containing the mouse cursor
 - **Frame autosave:** `"QuickNotePanel"` — restores last position on subsequent shows
 
-**`QuickNoteWindowController`** — singleton. Lazy-instantiates the panel on first `showPanel()`, retains for the app lifetime.
+`**QuickNoteWindowController`** — singleton. Lazy-instantiates the panel on first `showPanel()`, retains for the app lifetime.
 
 ```swift
 func showPanel() {
@@ -88,7 +88,7 @@ func dismissPanel(saved: Bool) {
 }
 ```
 
-**`QuickNotePanelView`** — SwiftUI root, hosted via `NSHostingView`.
+`**QuickNotePanelView**` — SwiftUI root, hosted via `NSHostingView`.
 
 ```
 VStack(spacing: 0)
@@ -116,7 +116,7 @@ Wrapped in a `RoundedRectangle` with `.glassEffect(in:)` and Jot's `MainColor` t
 
 ### 3. Storage — Quick Notes inbox folder
 
-**`QuickNoteService`** — single save path.
+`**QuickNoteService`** — single save path.
 
 ```swift
 final class QuickNoteService {
@@ -145,7 +145,7 @@ The folder is a regular Jot folder — user can rename, recolor, pin, delete. Na
 
 ### 4. Settings integration
 
-**`HotKeyRecorderView`** — SwiftUI button for the Settings UI.
+`**HotKeyRecorderView`** — SwiftUI button for the Settings UI.
 
 - Label: current chord (`⌃⌥⌘N`) or placeholder ("Click to record")
 - On tap → recording state
@@ -195,6 +195,7 @@ JotApp (@main)
 
 ### New
 
+
 | File                                            | Responsibility                                    |
 | ----------------------------------------------- | ------------------------------------------------- |
 | `Jot/Utils/GlobalHotKeyManager.swift`           | Carbon wrapper (~150 lines)                       |
@@ -204,13 +205,16 @@ JotApp (@main)
 | `Jot/Views/Components/HotKeyRecorderView.swift` | Settings chord recorder                           |
 | `JotTests/QuickNoteTests.swift`                 | Unit tests                                        |
 
+
 ### Modified
+
 
 | File                                                              | Change                                                              |
 | ----------------------------------------------------------------- | ------------------------------------------------------------------- |
 | `Jot/App/JotApp.swift`                                            | Register hotkey at launch, wire callback to window controller       |
 | `Jot/Utils/ThemeManager.swift`                                    | Add `quickNoteHotKey` and `quickNotesFolderID` persisted properties |
 | `Jot/Views/Screens/SettingsView.swift` (or Keyboard settings tab) | Add Quick Notes row with `HotKeyRecorderView`                       |
+
 
 ### Explicitly NOT touched
 
@@ -222,9 +226,10 @@ JotApp (@main)
 
 ## Edge cases
 
+
 | #   | Situation                                       | Handling                                                                                                                                                                                                                                               |
 | --- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1   | Hotkey already owned at install time            | `RegisterEventHotKey` returns non-zero `OSStatus`. Log, leave previous installed. On default-hotkey failure at first launch, surface a one-time banner in main window: _"Quick Notes hotkey (⌃⌥⌘N) couldn't be registered. Pick another in Settings."_ |
+| 1   | Hotkey already owned at install time            | `RegisterEventHotKey` returns non-zero `OSStatus`. Log, leave previous installed. On default-hotkey failure at first launch, surface a one-time banner in main window: *"Quick Notes hotkey (⌃⌥⌘N) couldn't be registered. Pick another in Settings."* |
 | 2   | Hotkey fires while panel is already visible     | `showPanel()` checks `panel?.isVisible`. If visible, `makeKeyAndOrderFront(nil)` to bring forward. Don't reset fields.                                                                                                                                 |
 | 3   | Hotkey fires in rapid succession                | Idempotent via #2. No debouncing needed.                                                                                                                                                                                                               |
 | 4   | Quick Notes folder deleted while panel has text | Detected at save time. Transparent recreation, no user-visible error.                                                                                                                                                                                  |
@@ -234,7 +239,8 @@ JotApp (@main)
 | 8   | Unsaved body text + Escape                      | Silent discard. Quick notes are a stream; no confirmation dialog.                                                                                                                                                                                      |
 | 9   | Unsaved body text + force-quit                  | Not persisted. v1 keeps panel state in memory only.                                                                                                                                                                                                    |
 | 10  | Hotkey cleared in Settings                      | Button label flips to "Click to record". Unambiguous.                                                                                                                                                                                                  |
-| 11  | Settings hot-swap while panel is open           | Open panel keeps working; only _next_ show uses new chord.                                                                                                                                                                                             |
+| 11  | Settings hot-swap while panel is open           | Open panel keeps working; only *next* show uses new chord.                                                                                                                                                                                             |
+
 
 ---
 
@@ -260,14 +266,14 @@ JotApp (@main)
 
 ### Manual smoke checklist
 
-- [ ] Press default chord in Safari → panel appears, Safari stays frontmost
-- [ ] Type + ⌘↩ → note appears in Jot sidebar under "Quick Notes" folder
-- [ ] Press chord again while panel visible → panel stays, focus returns to panel
-- [ ] Change chord in Settings → old chord dead, new chord live
-- [ ] Quit + relaunch Jot → chord still live after relaunch
-- [ ] Delete Quick Notes folder manually → next save recreates it
-- [ ] Clear hotkey in Settings → chord no longer fires anything
-- [ ] Re-bind after clear → new chord works
+- Press default chord in Safari → panel appears, Safari stays frontmost
+- Type + ⌘↩ → note appears in Jot sidebar under "Quick Notes" folder
+- Press chord again while panel visible → panel stays, focus returns to panel
+- Change chord in Settings → old chord dead, new chord live
+- Quit + relaunch Jot → chord still live after relaunch
+- Delete Quick Notes folder manually → next save recreates it
+- Clear hotkey in Settings → chord no longer fires anything
+- Re-bind after clear → new chord works
 
 ### What cannot be unit-tested
 
@@ -284,3 +290,4 @@ Actual Carbon hotkey firing (requires WindowServer). Covered by the manual smoke
 - Picking a non-default destination folder in Settings
 - Collision detection against known system shortcuts before installing (we rely on `RegisterEventHotKey` returning an error)
 - Analytics / usage metrics
+

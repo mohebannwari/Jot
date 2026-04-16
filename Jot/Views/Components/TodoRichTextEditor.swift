@@ -46,7 +46,6 @@ struct TodoRichTextEditor: View {
     @State private var showCommandMenu = false
     @State private var commandMenuRevealed = false
     @State private var commandMenuPosition: CGPoint = .zero
-    @State private var commandMenuCursorHeight: CGFloat = 20
     @State private var commandMenuSelectedIndex = 0
     @State private var commandSlashLocation: Int = -1
     @State private var commandMenuFilterText = ""
@@ -373,11 +372,16 @@ struct TodoRichTextEditor: View {
         { notification in
             if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
             if let info = notification.object as? [String: Any],
-                let position = info["position"] as? CGPoint,
                 let slashLocation = info["slashLocation"] as? Int
             {
+                let position: CGPoint? = {
+                    if let p = info["position"] as? CGPoint { return p }
+                    // `NSValue(cgPoint:)` round-trips through `pointValue` on macOS.
+                    if let v = info["position"] as? NSValue { return v.pointValue }
+                    return nil
+                }()
+                guard let position else { return }
                 commandMenuPosition = position
-                commandMenuCursorHeight = info["cursorHeight"] as? CGFloat ?? 20
                 commandSlashLocation = slashLocation
                 commandMenuSelectedIndex = 0
                 commandMenuFilterText = ""
@@ -732,68 +736,25 @@ struct TodoRichTextEditor: View {
 
     private func clampedCommandMenuPosition(for geometry: GeometryProxy) -> CGPoint {
         let containerSize = geometry.size
-        // Symmetric gaps from the glyph edges. `cursorY` is the glyph top
-        // and `cursorY + cursorHeight` is the glyph bottom (both computed
-        // from lineFragmentUsedRect in showCommandMenuAtCursor), so a 4pt
-        // gap applied in either direction produces the same visual distance
-        // between the "/" and the menu card.
-        let menuGapBelow: CGFloat = 4
-        let menuGapAbove: CGFloat = 4
-        // Use the menu's TRUE rendered height (includes scroll-view spacers
-        // and outer padding) — `idealHeight(for:)` alone under-counts by 8pt,
-        // which previously caused the above-flip to overlap the "/" anchor.
-        let menuHeight = CommandMenuLayout.totalHeight(for: filteredCommandMenuTools.count)
-        let cursorHeight = commandMenuCursorHeight
-        let bottomReserve: CGFloat = 50 // bottom toolbar overlay
-        let topReserve: CGFloat = 20    // small safety margin at viewport top
-
-        // Clamp X
+        // `commandMenuPosition` is the menu card's top-left in text-view /
+        // editor-local coordinates (see `showCommandMenuAtCursor`, which mirrors
+        // `showNotePickerAtCursor` using `visibleRect`).
+        //
+        // Do NOT clamp Y against `geometry.size.height`: this `GeometryReader` sits
+        // on the editor inside a SwiftUI `ScrollView`, and its reported height is
+        // often the **scroll viewport** height, not the full intrinsic document
+        // height. Clamping a large document-local Y (caret near the bottom) to
+        // `viewportHeight - menuHeight` pins the menu near the top of the scroll
+        // content — exactly the “menu at the header while I type / at the bottom”
+        // bug. Vertical placement and soft bounds are handled in AppKit via
+        // `visibleRect`; here we only keep the card on-screen horizontally and
+        // avoid a negative Y if math ever undershoots.
         let maxX = max(0, containerSize.width - Self.commandMenuTotalWidth)
         let clampedX = min(max(commandMenuPosition.x, 0), maxX)
 
-        // Determine above/below using viewport geometry (same pattern as
-        // floating toolbar submenu positioning in NoteDetailView).
-        // commandMenuPosition is in text-view-local coords (scrollable content).
-        // Convert to viewport-relative by using the overlay's global frame.
-        let globalFrame = geometry.frame(in: .global)
-        let cursorViewportY = commandMenuPosition.y + globalFrame.minY
-        let cursorBottomViewport = cursorViewportY + cursorHeight
+        let clampedY = max(commandMenuPosition.y, 0)
 
-        let windowHeight = NSApp.keyWindow?.contentView?.bounds.height ?? globalFrame.height
-        let spaceBelow = windowHeight - cursorBottomViewport - bottomReserve
-        let spaceAbove = cursorViewportY - topReserve
-        let fitsBelow = spaceBelow >= (menuHeight + menuGapBelow)
-        let fitsAbove = spaceAbove >= (menuHeight + menuGapAbove)
-
-        let yPosition: CGFloat
-        if fitsBelow {
-            // Below cursor with tight gap
-            yPosition = commandMenuPosition.y + cursorHeight + menuGapBelow
-        } else if fitsAbove {
-            // Above cursor with larger gap so "/" + placeholder stay uncovered
-            yPosition = commandMenuPosition.y - menuHeight - menuGapAbove
-        } else {
-            // Neither direction has enough room for the full menu. Pick the
-            // direction with MORE space and let the menu's internal ScrollView
-            // handle the overflow. Never return a y that would overlap the
-            // cursor line — the old `max(0, yPosition)` clamp caused exactly
-            // that bug when the cursor was near the top of the viewport.
-            if spaceAbove >= spaceBelow {
-                // Above: pin the menu's bottom at `cursorLineTop - menuGapAbove`,
-                // and push its top as high as available space allows. If the
-                // menu is taller than the available space, it will be clipped
-                // at the top by SwiftUI's overlay bounds — acceptable because
-                // the menu has internal vertical scrolling.
-                let menuBottom = commandMenuPosition.y - menuGapAbove
-                yPosition = menuBottom - menuHeight
-            } else {
-                // Below: pin the menu's top at `cursorLineBottom + menuGapBelow`.
-                // Internal scrolling handles bottom overflow.
-                yPosition = commandMenuPosition.y + cursorHeight + menuGapBelow
-            }
-        }
-
-        return CGPoint(x: clampedX, y: yPosition)
+        return CGPoint(x: clampedX, y: clampedY)
     }
 
     private func clampedURLPasteMenuPosition(for containerSize: CGSize) -> CGPoint {

@@ -23,6 +23,15 @@ private struct MeetingPickChoice: Identifiable {
     let isCurrentNoteOption: Bool
 }
 
+/// One root quick action row used to filter commands while the palette query is non-empty (`activationIndex` matches `activateQuickAction(at:)`).
+private struct RootQuickActionFilterSpec: Identifiable {
+    var id: Int { activationIndex }
+    let activationIndex: Int
+    let iconName: String
+    let title: String
+    let isEnabled: Bool
+}
+
 /// Root command palette vs. meeting “pick a note to record” sub-state (Figma 2795:4389).
 private enum CommandPaletteMode: Equatable {
     case root
@@ -64,8 +73,8 @@ struct FloatingSearch: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var accessibilityReduceMotion
 
-    /// Figma command palette width (node 2780:4006): 562pt minimum.
-    private let surfaceWidth: CGFloat = 562
+    /// Global command palette width (668pt).
+    private let surfaceWidth: CGFloat = 668
     private let surfaceCornerRadius: CGFloat = 22
     private let resultItemCornerRadius: CGFloat = 12
     /// Fixed quick actions in root mode (excluding optional deferred-update lead row).
@@ -133,6 +142,11 @@ struct FloatingSearch: View {
 
     private var isEmptyQuery: Bool {
         trimmedSearch.isEmpty
+    }
+
+    /// True when typed query has at least one note/folder hit (independent of command filtering).
+    private var showResults: Bool {
+        !trimmedSearch.isEmpty && !engine.results.isEmpty
     }
 
     /// Root palette: typed query with at least one matching command and/or note/folder hit.
@@ -210,6 +224,78 @@ struct FloatingSearch: View {
         default:
             return []
         }
+    }
+
+    /// Full root quick-action list in palette order (for typed-query filtering).
+    /// Keep `activationIndex` / titles aligned with `rootStandardQuickActionRows` and `activateQuickAction(at:)`.
+    private var allRootQuickActionFilterSpecs: [RootQuickActionFilterSpec] {
+        var rows: [RootQuickActionFilterSpec] = [
+            RootQuickActionFilterSpec(
+                activationIndex: 0, iconName: "IconEditSmall2", title: "New Note", isEnabled: true),
+            RootQuickActionFilterSpec(
+                activationIndex: 1, iconName: "IconFloatingNote", title: "Floating Note", isEnabled: true),
+            RootQuickActionFilterSpec(
+                activationIndex: 2,
+                iconName: "IconMicrophoneSparkle",
+                title: "Start Meeting Session in a Note",
+                isEnabled: true),
+            RootQuickActionFilterSpec(
+                activationIndex: 3, iconName: "IconFolderAddRight", title: "New Folder", isEnabled: true),
+            RootQuickActionFilterSpec(
+                activationIndex: 4, iconName: "IconSplit", title: "New Split View", isEnabled: true),
+            RootQuickActionFilterSpec(
+                activationIndex: 5,
+                iconName: selectedNote?.isPinned == true ? "IconUnpin" : "IconThumbtack",
+                title: selectedNote?.isPinned == true ? "Unpin Note" : "Pin Note",
+                isEnabled: selectedNote != nil),
+            RootQuickActionFilterSpec(
+                activationIndex: 6,
+                iconName: "IconZenMode",
+                title: isZenMode ? "Exit Zen Mode" : "Zen Mode",
+                isEnabled: true),
+            RootQuickActionFilterSpec(
+                activationIndex: 7,
+                iconName: archiveOrRestoreQuickActionIcon,
+                title: archiveOrRestoreQuickActionTitle,
+                isEnabled: isArchiveOrRestoreQuickActionEnabled),
+            RootQuickActionFilterSpec(
+                activationIndex: 8, iconName: "IconSettingsGear1", title: "Settings", isEnabled: true),
+        ]
+        if hasDeferredUpdateRow {
+            rows.append(
+                RootQuickActionFilterSpec(
+                    activationIndex: deferredUpdateRowSelectableIndex,
+                    iconName: "IconUpdateDownload",
+                    title: "Update App",
+                    isEnabled: true))
+        }
+        return rows
+    }
+
+    /// Quick actions whose title matches the trimmed query (enabled rows only).
+    private var filteredRootQuickActionSpecs: [RootQuickActionFilterSpec] {
+        let q = trimmedSearch
+        guard !q.isEmpty else { return [] }
+        return allRootQuickActionFilterSpecs.filter { spec in
+            spec.isEnabled && spec.title.localizedCaseInsensitiveContains(q)
+        }
+    }
+
+    private var typedQueryCommandMatchCount: Int { filteredRootQuickActionSpecs.count }
+
+    private var typedQueryUnifiedRowCount: Int { typedQueryCommandMatchCount + engine.results.count }
+
+    /// Non-empty query in root mode with at least one command match and/or note-folder hit.
+    private var typedQueryUnifiedListActive: Bool {
+        !isEmptyQuery && paletteMode == .root && typedQueryUnifiedRowCount > 0
+    }
+
+    private var typedQueryScrollMaxHeight: CGFloat {
+        guard typedQueryUnifiedListActive else { return 0 }
+        let hasCommands = typedQueryCommandMatchCount > 0
+        let hasNotes = !engine.results.isEmpty
+        if hasCommands && hasNotes { return 320 }
+        return 280
     }
 
     /// Sparkle takes precedence over DEBUG build-watcher when both are set.
@@ -291,12 +377,10 @@ struct FloatingSearch: View {
     }
 
     private var totalPaletteRows: Int {
-        if showMixedQueryResults {
-            return filteredRootQuickActionIndices.count + engine.results.count
+        if typedQueryUnifiedListActive {
+            return typedQueryUnifiedRowCount
         }
-        if showNoteSearchResultsOnly {
-            return engine.results.count
-        }
+        if showResults { return engine.results.count }
         guard isEmptyQuery else { return 0 }
         if paletteMode == .meetingPickNote {
             return meetingPickChoices.count
@@ -306,11 +390,6 @@ struct FloatingSearch: View {
 
     private var showLastSearchSection: Bool {
         paletteMode == .root && isEmptyQuery && !engine.paletteHistory.isEmpty
-    }
-
-    private var maxResultsHeight: CGFloat {
-        if showResultsPanel { return 280 }
-        return 0
     }
 
     var body: some View {
@@ -410,13 +489,12 @@ struct FloatingSearch: View {
 
             if isEmptyQuery {
                 quickActionsAndRecentsBlock
-            }
-
-            if showResultsPanel {
+            } else if typedQueryUnifiedListActive {
                 Rectangle()
                     .fill(Color("BorderSubtleColor"))
                     .frame(height: 0.5)
-                resultsSection
+                typedQueryUnifiedList
+                    .frame(maxHeight: typedQueryScrollMaxHeight)
             }
 
             commandPaletteFooter
@@ -1030,37 +1108,109 @@ struct FloatingSearch: View {
         .floatingSearchKeycapShadows()
     }
 
-    // MARK: - Results (note/folder hits, plus filtered commands when the query is non-empty)
+    // MARK: - Typed query: filtered commands + note/folder hits (single list)
 
+    /// One scrollable column: matching quick actions (if any), divider, then `SearchEngine` hits (if any).
     @ViewBuilder
-    private var resultsSection: some View {
+    private var typedQueryUnifiedList: some View {
         ScrollView {
             VStack(spacing: 0) {
                 resultsScrollViewLegacyScrollerProbe
-                if showMixedQueryResults {
-                    ForEach(Array(filteredRootQuickActionIndices.enumerated()), id: \.offset) { pair in
-                        let listOffset = pair.offset
-                        let paletteIndex = pair.element
-                        if hasDeferredUpdateRow, paletteIndex == deferredUpdateRowSelectableIndex {
-                            deferredUpdateQuickRow(
-                                index: paletteIndex, combinedListSelectionIndex: listOffset)
-                        } else {
-                            rootPaletteQuickActionRow(
-                                paletteIndex: paletteIndex, combinedListSelectionIndex: listOffset)
+                if !filteredRootQuickActionSpecs.isEmpty {
+                    VStack(spacing: 0) {
+                        ForEach(Array(filteredRootQuickActionSpecs.enumerated()), id: \.element.activationIndex) {
+                            pair in
+                            typedFilterQuickActionRow(spec: pair.element, unifiedIndex: pair.offset)
                         }
                     }
+                    .padding(8)
                 }
-                ForEach(Array(engine.results.enumerated()), id: \.element.id) { resultIndex, result in
-                    let selectionIndex = filteredRootQuickActionIndices.count + resultIndex
-                    resultRow(result, selectionIndex: selectionIndex)
+                if !filteredRootQuickActionSpecs.isEmpty, !engine.results.isEmpty {
+                    Rectangle()
+                        .fill(Color("BorderSubtleColor"))
+                        .frame(height: 0.5)
+                        .padding(.horizontal, 8)
+                }
+                if !engine.results.isEmpty {
+                    VStack(spacing: 0) {
+                        ForEach(Array(engine.results.enumerated()), id: \.element.id) { pair in
+                            resultRow(
+                                pair.element,
+                                unifiedIndex: typedQueryCommandMatchCount + pair.offset)
+                        }
+                    }
+                    .padding(8)
                 }
             }
             // Keep ⌘-style shortcuts and folder metadata left of vertical scroll indicators (overlay scrubbers).
             .padding(.trailing, resultsScrollTrailingGutter)
         }
         .scrollIndicators(.visible)
-        .frame(maxHeight: maxResultsHeight)
-        .padding(8)
+    }
+
+    @ViewBuilder
+    private func typedFilterQuickActionTrailing(activationIndex: Int) -> some View {
+        switch activationIndex {
+        case 0:
+            sidebarStyleShortcutLabel("\u{2318}N")
+        case 1:
+            sidebarStyleShortcutLabel(quickNoteShortcutDisplay)
+        case 2:
+            sidebarStyleShortcutLabel(startMeetingSessionShortcutDisplay)
+        case 6:
+            sidebarStyleShortcutLabel("\u{2318}.")
+        case 8:
+            sidebarStyleShortcutLabel("\u{2318},")
+        default:
+            EmptyView()
+        }
+    }
+
+    private func typedFilterQuickActionRow(spec: RootQuickActionFilterSpec, unifiedIndex: Int) -> some View {
+        let isSelected = typedQueryUnifiedListActive && selectedResultIndex == unifiedIndex
+        return Button {
+            activateQuickAction(at: spec.activationIndex)
+        } label: {
+            HStack(spacing: 0) {
+                HStack(spacing: 8) {
+                    Image(spec.iconName)
+                        .renderingMode(.template)
+                        .resizable()
+                        .scaledToFit()
+                        .foregroundColor(Color("SecondaryTextColor"))
+                        .frame(width: 15, height: 15)
+
+                    Text(spec.title)
+                        .font(FontManager.heading(size: 13, weight: .medium))
+                        .tracking(-0.4)
+                        .foregroundColor(Color("PrimaryTextColor"))
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 0)
+
+                HStack(spacing: 0) {
+                    typedFilterQuickActionTrailing(activationIndex: spec.activationIndex)
+                }
+                .frame(minHeight: 15)
+            }
+            .padding(8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background {
+                Capsule()
+                    .fill(Color("HoverBackgroundColor"))
+                    .opacity(isSelected ? 1 : 0)
+            }
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(!spec.isEnabled)
+        .opacity(spec.isEnabled ? 1 : 0.45)
+        .onHover { hovering in
+            if hovering, typedQueryUnifiedListActive, spec.isEnabled {
+                selectedResultIndex = unifiedIndex
+            }
+        }
     }
 
     private func folder(for folderID: UUID?) -> Folder? {
@@ -1068,9 +1218,9 @@ struct FloatingSearch: View {
         return folders.first(where: { $0.id == folderID })
     }
 
-    private func resultRow(_ result: SearchHit, selectionIndex: Int) -> some View {
+    private func resultRow(_ result: SearchHit, unifiedIndex: Int) -> some View {
         let isHovered = hoveredResultID == result.id
-        let isSelected = selectedResultIndex == selectionIndex
+        let isSelected = selectedResultIndex == unifiedIndex
         let hasPreview = result.type == .content
         // Folder name lives on the title row (Figma 2785:4587); only content preview adds a second line.
         let isMultiLine = hasPreview
@@ -1165,7 +1315,7 @@ struct FloatingSearch: View {
             withAnimation(SearchAnimations.resultHover) {
                 hoveredResultID = hovering ? result.id : (hoveredResultID == result.id ? nil : hoveredResultID)
                 if hovering {
-                    selectedResultIndex = selectionIndex
+                    selectedResultIndex = unifiedIndex
                 }
             }
         }
@@ -1346,6 +1496,9 @@ struct FloatingSearch: View {
             #endif
             dismissSearch()
         case 2:
+            // Meeting pick UI only mounts when the query is empty; clear typed filter text before swapping.
+            searchText = ""
+            engine.query = ""
             withPaletteSwapAnimation {
                 paletteMode = .meetingPickNote
                 selectedResultIndex = 0
@@ -1415,7 +1568,19 @@ struct FloatingSearch: View {
     }
 
     private func handleReturnKey() {
-        if showMixedQueryResults || showNoteSearchResultsOnly {
+        if typedQueryUnifiedListActive {
+            if selectedResultIndex < typedQueryCommandMatchCount {
+                let specs = filteredRootQuickActionSpecs
+                guard selectedResultIndex < specs.count else { return }
+                activateQuickAction(at: specs[selectedResultIndex].activationIndex)
+            } else {
+                let noteIdx = selectedResultIndex - typedQueryCommandMatchCount
+                guard noteIdx < engine.results.count else { return }
+                selectResult(engine.results[noteIdx])
+            }
+            return
+        }
+        if showResults {
             commitCurrentSearch()
         } else if isEmptyQuery, totalPaletteRows > 0 {
             activatePaletteRow(at: selectedResultIndex)
@@ -1430,9 +1595,26 @@ struct FloatingSearch: View {
     }
 
     private func navigateKeyboard(direction: NavigationDirection) {
-        if showMixedQueryResults {
-            navigateMixedQueryResults(direction: direction)
-        } else if showNoteSearchResultsOnly {
+        if typedQueryUnifiedListActive {
+            guard typedQueryUnifiedRowCount > 0 else { return }
+            let maxIndex = typedQueryUnifiedRowCount - 1
+            switch direction {
+            case .down:
+                selectedResultIndex = min(selectedResultIndex + 1, maxIndex)
+            case .up:
+                selectedResultIndex = max(selectedResultIndex - 1, 0)
+            }
+            if selectedResultIndex >= typedQueryCommandMatchCount {
+                let noteIdx = selectedResultIndex - typedQueryCommandMatchCount
+                if noteIdx < engine.results.count {
+                    hoveredResultID = engine.results[noteIdx].id
+                }
+            } else {
+                hoveredResultID = nil
+            }
+            return
+        }
+        if showResults {
             navigateResults(direction: direction)
         } else if isEmptyQuery, totalPaletteRows > 0 {
             switch direction {

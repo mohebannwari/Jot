@@ -11,10 +11,6 @@ struct SettingsPage: View {
     @State private var hoveredTheme: AppTheme?
     @State private var hoveredBodyFontStyle: BodyFontStyle?
     @State private var hoveredLineSpacing: LineSpacing?
-    @State private var hoveredFontSize: CGFloat?
-    @State private var isCustomFontSize = false
-    @State private var customFontSizeText: String = ""
-    @FocusState private var isCustomFontSizeFocused: Bool
 
     // Contact panel state
     @State private var feedbackType: FeedbackType = .bug
@@ -648,9 +644,9 @@ struct SettingsPage: View {
             VStack(alignment: .leading, spacing: 48) {
                 themeSection
                 tintSection
+                typographySection
                 bodyFontSection
                 lineSpacingSection
-                fontSizeSection
             }
             .padding(.vertical, contentVerticalPadding)
         }
@@ -907,105 +903,33 @@ struct SettingsPage: View {
         }
     }
 
-    // MARK: - Font Size Section
+    // MARK: - Typography (body font size)
 
-    private let fontSizePresets: [CGFloat] = [14, 15, 16, 18]
-
-    private var isPresetSize: Bool {
-        fontSizePresets.contains(themeManager.bodyFontSize)
-    }
-
-    private var fontSizeSection: some View {
+    private var typographySection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            sectionLabel("Font size")
+            sectionLabel("Typography")
 
-            HStack(spacing: 8) {
-                ForEach(fontSizePresets, id: \.self) { size in
-                    fontSizePill(size, isSelected: themeManager.bodyFontSize == size) {
-                        isCustomFontSizeFocused = false
-                        isCustomFontSize = false
-                        themeManager.bodyFontSize = size
+            settingsGroupedCard {
+                HStack(alignment: .center, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Body font size")
+                            .font(FontManager.heading(size: 13, weight: .semibold))
+                            .foregroundStyle(Color("SettingsPrimaryTextColor"))
+                        Text("Font size for the Body text")
+                            .font(FontManager.heading(size: 11, weight: .regular))
+                            .foregroundStyle(Color("SettingsPlaceholderTextColor"))
                     }
-                }
-
-                if isCustomFontSize || !isPresetSize {
-                    customFontSizeField
-                } else {
-                    fontSizePill(nil, label: "Custom", isSelected: false, wide: true) {
-                        isCustomFontSize = true
-                        customFontSizeText = "\(Int(themeManager.bodyFontSize))"
-                        isCustomFontSizeFocused = true
-                    }
+                    Spacer(minLength: 16)
+                    SettingsNumericCounterPill(
+                        value: Binding(
+                            get: { Int(round(themeManager.bodyFontSize)) },
+                            set: { themeManager.bodyFontSize = CGFloat($0) }
+                        ),
+                        range: 10...28
+                    )
                 }
             }
         }
-    }
-
-    private func fontSizePill(_ size: CGFloat?, label: String? = nil, isSelected: Bool, wide: Bool = false, action: @escaping () -> Void) -> some View {
-        let isHovered = hoveredFontSize == (size ?? -1)
-
-        return Button(action: action) {
-            Text(label ?? "\(Int(size ?? 0))")
-                .font(FontManager.metadata(size: 12, weight: .medium))
-                .foregroundColor(
-                    isSelected
-                        ? Color("ButtonPrimaryTextColor")
-                        : Color("SettingsPlaceholderTextColor")
-                )
-                .frame(width: wide ? 64 : 40, height: 32)
-                .background(
-                    Capsule()
-                        .fill(isSelected ? Color("SettingsSelectionOrange") : (colorScheme == .light ? Color.white : Color("SettingsOptionCardColor")))
-                )
-                .animation(.jotHover, value: isHovered)
-        }
-        .buttonStyle(.plain)
-        .macPointingHandCursor()
-        .onHover { hovering in
-            if hovering {
-                hoveredFontSize = size ?? -1
-            } else if hoveredFontSize == (size ?? -1) {
-                hoveredFontSize = nil
-            }
-        }
-    }
-
-    private var customFontSizeField: some View {
-        let isActive = !isPresetSize || isCustomFontSize
-
-        let isCustomSelected = isActive && !isPresetSize
-
-        return TextField("", text: $customFontSizeText)
-            .font(FontManager.metadata(size: 12, weight: .medium))
-            .foregroundColor(isCustomSelected ? Color("ButtonPrimaryTextColor") : Color("SettingsPrimaryTextColor"))
-            .multilineTextAlignment(.center)
-            .frame(width: 40, height: 32)
-            .background(
-                Capsule()
-                    .fill(isCustomSelected ? Color("SettingsSelectionOrange") : (colorScheme == .light ? Color.white : Color("SettingsOptionCardColor")))
-            )
-            .textFieldStyle(.plain)
-            .focused($isCustomFontSizeFocused)
-            .onSubmit {
-                if let val = Double(customFontSizeText) {
-                    let clamped = min(max(CGFloat(val), 10), 28)
-                    themeManager.bodyFontSize = clamped
-                    customFontSizeText = "\(Int(clamped))"
-                }
-                isCustomFontSizeFocused = false
-            }
-            .onChange(of: isCustomFontSizeFocused) { _, focused in
-                if focused {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                        NSApp.sendAction(#selector(NSResponder.selectAll(_:)), to: nil, from: nil)
-                    }
-                }
-            }
-            .onAppear {
-                if !isPresetSize {
-                    customFontSizeText = "\(Int(themeManager.bodyFontSize))"
-                }
-            }
     }
 
     // MARK: - About Panel

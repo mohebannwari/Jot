@@ -1,0 +1,683 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Jot — Backlog Roadmap</title>
+    <style>
+      :root {
+        --accent: #2563eb;
+        --text: #1a1a1a;
+        --text-secondary: rgba(26, 26, 26, 0.7);
+        --text-tertiary: #52525b;
+        --surface: #ffffff;
+        --surface-elev: #f5f4f4;
+        --surface-translucent: rgba(26, 26, 26, 0.06);
+        --border: rgba(26, 26, 26, 0.09);
+        --card: rgba(255, 255, 255, 0.7);
+        --bg: #fafaf9;
+        --stone-300: #d6d3d1;
+        --pinned: #fef08a;
+        --pinned-icon: #854d0e;
+        --tag-bg: rgba(96, 141, 250, 0.35);
+        --shadow:
+          0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px -12px rgba(0, 0, 0, 0.1);
+        --radius: 16px;
+        --radius-inner: 12px;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --accent: #608dfa;
+          --text: #ffffff;
+          --text-secondary: rgba(255, 255, 255, 0.7);
+          --text-tertiary: #a19fa9;
+          --surface: #1c1918;
+          --surface-elev: #292524;
+          --surface-translucent: rgba(255, 255, 255, 0.06);
+          --border: rgba(255, 255, 255, 0.09);
+          --card: rgba(28, 25, 24, 0.7);
+          --bg: #0c0a09;
+          --stone-300: #292524;
+          --pinned: #854d0e;
+          --pinned-icon: #fef08a;
+          --tag-bg: rgba(96, 141, 250, 0.25);
+          --shadow:
+            0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 32px -8px rgba(0, 0, 0, 0.6);
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro", system-ui,
+          sans-serif;
+        background:
+          radial-gradient(
+            1200px 600px at 10% -10%,
+            rgba(37, 99, 235, 0.08),
+            transparent 60%
+          ),
+          radial-gradient(
+            900px 500px at 90% 10%,
+            rgba(254, 240, 138, 0.18),
+            transparent 60%
+          ),
+          var(--bg);
+        color: var(--text);
+        min-height: 100vh;
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+        letter-spacing: -0.01em;
+      }
+
+      .wrap {
+        max-width: 1240px;
+        margin: 0 auto;
+        padding: 48px 32px 80px;
+      }
+
+      header {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 32px;
+        margin-bottom: 40px;
+        flex-wrap: wrap;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-size: 13px;
+        color: var(--text-secondary);
+        letter-spacing: 0;
+      }
+      .brand-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 3px;
+        background: var(--accent);
+        box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
+      }
+      h1 {
+        font-size: 40px;
+        font-weight: 600;
+        letter-spacing: -0.03em;
+        margin: 8px 0 6px;
+        line-height: 1.05;
+      }
+      .sub {
+        font-size: 15px;
+        color: var(--text-secondary);
+        margin: 0;
+        max-width: 620px;
+        line-height: 1.5;
+      }
+      .meta {
+        display: flex;
+        gap: 16px;
+        font-size: 12px;
+        color: var(--text-tertiary);
+        font-family: ui-monospace, "SF Mono", Menlo, monospace;
+        letter-spacing: 0;
+      }
+      .meta b {
+        color: var(--text);
+        font-weight: 600;
+      }
+
+      /* Timeline spine */
+      .timeline {
+        position: relative;
+        margin-top: 8px;
+      }
+      .timeline::before {
+        content: "";
+        position: absolute;
+        left: 120px;
+        top: 14px;
+        bottom: 14px;
+        width: 2px;
+        background: linear-gradient(to bottom, var(--border), transparent);
+      }
+      @media (max-width: 800px) {
+        .timeline::before {
+          left: 18px;
+        }
+      }
+
+      .horizon {
+        display: grid;
+        grid-template-columns: 120px 1fr;
+        gap: 24px;
+        margin-bottom: 36px;
+        position: relative;
+      }
+      @media (max-width: 800px) {
+        .horizon {
+          grid-template-columns: 1fr;
+          gap: 12px;
+          padding-left: 36px;
+        }
+      }
+
+      .horizon-label {
+        position: relative;
+        padding-top: 6px;
+      }
+      .horizon-label::before {
+        content: "";
+        position: absolute;
+        left: 116px;
+        top: 12px;
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: var(--surface);
+        border: 2px solid var(--accent);
+        box-shadow: 0 0 0 4px var(--bg);
+      }
+      @media (max-width: 800px) {
+        .horizon-label::before {
+          left: -22px;
+          top: 10px;
+        }
+      }
+      .horizon-title {
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--accent);
+      }
+      .horizon-desc {
+        font-size: 11px;
+        color: var(--text-tertiary);
+        margin-top: 4px;
+        font-family: ui-monospace, "SF Mono", Menlo, monospace;
+      }
+
+      .cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 12px;
+      }
+
+      .card {
+        background: var(--card);
+        backdrop-filter: blur(20px) saturate(140%);
+        -webkit-backdrop-filter: blur(20px) saturate(140%);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 16px;
+        box-shadow: var(--shadow);
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        transition:
+          transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1),
+          box-shadow 0.25s,
+          border-color 0.25s;
+        position: relative;
+        overflow: hidden;
+      }
+      .card:hover {
+        transform: translateY(-2px);
+        border-color: rgba(37, 99, 235, 0.35);
+        box-shadow:
+          0 1px 2px rgba(0, 0, 0, 0.06),
+          0 18px 40px -18px rgba(37, 99, 235, 0.28);
+      }
+      .card::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        pointer-events: none;
+        background: linear-gradient(
+          180deg,
+          rgba(255, 255, 255, 0.04),
+          transparent 30%
+        );
+      }
+
+      .card-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+      .id {
+        font-family: ui-monospace, "SF Mono", Menlo, monospace;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0;
+        color: var(--text-tertiary);
+      }
+      .id a {
+        color: inherit;
+        text-decoration: none;
+      }
+      .id a:hover {
+        color: var(--accent);
+      }
+
+      .pri {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--text-secondary);
+      }
+      .pri-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+      }
+      .pri-urgent .pri-dot {
+        background: #ef4444;
+      }
+      .pri-high .pri-dot {
+        background: #f59e0b;
+      }
+      .pri-medium .pri-dot {
+        background: var(--accent);
+      }
+      .pri-low .pri-dot {
+        background: var(--text-tertiary);
+        opacity: 0.6;
+      }
+
+      .title {
+        font-size: 15px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+        line-height: 1.35;
+        color: var(--text);
+      }
+      .desc {
+        font-size: 13px;
+        line-height: 1.5;
+        color: var(--text-secondary);
+      }
+
+      .card-foot {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+        padding-top: 4px;
+      }
+      .tag {
+        font-size: 10px;
+        font-weight: 500;
+        letter-spacing: 0.02em;
+        padding: 3px 8px;
+        border-radius: 999px;
+        background: var(--surface-translucent);
+        color: var(--text-secondary);
+      }
+      .tag.status {
+        background: var(--tag-bg);
+        color: var(--text);
+      }
+      .tag.idea {
+        background: var(--pinned);
+        color: var(--pinned-icon);
+      }
+
+      /* Legend */
+      .legend {
+        display: flex;
+        gap: 20px;
+        flex-wrap: wrap;
+        margin-top: 28px;
+        padding: 14px 16px;
+        border: 1px dashed var(--border);
+        border-radius: 12px;
+        font-size: 12px;
+        color: var(--text-secondary);
+      }
+      .legend-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      footer {
+        margin-top: 48px;
+        padding-top: 24px;
+        border-top: 1px solid var(--border);
+        font-size: 11px;
+        color: var(--text-tertiary);
+        font-family: ui-monospace, "SF Mono", Menlo, monospace;
+        display: flex;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <div>
+          <div class="brand">
+            <span class="brand-dot"></span> JOT / LINEAR BACKLOG
+          </div>
+          <h1>Roadmap</h1>
+          <p class="sub">
+            Active backlog for the Jot project, ordered by horizon. Compiled
+            from Linear <code>DES-*</code> issues tagged with the Jot project
+            and status <b>Backlog</b> or <b>Idea</b>.
+          </p>
+        </div>
+        <div class="meta">
+          <span>9 open &nbsp;·&nbsp; <b>as of 2026-04-15</b></span>
+        </div>
+      </header>
+
+      <div class="timeline">
+        <!-- NOW -->
+        <div class="horizon">
+          <div class="horizon-label">
+            <div class="horizon-title">Now</div>
+            <div class="horizon-desc">in-flight polish</div>
+          </div>
+          <div class="cards">
+            <div class="card">
+              <div class="card-head">
+                <span class="id"
+                  ><a
+                    href="https://linear.app/mohebanw/issue/DES-299"
+                    target="_blank"
+                    >DES-299</a
+                  ></span
+                >
+                <span class="pri pri-medium"
+                  ><span class="pri-dot"></span>Medium</span
+                >
+              </div>
+              <div class="title">Batch-collapsed open folders</div>
+              <div class="desc">
+                Allow folders in the sidebar to batch-collapse, keeping the tree
+                legible when many folders are expanded at once.
+              </div>
+              <div class="card-foot">
+                <span class="tag status">Backlog</span>
+                <span class="tag">Feature</span>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-head">
+                <span class="id"
+                  ><a
+                    href="https://linear.app/mohebanw/issue/DES-300"
+                    target="_blank"
+                    >DES-300</a
+                  ></span
+                >
+                <span class="pri pri-medium"
+                  ><span class="pri-dot"></span>Medium</span
+                >
+              </div>
+              <div class="title">Global command / search palette</div>
+              <div class="desc">
+                Extend <code>FloatingSearch</code> so common actions are
+                reachable from the ⌘K flow — not only from menus, sidebar, or
+                the in-editor <code>/</code> menu.
+              </div>
+              <div class="card-foot">
+                <span class="tag status">Backlog</span>
+                <span class="tag">FloatingSearch</span>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-head">
+                <span class="id"
+                  ><a
+                    href="https://linear.app/mohebanw/issue/DES-301"
+                    target="_blank"
+                    >DES-301</a
+                  ></span
+                >
+                <span class="pri pri-medium"
+                  ><span class="pri-dot"></span>Medium</span
+                >
+              </div>
+              <div class="title">Apple Notes gap-analysis roadmap</div>
+              <div class="desc">
+                Tracker issue migrated from <code>roadmap.md</code>. Parent of
+                the feature-parity work against Apple Notes (iOS 26 / macOS 26).
+              </div>
+              <div class="card-foot">
+                <span class="tag status">Backlog</span>
+                <span class="tag">Tracker</span>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-head">
+                <span class="id"
+                  ><a
+                    href="https://linear.app/mohebanw/issue/DES-284"
+                    target="_blank"
+                    >DES-284</a
+                  ></span
+                >
+                <span class="pri pri-medium"
+                  ><span class="pri-dot"></span>Medium</span
+                >
+              </div>
+              <div class="title">Design onboarding flow</div>
+              <div class="desc">
+                First-run experience for new users — design work, not yet
+                implementation.
+              </div>
+              <div class="card-foot">
+                <span class="tag status">Backlog</span>
+                <span class="tag">Design</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- NEXT — Batch 5 -->
+        <div class="horizon">
+          <div class="horizon-label">
+            <div class="horizon-title">Next · Batch 5</div>
+            <div class="horizon-desc">platform reach</div>
+          </div>
+          <div class="cards">
+            <div class="card">
+              <div class="card-head">
+                <span class="id"
+                  ><a
+                    href="https://linear.app/mohebanw/issue/DES-274"
+                    target="_blank"
+                    >DES-274</a
+                  ></span
+                >
+                <span class="pri pri-medium"
+                  ><span class="pri-dot"></span>Medium</span
+                >
+              </div>
+              <div class="title">Reminders / due dates on notes</div>
+              <div class="desc">
+                Optional reminder date+time per note with a native macOS
+                notification. Lightweight — not a task manager.
+              </div>
+              <div class="card-foot">
+                <span class="tag idea">Idea</span>
+                <span class="tag">Feature</span>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-head">
+                <span class="id"
+                  ><a
+                    href="https://linear.app/mohebanw/issue/DES-273"
+                    target="_blank"
+                    >DES-273</a
+                  ></span
+                >
+                <span class="pri pri-medium"
+                  ><span class="pri-dot"></span>Medium</span
+                >
+              </div>
+              <div class="title">Widgets (WidgetKit)</div>
+              <div class="desc">
+                Desktop and Notification Center widgets for pinned notes and
+                recent notes. Requires WidgetKit extension + App Groups.
+              </div>
+              <div class="card-foot">
+                <span class="tag idea">Idea</span>
+                <span class="tag">Feature</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- LATER — Batch 6 -->
+        <div class="horizon">
+          <div class="horizon-label">
+            <div class="horizon-title">Later · Batch 6</div>
+            <div class="horizon-desc">organization + capture</div>
+          </div>
+          <div class="cards">
+            <div class="card">
+              <div class="card-head">
+                <span class="id"
+                  ><a
+                    href="https://linear.app/mohebanw/issue/DES-275"
+                    target="_blank"
+                    >DES-275</a
+                  ></span
+                >
+                <span class="pri pri-low"
+                  ><span class="pri-dot"></span>Low</span
+                >
+              </div>
+              <div class="title">Global quick-note hotkey</div>
+              <div class="desc">
+                System-wide shortcut that summons a floating
+                <code>NSPanel</code> capture window above any app. Type,
+                dismiss, saved.
+              </div>
+              <div class="card-foot">
+                <span class="tag status">Backlog</span>
+                <span class="tag">Feature</span>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-head">
+                <span class="id"
+                  ><a
+                    href="https://linear.app/mohebanw/issue/DES-276"
+                    target="_blank"
+                    >DES-276</a
+                  ></span
+                >
+                <span class="pri pri-low"
+                  ><span class="pri-dot"></span>Low</span
+                >
+              </div>
+              <div class="title">Smart folders (auto-filters)</div>
+              <div class="desc">
+                Rule-based folders — tag, date, content, or folder membership
+                with AND/OR logic. Auto-populating, no manual sorting.
+              </div>
+              <div class="card-foot">
+                <span class="tag status">Backlog</span>
+                <span class="tag">Feature</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- IDEAS -->
+        <div class="horizon">
+          <div class="horizon-label">
+            <div class="horizon-title">Ideas</div>
+            <div class="horizon-desc">unscheduled</div>
+          </div>
+          <div class="cards">
+            <div class="card">
+              <div class="card-head">
+                <span class="id"
+                  ><a
+                    href="https://linear.app/mohebanw/issue/DES-184"
+                    target="_blank"
+                    >DES-184</a
+                  ></span
+                >
+                <span class="pri pri-low"
+                  ><span class="pri-dot"></span>Low</span
+                >
+              </div>
+              <div class="title">
+                Auto-tag generation (Apple Foundation Models)
+              </div>
+              <div class="desc">
+                Use on-device FoundationModels to suggest tags per note. Builds
+                on the existing <code>AppleIntelligenceService</code> pipeline.
+              </div>
+              <div class="card-foot">
+                <span class="tag status">Backlog</span>
+                <span class="tag">AI</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="legend">
+        <span class="legend-item"
+          ><span class="pri-dot" style="background: #ef4444"></span>
+          Urgent</span
+        >
+        <span class="legend-item"
+          ><span class="pri-dot" style="background: #f59e0b"></span> High</span
+        >
+        <span class="legend-item"
+          ><span class="pri-dot" style="background: var(--accent)"></span>
+          Medium</span
+        >
+        <span class="legend-item"
+          ><span
+            class="pri-dot"
+            style="background: var(--text-tertiary); opacity: 0.6"
+          ></span>
+          Low</span
+        >
+        <span class="legend-item"
+          ><span class="tag status" style="padding: 2px 8px">Backlog</span>
+          status column</span
+        >
+        <span class="legend-item"
+          ><span class="tag idea" style="padding: 2px 8px">Idea</span> status
+          column</span
+        >
+      </div>
+
+      <footer>
+        <span>Source: Linear · Team Design · Project Jot</span>
+        <span>Generated 2026-04-15</span>
+      </footer>
+    </div>
+  </body>
+</html>

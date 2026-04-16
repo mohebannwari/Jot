@@ -13,12 +13,6 @@ import AppKit
 final class CalloutOverlayView: NSView {
 
     static let minWidth: CGFloat = 400
-    /// Height of a single line at the callout's body font size (15pt regular).
-    /// Cached to avoid allocating NSFont on every layout pass.
-    private static let singleLineHeight: CGFloat = {
-        let font = NSFont.systemFont(ofSize: 15, weight: .regular)
-        return ceil(font.ascender - font.descender + font.leading)
-    }()
     /// Set by the coordinator so drag-resize respects the actual container.
     var currentContainerWidth: CGFloat = 0
     private static let handleWidth: CGFloat = 12
@@ -47,7 +41,8 @@ final class CalloutOverlayView: NSView {
     var contentLayoutWidth: CGFloat = 0
 
     // -- Figma Design Tokens (node 2448:7886) --------------------------------
-    private let blockRadius:        CGFloat = 16   // var(--2xl, 16px)
+    /// Fixed shell corner radius (points). Same as code blocks — not derived from content height.
+    private let blockRadius:        CGFloat = 22
     private let blockPaddingTop:    CGFloat = 24   // clears pill
     private let blockPaddingBottom: CGFloat = 16   // var(--base, 16px)
     private let blockPaddingH:      CGFloat = 16   // var(--base, 16px)
@@ -238,11 +233,6 @@ final class CalloutOverlayView: NSView {
         // Block fills content width, offset down by pill overflow
         let blockH = max(bounds.height - pO, 50)
         blockView.frame = CGRect(x: 0, y: pO, width: contentW, height: blockH)
-
-        // Dynamic corner radius: 16 for single-line, 22 for multiline
-        let contentH = blockH - blockPaddingTop - blockPaddingBottom
-        let dynamicRadius = contentH > Self.singleLineHeight + 4 ? 22 : blockRadius
-        blockView.layer?.cornerRadius = dynamicRadius
 
         // Text field inside block
         let tfW = max(contentW - blockPaddingH * 2, 40)
