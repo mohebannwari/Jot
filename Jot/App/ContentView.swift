@@ -3603,6 +3603,10 @@ struct ContentView: View {
         propertiesPanelContent(for: note, editorInstanceID: editorInstanceID)
             .frame(width: Self.propertiesPanelWidth)
             .frame(width: isVisible ? Self.propertiesPanelWidth : 0, alignment: .leading)
+            // Intentional `.clipped()` on width-collapsing container: the inner view is rendered
+            // at full 340pt width then the outer frame animates to 0. Without clipping, the
+            // unclipped overflow would paint over sibling views during the collapse animation.
+            // Exception to the CLAUDE.md no-clipping-on-containers rule is deliberate here.
             .clipped()
             .opacity(isVisible ? 1 : 0)
             .allowsHitTesting(isVisible)
@@ -5244,6 +5248,10 @@ struct NoteListCard: View {
                 .frame(width: isHovered ? nil : 0)
                 .opacity(isHovered ? 1 : 0)
                 .allowsHitTesting(isHovered)
+                // Intentional `.clipped()`: the ellipsis button animates in/out via width=0.
+                // Without clipping, the button's intrinsic content would paint over adjacent
+                // row cells during the hover transition. Exception to CLAUDE.md no-clipping
+                // rule — deliberate for the hover-reveal animation.
                 .clipped()
             }
         }
