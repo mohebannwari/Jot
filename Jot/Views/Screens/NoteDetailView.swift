@@ -27,6 +27,11 @@ struct NoteDetailView: View {
 
   private var isLayoutAnimating: Bool { isSidebarAnimating || isPanelAnimating }
 
+  /// Matches ``editorScrollContent`` top padding and sticker placement math.
+  private var noteDetailScrollContentTopInset: CGFloat {
+    FontManager.noteDetailEditorScrollTopInset()
+  }
+
   // MARK: - Environment
   @Environment(\.colorScheme) private var colorScheme
   @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -399,7 +404,7 @@ struct NoteDetailView: View {
           .id("menuSpacer")
       }
     }
-    .padding(.top, 48)
+    .padding(.top, noteDetailScrollContentTopInset)
     .padding(.horizontal, 60)
     .frame(maxWidth: .infinity, minHeight: scrollViewHeight, alignment: .topLeading)
     .overlay(alignment: .topLeading) {
@@ -494,7 +499,7 @@ struct NoteDetailView: View {
           HStack {
             Spacer()
             Text(editedTitle.isEmpty ? "Untitled" : editedTitle)
-              .font(FontManager.heading(size: 12, weight: .medium))
+              .font(FontManager.heading(size: FontManager.noteDetailOverlayHeadingSize, weight: .medium))
               .foregroundColor(Color("PrimaryTextColor"))
               .opacity(0.5)
               .lineLimit(1)
@@ -1486,7 +1491,7 @@ struct NoteDetailView: View {
 
   private var titleField: some View {
     TextField("Note Title", text: $editedTitle, axis: .vertical)
-      .font(FontManager.heading(size: 32, weight: .medium))
+      .font(FontManager.noteDetailTitleFont())
       .foregroundColor(Color("PrimaryTextColor"))
       .textFieldStyle(.plain)
       .lineLimit(nil)
@@ -1634,7 +1639,7 @@ struct NoteDetailView: View {
     HStack(spacing: 8) {
       BrailleLoader(pattern: .snake, size: 11)
       Text("Proofreading...")
-        .font(FontManager.heading(size: 12, weight: .medium))
+        .font(FontManager.heading(size: FontManager.noteDetailOverlayHeadingSize, weight: .medium))
         .foregroundColor(Color("PrimaryTextColor"))
         .shimmering(active: true)
     }
@@ -1646,7 +1651,7 @@ struct NoteDetailView: View {
   private func aiErrorPill(message: String) -> some View {
     HStack(spacing: 8) {
       Text(message)
-        .font(FontManager.heading(size: 12, weight: .medium))
+        .font(FontManager.heading(size: FontManager.noteDetailOverlayHeadingSize, weight: .medium))
         .foregroundColor(Color.red.opacity(0.8))
         .lineLimit(1)
 
@@ -1700,7 +1705,7 @@ struct NoteDetailView: View {
       HStack(spacing: 8) {
         if count > 1 {
           Text("\(clampedIndex + 1)/\(count)")
-            .font(FontManager.heading(size: 12, weight: .medium).monospacedDigit())
+            .font(FontManager.heading(size: FontManager.noteDetailOverlayHeadingSize, weight: .medium).monospacedDigit())
             .foregroundColor(Color("SecondaryTextColor"))
             .padding(.leading, 8)
 
@@ -1739,7 +1744,7 @@ struct NoteDetailView: View {
             userInfo: ["editorInstanceID": editorInstanceID])
           withAnimation(.jotSpring) { aiPanelState = .none }
         }
-        .font(FontManager.heading(size: 12, weight: .regular))
+        .font(FontManager.heading(size: FontManager.noteDetailOverlayHeadingSize, weight: .regular))
         .foregroundColor(Color("SecondaryTextColor"))
         .padding(.horizontal, 14)
         .padding(.vertical, 7)
@@ -1751,7 +1756,7 @@ struct NoteDetailView: View {
         Button("Replace All") {
           replaceAllSuggestions()
         }
-        .font(FontManager.heading(size: 12, weight: .semibold))
+        .font(FontManager.heading(size: FontManager.noteDetailOverlayHeadingSize, weight: .semibold))
         .foregroundColor(.white)
         .padding(.horizontal, 14)
         .padding(.vertical, 7)
@@ -1772,7 +1777,7 @@ struct NoteDetailView: View {
         .foregroundColor(.green)
         .font(.system(size: 14))
       Text("Looks good")
-        .font(FontManager.heading(size: 12, weight: .medium))
+        .font(FontManager.heading(size: FontManager.noteDetailOverlayHeadingSize, weight: .medium))
         .foregroundColor(Color("PrimaryTextColor"))
     }
     .padding(.horizontal, 16)
@@ -1807,7 +1812,7 @@ struct NoteDetailView: View {
 
       TextField("Enter URL", text: $linkInputText)
         .textFieldStyle(.plain)
-        .font(FontManager.heading(size: 12, weight: .medium))
+        .font(FontManager.heading(size: FontManager.noteDetailOverlayHeadingSize, weight: .medium))
         .foregroundColor(Color("PrimaryTextColor"))
         .focused($isLinkInputFocused)
         .submitLabel(.done)
@@ -1815,7 +1820,7 @@ struct NoteDetailView: View {
 
       Button(action: submitLink) {
         Image(systemName: "arrow.right.circle.fill")
-          .font(FontManager.heading(size: 20, weight: .regular))
+          .font(FontManager.heading(size: FontManager.noteDetailAuxiliaryHeadingSize, weight: .regular))
           .foregroundColor(
             linkInputText.isEmpty ? Color("SecondaryTextColor") : Color("AccentColor"))
       }
@@ -1846,14 +1851,14 @@ struct NoteDetailView: View {
       // Find row
       HStack(spacing: 8) {
         Text(searchCountLabel)
-          .font(FontManager.heading(size: 12, weight: .medium))
+          .font(FontManager.heading(size: FontManager.noteDetailOverlayHeadingSize, weight: .medium))
           .foregroundColor(Color("SecondaryTextColor"))
           .monospacedDigit()
           .frame(minWidth: 28, alignment: .trailing)
 
         TextField("Search", text: $searchOnPageQuery)
           .textFieldStyle(.plain)
-          .font(FontManager.heading(size: 12, weight: .medium))
+          .font(FontManager.heading(size: FontManager.noteDetailOverlayHeadingSize, weight: .medium))
           .foregroundColor(Color("PrimaryTextColor"))
           .focused($isSearchOnPageFocused)
           .onChange(of: searchOnPageQuery) { _, newValue in
@@ -1992,7 +1997,8 @@ struct NoteDetailView: View {
 
   private func insertStickerAtCenter() {
     // Position relative to current scroll viewport, not scroll content top
-    let visibleTop = max(0, -titleOffset + 48 + contentTopInsetAdjustment)
+    let visibleTop = max(
+      0, -titleOffset + noteDetailScrollContentTopInset + contentTopInsetAdjustment)
     let x: CGFloat = 80
     let y: CGFloat = visibleTop + 80
     let newSticker = Sticker(

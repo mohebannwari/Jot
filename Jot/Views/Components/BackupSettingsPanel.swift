@@ -120,44 +120,12 @@ struct BackupSettingsPanel: View {
 
                     Spacer()
 
-                    HStack(spacing: 0) {
-                        Button {
-                            if themeManager.backupMaxCount > 1 {
-                                themeManager.backupMaxCount -= 1
-                            }
-                        } label: {
-                            Image(systemName: "minus")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundColor(Color("SettingsPlaceholderTextColor"))
-                                .frame(width: 32, height: 28)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-
-                        Text("\(themeManager.backupMaxCount)")
-                            .font(FontManager.heading(size: 12, weight: .medium))
-                            .tracking(-0.3)
-                            .foregroundColor(Color("PrimaryTextColor"))
-                            .frame(minWidth: 16, alignment: .center)
-
-                        Button {
-                            if themeManager.backupMaxCount < 50 {
-                                themeManager.backupMaxCount += 1
-                            }
-                        } label: {
-                            Image(systemName: "plus")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundColor(Color("SettingsPlaceholderTextColor"))
-                                .frame(width: 32, height: 28)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .padding(.horizontal, 2)
-                    .padding(.vertical, 1)
-                    .background(
-                        Capsule()
-                            .fill(themeManager.tintedSettingsInnerPill(for: colorScheme))
+                    SettingsNumericCounterPill(
+                        value: Binding(
+                            get: { themeManager.backupMaxCount },
+                            set: { themeManager.backupMaxCount = $0 }
+                        ),
+                        range: 1...50
                     )
                 }
             }

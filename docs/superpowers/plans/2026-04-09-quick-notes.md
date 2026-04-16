@@ -1525,20 +1525,16 @@ If any smoke test fails, stop and file each failure as a bug before continuing. 
 
 ## Task 10: Update memory and roadmap
 
+**Note (2026-04-14):** Repo `roadmap.md` was removed; the product roadmap now lives in Linear [DES-301](https://linear.app/mohebanw/issue/DES-301/backlog-jot-feature-roadmap-apple-notes-gap-analysis). Complete the equivalent of the steps below by editing that issue’s description if needed.
+
 **Files:**
 
-- Modify: `roadmap.md`
+- ~~Modify: `roadmap.md`~~ (superseded by Linear DES-301)
 - Modify: `/Users/mohebanwari/.claude/projects/-Users-mohebanwari-development-Jot/memory/project_apple_notes_roadmap_apr08.md`
 
-### - [ ] Step 10.1: Update the roadmap
+### - [ ] Step 10.1: Update the roadmap (Linear DES-301)
 
-In `roadmap.md`, change Phase 2 Feature 3 from "Not implemented" to "Completed":
-
-Find the section header `### 3. Quick Notes (Global Hotkey Capture)` and update:
-
-- Change `**Status:** Not implemented` to `**Status:** Completed`
-- Add a `**Changes:**` line describing what was built (6 new files, 3 modified, Carbon-based registration, NSPanel panel, default ⌃⌥⌘N, configurable via Settings)
-- Match the format used by the completed Phase 1 entries above it
+In Linear issue DES-301, ensure Phase 2 Feature 3 (Quick Notes) is marked **Completed** with the same level of detail the old `roadmap.md` used (status, changes, key files).
 
 ### - [ ] Step 10.2: Update the memory file
 
@@ -1551,8 +1547,8 @@ In `/Users/mohebanwari/.claude/projects/-Users-mohebanwari-development-Jot/memor
 ### - [ ] Step 10.3: Commit
 
 ```bash
-git add roadmap.md
-git commit -m "docs: mark Quick Notes (Phase 2 #3) as completed in roadmap
+git add -A
+git commit -m "docs: note Quick Notes (Phase 2 #3) completed; roadmap in Linear DES-301
 
 Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>"
 ```
@@ -1590,3 +1586,7 @@ The memory file lives outside the repo and is not committed.
 - Task 7.1: locate exact insertion point in General tab
 
 These are legitimate "look at the current code before editing" checks, not TBDs.
+
+```
+
+```

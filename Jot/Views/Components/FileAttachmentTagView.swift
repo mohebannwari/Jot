@@ -47,7 +47,8 @@ struct FileAttachmentTagView: View {
         }
         // Match NoteMetadataSection attachment pills: primary button tokens only (no app tint).
         .foregroundColor(Color("ButtonPrimaryTextColor"))
-        .padding(4)
+        .padding(.horizontal, FontManager.InlineEditorPillRasterPadding.horizontal)
+        .padding(.vertical, FontManager.InlineEditorPillRasterPadding.vertical)
         .background(Color("ButtonPrimaryBgColor"), in: Capsule())
         .onHover { inside in
             if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }

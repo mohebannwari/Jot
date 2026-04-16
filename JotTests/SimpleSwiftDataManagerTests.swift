@@ -104,9 +104,17 @@ final class SimpleSwiftDataManagerTests: XCTestCase {
         XCTAssertEqual(programmingResults.count, 1)
         XCTAssertEqual(programmingResults.first?.title, "Swift Programming")
 
+        // Multi-word tag names: first fetch token matches "test", post-filter must require both words in tags/title/body.
+        _ = manager.addNote(
+            title: "Metadata Only",
+            content: "Body has neither token alone in a misleading way.",
+            tags: ["test tag"])
+        let multiWordTagResults = await manager.searchNotes(query: "test tag")
+        XCTAssertTrue(multiWordTagResults.contains { $0.title == "Metadata Only" })
+
         // Test empty query
         let allResults = await manager.searchNotes(query: "")
-        XCTAssertEqual(allResults.count, 3)
+        XCTAssertEqual(allResults.count, 4)
     }
 
     // testMigrationFromJSON removed -- migrateFromJSON no longer exists on SimpleSwiftDataManager

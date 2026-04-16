@@ -20,18 +20,13 @@ final class CodeBlockOverlayView: NSView {
     /// Maximum total height — vertical scroll kicks in beyond this.
     static let maxHeight: CGFloat = 500
 
-    /// Height of a single line at the code font size (mono 13pt).
-    private static let singleLineHeight: CGFloat = {
-        let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
-        return ceil(font.ascender - font.descender + font.leading)
-    }()
-
     /// Set by the coordinator so drag-resize respects the actual container.
     var currentContainerWidth: CGFloat = 0
     private static let handleWidth: CGFloat = 12
 
-    // -- Design tokens (matching CalloutOverlayView / callout .note) -----------
-    private let blockRadius:        CGFloat = 16
+    // -- Design tokens (matching CalloutOverlayView shell) --------------------
+    /// Fixed shell corner radius (points). Matches callout blocks; not derived from size or line count.
+    private let blockRadius:        CGFloat = 22
     private let blockPaddingTop:    CGFloat = 24   // clears pill
     private let blockPaddingBottom: CGFloat = 16
     private let blockPaddingH:      CGFloat = 16
@@ -63,6 +58,8 @@ final class CodeBlockOverlayView: NSView {
     var onDataChanged:     ((CodeBlockData) -> Void)?
     var onDeleteCodeBlock: (() -> Void)?
     var onWidthChanged:    ((CGFloat) -> Void)?
+    /// One-shot after horizontal drag ends or double-click snap — mirrors `CalloutOverlayView` / tabs (`syncText` in coordinator).
+    var onResizeGestureEnded: (() -> Void)?
 
     // MARK: - Subviews
 
@@ -198,12 +195,16 @@ final class CodeBlockOverlayView: NSView {
         chipView.addSubview(langLabel)
         chipView.addSubview(chevronView)
 
-        // Resize handle
+        // Resize handle — `onDragEnd` drives debounced persistence like callouts/tabs (not every tick).
         resizeHandle.onDrag = { [weak self] newWidth in
             self?.handleResize(to: newWidth)
         }
+        resizeHandle.onDragEnd = { [weak self] in
+            self?.onResizeGestureEnded?()
+        }
         resizeHandle.onDoubleClick = { [weak self] in
             self?.snapToContentWidth()
+            self?.onResizeGestureEnded?()
         }
         addSubview(resizeHandle)
 
@@ -220,11 +221,6 @@ final class CodeBlockOverlayView: NSView {
         // Block fills width, offset down by pill overflow
         let blockH = max(bounds.height - pO, 50)
         blockView.frame = CGRect(x: 0, y: pO, width: bounds.width, height: blockH)
-
-        // Dynamic corner radius: 16 for single-line, 22 for multiline
-        let contentH = blockH - blockPaddingTop - blockPaddingBottom
-        let dynamicRadius = contentH > Self.singleLineHeight + 4 ? 22 : blockRadius
-        blockView.layer?.cornerRadius = dynamicRadius
 
         // ScrollView inside block (blockView is non-flipped: y=0 at bottom)
         let svW = max(bounds.width - blockPaddingH * 2, 40)
@@ -536,9 +532,12 @@ private final class _CodeResizeHandle: NSView {
 
     var onDrag: ((CGFloat) -> Void)?
     var onDoubleClick: (() -> Void)?
+    /// After an actual drag (not plain click / double-click).
+    var onDragEnd: (() -> Void)?
 
     private var dragStartX: CGFloat = 0
     private var dragStartWidth: CGFloat = 0
+    private var didDragThisGesture = false
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -565,14 +564,21 @@ private final class _CodeResizeHandle: NSView {
             onDoubleClick?()
             return
         }
+        didDragThisGesture = false
         dragStartX = event.locationInWindow.x
         dragStartWidth = superview?.bounds.width ?? 0
     }
 
     override func mouseDragged(with event: NSEvent) {
+        didDragThisGesture = true
         let delta = event.locationInWindow.x - dragStartX
         onDrag?(dragStartWidth + delta)
     }
 
-    override func mouseUp(with event: NSEvent) { }
+    override func mouseUp(with event: NSEvent) {
+        if didDragThisGesture {
+            didDragThisGesture = false
+            onDragEnd?()
+        }
+    }
 }

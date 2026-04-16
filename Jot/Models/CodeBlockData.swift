@@ -3,9 +3,11 @@
 //  Jot
 //
 //  Data model for code block attachments.
-//  Serialization format: [[codeblock|language]]escaped_code[[/codeblock]]
+//  Serialization: `[[codeblock|language]]escaped_code[[/codeblock]]` or, when width is customized,
+//  `[[codeblock|language:WW.WW]]escaped_code[[/codeblock]]` (POSIX decimal point; same idea as callouts).
 //
 
+import CoreGraphics
 import Foundation
 
 struct CodeBlockData: Equatable {
@@ -16,8 +18,17 @@ struct CodeBlockData: Equatable {
     /// Raw code string (unescaped).
     var code: String
 
+    /// When non-nil, editor uses this width clamped to the text container; `nil` means full container width.
+    var preferredContentWidth: CGFloat?
+
+    init(language: String, code: String, preferredContentWidth: CGFloat? = nil) {
+        self.language = language
+        self.code = code
+        self.preferredContentWidth = preferredContentWidth
+    }
+
     static func empty(language: String = "plaintext") -> CodeBlockData {
-        CodeBlockData(language: language, code: "")
+        CodeBlockData(language: language, code: "", preferredContentWidth: nil)
     }
 
     // MARK: - Supported Languages
@@ -60,9 +71,18 @@ struct CodeBlockData: Equatable {
 
     // MARK: - Serialization
 
+    private static let markupLocale = Locale(identifier: "en_US_POSIX")
+
     func serialize() -> String {
         let escaped = Self.escapeCode(code)
-        return "[[codeblock|\(language)]]\(escaped)[[/codeblock]]"
+        let openTag: String
+        if let w = preferredContentWidth {
+            let widthStr = String(format: "%.2f", locale: Self.markupLocale, Double(w))
+            openTag = "[[codeblock|\(language):\(widthStr)]]"
+        } else {
+            openTag = "[[codeblock|\(language)]]"
+        }
+        return "\(openTag)\(escaped)[[/codeblock]]"
     }
 
     static func deserialize(from text: String) -> CodeBlockData? {
@@ -70,7 +90,20 @@ struct CodeBlockData: Equatable {
         let afterPrefix = text.dropFirst("[[codeblock|".count)
         guard let closeBracket = afterPrefix.range(of: "]]") else { return nil }
 
-        let language = String(afterPrefix[afterPrefix.startIndex..<closeBracket.lowerBound])
+        let rawHeader = String(afterPrefix[afterPrefix.startIndex..<closeBracket.lowerBound])
+        var language = rawHeader
+        var preferredContentWidth: CGFloat?
+        // Optional `language:width` suffix — width must parse as a positive double.
+        if let colonIdx = rawHeader.lastIndex(of: ":"), colonIdx > rawHeader.startIndex {
+            let prefix = String(rawHeader[..<colonIdx])
+            let suffix = String(rawHeader[rawHeader.index(after: colonIdx)...])
+            if let w = Double(suffix), w > 0, !prefix.isEmpty {
+                language = prefix
+                preferredContentWidth = CGFloat(w)
+            }
+        }
+        if language.isEmpty { language = "plaintext" }
+
         let contentStart = closeBracket.upperBound
 
         let remaining = afterPrefix[contentStart...]
@@ -79,7 +112,7 @@ struct CodeBlockData: Equatable {
         let rawCode = String(remaining[remaining.startIndex..<closingRange.lowerBound])
         let code = unescapeCode(rawCode)
 
-        return CodeBlockData(language: language.isEmpty ? "plaintext" : language, code: code)
+        return CodeBlockData(language: language, code: code, preferredContentWidth: preferredContentWidth)
     }
 
     // MARK: - Escape Helpers

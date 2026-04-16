@@ -232,9 +232,12 @@ extension NoteEntity {
             return #Predicate<NoteEntity> { _ in false }
         }
 
+        // Tags are merged in `SimpleSwiftDataManager.searchNotes` from the in-memory note list.
+        // SwiftData cannot express "any tag contains substring" on `[String]` here without crashing
+        // the Core Data SQL generator (non-relationship collection subquery).
         return #Predicate<NoteEntity> { note in
             note.title.localizedStandardContains(firstTerm) ||
-            note.content.localizedStandardContains(firstTerm)
+                note.content.localizedStandardContains(firstTerm)
         }
     }
 

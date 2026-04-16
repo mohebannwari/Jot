@@ -548,7 +548,8 @@ struct FolderSection: View {
                         }
                         .buttonStyle(.plain)
                         .padding(.leading, 8)
-                        .padding(.top, 2)
+                        // Vertical padding so the control breathes against the last note row and the next folder.
+                        .padding(.vertical, 4)
                         .subtleHoverScale(1.02)
                     }
                 }
