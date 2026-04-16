@@ -364,9 +364,6 @@ extension AudioRecorder {
     fileprivate func installTapIfNeeded() {
         guard !tapInstalled else { return }
         guard let outputFormat else { return }
-        // Capture the buffer callback at install time so the audio thread
-        // holds a stable reference and doesn't race with MainActor clearing it.
-        let bufferCallback = onBufferAvailable
         bridgeMixer.installTap(
             onBus: 0,
             bufferSize: 1024,
@@ -385,8 +382,16 @@ extension AudioRecorder {
                     }
                 }
             }
-            // Forward buffer to transcription service if in meeting mode
-            bufferCallback?(buffer)
+            // Re-read `onBufferAvailable` live per buffer (not captured at install time) so
+            // a MainActor reassignment between start() cycles is visible immediately. The
+            // previous implementation snapshotted the callback; callers that set the property
+            // AFTER start() saw their callback silently ignored until removeTap() ran.
+            // The property is set on MainActor and read on the audio thread — for optional
+            // closure reads this is a narrow data race, but the alternative (per-buffer lock)
+            // adds main-thread contention on every audio callback. Contract: callers MUST NOT
+            // reassign `onBufferAvailable` during active recording; reassignment is safe only
+            // between start/stop cycles.
+            self.onBufferAvailable?(buffer)
             self.dispatchToMain {
                 self.updateLevels(computedLevels)
             }
