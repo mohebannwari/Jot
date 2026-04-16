@@ -200,6 +200,47 @@ final class ThemeManagerTests: XCTestCase {
             "Light tint should be meaningfully brighter than dark tint at full intensity")
     }
 
+    // MARK: - Editor text flags (spellcheck/autocorrect/smart substitutions)
+
+    /// First-launch default for editor spellcheck/autocorrect/smart-quotes/smart-dashes must
+    /// be ON. Historically these read via `UserDefaults.bool(forKey:)` without a registered
+    /// default, which returns `false` when the key is absent — shipping the editor with
+    /// every macOS text-input nicety disabled out of the box.
+    func testEditorTextFlags_DefaultToTrueOnFirstLaunch() {
+        let (defaults, suiteName) = isolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let manager = ThemeManager(userDefaults: defaults)
+
+        XCTAssertTrue(manager.spellCheckEnabled,
+            "spellCheckEnabled must default to true on first launch")
+        XCTAssertTrue(manager.autocorrectEnabled,
+            "autocorrectEnabled must default to true on first launch")
+        XCTAssertTrue(manager.smartQuotesEnabled,
+            "smartQuotesEnabled must default to true on first launch")
+        XCTAssertTrue(manager.smartDashesEnabled,
+            "smartDashesEnabled must default to true on first launch")
+    }
+
+    /// User choice must still override the registered default: persisting `false` and
+    /// re-initializing must yield `false`, not the default.
+    func testEditorTextFlags_PersistedFalseOverridesDefault() {
+        let (defaults, suiteName) = isolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        defaults.set(false, forKey: ThemeManager.spellCheckKey)
+        defaults.set(false, forKey: ThemeManager.autocorrectKey)
+        defaults.set(false, forKey: ThemeManager.smartQuotesKey)
+        defaults.set(false, forKey: ThemeManager.smartDashesKey)
+
+        let manager = ThemeManager(userDefaults: defaults)
+
+        XCTAssertFalse(manager.spellCheckEnabled)
+        XCTAssertFalse(manager.autocorrectEnabled)
+        XCTAssertFalse(manager.smartQuotesEnabled)
+        XCTAssertFalse(manager.smartDashesEnabled)
+    }
+
     private func isolatedDefaults() -> (UserDefaults, String) {
         let suiteName = "ThemeManagerTests.\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suiteName) else {

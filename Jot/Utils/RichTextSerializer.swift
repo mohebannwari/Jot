@@ -60,6 +60,9 @@ enum RichTextSerializer {
         style.paragraphSpacing = 8
         style.firstLineHeadIndent = 20
         style.headIndent = 20
+        // Must mirror TextFormattingManager.toggleBlockQuote so reload geometry matches live toggle.
+        style.tailIndent = -4
+        style.lineBreakMode = .byWordWrapping
         return style
     }
 
@@ -439,6 +442,8 @@ enum RichTextSerializer {
                         underline: fmtUnderline, strikethrough: fmtStrikethrough,
                         alignment: fmtAlignment)
                     attrs[.orderedListNumber] = num
+                    // Hang-indent under the "N. " prefix so wrapped lines align past the number.
+                    attrs[.paragraphStyle] = orderedListParagraphStyle()
                     result.append(NSAttributedString(string: prefix, attributes: attrs))
                     index = closeBracket.upperBound; continue
                 }
