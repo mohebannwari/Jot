@@ -116,6 +116,12 @@ extension Notification.Name {
     /// saves read `@State` (see `NoteDetailView.onChange(of: note.id)`).
     static let jotFlushEditorSerializationBeforeNoteSwitch = Notification.Name(
         "jotFlushEditorSerializationBeforeNoteSwitch")
+    /// Broadcast flush: every live editor Coordinator drains its pending serialization. Used before
+    /// `NSApp.terminate(nil)` paths (e.g. `BackupManager.restoreBackup`) so in-flight 150ms-debounced
+    /// edits land on the binding before the process exits. Unlike the note-switch flush, this has
+    /// no `editorInstanceID` filter — every editor flushes.
+    static let jotFlushEditorSerializationBeforeTerminate = Notification.Name(
+        "jotFlushEditorSerializationBeforeTerminate")
 }
 
 // MARK: - Typing Animation Layout Manager
@@ -3395,6 +3401,19 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 }
             }
 
+            // Broadcast flush before `NSApp.terminate` paths (e.g. backup restore). Every live
+            // Coordinator flushes — no editorInstanceID filter, since we're about to die.
+            let flushSerializationBeforeTerminate = NotificationCenter.default.addObserver(
+                forName: .jotFlushEditorSerializationBeforeTerminate,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                guard let self else { return }
+                MainActor.assumeIsolated {
+                    self.flushPendingSerialization()
+                }
+            }
+
             observers = [
                 windowKey,
                 insertTodo, insertLink, convertToWebClip, insertFileLink, insertVoiceTranscript, insertImage, applyTool, applyCommandMenuTool,
@@ -3409,6 +3428,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 settingsObserver, syncMenuState, printNote, quickLookTrigger, quickLookHoverTrigger,
                 fileExtractTrigger,
                 flushSerializationBeforeNoteSwitch,
+                flushSerializationBeforeTerminate,
             ]
         }
 
