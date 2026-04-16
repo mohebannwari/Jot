@@ -24,12 +24,78 @@ private struct MeetingPickChoice: Identifiable {
 }
 
 /// One root quick action row used to filter commands while the palette query is non-empty (`activationIndex` matches `activateQuickAction(at:)`).
-private struct RootQuickActionFilterSpec: Identifiable {
+struct RootQuickActionFilterSpec: Identifiable {
     var id: Int { activationIndex }
     let activationIndex: Int
     let iconName: String
     let title: String
     let isEnabled: Bool
+}
+
+/// Catalog of keyword aliases for each root quick action index — title plus common synonyms
+/// like "floating panel" for index 1 or "preferences" for index 8. Pure value type so it can
+/// be unit-tested without materializing a SwiftUI view.
+///
+/// Indices 5 (pin), 6 (zen), and 7 (archive) depend on live app state (pin status, zen toggle,
+/// whether the note is archived), so those are passed as struct fields rather than read from a
+/// view-level `@State`.
+struct RootQuickActionKeywordCatalog {
+    /// Whether the currently selected note is pinned — flips index 5's primary label between
+    /// "Pin Note" and "Unpin Note". Alias terms "Pin" and "Unpin" are always included so either
+    /// verb matches regardless of current state.
+    let selectedNoteIsPinned: Bool
+    /// Whether the app is in zen mode — flips index 6's primary label between "Zen Mode" and
+    /// "Exit Zen Mode". Aliases "Zen" and "Focus" are always included.
+    let isZenMode: Bool
+    /// Current dynamic title for the archive/restore action (depends on selected-note archive
+    /// state). Aliases "Archive" and "Restore" are always included so either verb matches.
+    let archiveOrRestoreTitle: String
+
+    /// Keyword list for the given activation index — title plus common synonyms. Out-of-range
+    /// indices return an empty array.
+    func keywords(for index: Int) -> [String] {
+        switch index {
+        case 0:
+            return ["New Note"]
+        case 1:
+            return ["Floating Note", "Quick Note", "Quick Capture", "Floating Panel"]
+        case 2:
+            return ["Start Meeting Session in a Note", "Meeting", "Recording", "Session"]
+        case 3:
+            return ["New Folder", "Folder"]
+        case 4:
+            return ["New Split View", "Split View", "Split"]
+        case 5:
+            return [
+                selectedNoteIsPinned ? "Unpin Note" : "Pin Note",
+                "Pin",
+                "Unpin",
+            ]
+        case 6:
+            return [
+                isZenMode ? "Exit Zen Mode" : "Zen Mode",
+                "Zen",
+                "Focus",
+            ]
+        case 7:
+            return [
+                archiveOrRestoreTitle,
+                "Archive",
+                "Restore",
+            ]
+        case 8:
+            return ["Settings", "Preferences"]
+        default:
+            return []
+        }
+    }
+
+    /// True if any alias for this action contains `query` (diacritic- and case-insensitive).
+    func matches(index: Int, query: String) -> Bool {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return false }
+        return keywords(for: index).contains { $0.localizedStandardContains(q) }
+    }
 }
 
 /// Root command palette vs. meeting “pick a note to record” sub-state (Figma 2795:4389).
@@ -149,81 +215,11 @@ struct FloatingSearch: View {
         !trimmedSearch.isEmpty && !engine.results.isEmpty
     }
 
-    /// Root palette: typed query with at least one matching command and/or note/folder hit.
-    private var showMixedQueryResults: Bool {
-        guard paletteMode == .root, !trimmedSearch.isEmpty else { return false }
-        return !filteredRootQuickActionIndices.isEmpty || !engine.results.isEmpty
-    }
-
-    /// Meeting pick mode: typed query with note search hits (commands stay hidden; picker is for notes).
-    private var showNoteSearchResultsOnly: Bool {
-        guard paletteMode == .meetingPickNote, !trimmedSearch.isEmpty else { return false }
-        return !engine.results.isEmpty
-    }
-
-    /// Any scrollable hit list below the search field (commands + notes, or meeting search only).
+    /// Any scrollable hit list below the search field — unified root-mode list OR meeting-pick-note
+    /// search. Replaces the legacy `showMixedQueryResults || showNoteSearchResultsOnly` pair.
     private var showResultsPanel: Bool {
-        showMixedQueryResults || showNoteSearchResultsOnly
-    }
-
-    /// Quick actions whose titles/keywords match the current query (palette order, root mode only).
-    private var filteredRootQuickActionIndices: [Int] {
-        guard paletteMode == .root, !trimmedSearch.isEmpty else { return [] }
-        let q = trimmedSearch
-        var indices: [Int] = []
-        for idx in 0..<rootStandardQuickActionCount where rootQuickActionMatchesSearch(index: idx, query: q) {
-            indices.append(idx)
-        }
-        if hasDeferredUpdateRow, "Update App".localizedStandardContains(q) {
-            indices.append(deferredUpdateRowSelectableIndex)
-        }
-        return indices
-    }
-
-    /// Whether any searchable string for this quick action contains the query (diacritic/case insensitive).
-    private func rootQuickActionMatchesSearch(index: Int, query: String) -> Bool {
-        for term in rootQuickActionSearchKeywords(for: index) where term.localizedStandardContains(query) {
-            return true
-        }
-        return false
-    }
-
-    /// Titles plus common aliases so typing e.g. “floating” or “preferences” still finds commands.
-    private func rootQuickActionSearchKeywords(for index: Int) -> [String] {
-        switch index {
-        case 0:
-            return ["New Note"]
-        case 1:
-            return ["Floating Note", "Quick Note", "Quick Capture", "Floating Panel"]
-        case 2:
-            return ["Start Meeting Session in a Note", "Meeting", "Recording", "Session"]
-        case 3:
-            return ["New Folder", "Folder"]
-        case 4:
-            return ["New Split View", "Split View", "Split"]
-        case 5:
-            return [
-                selectedNote?.isPinned == true ? "Unpin Note" : "Pin Note",
-                "Pin",
-                "Unpin",
-            ]
-        case 6:
-            return [
-                isZenMode ? "Exit Zen Mode" : "Zen Mode",
-                "Zen",
-                "Focus",
-            ]
-        case 7:
-            return [
-                archiveOrRestoreQuickActionTitle,
-                "Archive",
-                "Restore",
-            ]
-        case 8:
-            return ["Settings", "Preferences"]
-        default:
-            return []
-        }
+        if typedQueryUnifiedListActive { return true }
+        return paletteMode == .meetingPickNote && showResults
     }
 
     /// Full root quick-action list in palette order (for typed-query filtering).
@@ -272,12 +268,23 @@ struct FloatingSearch: View {
         return rows
     }
 
-    /// Quick actions whose title matches the trimmed query (enabled rows only).
+    /// Keyword catalog constructed from live view state — used by the spec filter below so
+    /// queries like "Capture" alias onto "Floating Note" the same way the legacy index-filter
+    /// did before PR #22's refactor.
+    private var rootQuickActionKeywordCatalog: RootQuickActionKeywordCatalog {
+        RootQuickActionKeywordCatalog(
+            selectedNoteIsPinned: selectedNote?.isPinned == true,
+            isZenMode: isZenMode,
+            archiveOrRestoreTitle: archiveOrRestoreQuickActionTitle)
+    }
+
+    /// Quick actions whose title or keyword aliases match the trimmed query (enabled rows only).
     private var filteredRootQuickActionSpecs: [RootQuickActionFilterSpec] {
         let q = trimmedSearch
         guard !q.isEmpty else { return [] }
+        let catalog = rootQuickActionKeywordCatalog
         return allRootQuickActionFilterSpecs.filter { spec in
-            spec.isEnabled && spec.title.localizedCaseInsensitiveContains(q)
+            spec.isEnabled && catalog.matches(index: spec.activationIndex, query: q)
         }
     }
 
@@ -725,19 +732,18 @@ struct FloatingSearch: View {
         }
     }
 
-    private func deferredUpdateQuickRow(index: Int, combinedListSelectionIndex: Int? = nil) -> some View {
+    private func deferredUpdateQuickRow(index: Int) -> some View {
         quickActionRow(
             index: index,
             iconName: "IconUpdateDownload",
             title: "Update App",
             isEnabled: true,
-            combinedListSelectionIndex: combinedListSelectionIndex,
             trailing: { EmptyView() })
     }
 
     /// Single root quick action by palette index (0…8). Deferred “Update App” uses `deferredUpdateQuickRow` separately.
     @ViewBuilder
-    private func rootPaletteQuickActionRow(paletteIndex: Int, combinedListSelectionIndex: Int? = nil) -> some View {
+    private func rootPaletteQuickActionRow(paletteIndex: Int) -> some View {
         switch paletteIndex {
         case 0:
             quickActionRow(
@@ -745,7 +751,6 @@ struct FloatingSearch: View {
                 iconName: "IconEditSmall2",
                 title: "New Note",
                 isEnabled: true,
-                combinedListSelectionIndex: combinedListSelectionIndex,
                 trailing: { sidebarStyleShortcutLabel("\u{2318}N") })
         case 1:
             quickActionRow(
@@ -753,7 +758,6 @@ struct FloatingSearch: View {
                 iconName: "IconFloatingNote",
                 title: "Floating Note",
                 isEnabled: true,
-                combinedListSelectionIndex: combinedListSelectionIndex,
                 trailing: { sidebarStyleShortcutLabel(quickNoteShortcutDisplay) })
         case 2:
             quickActionRow(
@@ -761,7 +765,6 @@ struct FloatingSearch: View {
                 iconName: "IconMicrophoneSparkle",
                 title: "Start Meeting Session in a Note",
                 isEnabled: true,
-                combinedListSelectionIndex: combinedListSelectionIndex,
                 trailing: { sidebarStyleShortcutLabel(startMeetingSessionShortcutDisplay) })
         case 3:
             quickActionRow(
@@ -769,7 +772,6 @@ struct FloatingSearch: View {
                 iconName: "IconFolderAddRight",
                 title: "New Folder",
                 isEnabled: true,
-                combinedListSelectionIndex: combinedListSelectionIndex,
                 trailing: { EmptyView() })
         case 4:
             quickActionRow(
@@ -777,7 +779,6 @@ struct FloatingSearch: View {
                 iconName: "IconSplit",
                 title: "New Split View",
                 isEnabled: true,
-                combinedListSelectionIndex: combinedListSelectionIndex,
                 trailing: { EmptyView() })
         case 5:
             quickActionRow(
@@ -785,7 +786,6 @@ struct FloatingSearch: View {
                 iconName: selectedNote?.isPinned == true ? "IconUnpin" : "IconThumbtack",
                 title: selectedNote?.isPinned == true ? "Unpin Note" : "Pin Note",
                 isEnabled: selectedNote != nil,
-                combinedListSelectionIndex: combinedListSelectionIndex,
                 trailing: { EmptyView() })
         case 6:
             quickActionRow(
@@ -794,7 +794,6 @@ struct FloatingSearch: View {
                 // Same wording as meeting-picker header when the sidebar is hidden (⌘. toggles either way).
                 title: isZenMode ? "Exit Zen Mode" : "Zen Mode",
                 isEnabled: true,
-                combinedListSelectionIndex: combinedListSelectionIndex,
                 trailing: { sidebarStyleShortcutLabel("\u{2318}.") })
         case 7:
             quickActionRow(
@@ -802,7 +801,6 @@ struct FloatingSearch: View {
                 iconName: archiveOrRestoreQuickActionIcon,
                 title: archiveOrRestoreQuickActionTitle,
                 isEnabled: isArchiveOrRestoreQuickActionEnabled,
-                combinedListSelectionIndex: combinedListSelectionIndex,
                 trailing: { EmptyView() })
         case 8:
             quickActionRow(
@@ -810,7 +808,6 @@ struct FloatingSearch: View {
                 iconName: "IconSettingsGear1",
                 title: "Settings",
                 isEnabled: true,
-                combinedListSelectionIndex: combinedListSelectionIndex,
                 trailing: { sidebarStyleShortcutLabel("\u{2318},") })
         default:
             EmptyView()
@@ -820,7 +817,7 @@ struct FloatingSearch: View {
     @ViewBuilder
     private var rootStandardQuickActionRows: some View {
         ForEach(0..<rootStandardQuickActionCount, id: \.self) { paletteIndex in
-            rootPaletteQuickActionRow(paletteIndex: paletteIndex, combinedListSelectionIndex: nil)
+            rootPaletteQuickActionRow(paletteIndex: paletteIndex)
         }
     }
 
@@ -829,15 +826,9 @@ struct FloatingSearch: View {
         iconName: String,
         title: String,
         isEnabled: Bool,
-        combinedListSelectionIndex: Int? = nil,
         @ViewBuilder trailing: () -> Trailing
     ) -> some View {
-        let isSelected: Bool = {
-            if let listIndex = combinedListSelectionIndex {
-                return showMixedQueryResults && selectedResultIndex == listIndex
-            }
-            return isEmptyQuery && !showResultsPanel && selectedResultIndex == index
-        }()
+        let isSelected = isEmptyQuery && !showResultsPanel && selectedResultIndex == index
         return Button {
             activateQuickAction(at: index)
         } label: {
@@ -878,9 +869,7 @@ struct FloatingSearch: View {
         .opacity(isEnabled ? 1 : 0.45)
         .onHover { hovering in
             guard hovering, isEnabled else { return }
-            if let listIndex = combinedListSelectionIndex, showMixedQueryResults {
-                selectedResultIndex = listIndex
-            } else if isEmptyQuery, !showResultsPanel {
+            if isEmptyQuery, !showResultsPanel {
                 selectedResultIndex = index
             }
         }
@@ -1427,15 +1416,11 @@ struct FloatingSearch: View {
         guard !trimmed.isEmpty else { return }
 
         engine.recordCommittedQuery(trimmed)
-        if showMixedQueryResults {
-            let cmds = filteredRootQuickActionIndices
-            if selectedResultIndex < cmds.count {
-                activateQuickAction(at: cmds[selectedResultIndex])
-            } else if !engine.results.isEmpty {
-                let resultIndex = selectedResultIndex - cmds.count
-                selectSearchHit(at: resultIndex, recordQuery: false)
-            }
-        } else if !engine.results.isEmpty {
+        // Command activation in root mode is handled by `handleReturnKey` via the unified list
+        // path before this function is called — so by the time we're here, either we're in
+        // meetingPickNote mode with note results, or the user pressed Enter on a typed query
+        // with zero selectable rows (just recording the committed query above).
+        if !engine.results.isEmpty {
             selectCurrentResult(recordQuery: false)
         }
     }
@@ -1623,29 +1608,6 @@ struct FloatingSearch: View {
             case .up:
                 selectedResultIndex = max(selectedResultIndex - 1, 0)
             }
-        }
-    }
-
-    /// Arrow keys when both command matches and note hits are listed (commands first).
-    private func navigateMixedQueryResults(direction: NavigationDirection) {
-        let cmdCount = filteredRootQuickActionIndices.count
-        let total = cmdCount + engine.results.count
-        guard total > 0 else { return }
-
-        switch direction {
-        case .down:
-            selectedResultIndex = min(selectedResultIndex + 1, total - 1)
-        case .up:
-            selectedResultIndex = max(selectedResultIndex - 1, 0)
-        }
-
-        if selectedResultIndex >= cmdCount {
-            let ri = selectedResultIndex - cmdCount
-            if ri < engine.results.count {
-                hoveredResultID = engine.results[ri].id
-            }
-        } else {
-            hoveredResultID = nil
         }
     }
 
