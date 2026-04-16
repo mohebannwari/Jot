@@ -46,6 +46,39 @@ final class SearchEngineTests: XCTestCase {
         XCTAssertEqual(engine.results.first?.note?.id, n.id)
     }
 
+    /// When the query is empty (palette closed / empty field), `setNotes` must NOT trigger a
+    /// full O(N) scan. The editor autosaves every 150ms and pipes through `setNotes`; scanning
+    /// every note on every autosave while the palette is closed is pure waste.
+    @MainActor
+    func testSetNotes_EmptyQuery_LeavesResultsEmpty() {
+        let engine = SearchEngine()
+        // query starts empty — setNotes should short-circuit before performSearch.
+        engine.setNotes([Note(title: "Alpha", content: "body")])
+        XCTAssertTrue(engine.results.isEmpty)
+    }
+
+    /// Same guard for `setFolders`.
+    @MainActor
+    func testSetFolders_EmptyQuery_LeavesResultsEmpty() {
+        let engine = SearchEngine()
+        engine.setFolders([Folder(name: "WorkFolder")])
+        XCTAssertTrue(engine.results.isEmpty)
+    }
+
+    /// When a query IS active, setNotes must still live-update results. Regression guard for
+    /// the empty-query short-circuit above.
+    @MainActor
+    func testSetNotes_WithActiveQuery_LiveUpdatesResults() {
+        let engine = SearchEngine()
+        engine.query = "alpha"
+        engine.setNotes([]) // no matches yet
+        XCTAssertTrue(engine.results.isEmpty)
+
+        engine.setNotes([Note(title: "Alpha", content: "")])
+        XCTAssertEqual(engine.results.first?.note?.title, "Alpha",
+            "With an active query, setNotes must trigger performSearch so new notes surface")
+    }
+
     @MainActor
     func testCommittedQueriesDedupedAndOrderedNewestFirst() {
         let (engine, defaults, suiteName) = makeIsolatedSearchEngine()

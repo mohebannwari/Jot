@@ -159,33 +159,43 @@ final class NoteEntity {
         self.modifiedAt = Date()
     }
 
+    /// Syncs `webClipURL/Title/Description` with the `[[webclip|title|desc|url]]` marker in `content`.
+    /// If the marker was removed from the note (user deleted it), the fields are cleared so the
+    /// entity stops reporting `isWebClip == true` forever. Called on `updateContent` and on
+    /// `init(from:)` — safe to run repeatedly because it's idempotent on unchanged content.
     private func extractWebClipData() {
-        // Extract webclip data from legacy content format
-        // Format: [[webclip|title|description|url]]
         let range = NSRange(content.startIndex..<content.endIndex, in: content)
-        if let match = Self.webClipRegex.firstMatch(in: content, range: range) {
-            if match.numberOfRanges >= 4 {
-                let titleRange = match.range(at: 1)
-                let descRange = match.range(at: 2)
-                let urlRange = match.range(at: 3)
-
-                if let titleSubstring = Range(titleRange, in: content),
-                   let descSubstring = Range(descRange, in: content),
-                   let urlSubstring = Range(urlRange, in: content) {
-
-                    self.webClipTitle = String(content[titleSubstring])
-                    self.webClipDescription = String(content[descSubstring])
-                    self.webClipURL = String(content[urlSubstring])
-                }
-            }
+        guard let match = Self.webClipRegex.firstMatch(in: content, range: range),
+              match.numberOfRanges >= 4,
+              let titleSubstring = Range(match.range(at: 1), in: content),
+              let descSubstring = Range(match.range(at: 2), in: content),
+              let urlSubstring = Range(match.range(at: 3), in: content)
+        else {
+            // No marker found — clear any previously-extracted web clip fields so the note
+            // no longer reports as a web clip. This fixes a bug where deleting the marker
+            // left `isWebClip == true` forever because extractWebClipData only wrote fields
+            // on match, never cleared them on miss.
+            self.webClipTitle = nil
+            self.webClipDescription = nil
+            self.webClipURL = nil
+            return
         }
+
+        self.webClipTitle = String(content[titleSubstring])
+        self.webClipDescription = String(content[descSubstring])
+        self.webClipURL = String(content[urlSubstring])
     }
 
     // MARK: - Update Methods
     func updateContent(_ newContent: String) {
+        // Skip regex scan when content is unchanged — saves work on autosave flush cycles
+        // that write identical content (e.g. title-only edits that round-trip through updateContent).
+        let contentChanged = newContent != self.content
         self.content = newContent
         self.modifiedAt = Date()
-        self.extractWebClipData()
+        if contentChanged {
+            self.extractWebClipData()
+        }
     }
 
     func updateTitle(_ newTitle: String) {
