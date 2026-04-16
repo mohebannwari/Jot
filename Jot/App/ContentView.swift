@@ -397,6 +397,16 @@ struct ContentView: View {
             selectedNote = note
             selectedNoteIDs = [note.id]
         }
+
+        // Prime `activeSplitPane = .primary` when restoring a visible split. The value otherwise
+        // stays nil until an editor's first-responder notification arrives, during which window
+        // both panes render as "inactive" (dimmed, no shadow). Matches `performSplit` which
+        // also sets `.primary` after creating a fresh split.
+        if isSplitViewVisible,
+           activeSplitPane == nil,
+           valid.first(where: { $0.id == activeSplitID })?.isComplete == true {
+            activeSplitPane = .primary
+        }
     }
 
     private func toggleSidebar(to visible: Bool? = nil) {
