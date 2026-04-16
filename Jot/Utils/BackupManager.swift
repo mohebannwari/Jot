@@ -204,12 +204,37 @@ final class BackupManager: ObservableObject {
         return results.sorted { $0.manifest.timestamp > $1.manifest.timestamp }
     }
 
-    /// Initiates a restore: writes the backup path to UserDefaults and terminates the app.
-    /// On next launch, JotApp.init() checks this flag and performs the actual restore.
+    /// Initiates a restore: flushes pending editor writes, writes the backup path to UserDefaults,
+    /// then terminates the app. On next launch `JotApp.init()` finds the flag and performs the
+    /// actual restore.
+    ///
+    /// The flush step matters because the editor debounces serialization by 150ms; without it,
+    /// any text typed in the last 150ms before the user confirms "Restore" would be lost when
+    /// `NSApp.terminate(nil)` exits the process before the debounce timer fires.
     func restoreBackup(_ backupURL: URL) {
-        userDefaults.set(backupURL.path, forKey: "pendingRestoreBackupPath")
+        Self.prepareRestore(
+            backupPath: backupURL.path,
+            userDefaults: userDefaults,
+            notificationCenter: .default)
         logger.info("Restore flag set for: \(backupURL.path). Terminating app.")
         NSApp.terminate(nil)
+    }
+
+    /// Side-effect-only seam for `restoreBackup`, exposed for testing. Writes the pending-restore
+    /// flag to `userDefaults` and broadcasts `.jotFlushEditorSerializationBeforeTerminate` so every
+    /// live editor Coordinator flushes its debounced serialization before the caller terminates.
+    static func prepareRestore(
+        backupPath: String,
+        userDefaults: UserDefaults,
+        notificationCenter: NotificationCenter
+    ) {
+        // Order: flush first so in-flight edits land on the binding, THEN write the restore flag.
+        // Reversing the order would be fine today, but this ordering keeps the invariant obvious:
+        // "by the time the flag is persisted, all editors have drained."
+        notificationCenter.post(
+            name: .jotFlushEditorSerializationBeforeTerminate,
+            object: nil)
+        userDefaults.set(backupPath, forKey: "pendingRestoreBackupPath")
     }
 
     /// Checks for and executes a pending restore on app launch.
