@@ -474,7 +474,9 @@ struct SettingsPage: View {
                                     Text("Change password")
                                         .font(FontManager.heading(size: 13, weight: .medium))
                                         .tracking(-0.5)
-                                        .foregroundColor(Color(red: 0x25/255, green: 0x63/255, blue: 0xeb/255))
+                                        // Was literally AccentColor light (#2563EB) hardcoded inline;
+                                        // use the token so dark-mode + tint-hue adjustments carry.
+                                        .foregroundColor(Color("AccentColor"))
                                 }
                                 .buttonStyle(.plain)
                                 .macPointingHandCursor()
@@ -586,11 +588,15 @@ struct SettingsPage: View {
             HStack(alignment: .top, spacing: 8) {
                 ZStack {
                     Circle()
-                        .fill(isOn.wrappedValue ? Color("ButtonPrimaryBgColor") : (colorScheme == .dark ? Color(white: 0.18) : Color.white))
+                        .fill(isOn.wrappedValue
+                              ? Color("ButtonPrimaryBgColor")
+                              : Color("CheckboxUncheckedFillColor"))
                         .frame(width: 15, height: 15)
 
                     Circle()
-                        .strokeBorder(isOn.wrappedValue ? Color.clear : (colorScheme == .dark ? Color(white: 0.35) : Color(white: 0.72)), lineWidth: 1)
+                        .strokeBorder(isOn.wrappedValue
+                                      ? Color.clear
+                                      : Color("CheckboxUncheckedStrokeColor"), lineWidth: 1)
                         .frame(width: 15, height: 15)
 
                     if isOn.wrappedValue {
@@ -1197,7 +1203,9 @@ struct SettingsPage: View {
             .padding(.vertical, 8)
             .background(
                 Capsule()
-                    .fill(Color(red: 34/255, green: 197/255, blue: 94/255))
+                    // Was Tailwind green-500 (#22C55E) hardcoded; SwiftUI `.green` is
+                    // theme-aware and close enough for a transient "feedback sent" state.
+                    .fill(Color.green)
                     .matchedGeometryEffect(id: "sendButtonBg", in: feedbackAnimation)
             )
         } else {
