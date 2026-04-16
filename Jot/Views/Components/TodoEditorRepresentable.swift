@@ -1727,33 +1727,6 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05, execute: work)
         }
 
-        // #region agent log
-        private static let jotDebugSessionPath = "/Users/mohebanwari/development/Jot/.cursor/debug-182eaa.log"
-        /// NDJSON lines for debug session `182eaa` (do not log PII).
-        private static func jotAgentDebugNDJSON(hypothesisId: String, location: String, message: String, data: [String: Any]) {
-            var payload: [String: Any] = [
-                "sessionId": "182eaa",
-                "timestamp": Int(Date().timeIntervalSince1970 * 1000),
-                "hypothesisId": hypothesisId,
-                "location": location,
-                "message": message,
-                "data": data
-            ]
-            guard JSONSerialization.isValidJSONObject(payload),
-                  let json = try? JSONSerialization.data(withJSONObject: payload),
-                  let line = String(data: json, encoding: .utf8) else { return }
-            let path = jotDebugSessionPath
-            if !FileManager.default.fileExists(atPath: path) {
-                FileManager.default.createFile(atPath: path, contents: nil)
-            }
-            let url = URL(fileURLWithPath: path)
-            guard let handle = try? FileHandle(forWritingTo: url) else { return }
-            defer { try? handle.close() }
-            try? handle.seekToEnd()
-            try? handle.write(contentsOf: Data((line + "\n").utf8))
-        }
-        // #endregion
-
         /// Forces text layout to finish, then updates every overlay **without** implicit
         /// NSView/CALayer animations. Note switches used to skip `ensureLayout` (unlike
         /// `applyInitialText`), so glyph rects were stale for the first overlay frame —
@@ -7096,21 +7069,6 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 let widthDrift = abs(currentWidth - desiredWidth) > 1
                 let heightDrift = abs(attachment.bounds.height - expectedHeight) > 1
                 if widthDrift || heightDrift {
-                    // #region agent log
-                    Self.jotAgentDebugNDJSON(
-                        hypothesisId: "H5",
-                        location: "TodoEditorRepresentable.updateCodeBlockOverlays",
-                        message: "codeBlockCorrection",
-                        data: [
-                            "oid": String(describing: ObjectIdentifier(attachment)),
-                            "widthDrift": widthDrift,
-                            "heightDrift": heightDrift,
-                            "desiredW": Double(desiredWidth),
-                            "currentW": Double(currentWidth),
-                            "currentH": Double(attachment.bounds.height),
-                            "expectedH": Double(expectedHeight)
-                        ])
-                    // #endregion
                     let newSize = CGSize(width: desiredWidth, height: expectedHeight)
                     attachment.attachmentCell = CodeBlockSizeAttachmentCell(size: newSize)
                     attachment.bounds = CGRect(origin: .zero, size: newSize)
@@ -7275,21 +7233,6 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     || abs(attachment.bounds.height - expectedHeight) > 1
                     || atMinFromDeserialization
                 if needsCorrection {
-                    // #region agent log
-                    Self.jotAgentDebugNDJSON(
-                        hypothesisId: "H2",
-                        location: "TodoEditorRepresentable.updateTabsOverlays",
-                        message: "tabsNeedsCorrection",
-                        data: [
-                            "oid": String(describing: ObjectIdentifier(attachment)),
-                            "dataContainerH": Double(attachment.tabsData.containerHeight),
-                            "boundsW": Double(currentWidth),
-                            "boundsH": Double(attachment.bounds.height),
-                            "expectedH": Double(expectedHeight),
-                            "atMinDeserialize": atMinFromDeserialization,
-                            "containerW": Double(containerW)
-                        ])
-                    // #endregion
                     let correctedWidth: CGFloat
                     if atMinFromDeserialization {
                         correctedWidth = containerW
@@ -7402,16 +7345,6 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     // ── onHeightChanged ──
                     overlay.onHeightChanged = { [weak self, weak textStorage, weak layoutManager, weak attachment] newHeight in
                         guard let self = self, let ts = textStorage, let lm = layoutManager, let att = attachment else { return }
-                        // #region agent log
-                        Self.jotAgentDebugNDJSON(
-                            hypothesisId: "H4",
-                            location: "TodoEditorRepresentable.tabsOnHeightChanged",
-                            message: "heightResize",
-                            data: [
-                                "oid": String(describing: ObjectIdentifier(att)),
-                                "newBodyHeight": Double(newHeight)
-                            ])
-                        // #endregion
                         att.tabsData.containerHeight = newHeight
                         let totalH = TabsContainerOverlayView.totalHeight(for: att.tabsData)
                         let newSize = CGSize(width: att.bounds.width, height: totalH)
@@ -8493,17 +8426,6 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 } else if let codeBlockAttachment = attributes[.attachment] as? NoteCodeBlockAttachment {
                     output.append(codeBlockAttachment.codeBlockData.serialize())
                 } else if let tabsAttachment = attributes[.attachment] as? NoteTabsAttachment {
-                    // #region agent log
-                    Self.jotAgentDebugNDJSON(
-                        hypothesisId: "H1",
-                        location: "TodoEditorRepresentable.serialize",
-                        message: "tabsAttachmentEmit",
-                        data: [
-                            "oid": String(describing: ObjectIdentifier(tabsAttachment)),
-                            "containerHeight": Double(tabsAttachment.tabsData.containerHeight),
-                            "serializePrefix": String(tabsAttachment.tabsData.serialize().prefix(140))
-                        ])
-                    // #endregion
                     output.append(tabsAttachment.tabsData.serialize())
                 } else if let cardSectionAttachment = attributes[.attachment] as? NoteCardSectionAttachment {
                     output.append(cardSectionAttachment.cardSectionData.serialize())
@@ -9143,16 +9065,6 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     if let closingRange = remaining.range(of: "[[/tabs]]") {
                         let tabsText = String(remaining[remaining.startIndex..<closingRange.upperBound])
                         if let tabsData = TabsContainerData.deserialize(from: tabsText) {
-                            // #region agent log
-                            Self.jotAgentDebugNDJSON(
-                                hypothesisId: "H3",
-                                location: "TodoEditorRepresentable.deserialize",
-                                message: "tabsParsed",
-                                data: [
-                                    "containerHeight": Double(tabsData.containerHeight),
-                                    "tabsTextPrefix": String(tabsText.prefix(120))
-                                ])
-                            // #endregion
                             let baseAttributes = Self.baseTypingAttributes(for: currentColorScheme)
                             if result.length > 0,
                                let lastScalar = result.string.unicodeScalars.last,
