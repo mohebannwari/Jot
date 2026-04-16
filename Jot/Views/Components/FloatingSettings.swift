@@ -695,7 +695,9 @@ struct SettingsPage: View {
                     .scaledToFill()
                     .frame(maxWidth: .infinity)
                     .frame(height: themeCardHeight)
-                    .clipped()
+                    // `.clipShape` on a `.scaledToFill` image masks overflow to the rounded rect;
+                    // no separate `.clipped()` needed. Previously both were stacked, which made
+                    // SwiftUI run two rasterization passes on the same frame.
                     .clipShape(RoundedRectangle(cornerRadius: bodyFontCardRadius, style: .continuous))
 
                 settingsSelectionLabel(label, isSelected: isSelected)
