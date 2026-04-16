@@ -337,6 +337,15 @@ final class ThemeManager: ObservableObject {
             userDefaults.string(forKey: Self.bodyFontStyleDefaultsKey) ?? BodyFontStyle.default.rawValue
         self.currentBodyFontStyle = BodyFontStyle(rawValue: savedBodyFontStyle) ?? .default
 
+        // Editor text-input niceties default ON to match every other macOS text editor.
+        // Must register BEFORE the .bool(forKey:) reads below — .bool returns the registered
+        // default when the key is absent, but `false` when no default was registered.
+        userDefaults.register(defaults: [
+            Self.spellCheckKey: true,
+            Self.autocorrectKey: true,
+            Self.smartQuotesKey: true,
+            Self.smartDashesKey: true,
+        ])
         self.spellCheckEnabled = userDefaults.bool(forKey: Self.spellCheckKey)
         self.autocorrectEnabled = userDefaults.bool(forKey: Self.autocorrectKey)
         self.smartQuotesEnabled = userDefaults.bool(forKey: Self.smartQuotesKey)
