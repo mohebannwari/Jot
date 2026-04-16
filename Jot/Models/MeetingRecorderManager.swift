@@ -136,9 +136,19 @@ final class MeetingRecorderManager: ObservableObject {
                 )
                 summaryResult = result
             } catch {
+                // Fallback summary includes a snippet of the raw transcript so the user sees
+                // their words rather than an empty body. The full serialized transcript is
+                // saved to the MeetingSession regardless of summary success.
+                let snippet = segments.prefix(8)
+                    .map(\.text)
+                    .joined(separator: " ")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                let fallbackBody = snippet.isEmpty
+                    ? "Summary generation failed. The full transcript is saved on this note."
+                    : "Summary generation failed. Transcript saved — first lines:\n\n\(snippet)"
                 summaryResult = MeetingSummaryDisplayResult(
                     title: "Meeting Notes",
-                    summary: "Summary generation failed. Transcript saved.",
+                    summary: fallbackBody,
                     keyPoints: [],
                     actionItems: [],
                     decisions: []
@@ -148,6 +158,30 @@ final class MeetingRecorderManager: ObservableObject {
             isSummaryLoading = false
             recordingState = .complete
             selectedTab = .summary
+        }
+    }
+
+    /// Re-runs summary generation from the existing transcript segments. Use when the initial
+    /// `stopRecording` summary generation failed (FoundationModels unavailable, throttled, etc.)
+    /// The audio file is already cleaned up at this point, but transcript segments live in the
+    /// `transcriptionService` until dismissed — so retry is possible as long as the meeting
+    /// panel hasn't been dismissed.
+    func retrySummary() async {
+        guard recordingState == .complete else { return }
+        let segments = transcriptionService.segments
+        guard !segments.isEmpty else { return }
+
+        isSummaryLoading = true
+        defer { isSummaryLoading = false }
+
+        do {
+            let (result, _) = try await summaryGenerator.generateSummary(
+                from: segments,
+                manualNotes: manualNotes
+            )
+            summaryResult = result
+        } catch {
+            // Preserve previous fallback body on retry failure — don't mask it with a generic error.
         }
     }
 
