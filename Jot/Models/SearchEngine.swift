@@ -71,6 +71,12 @@ final class SearchEngine: ObservableObject {
         }
         let validNoteIDs = Set(notes.map(\.id))
         pruneRecentOpenedNoteTargets(validNoteIDs: validNoteIDs)
+        // Skip the full O(N) scan when no query is active. The editor autosaves every 150ms,
+        // which calls into `setNotes` via the notes pipeline — scanning every note on every
+        // autosave while the palette is closed is pure waste. `performSearch()` already early-
+        // returns on empty query but re-scans the moment the user types, so live updates still
+        // work when the palette is open.
+        guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         performSearch()
     }
 
@@ -78,6 +84,7 @@ final class SearchEngine: ObservableObject {
         allFolders = folders
         let validFolderIDs = Set(folders.map(\.id))
         pruneRecentOpenedFolderTargets(validFolderIDs: validFolderIDs)
+        guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         performSearch()
     }
 
