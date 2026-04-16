@@ -584,10 +584,10 @@ private struct MeetingCheckbox: View {
                     .frame(width: size, height: size)
             } else {
                 Circle()
-                    .fill(colorScheme == .dark ? Color(white: 0.18) : .white)
+                    .fill(Color("CheckboxUncheckedFillColor"))
                     .frame(width: size, height: size)
                 Circle()
-                    .strokeBorder(colorScheme == .dark ? Color(white: 0.35) : Color(white: 0.72), lineWidth: borderWidth)
+                    .strokeBorder(Color("CheckboxUncheckedStrokeColor"), lineWidth: borderWidth)
                     .frame(width: size, height: size)
             }
         }
