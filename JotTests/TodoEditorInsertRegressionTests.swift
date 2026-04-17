@@ -418,6 +418,42 @@ final class TodoEditorInsertRegressionTests: XCTestCase {
         XCTAssertEqual(label, "Click")
     }
 
+    // MARK: - Inline-code pill bounds (B1)
+
+    /// Regression: inline-code pill previously used `boundingRect(forGlyphRange:in:)`
+    /// directly, which returns line-fragment-sized rects (≈1.5× font size). The pill
+    /// fill then extended well above cap-height and below the descender, giving
+    /// visible vertical bloat. The helper must compute a tight rect from font metrics.
+    func testInlineCodePillRect_HugsFontMetrics_NotLineFragmentHeight() {
+        let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+        // Simulated layout: a 20pt-tall line fragment with the baseline 10pt down.
+        let lineRect = CGRect(x: 0, y: 0, width: 500, height: 20)
+        let segmentRect = CGRect(x: 100, y: 2, width: 40, height: 16)
+        let baselineLocation = CGPoint(x: 0, y: 10)
+
+        let pill = TypingAnimationLayoutManager.inlineCodePillRect(
+            lineRect: lineRect,
+            segmentRect: segmentRect,
+            baselineLocation: baselineLocation,
+            font: font
+        )
+
+        let expectedHeight = font.capHeight + abs(font.descender) + 3  // 2 × 1.5pt padding
+        XCTAssertEqual(pill.height, expectedHeight, accuracy: 0.01,
+            "Pill height must hug font metrics (capHeight + |descender| + padding), not line-fragment height")
+        XCTAssertLessThan(pill.height, lineRect.height - 2,
+            "Pill must be meaningfully shorter than the line-fragment rect (this is the whole B1 fix)")
+
+        let expectedTop = 10 - font.capHeight - 1.5
+        XCTAssertEqual(pill.origin.y, expectedTop, accuracy: 0.01,
+            "Pill top should sit at baseline − capHeight − padding")
+
+        XCTAssertEqual(pill.width, 40 + 4, accuracy: 0.01,
+            "Pill width should equal segment width + 2 × horizontal bleed")
+        XCTAssertEqual(pill.origin.x, 100 - 2, accuracy: 0.01,
+            "Pill x should sit at segment.x − horizontal bleed")
+    }
+
     // MARK: - Legacy Unicode-arrow deserialize (C1)
 
     /// Regression: a legacy `\u{2192} ` (arrow + space) at line start must produce a single

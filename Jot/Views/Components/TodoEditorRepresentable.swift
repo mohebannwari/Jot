@@ -463,25 +463,74 @@ final class TypingAnimationLayoutManager: NSLayoutManager {
                                 safeCharRange: safeCharRange, context: ctx)
         }
 
-        // Inline code pills — one rounded rect per line fragment so wrapped monospace runs do not get
-        // a single stretched pill across the full union bounding box.
+        // Inline code pills — one tight rounded rect per line fragment so wrapped monospace runs
+        // do not get a single stretched pill across the full union bounding box. The vertical
+        // extent is computed from font metrics (capHeight + descender) rather than from
+        // `boundingRect(forGlyphRange:in:)`, which returns line-fragment-sized rects and would
+        // leave the pill much taller than the actual glyphs.
         textStorage.enumerateAttribute(.inlineCode, in: safeCharRange, options: []) { value, attrRange, _ in
             guard value as? Bool == true else { return }
             let fullGlyphRange = self.glyphRange(forCharacterRange: attrRange, actualCharacterRange: nil)
             guard fullGlyphRange.length > 0, NSMaxRange(fullGlyphRange) <= totalGlyphs else { return }
-            self.enumerateLineFragments(forGlyphRange: fullGlyphRange) { _, _, container, lineGlyphRange, _ in
+            self.enumerateLineFragments(forGlyphRange: fullGlyphRange) { lineRect, _, container, lineGlyphRange, _ in
                 let lineCharRange = self.characterRange(forGlyphRange: lineGlyphRange, actualGlyphRange: nil)
                 let overlap = NSIntersectionRange(attrRange, lineCharRange)
                 guard overlap.length > 0 else { return }
                 let overlapGlyphs = self.glyphRange(forCharacterRange: overlap, actualCharacterRange: nil)
                 guard overlapGlyphs.length > 0, NSMaxRange(overlapGlyphs) <= totalGlyphs else { return }
-                var rect = self.boundingRect(forGlyphRange: overlapGlyphs, in: container)
-                rect = rect.insetBy(dx: 0, dy: 1.5)
-                let pillRect = rect.offsetBy(dx: origin.x, dy: origin.y)
+                let segmentRect = self.boundingRect(forGlyphRange: overlapGlyphs, in: container)
+                let charIdx = self.characterIndexForGlyph(at: overlapGlyphs.location)
+                let font = (textStorage.attribute(.font, at: charIdx, effectiveRange: nil) as? NSFont)
+                    ?? NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+                let baselineLocation = self.location(forGlyphAt: overlapGlyphs.location)
+                let tightRect = TypingAnimationLayoutManager.inlineCodePillRect(
+                    lineRect: lineRect,
+                    segmentRect: segmentRect,
+                    baselineLocation: baselineLocation,
+                    font: font
+                )
+                let pillRect = tightRect.offsetBy(dx: origin.x, dy: origin.y)
                 NSColor.labelColor.withAlphaComponent(0.08).setFill()
-                NSBezierPath(roundedRect: pillRect, xRadius: 2, yRadius: 2).fill()
+                NSBezierPath(roundedRect: pillRect, xRadius: 3, yRadius: 3).fill()
             }
         }
+    }
+
+    /// Tight pill rect around an inline-code glyph run within a single line fragment.
+    ///
+    /// Vertical extent comes from font metrics: `baseline − capHeight − padding` to
+    /// `baseline + |descender| + padding`. Horizontal extent is the bounding rect of the
+    /// glyphs plus a small bleed on each side. This replaces the earlier approach that
+    /// used `boundingRect(forGlyphRange:in:)` directly — that API returns line-fragment-sized
+    /// rects, which made the pill fill span the full line height (~1.5× font size) rather
+    /// than hugging the glyphs.
+    ///
+    /// - Parameters:
+    ///   - lineRect: the line fragment rect in container coords (from `enumerateLineFragments`).
+    ///   - segmentRect: `boundingRect(forGlyphRange:in:)` for the per-line glyph range.
+    ///   - baselineLocation: `location(forGlyphAt:)` for the first glyph; `.y` is the baseline
+    ///     offset within the line fragment.
+    ///   - font: the font at the run's first character.
+    ///   - verticalPadding: bleed above cap-height and below descender (default 1.5pt).
+    ///   - horizontalBleed: bleed on each side of the glyph run (default 2pt).
+    /// - Returns: pill rect in container coords; the caller offsets by draw origin.
+    static func inlineCodePillRect(
+        lineRect: CGRect,
+        segmentRect: CGRect,
+        baselineLocation: CGPoint,
+        font: NSFont,
+        verticalPadding: CGFloat = 1.5,
+        horizontalBleed: CGFloat = 2
+    ) -> CGRect {
+        let baselineY = lineRect.origin.y + baselineLocation.y
+        let top = baselineY - font.capHeight - verticalPadding
+        let height = font.capHeight + abs(font.descender) + verticalPadding * 2
+        return CGRect(
+            x: segmentRect.origin.x - horizontalBleed,
+            y: top,
+            width: segmentRect.width + horizontalBleed * 2,
+            height: height
+        )
     }
 
     // MARK: - Organic Highlight Shape Drawing
