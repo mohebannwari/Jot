@@ -48,9 +48,12 @@ enum RichTextSerializer {
     static func invalidateCaches() {
         _cachedTextFont = nil
         _cachedBaseParagraphStyle = nil
+        _cachedBlockQuoteParagraphStyle = nil
     }
 
+    private static var _cachedBlockQuoteParagraphStyle: NSParagraphStyle?
     static func blockQuoteParagraphStyle() -> NSParagraphStyle {
+        if let cached = _cachedBlockQuoteParagraphStyle { return cached }
         let spacing = ThemeManager.currentLineSpacing()
         let scaledHeight = baseLineHeight * spacing.multiplier / 1.2
         let style = NSMutableParagraphStyle()
@@ -63,7 +66,19 @@ enum RichTextSerializer {
         // Must mirror TextFormattingManager.toggleBlockQuote so reload geometry matches live toggle.
         style.tailIndent = -4
         style.lineBreakMode = .byWordWrapping
+        _cachedBlockQuoteParagraphStyle = style
         return style
+    }
+
+    /// Shared monospace font for `[[ic]]…[[/ic]]` inline-code runs.
+    /// Used from both the serializer's `flushBuffer` and the editor's deserialize paths so the
+    /// three call sites stay in lockstep on font size, weight, and bold/italic trait handling.
+    static func inlineCodeFont(bold: Bool, italic: Bool) -> NSFont {
+        let baseSize = ThemeManager.currentBodyFontSize() * 0.92
+        var codeFont = NSFont.monospacedSystemFont(ofSize: baseSize, weight: .regular)
+        if bold { codeFont = NSFontManager.shared.convert(codeFont, toHaveTrait: .boldFontMask) }
+        if italic { codeFont = NSFontManager.shared.convert(codeFont, toHaveTrait: .italicFontMask) }
+        return codeFont
     }
 
     static func orderedListParagraphStyle() -> NSParagraphStyle {
@@ -146,12 +161,8 @@ enum RichTextSerializer {
         attrs[.underlineStyle] = underline ? NSUnderlineStyle.single.rawValue : 0
         if strikethrough {
             attrs[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
-            // Use a dimmed color for strikethrough text
-            let strikeColor = NSColor(name: nil) { appearance in
-                let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-                return (isDark ? NSColor.white : NSColor.black).withAlphaComponent(0.7)
-            }
-            attrs[.foregroundColor] = strikeColor
+            // SecondaryTextColor is the canonical 70%-label dimmer token; matches blockquote foreground.
+            attrs[.foregroundColor] = NSColor(named: "SecondaryTextColor") ?? NSColor.secondaryLabelColor
         } else {
             attrs[.strikethroughStyle] = 0
         }
@@ -231,6 +242,11 @@ enum RichTextSerializer {
                 if runItalic { openTags += "[[i]]"; closeTags = "[[/i]]" + closeTags }
             }
 
+            if attributes[.inlineCode] as? Bool == true {
+                openTags += "[[ic]]"
+                closeTags = "[[/ic]]" + closeTags
+            }
+
             if hasUnderline     { openTags += "[[u]]"; closeTags = "[[/u]]" + closeTags }
             if hasStrikethrough { openTags += "[[s]]"; closeTags = "[[/s]]" + closeTags }
 
@@ -272,11 +288,11 @@ enum RichTextSerializer {
         var fmtBlockQuote = false
         var fmtHighlightHex: String? = nil
         var fmtHighlightVariant: Int? = nil
+        var fmtInlineCode = false
+        var fmtColorHex: String? = nil
 
-        let blockQuoteColor = NSColor(name: nil) { appearance in
-            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            return (isDark ? NSColor.white : NSColor.black).withAlphaComponent(0.7)
-        }
+        // SecondaryTextColor is the canonical 70%-label dimmer token; matches strikethrough foreground.
+        let blockQuoteColor = NSColor(named: "SecondaryTextColor") ?? NSColor.secondaryLabelColor
 
         var textBuffer = ""
         func flushBuffer() {
@@ -295,6 +311,15 @@ enum RichTextSerializer {
                 attrs[.highlightColor] = hlHex
                 // Assign variant — random if not persisted (backward compat with old notes)
                 attrs[.highlightVariant] = fmtHighlightVariant ?? Int.random(in: 0..<8)
+            }
+            if fmtInlineCode {
+                attrs[.font] = inlineCodeFont(bold: fmtBold, italic: fmtItalic)
+                attrs[.inlineCode] = true
+            }
+            // Custom color must apply last so it overrides blockquote dimmer and composes with inline-code.
+            if let hex = fmtColorHex {
+                attrs[.foregroundColor] = TextFormattingManager.nsColorFromHex(hex)
+                attrs[TextFormattingManager.customTextColorKey] = true
             }
             result.append(NSAttributedString(string: textBuffer, attributes: attrs))
             textBuffer = ""
@@ -348,7 +373,13 @@ enum RichTextSerializer {
             }
 
             // Inline formatting tags
-            if remaining.hasPrefix("[[b]]") {
+            if remaining.hasPrefix("[[ic]]") {
+                flushBuffer(); fmtInlineCode = true
+                index = text.index(index, offsetBy: "[[ic]]".count); continue
+            } else if remaining.hasPrefix("[[/ic]]") {
+                flushBuffer(); fmtInlineCode = false
+                index = text.index(index, offsetBy: "[[/ic]]".count); continue
+            } else if remaining.hasPrefix("[[b]]") {
                 flushBuffer(); fmtBold = true
                 index = text.index(index, offsetBy: 5); continue
             } else if remaining.hasPrefix("[[/b]]") {
@@ -429,6 +460,11 @@ enum RichTextSerializer {
             } else if remaining.hasPrefix("[[/hl]]") {
                 flushBuffer(); fmtHighlightHex = nil; fmtHighlightVariant = nil
                 index = text.index(index, offsetBy: 7); continue
+            } else if remaining.hasPrefix("[[arrow]]") {
+                flushBuffer()
+                result.append(NSAttributedString(string: "\u{2192}", attributes: baseTypingAttributes()))
+                index = text.index(index, offsetBy: "[[arrow]]".count)
+                continue
             } else if remaining.hasPrefix("[[ol|") {
                 flushBuffer()
                 let prefixLen = "[[ol|".count
@@ -442,6 +478,8 @@ enum RichTextSerializer {
                         underline: fmtUnderline, strikethrough: fmtStrikethrough,
                         alignment: fmtAlignment)
                     attrs[.orderedListNumber] = num
+                    attrs[.font] = textFont
+                    attrs[.foregroundColor] = NSColor.labelColor
                     // Hang-indent under the "N. " prefix so wrapped lines align past the number.
                     attrs[.paragraphStyle] = orderedListParagraphStyle()
                     result.append(NSAttributedString(string: prefix, attributes: attrs))
@@ -451,40 +489,20 @@ enum RichTextSerializer {
                 flushBuffer()
                 let prefixLen = "[[color|".count
                 let afterPrefix = text.index(index, offsetBy: prefixLen)
-                let dist = text.distance(from: afterPrefix, to: text.endIndex)
-                var parsedHex: String?
-                var hexEnd: String.Index?
-                if dist >= 10, text[text.index(afterPrefix, offsetBy: 8)...].hasPrefix("]]") {
-                    hexEnd = text.index(afterPrefix, offsetBy: 8)
-                    parsedHex = String(text[afterPrefix..<hexEnd!])
-                } else if dist >= 8, text[text.index(afterPrefix, offsetBy: 6)...].hasPrefix("]]") {
-                    hexEnd = text.index(afterPrefix, offsetBy: 6)
-                    parsedHex = String(text[afterPrefix..<hexEnd!])
+                // State-toggle (matches `[[hl|…]]` and every other inline tag) so nested `[[ic]]`,
+                // `[[b]]`, etc. interleave correctly. Malformed hex degrades to an uncolored run
+                // instead of leaking the raw tag characters.
+                if let openClose = text[afterPrefix...].range(of: "]]") {
+                    let hex = String(text[afterPrefix..<openClose.lowerBound])
+                    let hexOK = (hex.count == 6 || hex.count == 8)
+                        && hex.allSatisfy { $0.isHexDigit }
+                    fmtColorHex = hexOK ? hex : nil
+                    index = openClose.upperBound; continue
                 }
-                if let hex = parsedHex, let hEnd = hexEnd {
-                    let contentStart = text.index(hEnd, offsetBy: 2)
-                    if let closingRange = text[contentStart...].range(of: "[[/color]]") {
-                        let coloredText = String(text[contentStart..<closingRange.lowerBound])
-                        var attrs = formattingAttributes(
-                            heading: fmtHeading, bold: fmtBold, italic: fmtItalic,
-                            underline: fmtUnderline, strikethrough: fmtStrikethrough,
-                            alignment: fmtAlignment)
-                        attrs[.foregroundColor] = TextFormattingManager.nsColorFromHex(hex)
-                        attrs[TextFormattingManager.customTextColorKey] = true
-                        if fmtBlockQuote {
-                            attrs[.blockQuote] = true
-                            attrs[.paragraphStyle] = blockQuoteParagraphStyle()
-                        }
-                        if let hlHex = fmtHighlightHex {
-                            attrs[.highlightColor] = hlHex
-                            attrs[.highlightVariant] = fmtHighlightVariant ?? Int.random(in: 0..<8)
-                        }
-                        result.append(NSAttributedString(string: coloredText, attributes: attrs))
-                        index = closingRange.upperBound; continue
-                    }
-                }
+                // No `]]` for the opener — drop the prefix tokens and resume plain text.
+                index = afterPrefix; continue
             } else if remaining.hasPrefix("[[/color]]") {
-                // Orphaned close tag -- skip
+                flushBuffer(); fmtColorHex = nil
                 index = text.index(index, offsetBy: 10); continue
             } else if remaining.hasPrefix("[[/code]]") {
                 // Orphaned close tag -- skip

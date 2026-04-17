@@ -314,4 +314,163 @@ final class TodoEditorInsertRegressionTests: XCTestCase {
         XCTAssertEqual(textView.selectedRange().location, 5,
             "Cursor should be at end of typed text")
     }
+
+    // MARK: - Markdown / divider import cleanup
+
+    /// Divider deserialize must not append an extra `\n` when markup already has one after
+    /// `[[divider]]`; serialize round-trip must not grow the document on each open.
+    func testDividerSerializeRoundTripIsIdempotent() {
+        let markup = "A\n[[divider]]\nB"
+        let harness = makeHarness(initialText: markup)
+        pumpMainLoop(harness)
+        harness.coordinator.flushPendingSerialization()
+        let first = harness.currentText()
+        harness.coordinator.applyInitialText(first)
+        pumpMainLoop(harness)
+        harness.coordinator.flushPendingSerialization()
+        let second = harness.currentText()
+        XCTAssertEqual(
+            first,
+            second,
+            "Opening a note with a divider must not accumulate extra newlines each load; first=\(first.debugDescription) second=\(second.debugDescription)"
+        )
+        XCTAssertFalse(
+            first.contains("\n\n\n"),
+            "Divider markup must not create triple newlines"
+        )
+    }
+
+    /// After container width changes, divider attachment bounds must match (no stale 400pt cell).
+    func testDividerAttachmentResizesWithContainerWidth() {
+        let harness = makeHarness(initialText: "Line\n[[divider]]\nLine")
+        pumpMainLoop(harness)
+        guard let storage = harness.textView.textStorage else {
+            XCTFail("Missing text storage")
+            return
+        }
+
+        var dividerAttachment: NoteDividerAttachment?
+        storage.enumerateAttribute(.attachment, in: NSRange(location: 0, length: storage.length), options: []) { value, _, _ in
+            if let d = value as? NoteDividerAttachment {
+                dividerAttachment = d
+            }
+        }
+        guard let attachment = dividerAttachment else {
+            XCTFail("Expected a NoteDividerAttachment in storage")
+            return
+        }
+
+        let newWidth: CGFloat = 512
+        harness.textView.textContainer?.containerSize = NSSize(width: newWidth, height: CGFloat.greatestFiniteMagnitude)
+        harness.coordinator.updateDividerAttachments(in: harness.textView)
+
+        XCTAssertEqual(
+            attachment.bounds.width,
+            newWidth,
+            accuracy: 1.0,
+            "Divider attachment width should track text container after updateDividerAttachments"
+        )
+        if let cell = attachment.attachmentCell as? DividerSizeAttachmentCell {
+            XCTAssertEqual(cell.displaySize.width, newWidth, accuracy: 1.0, "Divider cell display width should match container")
+        }
+    }
+
+    /// Heading paragraph spacing must apply to the full paragraph (including trailing newline)
+    /// so reload/import does not drop heading vertical rhythm.
+    func testHeadingParagraphSpacingAppliedOnFullParagraphRange() {
+        let harness = makeHarness(initialText: "[[h1]]Title[[/h1]]\nBody")
+        pumpMainLoop(harness)
+        guard let storage = harness.textView.textStorage else {
+            XCTFail("Missing text storage")
+            return
+        }
+        let paraRange = (storage.string as NSString).paragraphRange(for: NSRange(location: 0, length: 0))
+        XCTAssertGreaterThan(paraRange.length, 0, "First paragraph should be non-empty")
+        let lastInPara = NSMaxRange(paraRange) - 1
+        guard lastInPara >= 0,
+              let ps = storage.attribute(.paragraphStyle, at: lastInPara, effectiveRange: nil) as? NSParagraphStyle
+        else {
+            XCTFail("Expected paragraph style on heading paragraph")
+            return
+        }
+        XCTAssertEqual(ps.paragraphSpacing, 12, accuracy: 0.01)
+        XCTAssertEqual(ps.paragraphSpacingBefore, 8, accuracy: 0.01)
+    }
+
+    /// Labeled plain-link markup must deserialize to a single attachment with `.plainLinkLabel`.
+    func testLabeledLinkDeserializeRendersLabel() {
+        let harness = makeHarness(initialText: "[[link|https://x.com|Click]]")
+        pumpMainLoop(harness)
+        guard let storage = harness.textView.textStorage else {
+            XCTFail("Missing text storage")
+            return
+        }
+        var linkCount = 0
+        var label: String?
+        storage.enumerateAttribute(.attachment, in: NSRange(location: 0, length: storage.length), options: []) { value, range, _ in
+            guard value != nil else { return }
+            if storage.attribute(.plainLinkURL, at: range.location, effectiveRange: nil) != nil {
+                linkCount += 1
+                label = storage.attribute(.plainLinkLabel, at: range.location, effectiveRange: nil) as? String
+            }
+        }
+        XCTAssertEqual(linkCount, 1, "Expected exactly one plain-link attachment")
+        XCTAssertEqual(label, "Click")
+    }
+
+    // MARK: - Legacy Unicode-arrow deserialize (C1)
+
+    /// Regression: a legacy `\u{2192} ` (arrow + space) at line start must produce a single
+    /// arrow attachment with no leftover space before the following text. The deserializer
+    /// matched the two-char pattern but only advanced the index by one, so the trailing
+    /// space was buffered as plain text on the next iteration — every reload of a pre-existing
+    /// note silently grew by one space per arrow.
+    func testLegacyUnicodeArrowDeserialize_ConsumesTrailingSpace() {
+        let harness = makeHarness(initialText: "\u{2192} hello")
+        pumpMainLoop(harness)
+        guard let storage = harness.textView.textStorage else {
+            XCTFail("Missing text storage")
+            return
+        }
+        let attachment0 = storage.attribute(.attachment, at: 0, effectiveRange: nil)
+        XCTAssertTrue(
+            attachment0 is NoteArrowAttachment,
+            "Position 0 must be a NoteArrowAttachment; got: \(String(describing: attachment0))"
+        )
+        XCTAssertEqual(
+            storage.string,
+            "\u{FFFC}hello",
+            "Legacy arrow must consume the matched trailing space; got: \(storage.string.debugDescription)"
+        )
+    }
+
+    /// Imported `[[ol|N]]` must not let bold/heading format state bleed into the visible "N. " prefix run.
+    func testOrderedListPrefixIgnoresBoldFormattingState() {
+        let harness = makeHarness(initialText: "[[ol|1]][[b]]Bold rest[[/b]]")
+        pumpMainLoop(harness)
+        guard let storage = harness.textView.textStorage else {
+            XCTFail("Missing text storage")
+            return
+        }
+        XCTAssertEqual(storage.string.prefix(3), "1. ", "Got prefix: \(storage.string.prefix(8))")
+        let ol = storage.attribute(.orderedListNumber, at: 0, effectiveRange: nil) as? Int
+        XCTAssertEqual(ol, 1)
+        let font0 = storage.attribute(.font, at: 0, effectiveRange: nil) as? NSFont
+        XCTAssertNotNil(font0)
+        XCTAssertFalse(
+            NSFontManager.shared.traits(of: font0!).contains(.boldFontMask),
+            "List number prefix should be regular weight"
+        )
+        let fontBold = storage.attribute(.font, at: 3, effectiveRange: nil) as? NSFont
+        XCTAssertTrue(
+            NSFontManager.shared.traits(of: fontBold!).contains(.boldFontMask),
+            "Text after prefix should stay bold"
+        )
+        guard let ps = storage.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle else {
+            XCTFail("Expected paragraph style on ordered-list line")
+            return
+        }
+        XCTAssertGreaterThan(ps.headIndent, 0)
+    }
 }
+

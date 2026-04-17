@@ -34,6 +34,10 @@ extension NSAttributedString.Key {
     static let webClipDomain = NSAttributedString.Key("WebClipDomain")
     static let webClipFullURL = NSAttributedString.Key("WebClipFullURL")
     static let plainLinkURL = NSAttributedString.Key("PlainLinkURL")
+    /// Optional display label for `[[link|URL|LABEL]]` plain links (when absent, the URL string is shown).
+    static let plainLinkLabel = NSAttributedString.Key("PlainLinkLabel")
+    /// Inline monospaced "code pill" spans (`[[ic]]...[[/ic]]` in serialized markup).
+    static let inlineCode = NSAttributedString.Key("InlineCode")
     static let linkCardTitle = NSAttributedString.Key("LinkCardTitle")
     static let linkCardDescription = NSAttributedString.Key("LinkCardDescription")
     static let linkCardDomain = NSAttributedString.Key("LinkCardDomain")
@@ -458,6 +462,26 @@ final class TypingAnimationLayoutManager: NSLayoutManager {
                                 textStorage: textStorage, textContainer: textContainer,
                                 safeCharRange: safeCharRange, context: ctx)
         }
+
+        // Inline code pills — one rounded rect per line fragment so wrapped monospace runs do not get
+        // a single stretched pill across the full union bounding box.
+        textStorage.enumerateAttribute(.inlineCode, in: safeCharRange, options: []) { value, attrRange, _ in
+            guard value as? Bool == true else { return }
+            let fullGlyphRange = self.glyphRange(forCharacterRange: attrRange, actualCharacterRange: nil)
+            guard fullGlyphRange.length > 0, NSMaxRange(fullGlyphRange) <= totalGlyphs else { return }
+            self.enumerateLineFragments(forGlyphRange: fullGlyphRange) { _, _, container, lineGlyphRange, _ in
+                let lineCharRange = self.characterRange(forGlyphRange: lineGlyphRange, actualGlyphRange: nil)
+                let overlap = NSIntersectionRange(attrRange, lineCharRange)
+                guard overlap.length > 0 else { return }
+                let overlapGlyphs = self.glyphRange(forCharacterRange: overlap, actualCharacterRange: nil)
+                guard overlapGlyphs.length > 0, NSMaxRange(overlapGlyphs) <= totalGlyphs else { return }
+                var rect = self.boundingRect(forGlyphRange: overlapGlyphs, in: container)
+                rect = rect.insetBy(dx: 0, dy: 1.5)
+                let pillRect = rect.offsetBy(dx: origin.x, dy: origin.y)
+                NSColor.labelColor.withAlphaComponent(0.08).setFill()
+                NSBezierPath(roundedRect: pillRect, xRadius: 2, yRadius: 2).fill()
+            }
+        }
     }
 
     // MARK: - Organic Highlight Shape Drawing
@@ -759,6 +783,21 @@ final class NoteTableAttachment: NSTextAttachment {
     }
 }
 
+/// Figma `IconArrowRight` (18x18) as inline storage — serializes as `[[arrow]]` (see `NoteImportService` / export).
+final class NoteArrowAttachment: NSTextAttachment {
+    /// Asset catalog name (must match `Jot/Assets.xcassets/IconArrowRight.imageset`).
+    static let assetName = "IconArrowRight"
+
+    override init(data: Data?, ofType uti: String?) {
+        super.init(data: data, ofType: uti)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("NoteArrowAttachment does not support init(coder:)")
+    }
+}
+
 /// Cell that allocates space for a table attachment but draws nothing visible.
 /// The NoteTableOverlayView handles rendering.
 final class TableSizeAttachmentCell: NSTextAttachmentCell {
@@ -920,7 +959,9 @@ final class NoteDividerAttachment: NSTextAttachment {
 }
 
 final class DividerSizeAttachmentCell: NSTextAttachmentCell {
-    let displaySize: CGSize
+    /// Width is updated by `updateDividerAttachments` when the text container resizes so
+    /// layout and drawing stay in sync (avoids "line cut off in the middle" vs stale cellSize).
+    var displaySize: CGSize
 
     init(size: CGSize) {
         self.displaySize = size
@@ -930,6 +971,13 @@ final class DividerSizeAttachmentCell: NSTextAttachmentCell {
     @available(*, unavailable)
     required init(coder: NSCoder) {
         fatalError("DividerSizeAttachmentCell does not support init(coder:)")
+    }
+
+    /// Resize the cell when the text container width changes (window/split, first layout).
+    func updateWidth(_ width: CGFloat) {
+        if abs(displaySize.width - width) > 0.5 {
+            displaySize = CGSize(width: width, height: displaySize.height)
+        }
     }
 
     override var cellSize: NSSize { displaySize }
@@ -944,19 +992,11 @@ final class DividerSizeAttachmentCell: NSTextAttachmentCell {
     }
 
     override func draw(withFrame cellFrame: NSRect, in controlView: NSView?) {
-        // Use live container width instead of the frozen cellFrame width,
-        // which may be stale from deserialization before layout completes.
-        let actualWidth: CGFloat
-        if let textView = controlView as? NSTextView,
-           let container = textView.textContainer {
-            actualWidth = container.containerSize.width
-        } else {
-            actualWidth = cellFrame.width
-        }
-        let drawFrame = NSRect(x: cellFrame.minX, y: cellFrame.minY, width: actualWidth, height: cellFrame.height)
-        let baseY = drawFrame.midY
-        let startX = drawFrame.minX
-        let endX = drawFrame.maxX
+        // `cellSize` / `cellFrame` are kept in sync with the live container via
+        // `updateDividerAttachments`; stroke the full allocated width.
+        let baseY = cellFrame.midY
+        let startX = cellFrame.minX
+        let endX = cellFrame.maxX
 
         let path = NSBezierPath()
         path.lineWidth = 0.9
@@ -1691,6 +1731,11 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         private var linkCardThumbnailLoadAttempted: Set<ObjectIdentifier> = []
         private var filePreviewOverlays: [ObjectIdentifier: FilePreviewOverlayView] = [:]
 
+        /// Last container width we ran the divider-attachment sync against. `updateDividerAttachments`
+        /// short-circuits when the width hasn't moved (within 0.5pt) since every `frameDidChange`
+        /// would otherwise re-enumerate `.attachment` across the entire text storage.
+        private var lastKnownDividerContainerWidth: CGFloat?
+
         private weak var overlayHostView: NSView?
         /// True when applyInitialText ran but the view was not in the hierarchy
         /// yet (no enclosingScrollView), so overlay creation was deferred.
@@ -1750,6 +1795,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
 
             updateImageOverlays(in: textView)
             updateTableOverlays(in: textView)
+            updateDividerAttachments(in: textView)
             updateCalloutOverlays(in: textView)
             updateCodeBlockOverlays(in: textView)
             updateTabsOverlays(in: textView)
@@ -1929,11 +1975,6 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             options: []
         )
         private static let plainLinkMarkupPrefix = "[[link|"
-        private static let plainLinkPattern = #"\[\[link\|([^\]]*)\]\]"#
-        private static let plainLinkRegex: NSRegularExpression? = try? NSRegularExpression(
-            pattern: plainLinkPattern,
-            options: []
-        )
         private static let linkCardMarkupPrefix = "[[linkcard|"
         private static let linkCardPattern = #"\[\[linkcard\|([^|]*)\|([^|]*)\|([^\]]*)\]\]"#
         private static let linkCardRegex: NSRegularExpression? = try? NSRegularExpression(
@@ -2205,15 +2246,89 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             return attributed
         }
 
+        /// Pre-tints a template NSImage with the given color. AppKit does NOT auto-tint template
+        /// images set on an ``NSTextAttachment`` — it draws the raw alpha. Without this, our Figma
+        /// arrow renders in a muted default gray regardless of the attribute foreground color.
+        private static func tintedImage(_ source: NSImage, with color: NSColor) -> NSImage {
+            let size = source.size
+            guard size.width > 0, size.height > 0 else { return source }
+            let tinted = NSImage(size: size, flipped: false) { rect in
+                source.draw(in: rect, from: .zero, operation: .sourceOver, fraction: 1.0)
+                color.set()
+                rect.fill(using: .sourceAtop)
+                return true
+            }
+            tinted.isTemplate = false
+            return tinted
+        }
+
+        /// Inline arrow from Figma `IconArrowRight` — stored as `[[arrow]]` in note markup.
+        /// - Parameter textAttrs: Optional attributes from surrounding context (typing or deserialize).
+        ///   Uses `.font` for scale and `.foregroundColor` so template rendering matches body / block quote.
+        ///   Does not copy `.paragraphStyle` here; paragraph styling comes from ``styleTodoParagraphs``.
+        private func makeArrowAttachment(merging textAttrs: [NSAttributedString.Key: Any]? = nil) -> NSMutableAttributedString {
+            let font = (textAttrs?[.font] as? NSFont) ?? Self.textFont
+            let foreground = (textAttrs?[.foregroundColor] as? NSColor) ?? NSColor.labelColor
+            let attachment = NoteArrowAttachment(data: nil, ofType: nil)
+            guard let image = NSImage(named: NoteArrowAttachment.assetName) else {
+                var attrs = Self.baseTypingAttributes(for: currentColorScheme)
+                attrs[.font] = font
+                attrs[.foregroundColor] = foreground
+                return NSMutableAttributedString(string: "\u{2192}", attributes: attrs)
+            }
+            // Slightly larger than cap height so the arrow reads as a full-weight glyph next to body
+            // text (Figma shaft is thin at pure capHeight). ~capHeight * 1.35 matches Unicode U+2192.
+            let cap = font.capHeight
+            let targetHeight = max(13, cap * 1.35)
+            let scale = targetHeight / max(image.size.height, 1)
+            let w = image.size.width * scale
+            let h = image.size.height * scale
+            // Render the template alpha filled with the resolved foreground so color matches the
+            // body text around it. Paragraph styling is re-applied by ``styleTodoParagraphs``.
+            attachment.image = Self.tintedImage(image, with: foreground)
+            // Sit on the text baseline like a capital letter: image bottom at baseline, top near
+            // cap line. Tiny negative nudge centers the shaft on x-height for optical alignment.
+            let opticalDrop: CGFloat = -((h - cap) / 2.0)
+            attachment.bounds = CGRect(x: 0, y: opticalDrop, width: w, height: h)
+            let attributed = NSMutableAttributedString(attachment: attachment)
+            let attachmentRange = NSRange(location: 0, length: attributed.length)
+            attributed.addAttribute(.font, value: font, range: attachmentRange)
+            attributed.addAttribute(.foregroundColor, value: foreground, range: attachmentRange)
+            if textAttrs?[.blockQuote] as? Bool == true {
+                attributed.addAttribute(.blockQuote, value: true, range: attachmentRange)
+            }
+            if let hlHex = textAttrs?[.highlightColor] as? String {
+                attributed.addAttribute(.highlightColor, value: hlHex, range: attachmentRange)
+                if let hlVar = textAttrs?[.highlightVariant] as? Int {
+                    attributed.addAttribute(.highlightVariant, value: hlVar, range: attachmentRange)
+                }
+            }
+            return attributed
+        }
+
         /// Create a plain blue text link attachment -- looks like text, behaves like a button.
-        private func makePlainLinkAttachment(url rawURL: String) -> NSMutableAttributedString {
+        /// - Parameters:
+        ///   - rawURL: Destination URL string from markup (may contain percent escapes).
+        ///   - label: Optional `[[link|URL|LABEL]]` display string; when nil or equal to the URL, the URL is shown.
+        private func makePlainLinkAttachment(url rawURL: String, label: String? = nil) -> NSMutableAttributedString {
             let normalizedURL = Self.normalizedURL(from: rawURL)
             let linkValue = normalizedURL.isEmpty ? rawURL : normalizedURL
 
-            let linkView = Text(linkValue)
-                .font(FontManager.heading(size: Self.textFont.pointSize, weight: .regular))
+            let trimmedLabel = label?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let displayText: String
+            if let trimmedLabel, !trimmedLabel.isEmpty, trimmedLabel != linkValue {
+                displayText = trimmedLabel
+            } else {
+                displayText = linkValue
+            }
+
+            // Body font + single-line truncation so bare URLs share the same raster height as short
+            // labels; vertical offset uses cap-height, not variable bitmap height (alignment fix).
+            let linkView = Text(displayText)
+                .font(FontManager.body(size: Self.textFont.pointSize, weight: .regular))
                 .foregroundColor(.accentColor)
-                .fixedSize()
+                .lineLimit(1)
+                .truncationMode(.tail)
                 .environment(\.colorScheme, currentColorScheme)
 
             let renderer = ImageRenderer(content: linkView)
@@ -2224,7 +2339,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             let attachment = NSTextAttachment()
 
             guard let cgImage = renderer.cgImage else {
-                return NSMutableAttributedString(string: linkValue)
+                // Fall back to plain text matching the pill label (not only the raw URL).
+                return NSMutableAttributedString(string: displayText)
             }
 
             let pixelWidth = CGFloat(cgImage.width)
@@ -2237,9 +2353,12 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             nsImage.addRepresentation(NSBitmapImageRep(cgImage: cgImage))
 
             attachment.image = nsImage
+            // The rasterized Text is a bare glyph block (no pill padding). Its internal baseline
+            // sits `|descender|` above the image bottom. Using the pill-centering helper shifts
+            // the baseline; align directly to font metrics instead.
             attachment.bounds = CGRect(
                 x: 0,
-                y: Self.imageTagVerticalOffset(for: displaySize.height),
+                y: Self.textFont.descender,
                 width: displaySize.width,
                 height: displaySize.height
             )
@@ -2249,6 +2368,9 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             attributed.addAttribute(.link, value: linkValue, range: attachmentRange)
             attributed.addAttribute(.underlineStyle, value: 0, range: attachmentRange)
             attributed.addAttribute(.plainLinkURL, value: linkValue, range: attachmentRange)
+            if let trimmedLabel, !trimmedLabel.isEmpty, trimmedLabel != linkValue {
+                attributed.addAttribute(.plainLinkLabel, value: trimmedLabel, range: attachmentRange)
+            }
             attributed.addAttribute(
                 .paragraphStyle, value: Self.webClipParagraphStyle(), range: attachmentRange)
 
@@ -5702,6 +5824,13 @@ struct TodoEditorRepresentable: NSViewRepresentable {
 
         // MARK: - Todo Handling
 
+        /// Line-start markdown `-> ` shortcut — builds the Figma arrow attachment (see `handleMarkdownShortcuts`).
+        fileprivate func makeArrowGlyphForMarkdownShortcut(merging textAttrs: [NSAttributedString.Key: Any])
+            -> NSAttributedString
+        {
+            makeArrowAttachment(merging: textAttrs)
+        }
+
         fileprivate func insertTodo() {
             guard let textView = textView else { return }
             let attachment = NSTextAttachment()
@@ -6810,8 +6939,9 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                                 stop.pointee = true
                             }
                         }
-
-                        self.syncText()
+                        // Do not call `syncText()` here: column divider drags fire this every tick and
+                        // run `styleTodoParagraphs` on the whole note (hides body text). `onResizeGestureEnded`
+                        // runs one `syncText()` after the drag or on discrete edits (see `NoteTableOverlayView`).
                     }
 
                     overlay.onDeleteTable = { [weak self, weak textStorage, weak textView, weak attachment] in
@@ -6850,6 +6980,16 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     tableOverlays[id] = overlay
                 }
 
+                if readOnly {
+                    overlay.onDataChanged = nil
+                    overlay.onResizeGestureEnded = nil
+                    overlay.onDeleteTable = nil
+                } else {
+                    overlay.onResizeGestureEnded = { [weak self] in
+                        self?.syncText()
+                    }
+                }
+
                 // Expand frame to cover interactive handle areas outside the table rect.
                 // Without this, NSView.hitTest is never called for out-of-frame handle clicks.
                 let insets = NoteTableOverlayView.overlayInsets
@@ -6869,6 +7009,40 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             for key in toRemove {
                 tableOverlays[key]?.removeFromSuperview()
                 tableOverlays.removeValue(forKey: key)
+            }
+        }
+
+        // MARK: - Divider attachment width sync
+
+        /// Keeps `NoteDividerAttachment` cell width in sync with the text container (resize,
+        /// first layout). Mirrors the table overlay "size drift" pattern; dividers draw in-cell
+        /// so no separate overlay view is needed.
+        func updateDividerAttachments(in textView: NSTextView) {
+            guard let textStorage = textView.textStorage,
+                  let layoutManager = textView.layoutManager,
+                  let textContainer = textView.textContainer else { return }
+
+            let width = max(textContainer.containerSize.width, 1)
+            // Width-cache short-circuit: `frameDidChange` fires on every layout pass, even when
+            // only the height changed. Skip the full `.attachment` enumeration when width hasn't
+            // moved since the previous run.
+            if let lastWidth = lastKnownDividerContainerWidth, abs(lastWidth - width) < 0.5 {
+                return
+            }
+            lastKnownDividerContainerWidth = width
+
+            let fullRange = NSRange(location: 0, length: textStorage.length)
+            guard fullRange.length > 0 else { return }
+
+            textStorage.enumerateAttribute(.attachment, in: fullRange, options: []) { value, range, _ in
+                guard let attachment = value as? NoteDividerAttachment,
+                      let cell = attachment.attachmentCell as? DividerSizeAttachmentCell else { return }
+
+                if abs(cell.displaySize.width - width) > 0.5 || abs(attachment.bounds.width - width) > 0.5 {
+                    cell.updateWidth(width)
+                    attachment.bounds = CGRect(origin: .zero, size: cell.displaySize)
+                    layoutManager.invalidateLayout(forCharacterRange: range, actualCharacterRange: nil)
+                }
             }
         }
 
@@ -8027,6 +8201,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 // can silently strip critical custom keys (.notelinkID, .notelinkTitle, etc.)
                 // causing notelinks and other attachments to vanish after serialization.
                 if attributes[.attachment] != nil { return }
+                // Inline code intentionally uses monospaced SF; do not rewrite it to the body font.
+                if attributes[.inlineCode] as? Bool == true { return }
 
                 var needsFixing = false
                 var fixedAttributes: [NSAttributedString.Key: Any] = attributes
@@ -8204,15 +8380,36 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     }
                 }
 
-                // Detect heading paragraphs — heading paragraph style is set during
-                // deserialization and must not be overwritten here.
+                // Arrow pseudo-bullets (imported `->` / `=>` or Unicode arrows) — hang-indent like ordered lists.
+                var isArrowParagraph = false
+                if !isTodoParagraph && !isWebClipParagraph && !isImageParagraph && !isTableParagraph
+                    && !isNumberedListParagraph && !isBlockQuoteParagraph,
+                   substringRange.location < textStorage.length, substringRange.length > 0
+                {
+                    let peekLen = min(12, substringRange.length)
+                    let peek = nsString.substring(
+                        with: NSRange(location: substringRange.location, length: peekLen))
+                    if peek.hasPrefix("\u{2192} ") || peek.hasPrefix("\u{21D2} ") {
+                        isArrowParagraph = true
+                    } else if textStorage.attribute(
+                        .attachment, at: substringRange.location, effectiveRange: nil) is NoteArrowAttachment {
+                        isArrowParagraph = true
+                    }
+                }
+
+                // Detect heading paragraphs — apply heading paragraph spacing on the full range
+                // (including the trailing newline) so AppKit does not resolve the paragraph from
+                // the newline's base style and drop heading spacing after import/round-trip.
                 var isHeadingParagraph = false
-                if !isTodoParagraph && !isWebClipParagraph && !isNumberedListParagraph && !isBlockQuoteParagraph {
-                    textStorage.enumerateAttribute(.font, in: substringRange, options: []) { val, _, stop in
-                        if let f = val as? NSFont, Self.headingLevel(for: f) != nil {
-                            isHeadingParagraph = true
-                            stop.pointee = true
-                        }
+                if !isTodoParagraph && !isWebClipParagraph && !isNumberedListParagraph && !isBlockQuoteParagraph
+                    && !isArrowParagraph
+                {
+                    // Heading font is carried from the paragraph's first character by invariant
+                    // (styleTodoParagraphs itself is what preserves this). A single-point peek
+                    // saves N `enumerateAttribute` visits per paragraph on every keystroke.
+                    if let f = textStorage.attribute(.font, at: substringRange.location, effectiveRange: nil) as? NSFont,
+                       Self.headingLevel(for: f) != nil {
+                        isHeadingParagraph = true
                     }
                 }
 
@@ -8248,7 +8445,21 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                         }
                     }
                     textStorage.addAttribute(.paragraphStyle, value: quoteStyle, range: substringRange)
-                } else if !isHeadingParagraph {
+                } else if isArrowParagraph {
+                    textStorage.addAttribute(.paragraphStyle, value: Self.orderedListParagraphStyle(), range: substringRange)
+                } else if isHeadingParagraph {
+                    // Match TextFormattingManager.applyHeading spacing for all heading levels.
+                    let headingStyle = NSMutableParagraphStyle()
+                    headingStyle.paragraphSpacingBefore = 8
+                    headingStyle.paragraphSpacing = 12
+                    textStorage.enumerateAttribute(.paragraphStyle, in: substringRange, options: []) { val, _, stop in
+                        if let ps = val as? NSParagraphStyle, ps.alignment != .left {
+                            headingStyle.alignment = ps.alignment
+                            stop.pointee = true
+                        }
+                    }
+                    textStorage.addAttribute(.paragraphStyle, value: headingStyle, range: substringRange)
+                } else {
                     // Body paragraph: apply base style but preserve any custom alignment
                     guard let mutableStyle = Self.baseParagraphStyle().mutableCopy() as? NSMutableParagraphStyle else { return }
                     var existingAlignment: NSTextAlignment = .left
@@ -8262,8 +8473,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     textStorage.addAttribute(.paragraphStyle, value: mutableStyle, range: substringRange)
                 }
 
-                // Don't adjust baseline for todo, web clip, heading, image, table, numbered list, or block quote paragraphs
-                if !isTodoParagraph && !isWebClipParagraph && !isHeadingParagraph && !isImageParagraph && !isTableParagraph && !isNumberedListParagraph && !isBlockQuoteParagraph {
+                // Don't adjust baseline for todo, web clip, heading, image, table, numbered list, block quote, or arrow paragraphs
+                if !isTodoParagraph && !isWebClipParagraph && !isHeadingParagraph && !isImageParagraph && !isTableParagraph && !isNumberedListParagraph && !isBlockQuoteParagraph && !isArrowParagraph {
                     textStorage.addAttribute(
                         .baselineOffset, value: Self.baseBaselineOffset, range: substringRange)
                 }
@@ -8400,7 +8611,15 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     output.append("[[linkcard|\(title)|\(description)|\(urlString)]]")
                 } else if let urlString = attributes[.plainLinkURL] as? String {
                     let sanitizedURL = urlString.trimmingCharacters(in: .whitespacesAndNewlines)
-                    output.append("[[link|\(sanitizedURL)]]")
+                    if let label = attributes[.plainLinkLabel] as? String,
+                       !label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                       label.trimmingCharacters(in: .whitespacesAndNewlines) != sanitizedURL
+                    {
+                        let trimmedLabel = label.trimmingCharacters(in: .whitespacesAndNewlines)
+                        output.append("[[link|\(sanitizedURL)|\(trimmedLabel)]]")
+                    } else {
+                        output.append("[[link|\(sanitizedURL)]]")
+                    }
                 } else if let attachment = attributes[.attachment] as? NSTextAttachment,
                     !(attachment.attachmentCell is TodoCheckboxAttachmentCell),
                     let urlString = Self.linkURLString(from: attributes)
@@ -8478,6 +8697,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                         ?? (attributes[.webClipFullURL] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
                         ?? domain
                     output.append("[[webclip|\(title)|\(description)|\(url)]]")
+                } else if attributes[.attachment] is NoteArrowAttachment {
+                    output.append("[[arrow]]")
                 } else if let attachment = attributes[.attachment] as? NSTextAttachment,
                     !(attachment.attachmentCell is TodoCheckboxAttachmentCell)
                 {
@@ -8579,6 +8800,11 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                         if runItalic { openTags += "[[i]]"; closeTags = "[[/i]]" + closeTags }
                     }
 
+                    if attributes[.inlineCode] as? Bool == true {
+                        openTags += "[[ic]]"
+                        closeTags = "[[/ic]]" + closeTags
+                    }
+
                     // Underline / strikethrough
                     if hasUnderline     { openTags += "[[u]]"; closeTags = "[[/u]]" + closeTags }
                     if hasStrikethrough { openTags += "[[s]]"; closeTags = "[[/s]]" + closeTags }
@@ -8636,6 +8862,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             var fmtBlockQuote = false
             var fmtHighlightHex: String? = nil
             var fmtHighlightVariant: Int? = nil
+            /// True while inside `[[ic]]...[[/ic]]` — maps to monospace + `.inlineCode` for pill rendering.
+            var fmtInlineCode = false
 
             // Buffer for accumulating plain text characters with the same attributes.
             // Flushed as a single NSAttributedString when formatting changes or a tag is hit.
@@ -8659,11 +8887,62 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     attrs[.highlightColor] = hlHex
                     attrs[.highlightVariant] = fmtHighlightVariant ?? Int.random(in: 0..<8)
                 }
+                if fmtInlineCode {
+                    attrs[.font] = RichTextSerializer.inlineCodeFont(bold: fmtBold, italic: fmtItalic)
+                    attrs[.inlineCode] = true
+                }
                 result.append(NSAttributedString(string: textBuffer, attributes: attrs))
                 textBuffer = ""
             }
 
+            /// Same attribute stack as ``flushBuffer()`` for inline specials (arrow, etc.) that are not plain text runs.
+            func attributesMatchingBufferedPlainText() -> [NSAttributedString.Key: Any] {
+                var attrs = Self.formattingAttributes(
+                    base: colorSchemeForBuffer,
+                    heading: fmtHeading,
+                    bold: fmtBold,
+                    italic: fmtItalic,
+                    underline: fmtUnderline, strikethrough: fmtStrikethrough,
+                    alignment: fmtAlignment)
+                if fmtBlockQuote {
+                    attrs[.blockQuote] = true
+                    attrs[.paragraphStyle] = Self.blockQuoteParagraphStyle()
+                    attrs[.foregroundColor] = blockQuoteTextColor
+                }
+                if let hlHex = fmtHighlightHex {
+                    attrs[.highlightColor] = hlHex
+                    attrs[.highlightVariant] = fmtHighlightVariant ?? Int.random(in: 0..<8)
+                }
+                if fmtInlineCode {
+                    attrs[.font] = RichTextSerializer.inlineCodeFont(bold: fmtBold, italic: fmtItalic)
+                    attrs[.inlineCode] = true
+                }
+                return attrs
+            }
+
+            /// True if `index` sits at the start of a paragraph (document start or right after `\n`).
+            /// Used to upgrade legacy line-start Unicode arrows (`\u{2192}`) to the Figma attachment
+            /// so notes written before `-> ` was auto-converted render consistently.
+            func isAtParagraphStart() -> Bool {
+                if index == text.startIndex { return true }
+                let prev = text.index(before: index)
+                return text[prev] == "\n"
+            }
+
             while index < text.endIndex {
+                // Legacy line-start Unicode arrow → Figma arrow attachment. Keeps `\u{21D2}` (`=>`) as
+                // Unicode text by design. Runs BEFORE buffering so the plain-text run isn't polluted.
+                if isAtParagraphStart(),
+                   text[index...].hasPrefix("\u{2192} ") {
+                    flushBuffer()
+                    result.append(makeArrowAttachment(merging: attributesMatchingBufferedPlainText()))
+                    // Consume both the arrow glyph AND the trailing space that matched the pattern,
+                    // otherwise the space gets buffered on the next iteration and every reload of
+                    // a legacy note silently grows by one space per arrow.
+                    index = text.index(index, offsetBy: 2)
+                    lastWasWebClip = false
+                    continue
+                }
                 if text[index...].hasPrefix("[x]") || text[index...].hasPrefix("[ ]") {
                     flushBuffer()
                     let isChecked = text[index...].hasPrefix("[x]")
@@ -8794,26 +9073,35 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     }
                 } else if text[index...].hasPrefix(Self.plainLinkMarkupPrefix) {
                     flushBuffer()
-                    if let endIndex = text[index...].range(of: "]]")?.upperBound {
+                    if let closeRange = text[index...].range(of: "]]") {
+                        let endIndex = closeRange.upperBound
                         let linkText = String(text[index..<endIndex])
-                        if let regex = Self.plainLinkRegex,
-                           let match = regex.firstMatch(
-                               in: linkText, options: [],
-                               range: NSRange(location: 0, length: linkText.utf16.count))
-                        {
-                            let rawURL = Self.string(from: match, at: 1, in: linkText)
-                            let attachment = makePlainLinkAttachment(url: rawURL)
-                            result.append(attachment)
-
-                            let space = NSAttributedString(
-                                string: " ",
-                                attributes: Self.baseTypingAttributes(for: currentColorScheme))
-                            result.append(space)
-
+                        let prefixLen = Self.plainLinkMarkupPrefix.count
+                        guard linkText.count >= prefixLen + 2 else {
                             index = endIndex
-                            lastWasWebClip = true
                             continue
                         }
+                        let innerStart = linkText.index(linkText.startIndex, offsetBy: prefixLen)
+                        let innerEnd = linkText.index(linkText.endIndex, offsetBy: -2)
+                        guard innerStart < innerEnd else {
+                            index = endIndex
+                            continue
+                        }
+                        let inner = String(linkText[innerStart..<innerEnd])
+                        let parts = inner.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false)
+                        let rawURL = String(parts[0])
+                        let labelPart: String? = parts.count > 1 ? String(parts[1]) : nil
+                        let attachment = makePlainLinkAttachment(url: rawURL, label: labelPart)
+                        result.append(attachment)
+
+                        let space = NSAttributedString(
+                            string: " ",
+                            attributes: Self.baseTypingAttributes(for: currentColorScheme))
+                        result.append(space)
+
+                        index = endIndex
+                        lastWasWebClip = true
+                        continue
                     }
                 } else if text[index...].hasPrefix(AttachmentMarkup.fileLinkMarkupPrefix) {
                     flushBuffer()
@@ -9204,8 +9492,17 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     }
                     let attachment = makeDividerAttachment()
                     result.append(attachment)
-                    result.append(NSAttributedString(string: "\n", attributes: baseAttributes))
-                    index = text.index(index, offsetBy: "[[divider]]".count)
+                    // Match other block attachments: do not add a second newline when markup
+                    // already has one after [[divider]] (avoids phantom empty paragraph per load).
+                    let afterDivider = text.index(index, offsetBy: "[[divider]]".count)
+                    if afterDivider < text.endIndex {
+                        if !text[afterDivider].isNewline {
+                            result.append(NSAttributedString(string: "\n", attributes: baseAttributes))
+                        }
+                    } else {
+                        result.append(NSAttributedString(string: "\n", attributes: baseAttributes))
+                    }
+                    index = afterDivider
                     lastWasWebClip = false
                     continue
                 } else if text[index...].hasPrefix("[[notelink|") {
@@ -9227,6 +9524,16 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                             continue
                         }
                     }
+                } else if text[index...].hasPrefix("[[ic]]") {
+                    flushBuffer()
+                    fmtInlineCode = true
+                    index = text.index(index, offsetBy: "[[ic]]".count)
+                    continue
+                } else if text[index...].hasPrefix("[[/ic]]") {
+                    flushBuffer()
+                    fmtInlineCode = false
+                    index = text.index(index, offsetBy: "[[/ic]]".count)
+                    continue
                 } else if text[index...].hasPrefix("[[b]]") {
                     flushBuffer()
                     fmtBold = true
@@ -9303,6 +9610,12 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     // Orphaned close tag from legacy format — skip
                     index = text.index(index, offsetBy: 9)
                     continue
+                } else if text[index...].hasPrefix("[[arrow]]") {
+                    flushBuffer()
+                    result.append(makeArrowAttachment(merging: attributesMatchingBufferedPlainText()))
+                    index = text.index(index, offsetBy: "[[arrow]]".count)
+                    lastWasWebClip = false
+                    continue
                 } else if text[index...].hasPrefix("[[ol|") {
                     flushBuffer()
                     // Parse [[ol|N]] — extract the number
@@ -9312,13 +9625,12 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                         let numStr = String(text[afterPrefix..<closeBracket.lowerBound])
                         let num = Int(numStr) ?? 1
                         let prefix = "\(num). "
-                        var attrs = Self.formattingAttributes(
-                            base: currentColorScheme,
-                            heading: fmtHeading,
-                            bold: fmtBold, italic: fmtItalic,
-                            underline: fmtUnderline, strikethrough: fmtStrikethrough,
-                            alignment: fmtAlignment)
+                        // Pin list prefix to body + hang-indent (do not inherit bold/heading from fmt* state).
+                        var attrs = Self.baseTypingAttributes(for: currentColorScheme)
                         attrs[.orderedListNumber] = num
+                        attrs[.paragraphStyle] = Self.orderedListParagraphStyle()
+                        attrs[.font] = FontManager.bodyNS()
+                        attrs[.foregroundColor] = NSColor.labelColor
                         result.append(NSAttributedString(string: prefix, attributes: attrs))
                         index = closeBracket.upperBound
                         lastWasWebClip = false
@@ -9882,15 +10194,18 @@ final class InlineNSTextView: NSTextView, QLPreviewPanelDataSource, QLPreviewPan
                             height: rect.height
                         )
 
+                        let eid = self.editorInstanceID
                         DispatchQueue.main.async {
+                            var payload: [String: Any] = [
+                                "code": insertedText,
+                                "range": NSValue(range: pastedRange),
+                                "rect": NSValue(rect: adjustedRect),
+                                "language": language,
+                            ]
+                            if let eid = eid { payload["editorInstanceID"] = eid }
                             NotificationCenter.default.post(
                                 name: .codePasteDetected,
-                                object: [
-                                    "code": insertedText,
-                                    "range": NSValue(range: pastedRange),
-                                    "rect": NSValue(rect: adjustedRect),
-                                    "language": language,
-                                ] as [String: Any]
+                                object: payload
                             )
                         }
                     }
@@ -10827,14 +11142,43 @@ final class InlineNSTextView: NSTextView, QLPreviewPanelDataSource, QLPreviewPan
             if let match = trimmed.wholeMatch(of: olPattern),
                cursorInPara == trimmed.count {
                 let num = Int(match.1) ?? 1
+                // NSRange lengths are UTF-16 code units; use NSString length so a paragraph that
+                // begins with a multi-scalar grapheme (emoji, combining marks) produces the right
+                // delete range.
                 let deleteRange = NSRange(
                     location: paraRange.location,
-                    length: trimmed.count)
+                    length: (trimmed as NSString).length)
                 let prefix = "\(num). "
                 textStorage.replaceCharacters(in: deleteRange, with: prefix)
                 let prefixRange = NSRange(location: paraRange.location, length: prefix.count)
                 textStorage.addAttribute(.orderedListNumber, value: num, range: prefixRange)
                 setSelectedRange(NSRange(location: paraRange.location + prefix.count, length: 0))
+                return
+            }
+
+            // Line-start `-> ` / `=> ` — Figma `IconArrowRight` attachment vs Unicode double arrow.
+            if trimmed.wholeMatch(of: /^\s*-> $/) != nil,
+               cursorInPara == trimmed.count,
+               let coord = actionDelegate {
+                let deleteRange = NSRange(location: paraRange.location, length: (trimmed as NSString).length)
+                let seedAttrs = textStorage.attributes(at: paraRange.location, effectiveRange: nil)
+                let chunk = NSMutableAttributedString(
+                    attributedString: coord.makeArrowGlyphForMarkdownShortcut(merging: seedAttrs))
+                let spaceAttrs = TodoEditorRepresentable.Coordinator.baseTypingAttributes(for: coord.currentColorScheme)
+                chunk.append(NSAttributedString(string: " ", attributes: spaceAttrs))
+                textStorage.replaceCharacters(in: deleteRange, with: chunk)
+                setSelectedRange(NSRange(location: deleteRange.location + chunk.length, length: 0))
+                return
+            }
+            if trimmed.wholeMatch(of: /^\s*=> $/) != nil,
+               cursorInPara == trimmed.count {
+                let deleteRange = NSRange(location: paraRange.location, length: (trimmed as NSString).length)
+                let doubleArrow = "\u{21D2} "
+                let attrs = TodoEditorRepresentable.Coordinator.baseTypingAttributes(
+                    for: actionDelegate?.currentColorScheme)
+                let chunk = NSAttributedString(string: doubleArrow, attributes: attrs)
+                textStorage.replaceCharacters(in: deleteRange, with: chunk)
+                setSelectedRange(NSRange(location: deleteRange.location + (doubleArrow as NSString).length, length: 0))
                 return
             }
         }

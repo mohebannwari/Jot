@@ -568,6 +568,9 @@ struct TodoRichTextEditor: View {
                   let rangeValue = info["range"] as? NSValue,
                   let rectValue = info["rect"] as? NSValue,
                   let language = info["language"] as? String else { return }
+            // Scope to the editor that actually pasted — without this, a split-view layout
+            // pops the menu in every editor simultaneously.
+            if let nid = info["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
 
             let range = rangeValue.rangeValue
             let rect = rectValue.rectValue
@@ -588,7 +591,9 @@ struct TodoRichTextEditor: View {
             }
             syncMenuState(["isCodePasteMenuShowing": true])
         }
-        .onReceive(NotificationCenter.default.publisher(for: .codePasteDismiss)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .codePasteDismiss)) { notification in
+            if let info = notification.object as? [String: Any],
+               let nid = info["editorInstanceID"] as? UUID, nid != editorInstanceID { return }
             if showCodePasteMenu {
                 withAnimation(.smooth(duration: 0.15)) { showCodePasteMenu = false }
                 syncMenuState(["isCodePasteMenuShowing": false])
@@ -860,7 +865,6 @@ struct URLPasteOptionMenu: View {
     let onPasteAsURL: () -> Void
     let onCard: () -> Void
 
-    @Environment(\.colorScheme) private var colorScheme
     @State private var focusedOption: Int = 0
     @State private var hoveredOption: Int?
 
@@ -958,15 +962,18 @@ struct URLPasteOptionMenu: View {
     }
 
     private func iconColor(for index: Int) -> Color {
+        // `PrimaryTextColor` already resolves to `#1A1A1A` in light and `#FFFFFF` in dark —
+        // the old `colorScheme == .dark ? .white : Color("PrimaryTextColor")` was dead code.
         activeOption == index
-            ? (colorScheme == .dark ? .white : Color("PrimaryTextColor"))
+            ? Color("PrimaryTextColor")
             : Color("IconSecondaryColor")
     }
 
     private func textColor(for index: Int) -> Color {
-        activeOption == index
-            ? (colorScheme == .dark ? .white : Color("PrimaryTextColor"))
-            : Color("PrimaryTextColor")
+        // Always `PrimaryTextColor`: active state was previously hardcoded `.white` in dark,
+        // which `PrimaryTextColor` already resolves to. Kept as a helper for call-site symmetry
+        // with `iconColor(for:)` so both follow the same signature.
+        Color("PrimaryTextColor")
     }
 }
 
@@ -975,7 +982,6 @@ struct CodePasteOptionMenu: View {
     let onCodeBlock: () -> Void
     let onPlainText: () -> Void
 
-    @Environment(\.colorScheme) private var colorScheme
     @State private var focusedOption: Int = 0
     @State private var hoveredOption: Int?
 
@@ -1064,15 +1070,18 @@ struct CodePasteOptionMenu: View {
     }
 
     private func iconColor(for index: Int) -> Color {
+        // `PrimaryTextColor` already resolves to `#1A1A1A` in light and `#FFFFFF` in dark —
+        // the old `colorScheme == .dark ? .white : Color("PrimaryTextColor")` was dead code.
         activeOption == index
-            ? (colorScheme == .dark ? .white : Color("PrimaryTextColor"))
+            ? Color("PrimaryTextColor")
             : Color("IconSecondaryColor")
     }
 
     private func textColor(for index: Int) -> Color {
-        activeOption == index
-            ? (colorScheme == .dark ? .white : Color("PrimaryTextColor"))
-            : Color("PrimaryTextColor")
+        // Always `PrimaryTextColor`: active state was previously hardcoded `.white` in dark,
+        // which `PrimaryTextColor` already resolves to. Kept as a helper for call-site symmetry
+        // with `iconColor(for:)` so both follow the same signature.
+        Color("PrimaryTextColor")
     }
 }
 

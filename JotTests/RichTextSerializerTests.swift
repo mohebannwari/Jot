@@ -77,4 +77,163 @@ final class RichTextSerializerTests: XCTestCase {
         XCTAssertEqual(style.firstLineHeadIndent, 0,
             "Ordered list firstLineHeadIndent must be 0 so the number prefix sits at the margin")
     }
+
+    // MARK: - Inline code
+
+    /// `[[ic]]...[[/ic]]` must survive deserialize → serialize for card-style markup paths.
+    func testInlineCodeTagRoundTrip() {
+        let input = "[[ic]]read_file[[/ic]]"
+        let attributed = RichTextSerializer.deserializeToAttributedString(input)
+        let roundTrip = RichTextSerializer.serializeAttributedString(attributed)
+        XCTAssertEqual(roundTrip, input)
+        XCTAssertEqual(attributed.attribute(.inlineCode, at: 0, effectiveRange: nil) as? Bool, true)
+    }
+
+    // MARK: - Malformed color tag recovery (C2)
+
+    /// Regression: `[[color|HEX]]` with malformed hex (neither 6 nor 8 chars) used to fall
+    /// through the two length-specific branches and leak the raw tag as individual literal
+    /// characters (`[`, `[`, `c`, `o`, `l`, `o`, `r`, `|`, …). Must degrade gracefully.
+    func testMalformedColorTag_DoesNotLeakLiteralBrackets() {
+        let input = "[[color|GGGGG]]hello[[/color]]"
+        let attributed = RichTextSerializer.deserializeToAttributedString(input)
+        let plain = attributed.string
+        XCTAssertFalse(plain.contains("[["),
+            "Malformed color tag must degrade gracefully, not emit literal bracket characters; got: \(plain.debugDescription)")
+        XCTAssertFalse(plain.contains("color|"),
+            "Malformed color tag must not leak the 'color|' token as visible text; got: \(plain.debugDescription)")
+    }
+
+    // MARK: - Basic inline tag round-trips (test coverage gap)
+
+    func testBoldRoundTrip() {
+        let input = "[[b]]hello[[/b]]"
+        let attributed = RichTextSerializer.deserializeToAttributedString(input)
+        XCTAssertEqual(RichTextSerializer.serializeAttributedString(attributed), input)
+        guard let font = attributed.attribute(.font, at: 0, effectiveRange: nil) as? NSFont else {
+            XCTFail("Expected .font attribute on bold run")
+            return
+        }
+        XCTAssertTrue(NSFontManager.shared.traits(of: font).contains(.boldFontMask))
+    }
+
+    func testItalicRoundTrip() {
+        let input = "[[i]]hello[[/i]]"
+        let attributed = RichTextSerializer.deserializeToAttributedString(input)
+        XCTAssertEqual(RichTextSerializer.serializeAttributedString(attributed), input)
+        guard let font = attributed.attribute(.font, at: 0, effectiveRange: nil) as? NSFont else {
+            XCTFail("Expected .font attribute on italic run")
+            return
+        }
+        XCTAssertTrue(NSFontManager.shared.traits(of: font).contains(.italicFontMask))
+    }
+
+    func testUnderlineRoundTrip() {
+        let input = "[[u]]hello[[/u]]"
+        let attributed = RichTextSerializer.deserializeToAttributedString(input)
+        XCTAssertEqual(RichTextSerializer.serializeAttributedString(attributed), input)
+        let style = attributed.attribute(.underlineStyle, at: 0, effectiveRange: nil) as? Int
+        XCTAssertEqual(style, NSUnderlineStyle.single.rawValue)
+    }
+
+    func testStrikethroughRoundTrip() {
+        let input = "[[s]]hello[[/s]]"
+        let attributed = RichTextSerializer.deserializeToAttributedString(input)
+        XCTAssertEqual(RichTextSerializer.serializeAttributedString(attributed), input)
+        let style = attributed.attribute(.strikethroughStyle, at: 0, effectiveRange: nil) as? Int
+        XCTAssertEqual(style, NSUnderlineStyle.single.rawValue)
+    }
+
+    func testColorHexRoundTrip() {
+        let input = "[[color|ff0000]]hello[[/color]]"
+        let attributed = RichTextSerializer.deserializeToAttributedString(input)
+        let roundTrip = RichTextSerializer.serializeAttributedString(attributed)
+        XCTAssertEqual(roundTrip.lowercased(), input.lowercased(),
+            "Color hex round-trip should be stable; got: \(roundTrip)")
+        let isCustomColor = attributed.attribute(
+            TextFormattingManager.customTextColorKey, at: 0, effectiveRange: nil) as? Bool
+        XCTAssertEqual(isCustomColor, true, "Custom color flag must be set on colored run")
+    }
+
+    /// Canonical nesting order (bold > italic > ic > underline > strikethrough) means
+    /// `[[b]][[u]]x[[/u]][[/b]]` should round-trip exactly.
+    func testNestedBoldUnderlineRoundTrip() {
+        let input = "[[b]][[u]]hello[[/u]][[/b]]"
+        let attributed = RichTextSerializer.deserializeToAttributedString(input)
+        XCTAssertEqual(RichTextSerializer.serializeAttributedString(attributed), input)
+        guard let font = attributed.attribute(.font, at: 0, effectiveRange: nil) as? NSFont else {
+            XCTFail("Expected .font attribute")
+            return
+        }
+        XCTAssertTrue(NSFontManager.shared.traits(of: font).contains(.boldFontMask),
+            "Nested bold+underline: bold trait must survive")
+        let underline = attributed.attribute(.underlineStyle, at: 0, effectiveRange: nil) as? Int
+        XCTAssertEqual(underline, NSUnderlineStyle.single.rawValue,
+            "Nested bold+underline: underline must survive")
+    }
+
+    /// `[[ic]]` + `[[b]]` co-occurrence must produce a bold monospace run.
+    func testInlineCodeBoldCoOccurrence() {
+        let input = "[[b]][[ic]]code[[/ic]][[/b]]"
+        let attributed = RichTextSerializer.deserializeToAttributedString(input)
+        XCTAssertEqual(RichTextSerializer.serializeAttributedString(attributed), input)
+        guard let font = attributed.attribute(.font, at: 0, effectiveRange: nil) as? NSFont else {
+            XCTFail("Expected .font attribute")
+            return
+        }
+        XCTAssertTrue(font.isFixedPitch, "Monospace font required for inline-code")
+        XCTAssertTrue(NSFontManager.shared.traits(of: font).contains(.boldFontMask),
+            "Bold trait must apply on top of inline-code font")
+        XCTAssertEqual(attributed.attribute(.inlineCode, at: 0, effectiveRange: nil) as? Bool, true)
+    }
+
+    /// Unclosed opening tag must not crash; the text should still render with the open tag's
+    /// formatting applied up to end-of-string (via `flushBuffer` at the bottom of the loop).
+    func testUnclosedBoldTagDoesNotCrash() {
+        let attributed = RichTextSerializer.deserializeToAttributedString("[[b]]no close")
+        XCTAssertEqual(attributed.string, "no close",
+            "Unclosed tag must still emit its inner text without leaking the tag")
+        guard let font = attributed.attribute(.font, at: 0, effectiveRange: nil) as? NSFont else {
+            XCTFail("Expected .font attribute on buffered run")
+            return
+        }
+        XCTAssertTrue(NSFontManager.shared.traits(of: font).contains(.boldFontMask),
+            "Unclosed `[[b]]` must still apply bold to its inner text")
+    }
+
+    /// P3 regression guard: the shared helper is the single source of truth for inline-code
+    /// font size, weight, and trait handling. A manual monospace font construction elsewhere
+    /// would bypass this.
+    func testInlineCodeFontHelperProducesMonospace() {
+        let font = RichTextSerializer.inlineCodeFont(bold: false, italic: false)
+        XCTAssertTrue(font.isFixedPitch, "Inline-code helper must return a monospace font")
+        let boldFont = RichTextSerializer.inlineCodeFont(bold: true, italic: false)
+        XCTAssertTrue(NSFontManager.shared.traits(of: boldFont).contains(.boldFontMask))
+        let italicFont = RichTextSerializer.inlineCodeFont(bold: false, italic: true)
+        XCTAssertTrue(NSFontManager.shared.traits(of: italicFont).contains(.italicFontMask))
+    }
+
+    // MARK: - Color + inline-code composition (H3)
+
+    /// A run wrapped in `[[color|...]]` that is also `[[ic]]...[[/ic]]` must carry BOTH
+    /// the custom foreground color AND the monospace font + `.inlineCode` attribute.
+    /// The color branch read other format state (bold, italic, …) but not inline-code,
+    /// dropping the monospace font for colored code runs.
+    func testColorAroundInlineCode_PreservesBothAttributes() {
+        let input = "[[color|ff0000]][[ic]]code[[/ic]][[/color]]"
+        let attributed = RichTextSerializer.deserializeToAttributedString(input)
+        guard attributed.length > 0 else {
+            XCTFail("Expected non-empty deserialize output")
+            return
+        }
+        let isInlineCode = attributed.attribute(.inlineCode, at: 0, effectiveRange: nil) as? Bool
+        XCTAssertEqual(isInlineCode, true,
+            "Inline-code attribute must survive being wrapped in [[color|...]]")
+        guard let font = attributed.attribute(.font, at: 0, effectiveRange: nil) as? NSFont else {
+            XCTFail("Expected .font attribute on inline-code run inside color")
+            return
+        }
+        XCTAssertTrue(font.isFixedPitch,
+            "Inline-code font inside [[color|...]] must remain monospaced; got \(font.fontName)")
+    }
 }
