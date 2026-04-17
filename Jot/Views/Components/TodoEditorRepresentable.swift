@@ -23,7 +23,9 @@ let checkedTodoTextColor = NSColor(name: nil) { appearance in
 }
 
 /// Dynamic color for block quote text — resolves at draw time so it adapts to light/dark.
-private let blockQuoteTextColor = NSColor(name: nil) { appearance in
+/// `internal` (default access) because `InlineNSTextView+MarkdownShortcuts` reads it from
+/// a sibling file; matches `checkedTodoTextColor`'s access level above.
+let blockQuoteTextColor = NSColor(name: nil) { appearance in
     let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
     return (isDark ? NSColor.white : NSColor.black).withAlphaComponent(0.7)
 }
@@ -1721,7 +1723,9 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         private var observers: [NSObjectProtocol] = []
         private var lastSerialized = ""
         private var currentHoveredCharIndex: Int? = nil
-        fileprivate let formatter = TextFormattingManager()
+        // `internal` (default) because `InlineNSTextView+MarkdownShortcuts.swift` reaches it
+        // from a sibling file via `actionDelegate.formatter`.
+        let formatter = TextFormattingManager()
         /// Reentrancy counter — supports nested isUpdating = true/false pairs safely.
         /// Read as Bool for backward compatibility; set true increments, set false decrements.
         private var _updatingCount = 0
@@ -5874,13 +5878,15 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         // MARK: - Todo Handling
 
         /// Line-start markdown `-> ` shortcut — builds the Figma arrow attachment (see `handleMarkdownShortcuts`).
-        fileprivate func makeArrowGlyphForMarkdownShortcut(merging textAttrs: [NSAttributedString.Key: Any])
+        /// `internal` (default) because the markdown-shortcut handler lives in a sibling file.
+        func makeArrowGlyphForMarkdownShortcut(merging textAttrs: [NSAttributedString.Key: Any])
             -> NSAttributedString
         {
             makeArrowAttachment(merging: textAttrs)
         }
 
-        fileprivate func insertTodo() {
+        /// `internal` (default) so `InlineNSTextView+MarkdownShortcuts.swift` can call it.
+        func insertTodo() {
             guard let textView = textView else { return }
             let attachment = NSTextAttachment()
             let cell = TodoCheckboxAttachmentCell(isChecked: false)
@@ -11081,256 +11087,15 @@ final class InlineNSTextView: NSTextView, QLPreviewPanelDataSource, QLPreviewPan
 
         super.insertText(string, replacementRange: replacementRange)
 
-        // Check for markdown shortcuts after insertion
+        // Check for markdown shortcuts after insertion.
+        // `handleMarkdownShortcuts(inserted:)` is defined in `InlineNSTextView+MarkdownShortcuts.swift`.
         if let str = string as? String {
             handleMarkdownShortcuts(inserted: str)
         }
     }
 
-    /// Base typing attributes for markdown shortcut results
-    private var markdownBaseAttributes: [NSAttributedString.Key: Any] {
-        let font = FontManager.bodyNS()
-        return [
-            .font: font,
-            .foregroundColor: NSColor.labelColor,
-        ]
-    }
-
-    /// Detects and applies markdown-style shortcuts after text insertion
-    private func handleMarkdownShortcuts(inserted: String) {
-        guard let textStorage = self.textStorage else { return }
-        // Group shortcut replacement with the preceding character insertion
-        // so Cmd+Z reverts both in one step
-        undoManager?.groupsByEvent = false
-        defer { undoManager?.groupsByEvent = true }
-        let cursor = selectedRange().location
-
-        // --- Block-level shortcuts (trigger on Space) ---
-        if inserted == " " {
-            let paraRange = (textStorage.string as NSString).paragraphRange(
-                for: NSRange(location: max(0, cursor - 1), length: 0))
-            let lineText = (textStorage.string as NSString).substring(with: paraRange)
-            let trimmed = lineText.trimmingCharacters(in: .newlines)
-
-            // Only trigger if cursor is right after the pattern (at start of line)
-            let cursorInPara = cursor - paraRange.location
-            struct BlockPattern {
-                let prefix: String
-                let action: String
-            }
-            let patterns: [BlockPattern] = [
-                .init(prefix: "- ", action: "bullet"),
-                .init(prefix: "* ", action: "bullet"),
-                .init(prefix: "[ ] ", action: "todo"),
-                .init(prefix: "> ", action: "quote"),
-            ]
-
-            for pattern in patterns {
-                if trimmed == pattern.prefix.trimmingCharacters(in: .whitespaces)
-                    || (cursorInPara == pattern.prefix.count && lineText.hasPrefix(pattern.prefix)) {
-                    // Verify cursor position matches end of prefix
-                    guard cursorInPara == pattern.prefix.count else { continue }
-
-                    let deleteRange = NSRange(
-                        location: paraRange.location,
-                        length: pattern.prefix.count)
-
-                    switch pattern.action {
-                    case "bullet":
-                        textStorage.replaceCharacters(in: deleteRange, with: "")
-                        let newCursorPos = paraRange.location
-                        setSelectedRange(NSRange(location: newCursorPos, length: 0))
-                        if let coord = actionDelegate {
-                            coord.formatter.applyFormatting(to: self, tool: .bulletList)
-                        }
-                        // Position cursor after "• " — toggleBulletList leaves it past the newline
-                        setSelectedRange(NSRange(location: paraRange.location + 2, length: 0))
-                    case "todo":
-                        textStorage.replaceCharacters(in: deleteRange, with: "")
-                        let newCursorPos = paraRange.location
-                        setSelectedRange(NSRange(location: newCursorPos, length: 0))
-                        if let coord = actionDelegate {
-                            coord.insertTodo()
-                        }
-                    case "quote":
-                        // Remove "> " prefix and apply block quote formatting atomically.
-                        // beginEditing/endEditing prevents processEditing from firing
-                        // between the character removal and attribute application — without
-                        // this, styleTodoParagraphs() runs before .blockQuote is set
-                        // and applies baseParagraphStyle (no indent).
-                        textStorage.beginEditing()
-                        textStorage.replaceCharacters(in: deleteRange, with: "")
-                        let newCursorPos = paraRange.location
-                        let newParaRange = (textStorage.string as NSString).paragraphRange(
-                            for: NSRange(location: newCursorPos, length: 0))
-                        let quoteStyle = TodoEditorRepresentable.Coordinator.blockQuoteParagraphStyle()
-                        textStorage.addAttribute(.blockQuote, value: true, range: newParaRange)
-                        textStorage.addAttribute(.paragraphStyle, value: quoteStyle, range: newParaRange)
-                        textStorage.addAttribute(
-                            .foregroundColor,
-                            value: blockQuoteTextColor,
-                            range: newParaRange)
-                        textStorage.endEditing()
-                        setSelectedRange(NSRange(location: newCursorPos, length: 0))
-                        // Set typing attributes so first typed character gets the full style
-                        var quoteTyping = TodoEditorRepresentable.Coordinator.baseTypingAttributes(
-                            for: actionDelegate?.currentColorScheme)
-                        quoteTyping[.blockQuote] = true
-                        quoteTyping[.paragraphStyle] = quoteStyle
-                        quoteTyping[.foregroundColor] = blockQuoteTextColor
-                        typingAttributes = quoteTyping
-                    default:
-                        break
-                    }
-                    return
-                }
-            }
-
-            // Check for numbered list pattern: "1. " at line start
-            let olPattern = /^(\d+)\. $/
-            if let match = trimmed.wholeMatch(of: olPattern),
-               cursorInPara == trimmed.count {
-                let num = Int(match.1) ?? 1
-                // NSRange lengths are UTF-16 code units; use NSString length so a paragraph that
-                // begins with a multi-scalar grapheme (emoji, combining marks) produces the right
-                // delete range.
-                let deleteRange = NSRange(
-                    location: paraRange.location,
-                    length: (trimmed as NSString).length)
-                let prefix = "\(num). "
-                textStorage.replaceCharacters(in: deleteRange, with: prefix)
-                let prefixRange = NSRange(location: paraRange.location, length: prefix.count)
-                textStorage.addAttribute(.orderedListNumber, value: num, range: prefixRange)
-                setSelectedRange(NSRange(location: paraRange.location + prefix.count, length: 0))
-                return
-            }
-
-            // Line-start `-> ` / `=> ` — Figma `IconArrowRight` attachment vs Unicode double arrow.
-            if trimmed.wholeMatch(of: /^\s*-> $/) != nil,
-               cursorInPara == trimmed.count,
-               let coord = actionDelegate {
-                let deleteRange = NSRange(location: paraRange.location, length: (trimmed as NSString).length)
-                let seedAttrs = textStorage.attributes(at: paraRange.location, effectiveRange: nil)
-                let chunk = NSMutableAttributedString(
-                    attributedString: coord.makeArrowGlyphForMarkdownShortcut(merging: seedAttrs))
-                let spaceAttrs = TodoEditorRepresentable.Coordinator.baseTypingAttributes(for: coord.currentColorScheme)
-                chunk.append(NSAttributedString(string: " ", attributes: spaceAttrs))
-                textStorage.replaceCharacters(in: deleteRange, with: chunk)
-                setSelectedRange(NSRange(location: deleteRange.location + chunk.length, length: 0))
-                return
-            }
-            if trimmed.wholeMatch(of: /^\s*=> $/) != nil,
-               cursorInPara == trimmed.count {
-                let deleteRange = NSRange(location: paraRange.location, length: (trimmed as NSString).length)
-                let doubleArrow = "\u{21D2} "
-                let attrs = TodoEditorRepresentable.Coordinator.baseTypingAttributes(
-                    for: actionDelegate?.currentColorScheme)
-                let chunk = NSAttributedString(string: doubleArrow, attributes: attrs)
-                textStorage.replaceCharacters(in: deleteRange, with: chunk)
-                setSelectedRange(NSRange(location: deleteRange.location + (doubleArrow as NSString).length, length: 0))
-                return
-            }
-        }
-
-        // --- Inline shortcuts (trigger on closing delimiter) ---
-        if inserted == "*" || inserted == "`" || inserted == "~" {
-            let paraRange = (textStorage.string as NSString).paragraphRange(
-                for: NSRange(location: max(0, cursor - 1), length: 0))
-            let lineStart = paraRange.location
-            let textBeforeCursor = (textStorage.string as NSString).substring(
-                with: NSRange(location: lineStart, length: cursor - lineStart))
-
-            // Bold: **text**
-            if inserted == "*" && textBeforeCursor.hasSuffix("*") {
-                // Look for opening **
-                let searchStr = textBeforeCursor
-                if let range = searchStr.range(of: "**", options: .backwards,
-                                                range: searchStr.startIndex..<searchStr.index(before: searchStr.endIndex)) {
-                    let openOffset = searchStr.distance(from: searchStr.startIndex, to: range.lowerBound)
-                    let contentStart = openOffset + 2
-                    let contentEnd = searchStr.count - 1  // before the last *
-                    if contentEnd > contentStart {
-                        let content = String(searchStr[searchStr.index(searchStr.startIndex, offsetBy: contentStart)..<searchStr.index(searchStr.startIndex, offsetBy: contentEnd)])
-                        if !content.isEmpty && !content.hasPrefix("*") {
-                            // Replace **content** with bold content
-                            let absStart = lineStart + openOffset
-                            let fullLen = cursor - absStart  // includes closing *
-                            let replaceRange = NSRange(location: absStart, length: fullLen)
-                            var attrs = markdownBaseAttributes
-                            if let font = attrs[.font] as? NSFont {
-                                attrs[.font] = NSFontManager.shared.convert(font, toHaveTrait: .boldFontMask)
-                            }
-                            textStorage.replaceCharacters(in: replaceRange, with: NSAttributedString(string: content, attributes: attrs))
-                            setSelectedRange(NSRange(location: absStart + content.count, length: 0))
-                            return
-                        }
-                    }
-                }
-            }
-
-            // Italic: *text* (single asterisk, not **)
-            if inserted == "*" {
-                let searchStr = textBeforeCursor
-                // Find last single * that isn't part of ** — search before the closing *
-                let searchRange = searchStr.startIndex..<searchStr.index(before: searchStr.endIndex)
-                if let lastStar = searchStr[searchRange].lastIndex(of: "*") {
-                    let afterStar = searchStr.index(after: lastStar)
-                    // Bounds check: afterStar must be a valid index before subscripting
-                    guard afterStar < searchStr.endIndex else { return }
-                    // Make sure it's a single * (not **) — check before only when not at start
-                    let notDoubleBefore = lastStar == searchStr.startIndex || searchStr[searchStr.index(before: lastStar)] != "*"
-                    if notDoubleBefore && searchStr[afterStar] != "*" {
-                        let openOffset = searchStr.distance(from: searchStr.startIndex, to: lastStar)
-                        let contentStart = openOffset + 1
-                        let contentEnd = searchStr.count  // before closing *
-                        if contentEnd > contentStart {
-                            let content = String(searchStr[searchStr.index(searchStr.startIndex, offsetBy: contentStart)...])
-                            if !content.isEmpty {
-                                let absStart = lineStart + openOffset
-                                let fullLen = cursor - absStart
-                                let replaceRange = NSRange(location: absStart, length: fullLen)
-                                var attrs = markdownBaseAttributes
-                                if let font = attrs[.font] as? NSFont {
-                                    attrs[.font] = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask)
-                                }
-                                textStorage.replaceCharacters(in: replaceRange, with: NSAttributedString(string: content, attributes: attrs))
-                                setSelectedRange(NSRange(location: absStart + content.count, length: 0))
-                                return
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Strikethrough: ~~text~~
-            if inserted == "~" && textBeforeCursor.hasSuffix("~") {
-                let searchStr = textBeforeCursor
-                if let range = searchStr.range(of: "~~", options: .backwards,
-                                                range: searchStr.startIndex..<searchStr.index(before: searchStr.endIndex)) {
-                    let openOffset = searchStr.distance(from: searchStr.startIndex, to: range.lowerBound)
-                    let contentStart = openOffset + 2
-                    let contentEnd = searchStr.count - 1
-                    if contentEnd > contentStart {
-                        let content = String(searchStr[searchStr.index(searchStr.startIndex, offsetBy: contentStart)..<searchStr.index(searchStr.startIndex, offsetBy: contentEnd)])
-                        if !content.isEmpty && !content.hasPrefix("~") {
-                            let absStart = lineStart + openOffset
-                            let fullLen = cursor - absStart
-                            let replaceRange = NSRange(location: absStart, length: fullLen)
-                            var attrs = markdownBaseAttributes
-                            attrs[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
-                            attrs[.foregroundColor] = checkedTodoTextColor
-                            textStorage.replaceCharacters(in: replaceRange, with: NSAttributedString(string: content, attributes: attrs))
-                            setSelectedRange(NSRange(location: absStart + content.count, length: 0))
-                            return
-                        }
-                    }
-                }
-            }
-        }
-
-        // --- Divider shortcut: --- or *** at line start, trigger on Enter ---
-        // (handled separately since Enter triggers newline insertion)
-    }
+    // `handleMarkdownShortcuts(inserted:)` and its `markdownBaseAttributes` helper
+    // moved to `InlineNSTextView+MarkdownShortcuts.swift`.
 
     /// Reads the text typed after the "@" character to use as a filter for note picker
     private func readNotePickerFilterText() -> String {
