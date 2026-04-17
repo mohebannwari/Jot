@@ -2011,14 +2011,17 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             ThemeManager.currentBodyFontSize() * 1.5
         }
         private static let todoLineHeight: CGFloat = 24
-        private static let checkboxIconSize: CGFloat = 26
-        private static let checkboxAttachmentWidth: CGFloat = 30
-        private static let baseBaselineOffset: CGFloat = 0.0
+        // Access promoted from `private` to internal (default) so `NoteParagraphStyler`
+        // (sibling file) can read these while styling paragraphs. The constants are
+        // intentionally unchanged — only the visibility moved.
+        static let checkboxIconSize: CGFloat = 26
+        static let checkboxAttachmentWidth: CGFloat = 30
+        static let baseBaselineOffset: CGFloat = 0.0
         private static let todoBaselineOffset: CGFloat = {
             return 0.0
         }()
-        private static var checkboxAttachmentYOffset: CGFloat { 0.0 }
-        private static let checkboxBaselineOffset: CGFloat = {
+        static var checkboxAttachmentYOffset: CGFloat { 0.0 }
+        static let checkboxBaselineOffset: CGFloat = {
             return 0.0
         }()
         private static let webClipMarkupPrefix = "[[webclip|"
@@ -8215,371 +8218,27 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             }
         }
 
-        /// Fixes any text that has inconsistent font formatting (e.g., from Writing Tools).
-        /// When `scopeRange` is provided, only the affected paragraphs are scanned.
-        /// Pass `nil` for full-document passes (initial load, editor settings change).
+        /// Facade for `NoteParagraphStyler.fixInconsistentFonts`. Keeps the existing call sites
+        /// unchanged while the body lives in a sibling file. Manages `isUpdating` here (the
+        /// extracted function stays Coordinator-agnostic).
         private func fixInconsistentFonts(in scopeRange: NSRange? = nil) {
-            guard let textView = textView,
-                let textStorage = textView.textStorage
-            else { return }
-
-            let expectedAttributes = Self.baseTypingAttributes(for: currentColorScheme)
-            guard let expectedFont = expectedAttributes[.font] as? NSFont,
-                let expectedColor = expectedAttributes[.foregroundColor] as? NSColor
-            else { return }
-
-            // Determine working range: scoped to affected paragraphs or full document
-            let workingRange: NSRange
-            if let scope = scopeRange, scope.location != NSNotFound, scope.location < textStorage.length {
-                let nsString = textStorage.string as NSString
-                let start = nsString.paragraphRange(for: NSRange(location: scope.location, length: 0)).location
-                let endLoc = min(NSMaxRange(scope), textStorage.length)
-                let endPara = nsString.paragraphRange(for: NSRange(location: max(endLoc, start), length: 0))
-                workingRange = NSRange(location: start, length: NSMaxRange(endPara) - start)
-            } else {
-                workingRange = NSRange(location: 0, length: textStorage.length)
-            }
-
+            guard let textStorage = textView?.textStorage else { return }
             // Suppress textDidChange during font corrections to prevent
             // re-scheduling this function in an infinite 300ms loop
             isUpdating = true
             defer { isUpdating = false }
-
-            // Collect ranges that need fixing, then batch-apply inside beginEditing/endEditing
-            var fixups: [(range: NSRange, attrs: [NSAttributedString.Key: Any])] = []
-
-            textStorage.enumerateAttributes(
-                in: workingRange
-            ) { attributes, range, _ in
-                // Attachment characters (U+FFFC) render through their NSTextAttachmentCell,
-                // not through text attributes. Rewriting their attributes with setAttributes
-                // can silently strip critical custom keys (.notelinkID, .notelinkTitle, etc.)
-                // causing notelinks and other attachments to vanish after serialization.
-                if attributes[.attachment] != nil { return }
-                // Inline code intentionally uses monospaced SF; do not rewrite it to the body font.
-                if attributes[.inlineCode] as? Bool == true { return }
-
-                var needsFixing = false
-                var fixedAttributes: [NSAttributedString.Key: Any] = attributes
-
-                // Check font: correct only when the FAMILY is wrong or size is wrong.
-                // Checking family (not name) preserves intentional bold/italic variants
-                // in the correct family, while still catching Writing Tools injecting
-                // a completely different typeface (e.g. Helvetica into a Charter doc).
-                if let currentFont = attributes[.font] as? NSFont {
-                    let isHeading = Self.headingLevel(for: currentFont) != nil
-                    let hasCustomFontFamily = attributes[TextFormattingManager.customFontFamilyKey] as? Bool == true
-                    if !isHeading && !hasCustomFontFamily {
-                        let currentFamily = currentFont.familyName ?? currentFont.fontName
-                        let expectedFamily = expectedFont.familyName ?? expectedFont.fontName
-                        if currentFamily != expectedFamily
-                            || currentFont.pointSize != expectedFont.pointSize
-                        {
-                            // Replace font family but preserve bold/italic traits
-                            let traits = NSFontManager.shared.traits(of: currentFont)
-                            var replacement = expectedFont
-                            if traits.contains(.boldFontMask) {
-                                replacement = NSFontManager.shared.convert(
-                                    replacement, toHaveTrait: .boldFontMask)
-                            }
-                            if traits.contains(.italicFontMask) {
-                                replacement = NSFontManager.shared.convert(
-                                    replacement, toHaveTrait: .italicFontMask)
-                            }
-                            fixedAttributes[.font] = replacement
-                            needsFixing = true
-                        }
-                    }
-                } else {
-                    fixedAttributes[.font] = expectedFont
-                    needsFixing = true
-                }
-
-                // Check text color — skip ranges with a user-intentional custom color, block quote, or checked todo
-                let hasCustomColor = attributes[TextFormattingManager.customTextColorKey] as? Bool == true
-                let isBlockQuote = attributes[.blockQuote] as? Bool == true
-                let isTodoChecked = attributes[.todoChecked] as? Bool == true
-                if !hasCustomColor && !isBlockQuote && !isTodoChecked {
-                    if let currentColor = attributes[.foregroundColor] as? NSColor {
-                        if !currentColor.isEqual(expectedColor) {
-                            fixedAttributes[.foregroundColor] = expectedColor
-                            needsFixing = true
-                        }
-                    } else {
-                        fixedAttributes[.foregroundColor] = expectedColor
-                        needsFixing = true
-                    }
-                }
-
-                if needsFixing {
-                    fixups.append((range: range, attrs: fixedAttributes))
-                }
-            }
-
-            // Batch all mutations in a single editing bracket so the layout manager
-            // receives one processEditing notification, not N individual ones
-            if !fixups.isEmpty {
-                textStorage.beginEditing()
-                for fixup in fixups {
-                    textStorage.setAttributes(fixup.attrs, range: fixup.range)
-                }
-                textStorage.endEditing()
-            }
+            NoteParagraphStyler.fixInconsistentFonts(
+                in: textStorage,
+                scopeRange: scopeRange,
+                expectedAttributes: Self.baseTypingAttributes(for: currentColorScheme)
+            )
         }
 
-        /// Style paragraphs for todo checkboxes, lists, block quotes, images, tables, etc.
-        /// When `editedRange` is provided, only the affected paragraphs are re-styled (O(1) for
-        /// single-character edits). Pass `nil` for full-document passes (initial load, font change).
+        /// Facade for `NoteParagraphStyler.styleTodoParagraphs`. Existing call sites call this
+        /// method on the Coordinator; the implementation lives in a sibling file for testability.
         private func styleTodoParagraphs(editedRange: NSRange? = nil) {
             guard let textStorage = textView?.textStorage else { return }
-            let fullRange = NSRange(location: 0, length: textStorage.length)
-            // Bridge cast once — reused for working-range expansion and the paragraph loop below.
-            // Safe to hoist: textStorage.string is only modified via addAttribute/removeAttribute
-            // inside this function, neither of which changes the string content itself.
-            let nsString = textStorage.string as NSString
-            // Determine the working range: either the edited paragraph(s) or the full document
-            let workingRange: NSRange
-            if let edited = editedRange, edited.location != NSNotFound, edited.location < textStorage.length {
-                // Expand to paragraph boundaries so we always style complete paragraphs
-                let start = nsString.paragraphRange(for: NSRange(location: edited.location, length: 0)).location
-                let endLoc = min(NSMaxRange(edited), textStorage.length)
-                let endPara = nsString.paragraphRange(for: NSRange(location: max(endLoc, start), length: 0))
-                workingRange = NSRange(location: start, length: NSMaxRange(endPara) - start)
-            } else {
-                workingRange = fullRange
-            }
-            textStorage.beginEditing()
-            // Do NOT blanket-remove .paragraphStyle — heading and alignment styles live there.
-            textStorage.removeAttribute(.baselineOffset, range: workingRange)
-
-            var paragraphRange = NSRange(location: workingRange.location, length: 0)
-            while paragraphRange.location < NSMaxRange(workingRange) {
-                let substringRange = nsString.paragraphRange(
-                    for: NSRange(location: paragraphRange.location, length: 0))
-                if substringRange.length == 0 { break }
-                defer { paragraphRange.location = NSMaxRange(substringRange) }
-
-                // Strip highlight from paragraph-terminating newlines — prevents full-width
-                // background extension and highlight bleeding when Enter is pressed
-                let lastCharIndex = NSMaxRange(substringRange) - 1
-                if lastCharIndex >= 0,
-                   lastCharIndex < textStorage.length,
-                   nsString.character(at: lastCharIndex) == 0x0A,
-                   textStorage.attribute(.highlightColor, at: lastCharIndex, effectiveRange: nil) != nil {
-                    let nlRange = NSRange(location: lastCharIndex, length: 1)
-                    textStorage.removeAttribute(.backgroundColor, range: nlRange)
-                    textStorage.removeAttribute(.highlightColor, range: nlRange)
-                    textStorage.removeAttribute(.highlightVariant, range: nlRange)
-                }
-
-                var isTodoParagraph = false
-                var isWebClipParagraph = false
-                var isImageParagraph = false
-                var isTableParagraph = false
-
-                textStorage.enumerateAttribute(
-                    .attachment,
-                    in: NSRange(
-                        location: substringRange.location, length: min(1, substringRange.length)
-                    ), options: []
-                ) { value, _, stop in
-                    if let attachment = value as? NSTextAttachment {
-                        // Check if it's a todo checkbox
-                        if let cell = attachment.attachmentCell as? TodoCheckboxAttachmentCell {
-                            isTodoParagraph = true
-                            cell.invalidateAppearance()
-                            stop.pointee = true
-                        }
-                        // Check if it's a web clip attachment (inline pill style)
-                        else if textStorage.attribute(
-                            .webClipTitle, at: substringRange.location, effectiveRange: nil)
-                            != nil
-                        {
-                            isWebClipParagraph = true
-                            stop.pointee = true
-                        }
-                        // Table attachments need extra top spacing for grab handles
-                        else if attachment is NoteTableAttachment {
-                            isTableParagraph = true
-                            stop.pointee = true
-                        }
-                        // Other block-level attachments (image, callout, code block, link card, file preview)
-                        else if attachment is NoteImageAttachment
-                                || attachment is NoteCalloutAttachment
-                                || attachment is NoteCodeBlockAttachment
-                                || attachment is NoteTabsAttachment
-                                || attachment is NoteCardSectionAttachment
-                                || attachment is NoteLinkCardAttachment
-                                || ((attachment as? NoteFileAttachment).map { $0.viewMode != .tag } ?? false) {
-                            isImageParagraph = true
-                            stop.pointee = true
-                        }
-                    }
-                }
-
-                // Detect numbered list paragraphs
-                var isNumberedListParagraph = false
-                if !isTodoParagraph && !isWebClipParagraph && !isImageParagraph && !isTableParagraph {
-                    if substringRange.location < textStorage.length,
-                       textStorage.attribute(.orderedListNumber, at: substringRange.location, effectiveRange: nil) != nil {
-                        isNumberedListParagraph = true
-                    }
-                }
-
-                // Detect block quote paragraphs
-                var isBlockQuoteParagraph = false
-                if !isTodoParagraph && !isWebClipParagraph && !isImageParagraph && !isTableParagraph && !isNumberedListParagraph {
-                    if substringRange.location < textStorage.length,
-                       textStorage.attribute(.blockQuote, at: substringRange.location, effectiveRange: nil) as? Bool == true {
-                        isBlockQuoteParagraph = true
-                    }
-                }
-
-                // Arrow pseudo-bullets (imported `->` / `=>` or Unicode arrows) — hang-indent like ordered lists.
-                var isArrowParagraph = false
-                if !isTodoParagraph && !isWebClipParagraph && !isImageParagraph && !isTableParagraph
-                    && !isNumberedListParagraph && !isBlockQuoteParagraph,
-                   substringRange.location < textStorage.length, substringRange.length > 0
-                {
-                    let peekLen = min(12, substringRange.length)
-                    let peek = nsString.substring(
-                        with: NSRange(location: substringRange.location, length: peekLen))
-                    if peek.hasPrefix("\u{2192} ") || peek.hasPrefix("\u{21D2} ") {
-                        isArrowParagraph = true
-                    } else if textStorage.attribute(
-                        .attachment, at: substringRange.location, effectiveRange: nil) is NoteArrowAttachment {
-                        isArrowParagraph = true
-                    }
-                }
-
-                // Detect heading paragraphs — apply heading paragraph spacing on the full range
-                // (including the trailing newline) so AppKit does not resolve the paragraph from
-                // the newline's base style and drop heading spacing after import/round-trip.
-                var isHeadingParagraph = false
-                if !isTodoParagraph && !isWebClipParagraph && !isNumberedListParagraph && !isBlockQuoteParagraph
-                    && !isArrowParagraph
-                {
-                    // Heading font is carried from the paragraph's first character by invariant
-                    // (styleTodoParagraphs itself is what preserves this). A single-point peek
-                    // saves N `enumerateAttribute` visits per paragraph on every keystroke.
-                    if let f = textStorage.attribute(.font, at: substringRange.location, effectiveRange: nil) as? NSFont,
-                       Self.headingLevel(for: f) != nil {
-                        isHeadingParagraph = true
-                    }
-                }
-
-                // Apply appropriate paragraph style based on content type
-                if isTableParagraph {
-                    // Tables need extra top spacing so column grab handles don't overlap content above
-                    let tableStyle = NSMutableParagraphStyle()
-                    tableStyle.alignment = .left
-                    tableStyle.paragraphSpacing = 8
-                    tableStyle.paragraphSpacingBefore = 30
-                    textStorage.addAttribute(.paragraphStyle, value: tableStyle, range: substringRange)
-                } else if isImageParagraph {
-                    // Preserve block image paragraph style — do not override
-                    let imgStyle = NSMutableParagraphStyle()
-                    imgStyle.alignment = .left
-                    imgStyle.paragraphSpacing = 8
-                    imgStyle.paragraphSpacingBefore = 8
-                    textStorage.addAttribute(.paragraphStyle, value: imgStyle, range: substringRange)
-                } else if isWebClipParagraph {
-                    textStorage.addAttribute(.paragraphStyle, value: Self.webClipParagraphStyle(), range: substringRange)
-                } else if isTodoParagraph {
-                    textStorage.addAttribute(.paragraphStyle, value: Self.todoParagraphStyle(), range: substringRange)
-                } else if isNumberedListParagraph {
-                    textStorage.addAttribute(.paragraphStyle, value: Self.orderedListParagraphStyle(), range: substringRange)
-                } else if isBlockQuoteParagraph {
-                    // Actively enforce block quote paragraph style on every text change,
-                    // just like every other block type. Preserves custom alignment if set.
-                    guard let quoteStyle = Self.blockQuoteParagraphStyle().mutableCopy() as? NSMutableParagraphStyle else { return }
-                    textStorage.enumerateAttribute(.paragraphStyle, in: substringRange, options: []) { val, _, stop in
-                        if let ps = val as? NSParagraphStyle, ps.alignment != .left {
-                            quoteStyle.alignment = ps.alignment
-                            stop.pointee = true
-                        }
-                    }
-                    textStorage.addAttribute(.paragraphStyle, value: quoteStyle, range: substringRange)
-                } else if isArrowParagraph {
-                    textStorage.addAttribute(.paragraphStyle, value: Self.orderedListParagraphStyle(), range: substringRange)
-                } else if isHeadingParagraph {
-                    // Match TextFormattingManager.applyHeading spacing for all heading levels.
-                    let headingStyle = NSMutableParagraphStyle()
-                    headingStyle.paragraphSpacingBefore = 8
-                    headingStyle.paragraphSpacing = 12
-                    textStorage.enumerateAttribute(.paragraphStyle, in: substringRange, options: []) { val, _, stop in
-                        if let ps = val as? NSParagraphStyle, ps.alignment != .left {
-                            headingStyle.alignment = ps.alignment
-                            stop.pointee = true
-                        }
-                    }
-                    textStorage.addAttribute(.paragraphStyle, value: headingStyle, range: substringRange)
-                } else {
-                    // Body paragraph: apply base style but preserve any custom alignment
-                    guard let mutableStyle = Self.baseParagraphStyle().mutableCopy() as? NSMutableParagraphStyle else { return }
-                    var existingAlignment: NSTextAlignment = .left
-                    textStorage.enumerateAttribute(.paragraphStyle, in: substringRange, options: []) { val, _, stop in
-                        if let ps = val as? NSParagraphStyle, ps.alignment != .left {
-                            existingAlignment = ps.alignment
-                            stop.pointee = true
-                        }
-                    }
-                    if existingAlignment != .left { mutableStyle.alignment = existingAlignment }
-                    textStorage.addAttribute(.paragraphStyle, value: mutableStyle, range: substringRange)
-                }
-
-                // Don't adjust baseline for todo, web clip, heading, image, table, numbered list, block quote, or arrow paragraphs
-                if !isTodoParagraph && !isWebClipParagraph && !isHeadingParagraph && !isImageParagraph && !isTableParagraph && !isNumberedListParagraph && !isBlockQuoteParagraph && !isArrowParagraph {
-                    textStorage.addAttribute(
-                        .baselineOffset, value: Self.baseBaselineOffset, range: substringRange)
-                }
-
-                if isTodoParagraph {
-                    var checkedCell: TodoCheckboxAttachmentCell?
-                    textStorage.enumerateAttribute(.attachment, in: substringRange, options: [])
-                    { value, attachmentRange, _ in
-                        guard let attachment = value as? NSTextAttachment,
-                            let cell = attachment.attachmentCell as? TodoCheckboxAttachmentCell
-                        else { return }
-                        attachment.bounds = CGRect(
-                            x: 0, y: Self.checkboxAttachmentYOffset,
-                            width: Self.checkboxAttachmentWidth, height: Self.checkboxIconSize)
-                        textStorage.addAttribute(
-                            .baselineOffset, value: Self.checkboxBaselineOffset,
-                            range: attachmentRange)
-                        cell.invalidateAppearance()
-                        checkedCell = cell
-                    }
-
-                    // Enforce checked todo text styling on the text portion
-                    // Todo structure: [attachment][space][space][text...] — skip all 3 prefix chars
-                    if let cell = checkedCell {
-                        let textStart = substringRange.location + 3
-                        let textEnd = NSMaxRange(substringRange)
-                        if textStart < textEnd {
-                            let textRange = NSRange(location: textStart, length: textEnd - textStart)
-                            if cell.isChecked {
-                                textStorage.addAttribute(.todoChecked, value: true, range: textRange)
-                                textStorage.addAttribute(.foregroundColor, value: checkedTodoTextColor, range: textRange)
-                            } else {
-                                textStorage.removeAttribute(.todoChecked, range: textRange)
-                                textStorage.addAttribute(.foregroundColor, value: NSColor.labelColor, range: textRange)
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Suppress spell check red underlines on attachment characters (U+FFFC).
-            // Without this, the spell checker treats words adjacent to inline attachments
-            // (checkboxes, images, webclips) as misspelled due to the invisible U+FFFC boundary.
-            textStorage.enumerateAttribute(.attachment, in: workingRange, options: []) { value, range, _ in
-                if value != nil {
-                    textStorage.addAttribute(.spellingState, value: 0, range: range)
-                }
-            }
-
-            textStorage.endEditing()
+            NoteParagraphStyler.styleTodoParagraphs(in: textStorage, editedRange: editedRange)
         }
 
         private func isInTodoParagraph(range: NSRange) -> Bool {
@@ -8803,7 +8462,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     let isBlockQuote = attributes[.blockQuote] as? Bool == true
                     let highlightHex = attributes[.highlightColor] as? String
                     let highlightVariant = attributes[.highlightVariant] as? Int
-                    let heading = font.flatMap { Self.headingLevel(for: $0) }
+                    let heading = font.flatMap { NoteParagraphStyler.headingLevel(for: $0) }
 
                     var runBold = false
                     var runItalic = false
@@ -9918,14 +9577,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             return blended + opticalFineTune
         }
 
-        private static func headingLevel(for font: NSFont) -> TextFormattingManager.HeadingLevel? {
-            switch font.pointSize {
-            case TextFormattingManager.HeadingLevel.h1.fontSize: return .h1
-            case TextFormattingManager.HeadingLevel.h2.fontSize: return .h2
-            case TextFormattingManager.HeadingLevel.h3.fontSize: return .h3
-            default: return nil
-            }
-        }
+        // `headingLevel(for:)` moved to `NoteParagraphStyler.headingLevel(for:)`.
 
         private static func nsColorToHex(_ color: NSColor) -> String {
             let c = color.usingColorSpace(.sRGB) ?? color.usingColorSpace(.deviceRGB) ?? color
@@ -11265,7 +10917,9 @@ final class InlineNSTextView: NSTextView, QLPreviewPanelDataSource, QLPreviewPan
     }
 }
 
-private final class TodoCheckboxAttachmentCell: NSTextAttachmentCell {
+// Access promoted from `private` to file-internal so `NoteParagraphStyler`
+// (sibling file) can detect todo paragraphs via `attachment.attachmentCell as?`.
+final class TodoCheckboxAttachmentCell: NSTextAttachmentCell {
     var isChecked: Bool
     private let size = NSSize(width: 30, height: 26)
     private let checkSize: CGFloat = 18
