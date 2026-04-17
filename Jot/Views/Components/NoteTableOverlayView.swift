@@ -28,8 +28,18 @@ final class NoteTableOverlayView: NSView {
     }
 
     var onDataChanged: ((NoteTableData) -> Void)?
+    /// Fired once after a discrete table edit or when a column-divider drag ends (host runs `syncText`).
+    var onResizeGestureEnded: (() -> Void)?
     var onDeleteTable: (() -> Void)?
     weak var parentTextView: NSTextView?
+
+    /// Pushes `tableData` to the text attachment; optionally notifies the host to sync serialized markup.
+    private func publishTableDataChange(commitToNote: Bool) {
+        onDataChanged?(tableData)
+        if commitToNote {
+            onResizeGestureEnded?()
+        }
+    }
 
     /// Actual table viewport width set externally by updateTableOverlays.
     /// Content scrolls within this width when columns overflow.
@@ -151,11 +161,10 @@ final class NoteTableOverlayView: NSView {
             : .white
     }
 
-    /// Matches the note detail pane background for gradient fade edges.
+    /// Matches the **tinted** note detail pane surface (`ThemeManager.tintedPaneSurface`)
+    /// so horizontal scroll fade edges blend into the same wash as the editor chrome.
     private var paneBackgroundColor: NSColor {
-        NSColor(named: "DetailPaneSurfaceColor") ?? (isDarkMode
-            ? NSColor(red: 0.110, green: 0.098, blue: 0.090, alpha: 1)
-            : NSColor(red: 0.906, green: 0.898, blue: 0.894, alpha: 1))
+        ThemeManager.tintedPaneSurfaceNS(isDark: isDarkMode)
     }
 
     private var iconSecondaryColor: NSColor {
@@ -545,8 +554,8 @@ final class NoteTableOverlayView: NSView {
     // MARK: - Scroll Fade Edges
 
     /// Draws gradient fade overlays on the edges where content is clipped.
-    /// Uses the note detail pane's background color to fade table content
-    /// into the surrounding pane, matching the pane's own vertical fade style.
+    /// Uses the tinted pane surface color so the fade matches the note detail
+    /// background (including app-wide hue wash), not the untinted asset alone.
     /// Drawn OUTSIDE the table's content clip so it overlays the hard edge.
     private func drawScrollFadeEdges() {
         guard needsHorizontalScroll else { return }
@@ -1313,7 +1322,7 @@ final class NoteTableOverlayView: NSView {
                 }
                 let fitWidth = max(minColumnWidth, maxTextWidth + 2 * cellPaddingH)
                 tableData.columnWidths[col] = fitWidth
-                onDataChanged?(tableData)
+                publishTableDataChange(commitToNote: true)
                 needsDisplay = true
                 return
             }
@@ -1364,12 +1373,12 @@ final class NoteTableOverlayView: NSView {
         // + buttons
         if addRowButtonRect.contains(point) {
             tableData.addRow()
-            onDataChanged?(tableData)
+            publishTableDataChange(commitToNote: true)
             return
         }
         if addColumnButtonViewRect.contains(point) {
             tableData.addColumn()
-            onDataChanged?(tableData)
+            publishTableDataChange(commitToNote: true)
             return
         }
 
@@ -1393,7 +1402,7 @@ final class NoteTableOverlayView: NSView {
             // Only adjust the left column's width
             let newWidth = max(minColumnWidth, dividerStartWidths[idx] + delta)
             tableData.columnWidths[idx] = newWidth
-            onDataChanged?(tableData)
+            publishTableDataChange(commitToNote: false)
             NSCursor.resizeLeftRight.set()
             needsDisplay = true
             return
@@ -1439,6 +1448,7 @@ final class NoteTableOverlayView: NSView {
             isDraggingDivider = false
             draggingDividerIndex = -1
             dividerStartWidths = []
+            onResizeGestureEnded?()
             NSCursor.arrow.set()
             needsDisplay = true
             return
@@ -1449,7 +1459,7 @@ final class NoteTableOverlayView: NSView {
             let dest = target > dragSourceIndex ? target - 1 : target
             if dest != dragSourceIndex && dest >= 0 && dest < tableData.rows {
                 tableData.moveRow(from: dragSourceIndex, to: dest)
-                onDataChanged?(tableData)
+                publishTableDataChange(commitToNote: true)
             }
             isDraggingRow = false
             dragSourceIndex = -1
@@ -1463,7 +1473,7 @@ final class NoteTableOverlayView: NSView {
             let dest = target > dragSourceIndex ? target - 1 : target
             if dest != dragSourceIndex && dest >= 0 && dest < tableData.columns {
                 tableData.moveColumn(from: dragSourceIndex, to: dest)
-                onDataChanged?(tableData)
+                publishTableDataChange(commitToNote: true)
             }
             isDraggingColumn = false
             dragSourceIndex = -1
@@ -1479,7 +1489,7 @@ final class NoteTableOverlayView: NSView {
                 let dstText = tableData.cells[target.row][target.column]
                 tableData.updateCell(row: src.row, column: src.column, text: dstText)
                 tableData.updateCell(row: target.row, column: target.column, text: srcText)
-                onDataChanged?(tableData)
+                publishTableDataChange(commitToNote: true)
             }
             isDraggingCell = false
             dragCellSource = nil
@@ -1626,32 +1636,32 @@ final class NoteTableOverlayView: NSView {
 
     @objc private func addRowAbove(_ sender: Any?) {
         tableData.addRow(at: contextRowIndex)
-        onDataChanged?(tableData)
+        publishTableDataChange(commitToNote: true)
     }
 
     @objc private func addRowBelow(_ sender: Any?) {
         tableData.addRow(at: contextRowIndex + 1)
-        onDataChanged?(tableData)
+        publishTableDataChange(commitToNote: true)
     }
 
     @objc private func addColumnBefore(_ sender: Any?) {
         tableData.addColumn(at: contextColumnIndex)
-        onDataChanged?(tableData)
+        publishTableDataChange(commitToNote: true)
     }
 
     @objc private func addColumnAfter(_ sender: Any?) {
         tableData.addColumn(at: contextColumnIndex + 1)
-        onDataChanged?(tableData)
+        publishTableDataChange(commitToNote: true)
     }
 
     @objc private func deleteRow(_ sender: Any?) {
         if tableData.rows <= 1 { onDeleteTable?() }
-        else { tableData.deleteRow(at: contextRowIndex); onDataChanged?(tableData) }
+        else { tableData.deleteRow(at: contextRowIndex); publishTableDataChange(commitToNote: true) }
     }
 
     @objc private func deleteColumn(_ sender: Any?) {
         if tableData.columns <= 1 { onDeleteTable?() }
-        else { tableData.deleteColumn(at: contextColumnIndex); onDataChanged?(tableData) }
+        else { tableData.deleteColumn(at: contextColumnIndex); publishTableDataChange(commitToNote: true) }
     }
 
     @objc private func deleteTable(_ sender: Any?) {
@@ -1660,7 +1670,7 @@ final class NoteTableOverlayView: NSView {
 
     @objc private func toggleWrapText(_ sender: Any?) {
         tableData.wrapText.toggle()
-        onDataChanged?(tableData)
+        publishTableDataChange(commitToNote: true)
     }
 
     // MARK: - Cell Editing
@@ -1693,7 +1703,7 @@ final class NoteTableOverlayView: NSView {
         let newValue = field.stringValue
         if tableData.cells[cell.row][cell.column] != newValue {
             tableData.updateCell(row: cell.row, column: cell.column, text: newValue)
-            onDataChanged?(tableData)
+            publishTableDataChange(commitToNote: true)
         }
         field.removeFromSuperview()
         editField = nil
@@ -1725,7 +1735,7 @@ final class NoteTableOverlayView: NSView {
         // Add new row at the BOTTOM if we go past the last row
         if targetRow >= tableData.rows {
             tableData.addRow()
-            onDataChanged?(tableData)
+            publishTableDataChange(commitToNote: true)
             targetRow = tableData.rows - 1
             targetCol = 0
         }

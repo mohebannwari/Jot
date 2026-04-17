@@ -200,6 +200,43 @@ final class ThemeManagerTests: XCTestCase {
             "Light tint should be meaningfully brighter than dark tint at full intensity")
     }
 
+    /// `tintedPaneSurfaceNS` reads `UserDefaults.standard` (same contract as
+    /// `tintedBlockContainerNS`). Restores prior tint keys after the test.
+    func testTintedPaneSurfaceNS_tracksStandardUserDefaultsTint() {
+        let standard = UserDefaults.standard
+        let prevHue = standard.object(forKey: ThemeManager.tintHueKey)
+        let prevIntensity = standard.object(forKey: ThemeManager.tintIntensityKey)
+        defer {
+            if let prevHue {
+                standard.set(prevHue, forKey: ThemeManager.tintHueKey)
+            } else {
+                standard.removeObject(forKey: ThemeManager.tintHueKey)
+            }
+            if let prevIntensity {
+                standard.set(prevIntensity, forKey: ThemeManager.tintIntensityKey)
+            } else {
+                standard.removeObject(forKey: ThemeManager.tintIntensityKey)
+            }
+        }
+
+        // DetailPaneSurfaceColor dark base (#1C1917) — must match ThemeManager.swift.
+        let darkBase = NSColor(srgbRed: 28 / 255, green: 25 / 255, blue: 23 / 255, alpha: 1)
+            .usingColorSpace(.sRGB)!
+        standard.set(0.25, forKey: ThemeManager.tintHueKey)
+        standard.set(0.0, forKey: ThemeManager.tintIntensityKey)
+        let untintedDark = ThemeManager.tintedPaneSurfaceNS(isDark: true).usingColorSpace(.sRGB)!
+        XCTAssertEqual(untintedDark.redComponent, darkBase.redComponent, accuracy: 0.002)
+        XCTAssertEqual(untintedDark.greenComponent, darkBase.greenComponent, accuracy: 0.002)
+        XCTAssertEqual(untintedDark.blueComponent, darkBase.blueComponent, accuracy: 0.002)
+
+        standard.set(1.0, forKey: ThemeManager.tintIntensityKey)
+        let tintedDark = ThemeManager.tintedPaneSurfaceNS(isDark: true).usingColorSpace(.sRGB)!
+        let delta = abs(tintedDark.redComponent - darkBase.redComponent)
+            + abs(tintedDark.greenComponent - darkBase.greenComponent)
+            + abs(tintedDark.blueComponent - darkBase.blueComponent)
+        XCTAssertGreaterThan(delta, 0.02, "Full intensity should shift RGB away from the dark base")
+    }
+
     // MARK: - Editor text flags (spellcheck/autocorrect/smart substitutions)
 
     /// First-launch default for editor spellcheck/autocorrect/smart-quotes/smart-dashes must

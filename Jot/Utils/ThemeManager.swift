@@ -577,6 +577,34 @@ final class ThemeManager: ObservableObject {
         return baseSRGB.blended(withFraction: CGFloat(intensity), of: targetSRGB) ?? baseSRGB
     }
 
+    /// NSColor variant of `tintedPaneSurface(for:)` for AppKit overlays (e.g. inline
+    /// table horizontal scroll fade) that must match the note detail pane wash.
+    /// Reads tint from `UserDefaults.standard` like `tintedBlockContainerNS`.
+    ///
+    /// Base colors match `DetailPaneSurfaceColor` in the asset catalog (#E7E5E4 light,
+    /// #1C1917 dark). Wash targets mirror `tintHueWashTarget` used by
+    /// `blendTowardAppTintWash`. Blending is sRGB like other static bridges; SwiftUI
+    /// uses perceptual `Color.mix` on newer OS versions, so colors may diverge slightly
+    /// at very high intensity.
+    nonisolated static func tintedPaneSurfaceNS(isDark: Bool) -> NSColor {
+        let base: NSColor = isDark
+            ? NSColor(srgbRed: 28 / 255, green: 25 / 255, blue: 23 / 255, alpha: 1)   // #1C1917
+            : NSColor(srgbRed: 231 / 255, green: 229 / 255, blue: 228 / 255, alpha: 1) // #E7E5E4
+
+        let intensity = currentTintIntensity()
+        guard intensity > 0 else { return base }
+
+        let hue = CGFloat(currentTintHue())
+        // Same saturation / brightness as `tintHueWashTarget(for:)`.
+        let target: NSColor = isDark
+            ? NSColor(hue: hue, saturation: 0.38, brightness: 0.16, alpha: 1)
+            : NSColor(hue: hue, saturation: 0.10, brightness: 0.96, alpha: 1)
+
+        let baseSRGB = base.usingColorSpace(.sRGB) ?? base
+        let targetSRGB = target.usingColorSpace(.sRGB) ?? target
+        return baseSRGB.blended(withFraction: CGFloat(intensity), of: targetSRGB) ?? baseSRGB
+    }
+
     // MARK: - Secondary Button Background Tint
 
     /// Computes the tinted secondary button background color.
