@@ -2,6 +2,8 @@ import SwiftUI
 
 struct SettingsPage: View {
     @Binding var isPresented: Bool
+    /// Matches note detail sticky header vertical inset (traffic lights vs inset pane).
+    let titleTopPadding: CGFloat
 
     @EnvironmentObject private var themeManager: ThemeManager
     @Environment(\.colorScheme) private var colorScheme
@@ -31,9 +33,32 @@ struct SettingsPage: View {
     @State private var hoveredPasswordConfirm = false
     @State private var hoveredPasswordDismiss = false
 
-    private let columnGap: CGFloat = 42
+    /// Leading inset for the settings tab list from the detail pane edge.
+    private let tabLeadingInset: CGFloat = 40
+    /// Vertical gap between tab labels only (no per-tab padding).
     private let tabVerticalSpacing: CGFloat = 12
+    /// Space between the compact title row and the tab/content body.
+    private let titleToBodySpacing: CGFloat = 16
     private let contentVerticalPadding: CGFloat = 8
+
+    /// Pinned "Settings" title strip: title row plus a taller masked fade so scrolled content clears the title.
+    private let settingsTitleChromeHeight: CGFloat = 84
+
+    /// Same smootherstep mask as ``NoteDetailView.headerMaskGradient`` (scroll-underlay fade).
+    private static let settingsHeaderMaskGradient: LinearGradient = {
+        let steps = 40
+        let stops: [Gradient.Stop] = (0...steps).map { i in
+            let t = Double(i) / Double(steps)
+            let eased = 1.0 - (t * t * t * (t * (t * 6 - 15) + 10))
+            return .init(color: Color.white.opacity(eased), location: t)
+        }
+        return LinearGradient(gradient: Gradient(stops: stops), startPoint: .top, endPoint: .bottom)
+    }()
+
+    /// Scroll (and tab) content starts below the overlaid title chrome; matches title row + gap under it.
+    private var settingsContentTopInsetUnderChrome: CGFloat {
+        titleTopPadding + settingsTitleChromeHeight + titleToBodySpacing
+    }
 
     private let themeCardHeight: CGFloat = 91
 
@@ -125,22 +150,30 @@ struct SettingsPage: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            Text("Settings")
-                .font(FontManager.heading(size: 28, weight: .semibold))
-                .tracking(-0.4)
-                .foregroundColor(Color("SettingsPrimaryTextColor"))
+        ZStack(alignment: .top) {
+            ZStack(alignment: .topLeading) {
+                HStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    contentColumn
+                    Spacer(minLength: 0)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .zIndex(0)
 
-            HStack(alignment: .top, spacing: columnGap) {
                 tabColumn
                     .fixedSize(horizontal: true, vertical: false)
-
-                contentColumn
+                    .padding(.leading, tabLeadingInset)
+                    .padding(.top, settingsContentTopInsetUnderChrome + contentVerticalPadding)
+                    .zIndex(1)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .padding(.bottom, 24)
+
+            settingsTitleChrome
+                .frame(maxWidth: .infinity, alignment: .top)
+                .zIndex(10)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .padding(.top, 80)
-        .padding(.bottom, 24)
         .onChange(of: isPresented) { _, presented in
             if presented {
                 activeTab = .general
@@ -153,6 +186,52 @@ struct SettingsPage: View {
             }
         }
         #endif
+    }
+
+    // MARK: - Title chrome (matches NoteDetailView sticky header material + mask)
+
+    private var settingsTitleChrome: some View {
+        VStack(spacing: 0) {
+            // Opaque band flush to the pane top so scrolled content cannot peek above the mask strip.
+            Rectangle()
+                .fill(themeManager.tintedPaneSurface(for: colorScheme))
+                .frame(height: titleTopPadding)
+                .allowsHitTesting(false)
+
+            ZStack(alignment: .top) {
+                Rectangle()
+                    .fill(themeManager.tintedPaneSurface(for: colorScheme))
+                    .mask(Self.settingsHeaderMaskGradient)
+                    .frame(height: settingsTitleChromeHeight)
+                    .allowsHitTesting(false)
+
+                HStack {
+                    Spacer()
+                    Text("Settings")
+                        .font(FontManager.heading(size: FontManager.noteDetailOverlayHeadingSize, weight: .medium))
+                        .foregroundColor(Color("PrimaryTextColor").opacity(0.5))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .padding(.horizontal, 80)
+                    Spacer()
+                }
+                .frame(height: 24)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .top)
+        .allowsHitTesting(false)
+    }
+
+    /// Selected tab uses the main text token at full opacity; inactive matches sticky-title opacity parity.
+    private func tabForeground(isSelected: Bool, isHovered: Bool) -> Color {
+        let base = Color("PrimaryTextColor")
+        if isSelected {
+            return base
+        }
+        if isHovered {
+            return base.opacity(0.65)
+        }
+        return base.opacity(0.5)
     }
 
     // MARK: - Tab Bar
@@ -175,22 +254,9 @@ struct SettingsPage: View {
             Text(tab.title)
                 .font(FontManager.heading(size: 13, weight: .medium))
                 .tracking(-0.2)
-                .foregroundColor(isSelected
-                    ? (colorScheme == .light ? Color.white : Color.black)
-                    : Color("SettingsPrimaryTextColor"))
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background {
-                if isSelected {
-                    Capsule()
-                        .fill(colorScheme == .light ? Color.black : Color.white)
-                } else if isHovered {
-                    Capsule()
-                        .fill(Color("HoverBackgroundColor"))
-                }
-            }
-            .clipShape(Capsule())
-            .animation(.jotHover, value: isHovered)
+                .foregroundColor(tabForeground(isSelected: isSelected, isHovered: isHovered))
+                .animation(.jotHover, value: isHovered)
+                .animation(.jotHover, value: isSelected)
         }
         .buttonStyle(.plain)
         .macPointingHandCursor()
@@ -214,7 +280,7 @@ struct SettingsPage: View {
             case .appearance:
                 appearancePanel
             case .data:
-                BackupSettingsPanel()
+                BackupSettingsPanel(scrollContentTopInset: settingsContentTopInsetUnderChrome + contentVerticalPadding)
             case .about:
                 aboutPanel
             case .contact:
@@ -277,7 +343,7 @@ struct SettingsPage: View {
                     settingsGroupedCard {
                         // Same title/subtitle spacing as settingsCheckbox (VStack spacing 2). The recorder
                         // sits in a trailing column so its height does not sit between title and subtitle.
-                        HStack(alignment: .top, spacing: 12) {
+                        HStack(alignment: .center, spacing: 12) {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Floating Note")
                                     .font(FontManager.heading(size: 13, weight: .medium))
@@ -308,11 +374,9 @@ struct SettingsPage: View {
                                     }
                                 }
                             )
-                            // Optical alignment with the 13pt title line (checkbox row nudges the glyph 2pt).
-                            .padding(.top, 2)
                         }
 
-                        HStack(alignment: .top, spacing: 12) {
+                        HStack(alignment: .center, spacing: 12) {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Start Meeting Session")
                                     .font(FontManager.heading(size: 13, weight: .medium))
@@ -342,7 +406,6 @@ struct SettingsPage: View {
                                     }
                                 }
                             )
-                            .padding(.top, 2)
                         }
                     }
                 }
@@ -514,7 +577,8 @@ struct SettingsPage: View {
                     .padding(.horizontal, 14)
                 }
             }
-            .padding(.vertical, contentVerticalPadding)
+            .padding(.top, settingsContentTopInsetUnderChrome + contentVerticalPadding)
+            .padding(.bottom, contentVerticalPadding)
         }
         .scrollClipDisabled()
     }
@@ -585,7 +649,7 @@ struct SettingsPage: View {
         Button {
             isOn.wrappedValue.toggle()
         } label: {
-            HStack(alignment: .top, spacing: 8) {
+            HStack(alignment: .center, spacing: 8) {
                 ZStack {
                     Circle()
                         .fill(isOn.wrappedValue
@@ -605,7 +669,6 @@ struct SettingsPage: View {
                             .foregroundColor(Color("ButtonPrimaryTextColor"))
                     }
                 }
-                .padding(.top, 2)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
@@ -654,7 +717,8 @@ struct SettingsPage: View {
                 bodyFontSection
                 lineSpacingSection
             }
-            .padding(.vertical, contentVerticalPadding)
+            .padding(.top, settingsContentTopInsetUnderChrome + contentVerticalPadding)
+            .padding(.bottom, contentVerticalPadding)
         }
         .scrollClipDisabled()
     }
@@ -943,29 +1007,48 @@ struct SettingsPage: View {
     // MARK: - About Panel
 
     private var aboutPanel: some View {
-        VStack(spacing: 16) {
-            Image(nsImage: NSApp.applicationIconImage)
-                .resizable()
-                .scaledToFit()
-                .frame(width: 48, height: 48)
+        VStack(spacing: 0) {
+            // Push the card down so its top aligns with the first sidebar tab (same inset as ``tabColumn``).
+            Color.clear
+                .frame(height: settingsContentTopInsetUnderChrome + contentVerticalPadding)
 
-            VStack(spacing: 6) {
-                Text("Jot")
-                    .font(FontManager.heading(size: 28, weight: .semibold))
-                    .tracking(-0.4)
-                    .foregroundColor(Color("SettingsPrimaryTextColor"))
+            VStack(spacing: 0) {
+                Spacer(minLength: 0)
 
-                Text("Version \(appVersion)")
-                    .font(FontManager.metadata(size: 11, weight: .medium))
-                    .foregroundColor(Color("SettingsPlaceholderTextColor"))
+                VStack(alignment: .center, spacing: 16) {
+                    Image(nsImage: NSApp.applicationIconImage)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 48, height: 48)
+
+                    VStack(alignment: .center, spacing: 6) {
+                        Text("Jot")
+                            .font(FontManager.heading(size: 28, weight: .semibold))
+                            .tracking(-0.4)
+                            .foregroundColor(Color("SettingsPrimaryTextColor"))
+                            .multilineTextAlignment(.center)
+
+                        Text("Version \(appVersion)")
+                            .font(FontManager.metadata(size: 11, weight: .medium))
+                            .foregroundColor(Color("SettingsPlaceholderTextColor"))
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .frame(maxWidth: .infinity)
+
+                Spacer(minLength: 0)
             }
+            .frame(maxWidth: .infinity)
+            .frame(height: 280)
+            .padding(.horizontal, 24)
+            .background(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .fill(colorScheme == .light ? Color.white : Color("SettingsOptionCardColor"))
+            )
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 48)
-        .background(
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(colorScheme == .light ? Color.white : Color("SettingsOptionCardColor"))
-        )
+        .frame(maxWidth: .infinity, alignment: .top)
     }
 
     private var appVersion: String {
@@ -984,7 +1067,8 @@ struct SettingsPage: View {
                 emailSection
                 feedbackSection
             }
-            .padding(.vertical, contentVerticalPadding)
+            .padding(.top, settingsContentTopInsetUnderChrome + contentVerticalPadding)
+            .padding(.bottom, contentVerticalPadding)
         }
         .scrollClipDisabled()
     }

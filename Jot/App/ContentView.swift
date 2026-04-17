@@ -1168,7 +1168,7 @@ struct ContentView: View {
 
             let settingsBg = detailBg
 
-            SettingsPage(isPresented: $isSettingsPresented)
+            SettingsPage(isPresented: $isSettingsPresented, titleTopPadding: splitControlsTopPadding)
                 .environmentObject(themeManager)
                 .frame(width: totalDetailWidth)
                 .frame(maxHeight: .infinity)

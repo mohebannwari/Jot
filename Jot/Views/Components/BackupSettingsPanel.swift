@@ -1,6 +1,9 @@
 import SwiftUI
 
 struct BackupSettingsPanel: View {
+    /// Matches ``SettingsPage`` scroll top inset so the first row clears the overlaid title chrome.
+    var scrollContentTopInset: CGFloat = 0
+
     @EnvironmentObject private var themeManager: ThemeManager
     @EnvironmentObject private var notesManager: SimpleSwiftDataManager
     @ObservedObject private var backupManager = BackupManager.shared
@@ -17,6 +20,7 @@ struct BackupSettingsPanel: View {
                 backupsSection
                 noteHistorySection
             }
+            .padding(.top, scrollContentTopInset)
         }
         .onAppear {
             availableBackups = backupManager.listAvailableBackups()
