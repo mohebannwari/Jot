@@ -2357,6 +2357,17 @@ struct ContentView: View {
             Spacer(minLength: 0)
 
             if !isShowingArchive {
+                // One tap closes every folder row that is showing its note list (and resets “Show more” states).
+                // Only the collapse-all glyph uses a smaller frame; other header icons stay at `sidebarIconSize`.
+                sidebarBareIcon(
+                    assetName: "IconFolderCollapseAll",
+                    disabled: expandedFolderIDs.isEmpty && showAllNotesFolderIDs.isEmpty,
+                    iconSize: 13
+                ) {
+                    collapseAllExpandedFolders()
+                }
+                .help("Collapse all folders")
+
                 sidebarBareIcon(assetName: "IconFolderAddRight") {
                     promptCreateFolder()
                 }
@@ -2400,10 +2411,11 @@ struct ContentView: View {
     private func sidebarBareIcon(
         assetName: String,
         disabled: Bool = false,
+        iconSize: CGFloat? = nil,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            sidebarAssetIcon(assetName: assetName, tint: Color("SecondaryTextColor"))
+            sidebarAssetIcon(assetName: assetName, tint: Color("SecondaryTextColor"), size: iconSize)
                 .padding(4)
                 .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
@@ -3241,13 +3253,14 @@ struct ContentView: View {
         }
     }
 
-    private func sidebarAssetIcon(assetName: String, tint: Color) -> some View {
-        Image(assetName)
+    private func sidebarAssetIcon(assetName: String, tint: Color, size: CGFloat? = nil) -> some View {
+        let side = size ?? sidebarIconSize
+        return Image(assetName)
             .renderingMode(.template)
             .resizable()
             .scaledToFit()
             .foregroundColor(tint)
-            .frame(width: sidebarIconSize, height: sidebarIconSize)
+            .frame(width: side, height: side)
     }
 
     @ViewBuilder
@@ -4215,6 +4228,15 @@ struct ContentView: View {
     private func resetPendingMoveSelection() {
         pendingMoveNoteIDs.removeAll()
         batchMoveFolderName = ""
+    }
+
+    /// Collapses all expanded folder rows in the sidebar and clears per-folder “Show more” expansion.
+    private func collapseAllExpandedFolders() {
+        HapticManager.shared.buttonTap()
+        withAnimation(.jotSmoothFast) {
+            expandedFolderIDs.removeAll()
+            showAllNotesFolderIDs.removeAll()
+        }
     }
 
     private func promptCreateFolder(withNoteIDs noteIDs: Set<UUID>? = nil) {
