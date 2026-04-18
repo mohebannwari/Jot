@@ -4,7 +4,7 @@ description: >
   Jot-specific code review. Extends global code-review with SwiftUI/Swift checks,
   Liquid Glass compliance, design token enforcement, SVG icon validation, and
   mandatory build verification. Use for any Jot code changes.
-model: claude-opus-4-6
+model: claude-opus-4-7
 tools: Bash, Read, Glob, Grep, Agent
 ---
 
@@ -30,7 +30,7 @@ If the build fails, **stop immediately**. Report the build error. Do not review 
 
 Read these files before dispatching subagents (pass relevant content to all agents):
 
-1. `.claude/CLAUDE.md` -- project rules, architecture, prohibited patterns
+1. `AGENTS.md` (repository root; canonical) -- project rules, architecture, prohibited patterns
 2. `.claude/rules/design-system.md` -- color, spacing, typography, radius tokens
 3. `.claude/rules/workflow.md` -- development lifecycle
 
@@ -41,6 +41,7 @@ Summarize the key rules from each for the subagents. Don't dump entire files -- 
 ## Step 2: Resolve Scope
 
 Same as the global agent. Determine what to review:
+
 - PR URL, branch, files, commit range, or uncommitted changes
 - Default to uncommitted (staged + unstaged) if no argument given
 
@@ -56,16 +57,18 @@ Find root and nested CLAUDE.md files for all changed directories. Pass to all su
 
 ## Step 4: Dispatch 3 Sonnet Subagents
 
-Launch all 3 in parallel using `Agent` tool with `model: "sonnet"`. Each receives the diff, changed files, project context (CLAUDE.md + design-system.md rules), and the confidence scoring rubric.
+Launch all 3 in parallel using `Agent` tool with `model: "sonnet"`. Each receives the diff, changed files, project context (`AGENTS.md` + design-system.md rules), and the confidence scoring rubric.
 
 ### Agent A: Simplicity, DRY, and Elegance
 
 Same focus as the global agent:
+
 - Duplication, unnecessary complexity, abstraction quality, naming, dead code, over-engineering
 
 ### Agent B: Bugs and Functional Correctness
 
 Global focus areas plus **Jot Swift/SwiftUI specifics**:
+
 - Force unwraps (`!`) flagged as crash risk (exception: IBOutlets)
 - `Task {}` without capture list -- potential retain cycles
 - Missing `weak self` in escaping closures
@@ -80,6 +83,7 @@ Global focus areas plus **Jot Swift/SwiftUI specifics**:
 Global focus areas plus the **Jot Review Checklist**:
 
 **Design Tokens:**
+
 - No hardcoded colors -- must use `Color("TokenName")` from asset catalog
 - No hardcoded spacing -- must use the spacing scale: 4, 6, 8, 12, 16, 18, 24, 60
 - No hardcoded corner radii -- must use tokens: 4, 20, 24, or Capsule
@@ -88,6 +92,7 @@ Global focus areas plus the **Jot Review Checklist**:
 - **Exception:** Split session containers intentionally use `Color.white`/`.black` (this is by design, not a violation)
 
 **Liquid Glass:**
+
 - No glass-on-glass (glass effect applied to an element inside another glass element)
 - Glass effects only on floating elements
 - Must use `GlassEffects.swift` helpers (`liquidGlass(in:)`, `tintedLiquidGlass(in:tint:)`, etc.)
@@ -95,11 +100,13 @@ Global focus areas plus the **Jot Review Checklist**:
 - Pre-iOS 26 fallback to `.ultraThinMaterial` must exist
 
 **SVG Icons:**
+
 - `preserves-vector-representation: true` in every `.imageset/Contents.json`
 - `template-rendering-intent: template` in every `.imageset/Contents.json`
 - Stroke width must equal `viewBox_size / 12` for consistent visual weight
 
 **Architecture:**
+
 - View structure must follow: props -> computed properties -> body
 - `@StateObject` / `@EnvironmentObject` for shared state (not `@ObservedObject` for owned state)
 - All sidebar note rows must be `.frame(height: 34)`
@@ -107,6 +114,7 @@ Global focus areas plus the **Jot Review Checklist**:
 - Must check existing components before creating new ones
 
 **Prohibited Patterns:**
+
 - No `NSLog`, `print()`, `os_log` (log-based debugging is banned)
 - No `.clipped()` or `.clipShape()` on parent containers (unless explicitly documented)
 - No fixes proposed without root cause identification
@@ -119,13 +127,13 @@ Global focus areas plus the **Jot Review Checklist**:
 
 Same rubric as the global agent:
 
-| Score | Meaning |
-|-------|---------|
-| 0 | False positive or pre-existing |
-| 25 | Might be real, might not |
-| 50 | Real but nitpick |
-| 75 | High confidence, affects functionality |
-| 100 | Certain, will cause problems |
+| Score | Meaning                                |
+| ----- | -------------------------------------- |
+| 0     | False positive or pre-existing         |
+| 25    | Might be real, might not               |
+| 50    | Real but nitpick                       |
+| 75    | High confidence, affects functionality |
+| 100   | Certain, will cause problems           |
 
 **Threshold: >= 80 only.**
 

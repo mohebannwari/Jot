@@ -1,0 +1,1626 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Jot — Information Architecture</title>
+    <style>
+      :root {
+        --accent: #2563eb;
+        --accent-soft: rgba(37, 99, 235, 0.12);
+        --text: #1a1a1a;
+        --text-secondary: rgba(26, 26, 26, 0.7);
+        --text-tertiary: #52525b;
+        --surface: #ffffff;
+        --surface-elev: #f5f4f4;
+        --surface-translucent: rgba(26, 26, 26, 0.06);
+        --border: rgba(26, 26, 26, 0.09);
+        --border-strong: rgba(26, 26, 26, 0.18);
+        --card: rgba(255, 255, 255, 0.7);
+        --bg: #fafaf9;
+        --stone-300: #d6d3d1;
+        --pinned: #fef08a;
+        --pinned-icon: #854d0e;
+        --tag-bg: rgba(96, 141, 250, 0.35);
+        --kbd-bg: rgba(26, 26, 26, 0.06);
+        --kbd-border: rgba(26, 26, 26, 0.12);
+        --shadow:
+          0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px -12px rgba(0, 0, 0, 0.1);
+        --radius: 16px;
+        --radius-inner: 12px;
+
+        /* Branch accents (6 roots) */
+        --c-shell: #2563eb;
+        --c-floating: #8b5cf6;
+        --c-menu: #0891b2;
+        --c-intents: #d97706;
+        --c-entities: #16a34a;
+        --c-cross: #be185d;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --accent: #608dfa;
+          --accent-soft: rgba(96, 141, 250, 0.16);
+          --text: #ffffff;
+          --text-secondary: rgba(255, 255, 255, 0.7);
+          --text-tertiary: #a19fa9;
+          --surface: #1c1918;
+          --surface-elev: #292524;
+          --surface-translucent: rgba(255, 255, 255, 0.06);
+          --border: rgba(255, 255, 255, 0.09);
+          --border-strong: rgba(255, 255, 255, 0.22);
+          --card: rgba(28, 25, 24, 0.7);
+          --bg: #0c0a09;
+          --stone-300: #292524;
+          --pinned: #854d0e;
+          --pinned-icon: #fef08a;
+          --tag-bg: rgba(96, 141, 250, 0.25);
+          --kbd-bg: rgba(255, 255, 255, 0.06);
+          --kbd-border: rgba(255, 255, 255, 0.14);
+          --shadow:
+            0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 32px -8px rgba(0, 0, 0, 0.6);
+
+          --c-shell: #608dfa;
+          --c-floating: #a78bfa;
+          --c-menu: #22d3ee;
+          --c-intents: #fbbf24;
+          --c-entities: #4ade80;
+          --c-cross: #f472b6;
+        }
+      }
+      html[data-theme="light"] {
+        --accent: #2563eb;
+        --accent-soft: rgba(37, 99, 235, 0.12);
+        --text: #1a1a1a;
+        --text-secondary: rgba(26, 26, 26, 0.7);
+        --text-tertiary: #52525b;
+        --surface: #ffffff;
+        --surface-elev: #f5f4f4;
+        --surface-translucent: rgba(26, 26, 26, 0.06);
+        --border: rgba(26, 26, 26, 0.09);
+        --border-strong: rgba(26, 26, 26, 0.18);
+        --card: rgba(255, 255, 255, 0.7);
+        --bg: #fafaf9;
+        --kbd-bg: rgba(26, 26, 26, 0.06);
+        --kbd-border: rgba(26, 26, 26, 0.12);
+        --c-shell: #2563eb;
+        --c-floating: #8b5cf6;
+        --c-menu: #0891b2;
+        --c-intents: #d97706;
+        --c-entities: #16a34a;
+        --c-cross: #be185d;
+      }
+      html[data-theme="dark"] {
+        --accent: #608dfa;
+        --accent-soft: rgba(96, 141, 250, 0.16);
+        --text: #ffffff;
+        --text-secondary: rgba(255, 255, 255, 0.7);
+        --text-tertiary: #a19fa9;
+        --surface: #1c1918;
+        --surface-elev: #292524;
+        --surface-translucent: rgba(255, 255, 255, 0.06);
+        --border: rgba(255, 255, 255, 0.09);
+        --border-strong: rgba(255, 255, 255, 0.22);
+        --card: rgba(28, 25, 24, 0.7);
+        --bg: #0c0a09;
+        --kbd-bg: rgba(255, 255, 255, 0.06);
+        --kbd-border: rgba(255, 255, 255, 0.14);
+        --c-shell: #608dfa;
+        --c-floating: #a78bfa;
+        --c-menu: #22d3ee;
+        --c-intents: #fbbf24;
+        --c-entities: #4ade80;
+        --c-cross: #f472b6;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro", system-ui,
+          sans-serif;
+        background:
+          radial-gradient(
+            1200px 600px at 10% -10%,
+            rgba(37, 99, 235, 0.08),
+            transparent 60%
+          ),
+          radial-gradient(
+            900px 500px at 90% 10%,
+            rgba(254, 240, 138, 0.18),
+            transparent 60%
+          ),
+          var(--bg);
+        color: var(--text);
+        min-height: 100vh;
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+        letter-spacing: -0.01em;
+      }
+
+      .wrap {
+        max-width: 1240px;
+        margin: 0 auto;
+        padding: 48px 32px 96px;
+      }
+
+      /* Header */
+      header {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 32px;
+        margin-bottom: 48px;
+        flex-wrap: wrap;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-size: 13px;
+        color: var(--text-secondary);
+      }
+      .brand-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 3px;
+        background: var(--accent);
+        box-shadow: 0 0 0 4px var(--accent-soft);
+      }
+      h1 {
+        font-size: 42px;
+        font-weight: 600;
+        letter-spacing: -0.03em;
+        margin: 10px 0 8px;
+        line-height: 1.05;
+      }
+      .sub {
+        font-size: 15px;
+        color: var(--text-secondary);
+        margin: 0;
+        max-width: 620px;
+        line-height: 1.5;
+      }
+      .header-controls {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .pill-btn {
+        appearance: none;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        color: var(--text);
+        font-family: inherit;
+        font-size: 12px;
+        font-weight: 500;
+        letter-spacing: -0.01em;
+        padding: 8px 14px;
+        border-radius: 999px;
+        cursor: pointer;
+        transition:
+          background 0.15s ease,
+          border-color 0.15s ease;
+      }
+      .pill-btn:hover {
+        background: var(--surface-elev);
+        border-color: var(--border-strong);
+      }
+      .pill-btn.primary {
+        background: var(--text);
+        color: var(--surface);
+        border-color: var(--text);
+      }
+      .pill-btn.primary:hover {
+        opacity: 0.88;
+      }
+
+      /* Legend */
+      .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-bottom: 32px;
+        padding: 16px 18px;
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+      }
+      .legend-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        font-size: 12px;
+        color: var(--text-secondary);
+        padding: 4px 10px 4px 6px;
+        border-radius: 999px;
+        background: var(--surface-translucent);
+      }
+      .legend-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+      }
+
+      /* Root node */
+      .root-node {
+        display: inline-flex;
+        flex-direction: column;
+        align-items: center;
+        margin: 0 auto 16px;
+        width: 100%;
+      }
+      .root-pill {
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: 0;
+        padding: 10px 22px;
+        background: var(--text);
+        color: var(--surface);
+        border-radius: 999px;
+        box-shadow: var(--shadow);
+      }
+      .root-stem {
+        width: 2px;
+        height: 32px;
+        background: var(--border-strong);
+        margin: 8px 0 0;
+      }
+
+      /* Top-level grid: 6 root branches */
+      .branches {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+        gap: 24px;
+      }
+      @media (min-width: 1100px) {
+        .branches {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+
+      /* Branch card */
+      .branch {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 20px 22px 14px;
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        box-shadow: var(--shadow);
+        position: relative;
+        overflow: hidden;
+      }
+      .branch::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 4px;
+        background: var(--branch-color, var(--accent));
+      }
+      .branch[data-branch="shell"] {
+        --branch-color: var(--c-shell);
+      }
+      .branch[data-branch="floating"] {
+        --branch-color: var(--c-floating);
+      }
+      .branch[data-branch="menu"] {
+        --branch-color: var(--c-menu);
+      }
+      .branch[data-branch="intents"] {
+        --branch-color: var(--c-intents);
+      }
+      .branch[data-branch="entities"] {
+        --branch-color: var(--c-entities);
+      }
+      .branch[data-branch="cross"] {
+        --branch-color: var(--c-cross);
+      }
+
+      .branch-header {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+        margin: 0 0 14px;
+        padding-bottom: 14px;
+        border-bottom: 1px dashed var(--border);
+      }
+      .branch-title {
+        font-size: 16px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 0;
+      }
+      .branch-num {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 24px;
+        height: 24px;
+        border-radius: 7px;
+        background: var(--branch-color);
+        color: #fff;
+        font-size: 11px;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+      }
+      .branch-sub {
+        font-size: 12px;
+        color: var(--text-tertiary);
+        margin: 0;
+      }
+
+      /* Tree disclosure */
+      details {
+        margin: 0;
+      }
+      details > summary {
+        list-style: none;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 0;
+        font-size: 14px;
+        font-weight: 500;
+        color: var(--text);
+        user-select: none;
+        border-radius: 6px;
+        padding-left: 4px;
+      }
+      details > summary::-webkit-details-marker {
+        display: none;
+      }
+      details > summary:hover {
+        background: var(--surface-translucent);
+      }
+      details > summary::before {
+        content: "▸";
+        display: inline-block;
+        width: 12px;
+        font-size: 10px;
+        color: var(--text-tertiary);
+        transition: transform 0.15s ease;
+        transform-origin: center;
+      }
+      details[open] > summary::before {
+        transform: rotate(90deg);
+      }
+
+      /* Nested tree */
+      .tree {
+        list-style: none;
+        margin: 0;
+        padding: 0 0 0 14px;
+        position: relative;
+      }
+      .tree::before {
+        content: "";
+        position: absolute;
+        left: 5px;
+        top: 6px;
+        bottom: 6px;
+        width: 1px;
+        background: var(--border);
+      }
+      .tree > li {
+        position: relative;
+        padding: 4px 0 4px 18px;
+        font-size: 13px;
+        line-height: 1.5;
+        color: var(--text);
+      }
+      .tree > li::before {
+        content: "";
+        position: absolute;
+        left: 5px;
+        top: 14px;
+        width: 12px;
+        height: 1px;
+        background: var(--border);
+      }
+      .tree > li > details > summary {
+        margin-left: -14px;
+        padding-left: 14px;
+      }
+      .tree details > .tree {
+        margin-top: 4px;
+      }
+
+      /* Node label components */
+      .label {
+        font-weight: 500;
+      }
+      .muted {
+        color: var(--text-secondary);
+        font-weight: 400;
+      }
+      .tertiary {
+        color: var(--text-tertiary);
+        font-weight: 400;
+      }
+      .mono {
+        font-family:
+          "SF Mono", Menlo, Consolas, ui-monospace, "Roboto Mono", monospace;
+        font-size: 11.5px;
+        color: var(--text-tertiary);
+      }
+      .anchor {
+        font-family:
+          "SF Mono", Menlo, Consolas, ui-monospace, "Roboto Mono", monospace;
+        font-size: 11px;
+        color: var(--text-tertiary);
+        background: var(--surface-translucent);
+        padding: 1px 7px;
+        border-radius: 5px;
+        border: 1px solid var(--border);
+        white-space: nowrap;
+      }
+      kbd {
+        font-family:
+          "SF Mono", Menlo, Consolas, ui-monospace, "Roboto Mono", monospace;
+        font-size: 10.5px;
+        font-weight: 500;
+        color: var(--text-secondary);
+        background: var(--kbd-bg);
+        border: 1px solid var(--kbd-border);
+        border-radius: 4px;
+        padding: 1px 5px;
+        margin-left: 2px;
+      }
+      .tag {
+        display: inline-block;
+        font-size: 10.5px;
+        font-weight: 500;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+        color: var(--text-tertiary);
+        background: var(--surface-translucent);
+        border-radius: 4px;
+        padding: 1px 6px;
+        margin-left: 6px;
+        vertical-align: 1px;
+      }
+      .tag.accent {
+        color: var(--accent);
+        background: var(--accent-soft);
+      }
+      .pill-count {
+        display: inline-block;
+        min-width: 20px;
+        text-align: center;
+        font-size: 10.5px;
+        font-weight: 600;
+        color: var(--text-tertiary);
+        background: var(--surface-translucent);
+        padding: 1px 7px;
+        border-radius: 999px;
+        margin-left: 4px;
+      }
+
+      /* Footer */
+      footer {
+        margin-top: 64px;
+        padding-top: 24px;
+        border-top: 1px solid var(--border);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 12px;
+        color: var(--text-tertiary);
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+      footer a {
+        color: var(--text-secondary);
+        text-decoration: none;
+      }
+      footer a:hover {
+        color: var(--text);
+      }
+
+      /* Print: expand everything, flatten shadows */
+      @media print {
+        body {
+          background: #fff;
+        }
+        .pill-btn,
+        .header-controls {
+          display: none;
+        }
+        .branch {
+          break-inside: avoid;
+          page-break-inside: avoid;
+          box-shadow: none;
+        }
+        details > .tree,
+        details > * {
+          display: block !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <div>
+          <div class="brand">
+            <span class="brand-dot"></span>
+            <span>Jot · Information Architecture</span>
+          </div>
+          <h1>Information Architecture</h1>
+          <p class="sub">
+            Top-down map of every surface, menu, overlay, entity, and entry
+            point in the Jot macOS app. Click any branch to drill in; every leaf
+            cites <span class="mono">file:line</span> for source-of-truth
+            verification.
+          </p>
+        </div>
+        <div class="header-controls">
+          <button class="pill-btn" id="expandAll" type="button">
+            Expand all
+          </button>
+          <button class="pill-btn" id="collapseAll" type="button">
+            Collapse all
+          </button>
+          <button class="pill-btn primary" id="themeToggle" type="button">
+            Toggle theme
+          </button>
+        </div>
+      </header>
+
+      <div class="legend" aria-label="Branch legend">
+        <span class="legend-item">
+          <span class="legend-dot" style="background: var(--c-shell)"></span>
+          Shell / Primary UI
+        </span>
+        <span class="legend-item">
+          <span class="legend-dot" style="background: var(--c-floating)"></span>
+          Floating Surfaces
+        </span>
+        <span class="legend-item">
+          <span class="legend-dot" style="background: var(--c-menu)"></span>
+          macOS Menu Bar
+        </span>
+        <span class="legend-item">
+          <span class="legend-dot" style="background: var(--c-intents)"></span>
+          App Intents
+        </span>
+        <span class="legend-item">
+          <span class="legend-dot" style="background: var(--c-entities)"></span>
+          Core Entities
+        </span>
+        <span class="legend-item">
+          <span class="legend-dot" style="background: var(--c-cross)"></span>
+          Cross-cutting Systems
+        </span>
+      </div>
+
+      <!-- Root node -->
+      <div class="root-node">
+        <div class="root-pill">Jot</div>
+        <div class="root-stem"></div>
+      </div>
+
+      <!-- Branches grid -->
+      <div class="branches">
+        <!-- 1. Shell / Primary UI -->
+        <section class="branch" data-branch="shell">
+          <div class="branch-header">
+            <h2 class="branch-title">
+              <span class="branch-num">1</span>
+              Shell / Primary UI
+            </h2>
+            <p class="branch-sub">3-pane layout</p>
+          </div>
+
+          <details open>
+            <summary>
+              <span class="label">1.1 Sidebar</span>
+              <span class="tag">left pane · 240–560pt</span>
+            </summary>
+            <ul class="tree">
+              <li>
+                <span class="label">Top bar</span>
+                <span class="muted">— collapse icon · split-menu icon</span>
+              </li>
+              <li>
+                <details>
+                  <summary>
+                    <span class="label">Menu container</span>
+                    <span class="muted">(pinned top)</span>
+                  </summary>
+                  <ul class="tree">
+                    <li>New Note <kbd>⌘N</kbd></li>
+                    <li>Search <kbd>⌘K</kbd></li>
+                    <li>
+                      Archive toggle
+                      <span class="tertiary"
+                        >— conditional, when archived items exist</span
+                      >
+                    </li>
+                  </ul>
+                </details>
+              </li>
+              <li>
+                <details>
+                  <summary>
+                    <span class="label">Notes header</span>
+                    <span class="muted">— "Notes" / "Archive" label</span>
+                  </summary>
+                  <ul class="tree">
+                    <li>New folder button</li>
+                    <li>
+                      Filter dropdown
+                      <span class="tertiary"
+                        >— All · Pinned · Today · This Month · This Year · Older
+                        · Folders</span
+                      >
+                    </li>
+                  </ul>
+                </details>
+              </li>
+              <li>
+                <details open>
+                  <summary>
+                    <span class="label">Scrollable list</span>
+                    <span class="muted">(display order)</span>
+                  </summary>
+                  <ul class="tree">
+                    <li>
+                      <details>
+                        <summary>
+                          <span class="label">Folders</span>
+                          <span class="muted">— accordion</span>
+                        </summary>
+                        <ul class="tree">
+                          <li>
+                            Folder row · name · note count · hover "⋯" menu ·
+                            hover "New Note"
+                          </li>
+                          <li>
+                            Nested notes list
+                            <span class="tertiary"
+                              >(max 5 shown + "Show more")</span
+                            >
+                          </li>
+                          <li>
+                            Unfiled notes peek
+                            <span class="tertiary">(when collapsed)</span>
+                          </li>
+                        </ul>
+                      </details>
+                    </li>
+                    <li>Pinned Notes <span class="tag">accordion</span></li>
+                    <li>Locked Notes <span class="tag">accordion</span></li>
+                    <li>
+                      Active Split Session
+                      <span class="tertiary">— visible when split active</span>
+                    </li>
+                    <li>
+                      <details>
+                        <summary>
+                          <span class="label">Date-grouped sections</span>
+                          <span class="muted">— conditional</span>
+                        </summary>
+                        <ul class="tree">
+                          <li>Today</li>
+                          <li>This Month</li>
+                          <li>This Year</li>
+                          <li>Older</li>
+                          <li>
+                            Unfiled
+                            <span class="tertiary">— fallback placeholder</span>
+                          </li>
+                        </ul>
+                      </details>
+                    </li>
+                  </ul>
+                </details>
+              </li>
+              <li>
+                Update panel <span class="tag">DEBUG only</span>
+                <span class="tertiary"
+                  >— above Settings when rebuild available</span
+                >
+              </li>
+              <li>
+                <details>
+                  <summary><span class="label">Bottom menu</span></summary>
+                  <ul class="tree">
+                    <li>
+                      Trash
+                      <span class="tertiary"
+                        >— conditional, when deleted notes exist</span
+                      >
+                    </li>
+                    <li>Settings <kbd>⌘,</kbd></li>
+                  </ul>
+                </details>
+              </li>
+              <li class="tertiary">
+                <span class="anchor">Jot/App/ContentView.swift:1747–2398</span>
+              </li>
+            </ul>
+          </details>
+
+          <details>
+            <summary>
+              <span class="label">1.2 Detail Pane</span>
+              <span class="tag">center pane · editor</span>
+            </summary>
+            <ul class="tree">
+              <li>
+                Sticky header
+                <span class="tertiary">— scroll-activated faded title</span>
+              </li>
+              <li>
+                <details>
+                  <summary>
+                    <span class="label">Editor scroll content</span>
+                  </summary>
+                  <ul class="tree">
+                    <li>Date badge + archive status</li>
+                    <li>
+                      Title field <span class="tertiary">— 22pt semibold</span>
+                    </li>
+                    <li>
+                      <details>
+                        <summary>
+                          <span class="label">Meeting Notes Detail Panel</span>
+                          <span class="muted"
+                            >— if <span class="mono">isMeetingNote</span></span
+                          >
+                        </summary>
+                        <ul class="tree">
+                          <li>
+                            Panel header — icon · "MEETING NOTES" · session
+                            count
+                          </li>
+                          <li>
+                            Session accordions
+                            <span class="tertiary"
+                              >(reversed, newest first)</span
+                            >
+                            <ul class="tree">
+                              <li>
+                                Tabs: Transcript · Notes · Summary
+                                <span class="tertiary">(post-recording)</span>
+                              </li>
+                            </ul>
+                          </li>
+                        </ul>
+                      </details>
+                    </li>
+                    <li>
+                      AI result panels
+                      <span class="muted"
+                        >— Summary · Key Points · Proofread / Edit</span
+                      >
+                    </li>
+                    <li>
+                      <details>
+                        <summary>
+                          <span class="label">TodoRichTextEditor</span>
+                          <span class="muted">— main body</span>
+                        </summary>
+                        <ul class="tree">
+                          <li>
+                            Rich text editing
+                            <span class="tertiary"
+                              >(custom serialization format)</span
+                            >
+                          </li>
+                          <li>
+                            Inline attachments
+                            <span class="tertiary"
+                              >— PDF · Image · Audio · Video · Text file
+                              previews</span
+                            >
+                          </li>
+                          <li>
+                            Toolbar
+                            <span class="tertiary"
+                              >— format + attachment tools</span
+                            >
+                          </li>
+                          <li>
+                            Command menu
+                            <span class="tertiary"
+                              >— floating, smart positioning</span
+                            >
+                          </li>
+                        </ul>
+                      </details>
+                    </li>
+                    <li>Sticker canvas overlay</li>
+                    <li>Bottom content fade gradient</li>
+                  </ul>
+                </details>
+              </li>
+              <li class="tertiary">
+                <span class="anchor"
+                  >Jot/Views/Screens/NoteDetailView.swift:15–2128</span
+                >
+              </li>
+            </ul>
+          </details>
+
+          <details>
+            <summary>
+              <span class="label">1.3 Properties Panel</span>
+              <span class="tag">right pane · slide-in 0↔340pt</span>
+            </summary>
+            <ul class="tree">
+              <li>Folder</li>
+              <li>
+                Tags <span class="tertiary">— editable, add / remove</span>
+              </li>
+              <li>
+                Todos
+                <ul class="tree">
+                  <li>[x] Completed items</li>
+                  <li>[ ] Incomplete items</li>
+                </ul>
+              </li>
+              <li>Created date</li>
+              <li>Modified date</li>
+              <li>Word count</li>
+              <li>
+                Links <span class="tertiary">— parsed from content</span>
+                <ul class="tree">
+                  <li>Web clips <span class="mono">[[webclip|...]]</span></li>
+                  <li>Regular links <span class="mono">[[link|...]]</span></li>
+                </ul>
+              </li>
+              <li>
+                Attachments
+                <span class="tertiary">— stored / display filenames</span>
+              </li>
+              <li>
+                Backlinks <span class="tertiary">— clickable navigation</span>
+              </li>
+              <li class="tertiary">
+                <span class="anchor"
+                  >Jot/Views/Components/NoteMetadataSection.swift:16–650</span
+                >
+              </li>
+            </ul>
+          </details>
+        </section>
+
+        <!-- 2. Floating Surfaces -->
+        <section class="branch" data-branch="floating">
+          <div class="branch-header">
+            <h2 class="branch-title">
+              <span class="branch-num">2</span>
+              Floating Surfaces
+            </h2>
+            <p class="branch-sub">overlays · windows · sheets</p>
+          </div>
+
+          <details open>
+            <summary>
+              <span class="label">2.1 Command Palette</span>
+              <span class="tag accent">FloatingSearch</span>
+            </summary>
+            <ul class="tree">
+              <li>
+                <details>
+                  <summary>
+                    <span class="label">9 root quick actions</span>
+                  </summary>
+                  <ul class="tree">
+                    <li>New Note</li>
+                    <li>
+                      Quick Note
+                      <span class="tertiary"
+                        >— aliases: Floating Note, Quick Capture</span
+                      >
+                    </li>
+                    <li>
+                      Start Meeting Session
+                      <span class="tertiary"
+                        >— aliases: Meeting, Recording</span
+                      >
+                    </li>
+                    <li>New Folder</li>
+                    <li>New Split View</li>
+                    <li>
+                      Pin / Unpin Note
+                      <span class="tertiary">— dynamic title</span>
+                    </li>
+                    <li>
+                      Zen Mode / Exit Zen
+                      <span class="tertiary">— dynamic title</span>
+                    </li>
+                    <li>
+                      Archive / Restore Note
+                      <span class="tertiary">— dynamic title</span>
+                    </li>
+                    <li>
+                      Settings
+                      <span class="tertiary">— aliases: Preferences</span>
+                    </li>
+                  </ul>
+                </details>
+              </li>
+              <li>
+                <span class="mono">RootQuickActionKeywordCatalog</span>
+                <span class="tertiary"
+                  >— diacritic-insensitive alias match</span
+                >
+              </li>
+              <li>Meeting-session note-picker sub-mode</li>
+              <li class="tertiary">
+                <span class="anchor"
+                  >Jot/Views/Components/FloatingSearch.swift:1–2001</span
+                >
+              </li>
+            </ul>
+          </details>
+
+          <details>
+            <summary>
+              <span class="label">2.2 Settings Panel</span>
+              <span class="tag">5 tabs · 482pt wide</span>
+            </summary>
+            <ul class="tree">
+              <li>
+                General
+                <ul class="tree">
+                  <li>
+                    Sort options
+                    <span class="tertiary"
+                      >— ascending / descending, date / name / folder</span
+                    >
+                  </li>
+                  <li>Misc behavior settings</li>
+                </ul>
+              </li>
+              <li>
+                Appearance
+                <ul class="tree">
+                  <li>
+                    Theme cards
+                    <span class="tertiary">— color palette picker</span>
+                  </li>
+                  <li>
+                    Body font style
+                    <span class="tertiary">— Charter · System · Mono</span>
+                  </li>
+                  <li>
+                    Line spacing
+                    <span class="tertiary">— Compact · Default · Relaxed</span>
+                  </li>
+                </ul>
+              </li>
+              <li>
+                Backups <span class="muted">(Data)</span>
+                <ul class="tree">
+                  <li>
+                    BackupSettingsPanel
+                    <span class="tertiary"
+                      >— auto / manual / restore / retention</span
+                    >
+                  </li>
+                </ul>
+              </li>
+              <li>
+                Contact <span class="muted">(Support)</span>
+                <ul class="tree">
+                  <li>Feedback type toggle — Bug · Feature request</li>
+                  <li>Feedback text editor · Send · Copy email</li>
+                </ul>
+              </li>
+              <li>
+                About <span class="tertiary">— version · credits · links</span>
+              </li>
+              <li class="tertiary">
+                <span class="anchor"
+                  >Jot/Views/Components/FloatingSettings.swift:1–1379</span
+                >
+              </li>
+            </ul>
+          </details>
+
+          <details>
+            <summary>
+              <span class="label">2.3 Quick Note Panel</span>
+              <span class="tag">global hotkey · 600×400</span>
+            </summary>
+            <ul class="tree">
+              <li>Title field</li>
+              <li>
+                Body TextEditor <span class="tertiary">— plain text</span>
+              </li>
+              <li>Footer — Save <kbd>⌘↵</kbd> · Cancel <kbd>esc</kbd></li>
+              <li>
+                Glass surface
+                <span class="tertiary"
+                  >— Liquid Glass (26+) or BackdropBlur fallback</span
+                >
+              </li>
+              <li>
+                Frame auto-save
+                <span class="tertiary"
+                  >— position restored across sessions</span
+                >
+              </li>
+              <li>
+                Dismissal animations
+                <span class="tertiary"
+                  >— genie warp (save) · atom dissolve (discard)</span
+                >
+              </li>
+              <li class="tertiary">
+                <span class="anchor"
+                  >Jot/Views/Screens/QuickNotePanel.swift:23–393</span
+                >
+              </li>
+            </ul>
+          </details>
+
+          <details>
+            <summary>
+              <span class="label">2.4 Meeting Notes Floating Panel</span>
+              <span class="tag">live recording · 383×299</span>
+            </summary>
+            <ul class="tree">
+              <li>
+                Micro-pill
+                <span class="tertiary">— minimized during recording</span>
+              </li>
+              <li>
+                Expanded mode
+                <ul class="tree">
+                  <li>
+                    Tab bar — Transcript · Notes · Summary
+                    <span class="tertiary">(post-processing)</span>
+                  </li>
+                  <li>Tab content area</li>
+                  <li>
+                    Control bar — Pause / Resume · Stop
+                    <span class="tertiary">(with confirm)</span> · Save
+                  </li>
+                  <li>
+                    Summary loading state
+                    <span class="tertiary">— AI-powered</span>
+                  </li>
+                </ul>
+              </li>
+              <li>
+                Glass surface + Intelligence Glow
+                <span class="tertiary"
+                  >— continuous → one-shot on complete</span
+                >
+              </li>
+              <li class="tertiary">
+                <span class="anchor"
+                  >Jot/Views/Components/MeetingNotesFloatingPanel.swift:17+</span
+                >
+              </li>
+            </ul>
+          </details>
+
+          <details>
+            <summary>
+              <span class="label">2.5 Editor-scoped Overlays</span>
+              <span class="muted">— above NoteDetailView</span>
+            </summary>
+            <ul class="tree">
+              <li>Voice Recorder <kbd>⌘⇧R</kbd></li>
+              <li>
+                Search on Page <kbd>⌘F</kbd>
+                <span class="tertiary">— with Replace</span>
+              </li>
+              <li>
+                Link Input <kbd>⌘K</kbd>
+                <span class="tertiary">— in-editor quick link</span>
+              </li>
+              <li>
+                Edit Content panel <span class="tertiary">— selections</span>
+              </li>
+              <li>Translate panel</li>
+              <li>
+                Text Generation panel <span class="tertiary">— AI-powered</span>
+              </li>
+              <li>
+                Highlight Color Picker
+                <span class="tertiary">— inline palette</span>
+              </li>
+              <li>
+                File Link Picker
+                <span class="tertiary">— macOS file dialog</span>
+              </li>
+              <li>
+                Floating Toolbar
+                <span class="tertiary">— on text selection, bottom</span>
+              </li>
+            </ul>
+          </details>
+
+          <details>
+            <summary>
+              <span class="label">2.6 Export Format Sheet</span>
+            </summary>
+            <ul class="tree">
+              <li>
+                Preview section
+                <span class="tertiary">— thumbnail + expand</span>
+              </li>
+              <li>Format row — PDF · Markdown · RTF</li>
+              <li>Button section — Quick Look · Export</li>
+              <li class="tertiary">
+                <span class="anchor">ExportFormatSheet.swift</span>
+              </li>
+            </ul>
+          </details>
+        </section>
+
+        <!-- 3. macOS Menu Bar -->
+        <section class="branch" data-branch="menu">
+          <div class="branch-header">
+            <h2 class="branch-title">
+              <span class="branch-num">3</span>
+              macOS Menu Bar
+            </h2>
+            <p class="branch-sub">CommandMenus + CommandGroups</p>
+          </div>
+
+          <details open>
+            <summary><span class="label">File</span></summary>
+            <ul class="tree">
+              <li>New Note <kbd>⌘N</kbd></li>
+              <li>New Folder <kbd>⌘⇧N</kbd></li>
+              <li>Move to Trash</li>
+              <li class="tertiary">
+                <span class="anchor">NoteManagementCommands.swift:8–23</span>
+              </li>
+            </ul>
+          </details>
+
+          <details>
+            <summary><span class="label">Navigate</span></summary>
+            <ul class="tree">
+              <li>Previous Note <kbd>⌘⌥↑</kbd></li>
+              <li>Next Note <kbd>⌘⌥↓</kbd></li>
+              <li class="tertiary">
+                <span class="anchor">NoteManagementCommands.swift:26–42</span>
+              </li>
+            </ul>
+          </details>
+
+          <details>
+            <summary><span class="label">Selection</span></summary>
+            <ul class="tree">
+              <li>Select All Notes <kbd>⌘A</kbd></li>
+              <li>Clear Selection <kbd>esc</kbd></li>
+              <li>Delete Selected <kbd>⌫</kbd></li>
+              <li>Export Selected <kbd>⌘⇧E</kbd></li>
+              <li>Move Selected <kbd>⌘⇧M</kbd></li>
+              <li class="tertiary">
+                <span class="anchor">NoteSelectionCommands.swift:23–48</span>
+              </li>
+            </ul>
+          </details>
+
+          <details>
+            <summary><span class="label">Format</span></summary>
+            <ul class="tree">
+              <li>
+                Bold <kbd>⌘B</kbd> · Italic <kbd>⌘I</kbd> · Underline
+                <kbd>⌘U</kbd> · Strikethrough <kbd>⌘⇧X</kbd>
+              </li>
+              <li>
+                Heading 1 <kbd>⌘1</kbd> · Heading 2 <kbd>⌘2</kbd> · Heading 3
+                <kbd>⌘3</kbd>
+              </li>
+              <li>
+                Bullet List <kbd>⌘⇧8</kbd> · Numbered List <kbd>⌘⇧7</kbd> ·
+                Block Quote <kbd>⌘⇧.</kbd>
+              </li>
+              <li>Highlight <kbd>⌘⇧H</kbd></li>
+              <li>Insert Link <kbd>⌘⇧K</kbd></li>
+              <li class="tertiary">
+                <span class="anchor">FormatMenuCommands.swift:13–47</span>
+              </li>
+            </ul>
+          </details>
+
+          <details>
+            <summary><span class="label">App</span></summary>
+            <ul class="tree">
+              <li>Settings <kbd>⌘,</kbd></li>
+              <li>Check for Updates</li>
+              <li class="tertiary">
+                <span class="anchor">Jot/App/JotApp.swift:145–156</span>
+              </li>
+            </ul>
+          </details>
+
+          <details>
+            <summary>
+              <span class="label">Print</span>
+              <span class="tag">NSEvent intercept</span>
+            </summary>
+            <ul class="tree">
+              <li>
+                Print current note <kbd>⌘P</kbd>
+                <span class="tertiary">— bypasses AppKit validation</span>
+              </li>
+              <li class="tertiary">
+                <span class="anchor"
+                  >PrintCommands.swift · PrintKeyHandler.swift</span
+                >
+              </li>
+            </ul>
+          </details>
+        </section>
+
+        <!-- 4. App Intents -->
+        <section class="branch" data-branch="intents">
+          <div class="branch-header">
+            <h2 class="branch-title">
+              <span class="branch-num">4</span>
+              App Intents
+            </h2>
+            <p class="branch-sub">Shortcuts · Spotlight</p>
+          </div>
+
+          <details open>
+            <summary>
+              <span class="label">Intents</span
+              ><span class="pill-count">4</span>
+            </summary>
+            <ul class="tree">
+              <li>
+                <span class="label">Create Note</span>
+                <span class="tertiary">— title · content · folder</span>
+                <br /><span class="anchor">CreateNoteIntent.swift</span>
+              </li>
+              <li>
+                <span class="label">Append to Note</span>
+                <span class="tertiary">— add text to existing note</span>
+                <br /><span class="anchor">AppendToNoteIntent.swift</span>
+              </li>
+              <li>
+                <span class="label">Open Note</span>
+                <span class="tertiary"
+                  >— open in app · Spotlight integration</span
+                >
+                <br /><span class="anchor">OpenNoteIntent.swift</span>
+              </li>
+              <li>
+                <span class="label">Search Notes</span>
+                <span class="tertiary">— keyword query · ≤20 results</span>
+                <br /><span class="anchor">SearchNotesIntent.swift</span>
+              </li>
+            </ul>
+          </details>
+
+          <details>
+            <summary><span class="label">App Entities</span></summary>
+            <ul class="tree">
+              <li>
+                <span class="mono">NoteAppEntity</span>
+                <span class="tertiary"
+                  >— id · title · query by text / UUID · top-10 suggested</span
+                >
+              </li>
+              <li>
+                <span class="mono">FolderAppEntity</span>
+                <span class="tertiary"
+                  >— dynamic options for note creation</span
+                >
+              </li>
+              <li class="tertiary"><span class="anchor">Jot/Intents/</span></li>
+            </ul>
+          </details>
+        </section>
+
+        <!-- 5. Core Entities -->
+        <section class="branch" data-branch="entities">
+          <div class="branch-header">
+            <h2 class="branch-title">
+              <span class="branch-num">5</span>
+              Core Entities
+            </h2>
+            <p class="branch-sub">data layer · SwiftData</p>
+          </div>
+
+          <details open>
+            <summary>
+              <span class="mono">Note</span>
+              <span class="muted">— primary entity</span>
+            </summary>
+            <ul class="tree">
+              <li>
+                <span class="mono">id</span> · <span class="mono">title</span> ·
+                <span class="mono">content</span> ·
+                <span class="mono">date</span>
+              </li>
+              <li>
+                <span class="mono">tags[]</span> ·
+                <span class="mono">folderID</span>
+              </li>
+              <li>
+                State flags — <span class="mono">isPinned</span> ·
+                <span class="mono">isArchived</span> ·
+                <span class="mono">isLocked</span> ·
+                <span class="mono">isDeleted</span>
+              </li>
+              <li>
+                Embedded — <span class="mono">stickers[]</span> ·
+                <span class="mono">meetingSessions[]</span>
+              </li>
+              <li class="tertiary">
+                <span class="anchor">Jot/Models/Note.swift:10–63</span>
+              </li>
+            </ul>
+          </details>
+
+          <details>
+            <summary>
+              <span class="mono">Folder</span>
+            </summary>
+            <ul class="tree">
+              <li>
+                <span class="mono">id</span> · <span class="mono">name</span> ·
+                <span class="mono">colorHex</span>
+              </li>
+              <li>
+                <span class="mono">isArchived</span> ·
+                <span class="mono">createdAt</span> ·
+                <span class="mono">modifiedAt</span>
+              </li>
+              <li class="tertiary">
+                <span class="anchor">Jot/Models/Folder.swift:8–24</span>
+              </li>
+            </ul>
+          </details>
+
+          <details>
+            <summary>
+              <span class="mono">MeetingSession</span>
+            </summary>
+            <ul class="tree">
+              <li>
+                <span class="mono">id</span> · <span class="mono">date</span> ·
+                <span class="mono">duration</span> ·
+                <span class="mono">language</span>
+              </li>
+              <li>
+                <span class="mono">summary</span> ·
+                <span class="mono">transcript</span> ·
+                <span class="mono">manualNotes</span>
+              </li>
+              <li class="tertiary">
+                <span class="anchor">Jot/Models/MeetingModels.swift:64–80</span>
+              </li>
+            </ul>
+          </details>
+
+          <details>
+            <summary>
+              <span class="mono">TranscriptSegment</span>
+            </summary>
+            <ul class="tree">
+              <li>
+                <span class="mono">id</span> · <span class="mono">text</span> ·
+                <span class="mono">timestamp</span> ·
+                <span class="mono">isFinal</span>
+              </li>
+              <li class="tertiary">
+                <span class="anchor">Jot/Models/MeetingModels.swift:18–30</span>
+              </li>
+            </ul>
+          </details>
+
+          <details>
+            <summary>
+              <span class="mono">MeetingRecordingState</span>
+              <span class="muted">— enum</span>
+            </summary>
+            <ul class="tree">
+              <li>idle · recording · paused · processing · complete</li>
+              <li class="tertiary">
+                <span class="anchor">Jot/Models/MeetingModels.swift:34–40</span>
+              </li>
+            </ul>
+          </details>
+        </section>
+
+        <!-- 6. Cross-cutting Systems -->
+        <section class="branch" data-branch="cross">
+          <div class="branch-header">
+            <h2 class="branch-title">
+              <span class="branch-num">6</span>
+              Cross-cutting Systems
+            </h2>
+            <p class="branch-sub">services · managers · global</p>
+          </div>
+
+          <details open>
+            <summary>
+              <span class="label">Theme · Tint · Typography</span>
+              <span class="tag">ThemeManager</span>
+            </summary>
+            <ul class="tree">
+              <li>Color scheme — light · dark · auto</li>
+              <li>
+                Tint hue + intensity
+                <span class="tertiary">— tinted pane surface</span>
+              </li>
+              <li>Body font style — Charter · System · Mono</li>
+              <li>Line spacing — 1.0× · 1.2× · 1.5×</li>
+              <li>
+                UI scale <span class="tertiary">— window-level zoom</span>
+              </li>
+              <li class="tertiary">
+                <span class="anchor">Jot/Utils/ThemeManager.swift</span>
+              </li>
+            </ul>
+          </details>
+
+          <details>
+            <summary>
+              <span class="label">Backups &amp; Version Retention</span>
+            </summary>
+            <ul class="tree">
+              <li>
+                DataBackupManager
+                <span class="tertiary">— daily auto, 7-day retention</span>
+              </li>
+              <li>Manual backup · restore · export · import</li>
+              <li>
+                Version snapshots
+                <span class="tertiary">— configurable day window</span>
+              </li>
+              <li>
+                DataIntegrityManager
+                <span class="tertiary"
+                  >— validation + repair + health scoring</span
+                >
+              </li>
+            </ul>
+          </details>
+
+          <details>
+            <summary>
+              <span class="label">Global Hotkeys</span>
+            </summary>
+            <ul class="tree">
+              <li>
+                Quick Note chord
+                <span class="tertiary">— customizable, UserDefaults JSON</span>
+              </li>
+              <li>
+                Meeting Session chord
+                <span class="tertiary">— customizable</span>
+              </li>
+              <li>
+                Print <kbd>⌘P</kbd>
+                <span class="tertiary">— NSEvent-level intercept</span>
+              </li>
+              <li class="tertiary">
+                <span class="anchor">Jot/App/JotApp.swift:61–77</span>
+              </li>
+            </ul>
+          </details>
+
+          <details>
+            <summary>
+              <span class="label">File Preview Renderers</span>
+              <span class="tag">6 types × 3 modes</span>
+            </summary>
+            <ul class="tree">
+              <li>
+                <details>
+                  <summary><span class="label">Renderers</span></summary>
+                  <ul class="tree">
+                    <li>
+                      PDF
+                      <span class="tertiary"
+                        >— 1–2 pages + peek, horizontal scroll</span
+                      >
+                    </li>
+                    <li>
+                      Image
+                      <span class="tertiary">— aspect-fit, 10px corners</span>
+                    </li>
+                    <li>
+                      Audio
+                      <span class="tertiary"
+                        >— play / pause · seek · time labels</span
+                      >
+                    </li>
+                    <li>
+                      Video <span class="tertiary">— playback + scrubber</span>
+                    </li>
+                    <li>
+                      Text
+                      <span class="tertiary"
+                        >— syntax-highlighted, scrollable</span
+                      >
+                    </li>
+                    <li>
+                      Thumbnail
+                      <span class="tertiary">— generic icon fallback</span>
+                    </li>
+                  </ul>
+                </details>
+              </li>
+              <li>
+                View modes — <span class="mono">tag</span> ·
+                <span class="mono">medium</span> ·
+                <span class="mono">full</span>
+              </li>
+              <li class="tertiary">
+                <span class="anchor">Jot/Views/Components/Renderers/</span>
+              </li>
+            </ul>
+          </details>
+        </section>
+      </div>
+
+      <footer>
+        <div>
+          Source of truth · <a href="../CLAUDE.md">CLAUDE.md</a> ·
+          <a href="../.claude/rules/design-system.md">design-system.md</a>
+        </div>
+        <div>Generated 2026-04-17 · static artifact, no build dependency</div>
+      </footer>
+    </div>
+
+    <script>
+      (() => {
+        const html = document.documentElement;
+        const toggle = document.getElementById("themeToggle");
+        const expandAll = document.getElementById("expandAll");
+        const collapseAll = document.getElementById("collapseAll");
+
+        const stored = localStorage.getItem("jot-ia-theme");
+        if (stored === "light" || stored === "dark") {
+          html.setAttribute("data-theme", stored);
+        }
+
+        toggle.addEventListener("click", () => {
+          const current =
+            html.getAttribute("data-theme") ||
+            (window.matchMedia("(prefers-color-scheme: dark)").matches
+              ? "dark"
+              : "light");
+          const next = current === "dark" ? "light" : "dark";
+          html.setAttribute("data-theme", next);
+          localStorage.setItem("jot-ia-theme", next);
+        });
+
+        expandAll.addEventListener("click", () => {
+          document
+            .querySelectorAll("details")
+            .forEach((d) => d.setAttribute("open", ""));
+        });
+        collapseAll.addEventListener("click", () => {
+          document
+            .querySelectorAll("details")
+            .forEach((d) => d.removeAttribute("open"));
+        });
+      })();
+    </script>
+  </body>
+</html>

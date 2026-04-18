@@ -148,9 +148,6 @@ struct FloatingSearch: View {
     /// Shared vertical slot so the magnifier, placeholder/caret, and clear control align (plain TextField has extra cell insets).
     /// On macOS the focused field is edited by AppKit’s field editor, so leave headroom and apply the 1.5pt optical shift inside the native editor rect.
     private let searchFieldLineHeight: CGFloat = 22
-    /// Inset for the results `ScrollView` document so overlay scroll thumbs don’t cover trailing shortcuts and folder labels.
-    private let resultsScrollTrailingGutter: CGFloat = 18
-
     /// Pre–macOS 26 command palette shell fill — same tokens as the tabs block text body
     /// (`TabsContainerOverlayView.blocksColor` / `FloatingEditToolbar.pillBg` / Figma `bg/blocks`).
     private var searchPanelPreGlassFill: Color {
@@ -164,17 +161,19 @@ struct FloatingSearch: View {
         }
     }
 
-    /// macOS: nudge the results `NSScrollView` toward legacy scrollers when AppKit exposes one (see `FloatingSearchScrollViewLegacyScrollers`).
-    /// SwiftUI often still paints overlay scrubbers on top of the document; `resultsScrollTrailingGutter` keeps trailing row content clear.
-    @ViewBuilder
-    private var resultsScrollViewLegacyScrollerProbe: some View {
-        #if os(macOS)
-        FloatingSearchScrollViewLegacyScrollers()
-            .frame(width: 0, height: 0)
-            .accessibilityHidden(true)
-        #else
-        EmptyView()
-        #endif
+    /// Tint for internal seams in the command palette — under the search field, between the
+    /// quick actions block and LAST SEARCH, above the footer, and between commands/results in
+    /// typed-query mode. The app-wide `BorderSubtleColor` at 9% white is swallowed by this
+    /// panel's glass backdrop in dark mode, so we bump to ~15% locally. Light mode keeps the
+    /// existing token since 9% black already reads well against the surface. Outer panel stroke
+    /// and footer keycap separator use their own tokens.
+    private var panelDividerColor: Color {
+        switch colorScheme {
+        case .dark:
+            Color.white.opacity(0.15)
+        default:
+            Color("BorderSubtleColor")
+        }
     }
 
     private enum SearchAnimations {
@@ -498,7 +497,7 @@ struct FloatingSearch: View {
                 quickActionsAndRecentsBlock
             } else if typedQueryUnifiedListActive {
                 Rectangle()
-                    .fill(Color("BorderSubtleColor"))
+                    .fill(panelDividerColor)
                     .frame(height: 0.5)
                 typedQueryUnifiedList
                     .frame(maxHeight: typedQueryScrollMaxHeight)
@@ -598,7 +597,7 @@ struct FloatingSearch: View {
     private var quickActionsAndRecentsBlock: some View {
         VStack(spacing: 0) {
             Rectangle()
-                .fill(Color("BorderSubtleColor"))
+                .fill(panelDividerColor)
                 .frame(height: 0.5)
 
             Group {
@@ -725,7 +724,7 @@ struct FloatingSearch: View {
 
             if showLastSearchSection {
                 Rectangle()
-                    .fill(Color("BorderSubtleColor"))
+                    .fill(panelDividerColor)
                     .frame(height: 0.5)
                 lastSearchSectionContent
             }
@@ -898,12 +897,16 @@ struct FloatingSearch: View {
     @ViewBuilder
     private var lastSearchSectionContent: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("LAST SEARCH")
-                .font(FontManager.heading(size: 9, weight: .bold))
-                .textCase(.uppercase)
-                .foregroundColor(Color("SecondaryTextColor"))
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(8)
+            HStack(spacing: 8) {
+                Text("LAST SEARCH")
+                    .font(FontManager.heading(size: 9, weight: .bold))
+                    .textCase(.uppercase)
+                    .foregroundColor(Color("SecondaryTextColor"))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                clearLastSearchButton
+            }
+            .padding(8)
 
             VStack(spacing: 0) {
                 ForEach(Array(engine.paletteHistory.enumerated()), id: \.element.id) { offset, entry in
@@ -918,6 +921,22 @@ struct FloatingSearch: View {
             .padding(.bottom, 8)
         }
         .padding(8)
+    }
+
+    private var clearLastSearchButton: some View {
+        Button {
+            engine.clearPaletteHistory()
+            selectedResultIndex = 0
+        } label: {
+            Text("Clear All")
+                .font(FontManager.heading(size: 9, weight: .bold))
+                .textCase(.uppercase)
+                .foregroundColor(Color("SecondaryTextColor"))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Clear recent searches")
+        .accessibilityLabel("Clear recent searches")
     }
 
     private func stringRecentRow(query: String, index: Int) -> some View {
@@ -1007,7 +1026,7 @@ struct FloatingSearch: View {
     private var commandPaletteFooter: some View {
         VStack(spacing: 0) {
             Rectangle()
-                .fill(Color("BorderSubtleColor"))
+                .fill(panelDividerColor)
                 .frame(height: 0.5)
 
             HStack(alignment: .center, spacing: 0) {
@@ -1100,12 +1119,18 @@ struct FloatingSearch: View {
     // MARK: - Typed query: filtered commands + note/folder hits (single list)
 
     /// One scrollable column: matching quick actions (if any), divider, then `SearchEngine` hits (if any).
+    ///
+    /// Divider + spacing intentionally mirrors `rootQuickActionsAndLastSearchBlock` (empty-query
+    /// state): each section wraps with symmetric `.padding(8)` and the divider runs edge-to-edge
+    /// between them. This keeps the seam between sections visually identical regardless of
+    /// whether the user is browsing quick actions or typing a query.
     @ViewBuilder
     private var typedQueryUnifiedList: some View {
+        let hasCommands = !filteredRootQuickActionSpecs.isEmpty
+        let hasResults = !engine.results.isEmpty
         ScrollView {
             VStack(spacing: 0) {
-                resultsScrollViewLegacyScrollerProbe
-                if !filteredRootQuickActionSpecs.isEmpty {
+                if hasCommands {
                     VStack(spacing: 0) {
                         ForEach(Array(filteredRootQuickActionSpecs.enumerated()), id: \.element.activationIndex) {
                             pair in
@@ -1114,13 +1139,12 @@ struct FloatingSearch: View {
                     }
                     .padding(8)
                 }
-                if !filteredRootQuickActionSpecs.isEmpty, !engine.results.isEmpty {
+                if hasCommands, hasResults {
                     Rectangle()
-                        .fill(Color("BorderSubtleColor"))
+                        .fill(panelDividerColor)
                         .frame(height: 0.5)
-                        .padding(.horizontal, 8)
                 }
-                if !engine.results.isEmpty {
+                if hasResults {
                     VStack(spacing: 0) {
                         ForEach(Array(engine.results.enumerated()), id: \.element.id) { pair in
                             resultRow(
@@ -1131,10 +1155,8 @@ struct FloatingSearch: View {
                     .padding(8)
                 }
             }
-            // Keep ⌘-style shortcuts and folder metadata left of vertical scroll indicators (overlay scrubbers).
-            .padding(.trailing, resultsScrollTrailingGutter)
         }
-        .scrollIndicators(.visible)
+        .scrollIndicators(.automatic)
     }
 
     @ViewBuilder
@@ -1963,27 +1985,4 @@ private final class FloatingSearchTextFieldCell: NSTextFieldCell {
     }
 }
 
-/// SwiftUI’s `ScrollView` is backed by `NSScrollView`; when found, prefer legacy scrollers for a stable track.
-/// Document trailing padding (`resultsScrollTrailingGutter`) still avoids overlay thumbs covering row chrome.
-private struct FloatingSearchScrollViewLegacyScrollers: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        view.isHidden = true
-        return view
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async {
-            var current: NSView? = nsView.superview
-            while let c = current {
-                if let scroll = c as? NSScrollView {
-                    scroll.scrollerStyle = .legacy
-                    scroll.autohidesScrollers = false
-                    return
-                }
-                current = c.superview
-            }
-        }
-    }
-}
 #endif

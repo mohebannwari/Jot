@@ -149,7 +149,7 @@ def main() -> None:
         Paragraph(
             "README.md (feature list), Linear DES-301 (phases and backlog), "
             "docs/plans/ONBOARDING_PLAN.md (full feature inventory), "
-            ".claude/CLAUDE.md / AGENTS.md (architecture and conventions), "
+            "AGENTS.md at repository root (architecture and conventions; `.claude/CLAUDE.md` symlinks here), "
             "Jot/Intents/*.swift (Shortcuts surface area).",
             body,
         )

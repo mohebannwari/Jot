@@ -133,6 +133,13 @@ final class SearchEngine: ObservableObject {
         persistPaletteHistory()
     }
 
+    /// Wipes every recent query + opened target from the palette history.
+    func clearPaletteHistory() {
+        guard !paletteHistory.isEmpty else { return }
+        paletteHistory = []
+        persistPaletteHistory()
+    }
+
     private func persistPaletteHistory() {
         if let data = try? JSONEncoder().encode(paletteHistory) {
             userDefaults.set(data, forKey: paletteHistoryKey)

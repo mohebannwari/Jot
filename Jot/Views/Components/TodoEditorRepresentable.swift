@@ -492,7 +492,7 @@ final class TypingAnimationLayoutManager: NSLayoutManager {
                     font: font
                 )
                 let pillRect = tightRect.offsetBy(dx: origin.x, dy: origin.y)
-                NSColor.labelColor.withAlphaComponent(0.08).setFill()
+                (NSColor(named: "InlineCodeBgColor") ?? NSColor.labelColor.withAlphaComponent(0.08)).setFill()
                 NSBezierPath(roundedRect: pillRect, xRadius: 3, yRadius: 3).fill()
             }
         }

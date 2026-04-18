@@ -158,11 +158,30 @@ final class NoteImportService {
 
     private func convertMarkdown(at url: URL) async -> (title: String, content: String)? {
         guard let raw = try? String(contentsOf: url, encoding: .utf8) else { return nil }
-        let baseDir = url.deletingLastPathComponent()
+        return await convertMarkdownDocument(
+            raw: raw,
+            baseDirectory: url.deletingLastPathComponent(),
+            fileURLForFallbackTitle: url
+        )
+    }
+
+    /// Converts a Markdown string to Jot markup (shared by file import and unit tests).
+    ///
+    /// **Markdown fidelity:** strips leading YAML `---` … `---`, lifts a leading ATX `#` title out of
+    /// the body, hoists inline `` `code` `` before bold/italic passes, preserves labeled links,
+    /// autolinks, and normalizes line-start `->` / `=>` to Unicode arrows.
+    internal func convertMarkdownDocument(
+        raw: String,
+        baseDirectory: URL,
+        fileURLForFallbackTitle: URL
+    ) async -> (title: String, content: String) {
+        let baseDir = baseDirectory
+        // Drop YAML frontmatter first so `---` lines are not mistaken for setext / HR during preprocess.
+        let rawWithoutFrontmatter = Self.stripLeadingYAMLFrontmatter(raw)
 
         // Pre-pass: convert setext-style headings to ATX-style
         // (Title\n=== -> # Title, Subtitle\n--- -> ## Subtitle)
-        let rawLines = raw.components(separatedBy: .newlines)
+        let rawLines = rawWithoutFrontmatter.components(separatedBy: .newlines)
         var preprocessed: [String] = []
         var idx = 0
         while idx < rawLines.count {
@@ -182,6 +201,28 @@ final class NoteImportService {
             }
             preprocessed.append(current)
             idx += 1
+        }
+
+        // Leading `# Title` becomes the note title (Obsidian/Bear-style) and is removed from body.
+        var bodyLines = preprocessed
+        var resolvedTitle = titleFromURL(fileURLForFallbackTitle)
+        if let firstContentIndex = bodyLines.firstIndex(where: {
+            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }) {
+            let trimmed = bodyLines[firstContentIndex].trimmingCharacters(in: .whitespaces)
+            // Single-level ATX H1 only (`# `), not `##` / `###`.
+            if trimmed.hasPrefix("# "), !trimmed.hasPrefix("## ") {
+                let titleText = String(trimmed.dropFirst(2)).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !titleText.isEmpty {
+                    resolvedTitle = titleText
+                    bodyLines.remove(at: firstContentIndex)
+                    // Drop blank lines that followed the removed H1 so the body does not start with an empty paragraph.
+                    while firstContentIndex < bodyLines.count,
+                          bodyLines[firstContentIndex].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        bodyLines.remove(at: firstContentIndex)
+                    }
+                }
+            }
         }
 
         var lines: [String] = []
@@ -236,7 +277,7 @@ final class NoteImportService {
             indentedCodeLines = nil
         }
 
-        for line in preprocessed {
+        for line in bodyLines {
             // Code fences — accumulate into CodeBlockData
             if line.hasPrefix("```") {
                 flushPipeTable()
@@ -303,8 +344,24 @@ final class NoteImportService {
             var converted = line
             // Soft line break: strip 2+ trailing spaces (Markdown line-break signal)
             converted = converted.replacingOccurrences(of: #"\s{2,}$"#, with: "", options: .regularExpression)
+
+            // Line-start ASCII arrows (e.g. CLAUDE.md task lists) → Unicode, with optional indent preserved.
+            let wsLead = converted.prefix(while: { $0 == " " || $0 == "\t" })
+            let restAfterWs = converted.dropFirst(wsLead.count)
+            // Prefixes are exactly three UTF-16 scalars: `-`/`=` + `>` + space.
+            if restAfterWs.hasPrefix("-> ") {
+                converted = String(wsLead) + "[[arrow]] " + String(restAfterWs.dropFirst(3))
+            } else if restAfterWs.hasPrefix("=> ") {
+                converted = String(wsLead) + "\u{21D2} " + String(restAfterWs.dropFirst(3))
+            }
+
             var blockPrefix = ""
             var blockSuffix = ""
+
+            // Inline `` `code` `` must be extracted BEFORE link/image/URL passes so backtick spans
+            // containing `[](...)` or `https://...` are not corrupted (review: hoist before linkify).
+            let (convertedWithCodePH, codeSpans) = replaceInlineCodeWithPlaceholders(converted)
+            converted = convertedWithCodePH
 
             // Horizontal rules: ---, ***, ___  → divider tag
             let hrTrimmed = converted.trimmingCharacters(in: .whitespaces)
@@ -394,8 +451,8 @@ final class NoteImportService {
                 converted = "\(indent)\u{2022} " + String(bulletStr.dropFirst(2))
             }
 
-            // Images: ![alt](path) — resolve local paths relative to .md dir
-            for match in converted.matches(of: /!\[([^\]]*)\]\(([^)]+)\)/).reversed() {
+            // Images: ![alt](path "title") — optional title is stripped; resolve local paths relative to .md dir
+            for match in converted.matches(of: /!\[([^\]]*)\]\(([^)]+?)(?:\s+"[^"]*")?\)/).reversed() {
                 let path = String(match.2)
                 let imageURL: URL?
                 if let u = URL(string: path), u.scheme != nil {
@@ -412,7 +469,7 @@ final class NoteImportService {
             }
 
             // CSV file links: [text](path.csv) — inline as table (Notion exports)
-            if let csvMatch = converted.firstMatch(of: /\[([^\]]*)\]\(([^)]+\.csv)\)/) {
+            if let csvMatch = converted.firstMatch(of: /\[([^\]]*)\]\(([^)]+\.csv)(?:\s+"[^"]*")?\)/) {
                 let csvPath = String(csvMatch.2)
                 let csvURL: URL?
                 if let u = URL(string: csvPath), u.scheme != nil {
@@ -435,17 +492,28 @@ final class NoteImportService {
                 }
             }
 
-            // Links: [text](url)
+            // Links: [text](url "title") — optional CommonMark title is stripped; collapse when label == URL.
             converted = replacePattern(
-                in: converted, pattern: #"\[([^\]]+)\]\(([^)]+)\)"#
-            ) { groups in "[[link|\(groups[2])|\(groups[1])]]" }
+                in: converted, pattern: #"\[([^\]]+)\]\(([^)]+?)(?:\s+"[^"]*")?\)"#
+            ) { groups in
+                let label = groups[1]
+                let url = groups[2]
+                if label == url { return "[[link|\(url)]]" }
+                return "[[link|\(url)|\(label)]]"
+            }
 
-            // Bare URLs: detect URLs not already inside [[link|...]] tags
+            // Autolink brackets: <https://...>, <mailto:...>
+            converted = replacePattern(
+                in: converted,
+                pattern: #"<((?:https?://|mailto:)[^>\s]+)>"#
+            ) { "[[link|\($0[1])]]" }
+
+            // Bare URLs: detect URLs not already converted to [[link|...]] tags
             if !converted.contains("[[link|") {
                 converted = replacePattern(
                     in: converted,
                     pattern: #"(https?://[^\s\)\]\>]+)"#
-                ) { "[[link|\($0[1])|\($0[1])]]" }
+                ) { "[[link|\($0[1])]]" }
             }
 
             // Bold-italic: ***text*** or ___text___ (before bold/italic to consume triple delimiters first)
@@ -477,10 +545,13 @@ final class NoteImportService {
                 in: converted, pattern: #"~~(.+?)~~"#
             ) { "[[s]]\($0[1])[[/s]]" }
 
-            // Inline code: `code` → bold (no inline-code markup exists in the editor)
-            converted = replacePattern(
-                in: converted, pattern: #"`([^`\n]+)`"#
-            ) { "[[b]]\($0[1])[[/b]]" }
+            // Restore inline code spans as dedicated `[[ic]]...[[/ic]]` markup (editor + export round-trip).
+            for (i, code) in codeSpans.enumerated() {
+                converted = converted.replacingOccurrences(
+                    of: "\u{F00C}CODE\(i)\u{F00C}",
+                    with: "[[ic]]\(code)[[/ic]]"
+                )
+            }
 
             lines.append(blockPrefix + converted + blockSuffix)
         }
@@ -491,7 +562,51 @@ final class NoteImportService {
         // Flush any trailing pipe table
         flushPipeTable()
 
-        return (titleFromURL(url), collapseExcessiveBlankLines(lines.joined(separator: "\n")))
+        // Markdown uses blank lines as block separators; Jot storage uses a single \n
+        // between paragraphs. Collapse runs of newlines so imported .md does not create
+        // phantom empty paragraphs (huge vertical gaps) in the editor.
+        return (resolvedTitle, collapseMarkdownParagraphSeparators(lines.joined(separator: "\n")))
+    }
+
+    /// Strips a leading YAML frontmatter block when it opens and closes with a line that is exactly `---`.
+    private static func stripLeadingYAMLFrontmatter(_ raw: String) -> String {
+        let lines = raw.components(separatedBy: .newlines)
+        guard let first = lines.first?.trimmingCharacters(in: .whitespacesAndNewlines), first == "---" else {
+            return raw
+        }
+        for idx in 1..<lines.count {
+            if lines[idx].trimmingCharacters(in: .whitespacesAndNewlines) == "---" {
+                let tail = lines.dropFirst(idx + 1)
+                return tail.joined(separator: "\n")
+            }
+        }
+        return raw
+    }
+
+    /// Replaces each `` `inline` `` span with a private-use placeholder so later emphasis passes cannot
+    /// mutate characters inside code. Indices in placeholders match `spans` order left-to-right.
+    private func replaceInlineCodeWithPlaceholders(_ string: String) -> (String, [String]) {
+        guard let regex = try? NSRegularExpression(pattern: #"`([^`\n]+)`"#, options: []) else {
+            return (string, [])
+        }
+        let nsString = string as NSString
+        let full = NSRange(location: 0, length: nsString.length)
+        let matches = regex.matches(in: string, options: [], range: full)
+        guard !matches.isEmpty else { return (string, []) }
+
+        var spans: [String] = []
+        spans.reserveCapacity(matches.count)
+        for m in matches {
+            spans.append(nsString.substring(with: m.range(at: 1)))
+        }
+        var result = string
+        for (i, m) in matches.enumerated().reversed() {
+            let placeholder = "\u{F00C}CODE\(i)\u{F00C}"
+            if let swiftRange = Range(m.range, in: result) {
+                result.replaceSubrange(swiftRange, with: placeholder)
+            }
+        }
+        return (result, spans)
     }
 
     private func convertHTML(at url: URL) async -> (title: String, content: String)? {
@@ -1094,6 +1209,24 @@ final class NoteImportService {
             range: NSRange(location: 0, length: (text as NSString).length),
             withTemplate: "\n\n"
         )
+    }
+
+    /// Markdown blank lines separate blocks but are not extra vertical space in Jot.
+    /// Code/tables/callouts serialize internal newlines as escaped sequences inside tags,
+    /// so collapsing `\n{2,}` → `\n` here does not strip real blank lines inside those blocks.
+    /// Internal so `@testable` unit tests can assert normalization without disk I/O.
+    func collapseMarkdownParagraphSeparators(_ text: String) -> String {
+        guard let regex = try? NSRegularExpression(pattern: "\\n{2,}") else { return text }
+        var collapsed = regex.stringByReplacingMatches(
+            in: text,
+            range: NSRange(location: 0, length: (text as NSString).length),
+            withTemplate: "\n"
+        )
+        // A single leading newline still creates an empty first paragraph; trim one.
+        if collapsed.hasPrefix("\n") {
+            collapsed.removeFirst()
+        }
+        return collapsed
     }
 
     /// Normalize a code-fence language hint to a supported CodeBlockData language.

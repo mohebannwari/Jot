@@ -9,7 +9,7 @@ alwaysApply: true
 
 ## Which file
 
-- **Primary path:** `AGENTS.md` at the **repository root** (same content as `.claude/CLAUDE.md` when symlinked — read whichever resolves to the canonical doc, but the full document must be loaded).
+- **Primary path:** `AGENTS.md` at the **repository root** (canonical on disk). `.claude/CLAUDE.md` is a symlink to it; read `AGENTS.md` so you always load the real file.
 
 ## What “read fully” means
 

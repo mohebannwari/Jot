@@ -2,7 +2,7 @@
 
 Inherits all rules from the global workflow (`~/.claude/workflow.md`). This file adds Jot-specific conventions only.
 
-Architecture, design conventions, Liquid Glass helpers, and SVG rules live in `CLAUDE.md` (not duplicated here).
+Architecture, design conventions, Liquid Glass helpers, and SVG rules live in `AGENTS.md` at the repository root (`CLAUDE.md` / `.claude/CLAUDE.md` symlink there; not duplicated here).
 Design tokens live in `design-system.md` (not duplicated here).
 
 ---

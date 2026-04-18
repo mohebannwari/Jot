@@ -481,6 +481,7 @@ final class NoteExportService {
             text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "")
         }
         text = text.replacingOccurrences(of: "[[/hl]]", with: "")
+        text = text.replacingOccurrences(of: "[[arrow]]", with: "\u{2192}")
         // Convert ordered list prefixes to "N. "
         if let regex = try? NSRegularExpression(pattern: #"\[\[ol\|(\d+)\]\]"#) {
             text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "$1. ")
@@ -490,9 +491,12 @@ final class NoteExportService {
         text = text.replacingOccurrences(of: "[ ] ", with: "[todo] ")
         // Convert dividers
         text = text.replacingOccurrences(of: "[[divider]]", with: "---")
-        // Convert links
-        if let regex = try? NSRegularExpression(pattern: #"\[\[link\|([^|]+)\|([^\]]+)\]\]"#) {
+        // Convert links (labeled two-pipe form first, then bare single-pipe URL)
+        if let regex = try? NSRegularExpression(pattern: #"\[\[link\|([^|\]]+)\|([^\]]+)\]\]"#) {
             text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "$2 ($1)")
+        }
+        if let regex = try? NSRegularExpression(pattern: #"\[\[link\|([^\]]+)\]\]"#) {
+            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "$1")
         }
         // Convert images to placeholder
         if let regex = try? NSRegularExpression(pattern: #"\[\[image\|\|\|[^\]]+\]\]"#) {
@@ -538,12 +542,17 @@ final class NoteExportService {
         // Underline has no markdown equivalent — strip
         text = text.replacingOccurrences(of: "[[u]]", with: "")
         text = text.replacingOccurrences(of: "[[/u]]", with: "")
+        // Inline code — before block [[code]] (ic is a prefix of code).
+        text = text.replacingOccurrences(of: "[[ic]]", with: "`")
+        text = text.replacingOccurrences(of: "[[/ic]]", with: "`")
         // Code blocks
         text = text.replacingOccurrences(of: "[[code]]", with: "```\n")
         text = text.replacingOccurrences(of: "[[/code]]", with: "\n```")
         // Block quotes — convert to "> " prefix per line
         text = text.replacingOccurrences(of: "[[quote]]", with: "> ")
         text = text.replacingOccurrences(of: "[[/quote]]", with: "")
+        // Figma inline arrow — markdown `-> `.
+        text = text.replacingOccurrences(of: "[[arrow]]", with: "-> ")
         // Ordered list prefix
         if let regex = try? NSRegularExpression(pattern: #"\[\[ol\|(\d+)\]\]"#) {
             text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "$1. ")
@@ -553,9 +562,12 @@ final class NoteExportService {
         text = text.replacingOccurrences(of: "[ ] ", with: "- [ ] ")
         // Dividers
         text = text.replacingOccurrences(of: "[[divider]]", with: "\n---\n")
-        // Links
-        if let regex = try? NSRegularExpression(pattern: #"\[\[link\|([^|]+)\|([^\]]+)\]\]"#) {
+        // Links — labeled first so single-pipe bare links do not mis-parse.
+        if let regex = try? NSRegularExpression(pattern: #"\[\[link\|([^|\]]+)\|([^\]]+)\]\]"#) {
             text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "[$2]($1)")
+        }
+        if let regex = try? NSRegularExpression(pattern: #"\[\[link\|([^\]]+)\]\]"#) {
+            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "[$1]($1)")
         }
         // Images
         if let regex = try? NSRegularExpression(pattern: #"\[\[image\|\|\|([^\]|]+)(?:\|\|\|[0-9]*\.?[0-9]+)?\]\]"#) {
@@ -616,12 +628,16 @@ final class NoteExportService {
         text = text.replacingOccurrences(of: "[[/u]]", with: "</u>")
         text = text.replacingOccurrences(of: "[[s]]", with: "<s>")
         text = text.replacingOccurrences(of: "[[/s]]", with: "</s>")
+        // Inline code before block [[code]].
+        text = text.replacingOccurrences(of: "[[ic]]", with: "<code>")
+        text = text.replacingOccurrences(of: "[[/ic]]", with: "</code>")
         // Code blocks
         text = text.replacingOccurrences(of: "[[code]]", with: "<pre><code>")
         text = text.replacingOccurrences(of: "[[/code]]", with: "</code></pre>")
         // Block quotes
         text = text.replacingOccurrences(of: "[[quote]]", with: "<blockquote>")
         text = text.replacingOccurrences(of: "[[/quote]]", with: "</blockquote>")
+        text = text.replacingOccurrences(of: "[[arrow]]", with: "&rarr;")
         // Ordered list prefix
         if let regex = try? NSRegularExpression(pattern: #"\[\[ol\|(\d+)\]\]"#) {
             text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "<li>")
@@ -646,8 +662,8 @@ final class NoteExportService {
         text = text.replacingOccurrences(of: "[ ] ", with: "<input type=\"checkbox\" disabled> ")
         // Dividers
         text = text.replacingOccurrences(of: "[[divider]]", with: "<hr>")
-        // Links
-        if let regex = try? NSRegularExpression(pattern: #"\[\[link\|([^|]+)\|([^\]]+)\]\]"#) {
+        // Links — labeled first, then bare URL-only tags.
+        if let regex = try? NSRegularExpression(pattern: #"\[\[link\|([^|\]]+)\|([^\]]+)\]\]"#) {
             let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
             for match in matches.reversed() {
                 if let urlRange = Range(match.range(at: 1), in: text),
@@ -657,6 +673,19 @@ final class NoteExportService {
                     let label = String(text[labelRange])
                     let sanitizedURL = sanitizeURL(url)
                     text = text.replacingCharacters(in: fullRange, with: "<a href=\"\(sanitizedURL)\">\(label)</a>")
+                }
+            }
+        }
+
+        if let regex = try? NSRegularExpression(pattern: #"\[\[link\|([^\]]+)\]\]"#) {
+            let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
+            for match in matches.reversed() {
+                if let urlRange = Range(match.range(at: 1), in: text),
+                   let fullRange = Range(match.range, in: text) {
+                    let url = String(text[urlRange])
+                    let sanitizedURL = sanitizeURL(url)
+
+                    text = text.replacingCharacters(in: fullRange, with: "<a href=\"\(sanitizedURL)\">\(url)</a>")
                 }
             }
         }
