@@ -60,6 +60,8 @@ final class CodeBlockOverlayView: NSView {
     var onWidthChanged:    ((CGFloat) -> Void)?
     /// One-shot after horizontal drag ends or double-click snap — mirrors `CalloutOverlayView` / tabs (`syncText` in coordinator).
     var onResizeGestureEnded: (() -> Void)?
+    /// Horizontal resize drag began (host snapshots `CodeBlockData` for one undo at gesture end).
+    var onResizeWidthDragBegan: (() -> Void)?
 
     // MARK: - Subviews
 
@@ -196,6 +198,9 @@ final class CodeBlockOverlayView: NSView {
         chipView.addSubview(chevronView)
 
         // Resize handle — `onDragEnd` drives debounced persistence like callouts/tabs (not every tick).
+        resizeHandle.onDragBegan = { [weak self] in
+            self?.onResizeWidthDragBegan?()
+        }
         resizeHandle.onDrag = { [weak self] newWidth in
             self?.handleResize(to: newWidth)
         }
@@ -530,6 +535,7 @@ private final class _LangChipButton: NSView {
 
 private final class _CodeResizeHandle: NSView {
 
+    var onDragBegan: (() -> Void)?
     var onDrag: ((CGFloat) -> Void)?
     var onDoubleClick: (() -> Void)?
     /// After an actual drag (not plain click / double-click).
@@ -566,6 +572,7 @@ private final class _CodeResizeHandle: NSView {
         }
         didDragThisGesture = false
         dragStartX = event.locationInWindow.x
+        onDragBegan?()
         dragStartWidth = superview?.bounds.width ?? 0
     }
 

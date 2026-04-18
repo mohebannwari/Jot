@@ -20,6 +20,8 @@ struct TodoRichTextEditor: View {
     var availableNotes: [NotePickerItem] = []
     var onNavigateToNote: ((UUID) -> Void)?
     var fetchNote: ((UUID) -> Note?)?
+    /// Fired when the underlying `NSTextView` is available so the parent can attach to `NSUndoManager`.
+    var onUndoManagerAvailable: ((UndoManager?) -> Void)? = nil
 
     init(
         text: Binding<String>,
@@ -29,7 +31,8 @@ struct TodoRichTextEditor: View {
         onCommandMenuSelection: ((EditTool) -> Void)? = nil,
         availableNotes: [NotePickerItem] = [],
         onNavigateToNote: ((UUID) -> Void)? = nil,
-        fetchNote: ((UUID) -> Note?)? = nil
+        fetchNote: ((UUID) -> Note?)? = nil,
+        onUndoManagerAvailable: ((UndoManager?) -> Void)? = nil
     ) {
         self._text = text
         self.focusRequestID = focusRequestID
@@ -39,6 +42,7 @@ struct TodoRichTextEditor: View {
         self.availableNotes = availableNotes
         self.onNavigateToNote = onNavigateToNote
         self.fetchNote = fetchNote
+        self.onUndoManagerAvailable = onUndoManagerAvailable
     }
 
 
@@ -127,7 +131,8 @@ struct TodoRichTextEditor: View {
                     focusRequestID: focusRequestID,
                     editorInstanceID: editorInstanceID,
                     onNavigateToNote: onNavigateToNote,
-                    fetchNote: fetchNote
+                    fetchNote: fetchNote,
+                    onUndoManagerAvailable: onUndoManagerAvailable
                 )
         }
         .frame(maxWidth: .infinity)  // Natural height based on content

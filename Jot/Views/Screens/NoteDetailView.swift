@@ -58,6 +58,7 @@ struct NoteDetailView: View {
   @State private var lastSavedStickers: [Sticker] = []
   @State private var isPlacingSticker = false
   @State private var selectedStickerID: UUID? = nil
+  @StateObject private var stickerUndoController = StickerUndoController()
 
   // MARK: - Overlay state (accessed by +Actions extension)
   @State var showVoiceRecorderOverlay = false
@@ -389,7 +390,8 @@ struct NoteDetailView: View {
         onCommandMenuSelection: { performAuxiliaryToolAction($0) },
         availableNotes: availableNotes,
         onNavigateToNote: onNavigateToNote,
-        fetchNote: { uuid in notesManager.notes.first(where: { $0.id == uuid }) }
+        fetchNote: { uuid in notesManager.notes.first(where: { $0.id == uuid }) },
+        onUndoManagerAvailable: { stickerUndoController.noteEditorUndoManager = $0 }
       )
       .id(editorIdentity)
       .frame(maxWidth: .infinity, alignment: .leading)
@@ -412,7 +414,10 @@ struct NoteDetailView: View {
         stickers: $editedStickers,
         isPlacingSticker: $isPlacingSticker,
         selectedStickerID: $selectedStickerID,
-        onChanged: { scheduleAutosave() }
+        onChanged: { scheduleAutosave() },
+        recordStickerUndo: { old, new, name in
+          stickerUndoController.record(oldStickers: old, newStickers: new, actionName: name)
+        }
       )
     }
     .background(
@@ -437,6 +442,10 @@ struct NoteDetailView: View {
       ScrollViewReader { proxy in
         ScrollView(showsIndicators: false) {
           editorScrollContent
+        }
+        .onAppear {
+          stickerUndoController.bind(stickers: $editedStickers)
+          stickerUndoController.onAfterMutation = { scheduleAutosave() }
         }
         .padding(.top, contentTopInsetAdjustment)
         .transaction { t in
@@ -2011,8 +2020,10 @@ struct NoteDetailView: View {
       textColorDark: true,
       zIndex: (editedStickers.map(\.zIndex).max() ?? 0) + 1
     )
-    editedStickers.append(newSticker)
-    scheduleAutosave()
+    let previous = editedStickers
+    let next = previous + [newSticker]
+    stickerUndoController.record(
+      oldStickers: previous, newStickers: next, actionName: "Add Sticker")
   }
 
   private func handleEditToolAction(_ tool: EditTool) {

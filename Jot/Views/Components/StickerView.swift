@@ -16,12 +16,44 @@ struct StickerView: View {
     let onSelect: () -> Void
     let onDelete: () -> Void
     let onChanged: () -> Void
+    let getAllStickers: () -> [Sticker]
+    var recordStickerUndo: ((_ before: [Sticker], _ after: [Sticker], _ actionName: String) -> Void)?
 
     @State private var dragOffset: CGSize = .zero
     @State private var resizeStartSize: CGFloat? = nil
     @State private var resizePreviewSize: CGFloat? = nil
+    /// Full sticker list before a drag/resize gesture (used for one undo step on gesture end).
+    @State private var stickersSnapshotBeforeGesture: [Sticker]?
 
     private var displaySize: CGFloat { resizePreviewSize ?? sticker.size }
+
+    /// Commits a gesture-driven sticker change onto the shared undo stack when `recordStickerUndo` is wired.
+    private func finishGestureUndoableChange(actionName: String) {
+        if let rec = recordStickerUndo, let snap = stickersSnapshotBeforeGesture {
+            let after = getAllStickers()
+            if snap != after {
+                rec(snap, after, actionName)
+            } else {
+                onChanged()
+            }
+        } else {
+            onChanged()
+        }
+        stickersSnapshotBeforeGesture = nil
+    }
+
+    /// Discrete property edits (menus) register one undo step when the recorder is available.
+    private func applyDiscreteStickerMutation(actionName: String, mutate: () -> Void) {
+        if let rec = recordStickerUndo {
+            let before = getAllStickers()
+            mutate()
+            let after = getAllStickers()
+            rec(before, after, actionName)
+        } else {
+            mutate()
+            onChanged()
+        }
+    }
 
     var body: some View {
         stickerBody
@@ -95,9 +127,15 @@ struct StickerView: View {
                 textColor: sticker.textColorDark ? .black : .white,
                 stickerBaseColor: sticker.color.baseColor,
                 onCommit: { exitEditMode() },
-                onColorChange: { color in sticker.color = color; onChanged() },
-                onTextColorChange: { dark in sticker.textColorDark = dark; onChanged() },
-                onFontSizeChange: { size in sticker.fontSize = size; onChanged() },
+                onColorChange: { color in
+                    applyDiscreteStickerMutation(actionName: "Sticker Color") { sticker.color = color }
+                },
+                onTextColorChange: { dark in
+                    applyDiscreteStickerMutation(actionName: "Sticker Text Color") { sticker.textColorDark = dark }
+                },
+                onFontSizeChange: { size in
+                    applyDiscreteStickerMutation(actionName: "Sticker Text Size") { sticker.fontSize = size }
+                },
                 onDelete: onDelete,
                 currentColor: sticker.color,
                 currentTextColorDark: sticker.textColorDark,
@@ -127,6 +165,9 @@ struct StickerView: View {
             .gesture(
                 DragGesture()
                     .onChanged { value in
+                        if recordStickerUndo != nil, stickersSnapshotBeforeGesture == nil {
+                            stickersSnapshotBeforeGesture = getAllStickers()
+                        }
                         if resizeStartSize == nil {
                             resizeStartSize = sticker.size
                         }
@@ -137,7 +178,7 @@ struct StickerView: View {
                     .onEnded { _ in
                         if let preview = resizePreviewSize {
                             sticker.size = preview
-                            onChanged()
+                            finishGestureUndoableChange(actionName: "Resize Sticker")
                         }
                         resizePreviewSize = nil
                         resizeStartSize = nil
@@ -155,6 +196,9 @@ struct StickerView: View {
         DragGesture()
             .onChanged { value in
                 guard !isEditing else { return }
+                if recordStickerUndo != nil, stickersSnapshotBeforeGesture == nil {
+                    stickersSnapshotBeforeGesture = getAllStickers()
+                }
                 dragOffset = value.translation
             }
             .onEnded { value in
@@ -167,7 +211,7 @@ struct StickerView: View {
                 sticker.positionY += offset.height
                 sticker.positionX = max(0, sticker.positionX)
                 sticker.positionY = max(0, sticker.positionY)
-                onChanged()
+                finishGestureUndoableChange(actionName: "Move Sticker")
             }
     }
 
@@ -179,8 +223,9 @@ struct StickerView: View {
         Menu {
             ForEach(StickerColor.allCases, id: \.self) { color in
                 Button {
-                    sticker.color = color
-                    onChanged()
+                    applyDiscreteStickerMutation(actionName: "Sticker Color") {
+                        sticker.color = color
+                    }
                 } label: {
                     HStack {
                         Text(color.displayName)
@@ -197,8 +242,9 @@ struct StickerView: View {
         // Text color
         Menu {
             Button {
-                sticker.textColorDark = true
-                onChanged()
+                applyDiscreteStickerMutation(actionName: "Sticker Text Color") {
+                    sticker.textColorDark = true
+                }
             } label: {
                 HStack {
                     Text("Dark")
@@ -206,8 +252,9 @@ struct StickerView: View {
                 }
             }
             Button {
-                sticker.textColorDark = false
-                onChanged()
+                applyDiscreteStickerMutation(actionName: "Sticker Text Color") {
+                    sticker.textColorDark = false
+                }
             } label: {
                 HStack {
                     Text("Light")
@@ -222,8 +269,9 @@ struct StickerView: View {
         Menu {
             ForEach(9...20, id: \.self) { size in
                 Button {
-                    sticker.fontSize = CGFloat(size)
-                    onChanged()
+                    applyDiscreteStickerMutation(actionName: "Sticker Text Size") {
+                        sticker.fontSize = CGFloat(size)
+                    }
                 } label: {
                     HStack {
                         Text("\(size) pt")

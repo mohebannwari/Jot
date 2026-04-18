@@ -249,30 +249,40 @@ extension TodoEditorRepresentable.Coordinator {
                     overlay = NoteTableOverlayView(tableData: attachment.tableData)
                     overlay.parentTextView = textView
 
-                    overlay.onDataChanged = { [weak self, weak textStorage, weak textView, weak attachment] newData in
+                    overlay.onDataChanged = { [weak self, weak textStorage, weak textView, weak attachment] previous, newData, commit in
                         guard let self = self, let ts = textStorage, let tv = textView, let att = attachment else { return }
-                        att.tableData = newData
-
-                        // Recalculate attachment width from the text-column viewport; the overlay
-                        // itself paints overflow past that viewport to match card sections.
-                        let newHeight = NoteTableOverlayView.computeTableHeight(for: newData) + 1 + 36  // +36 for add-row button space
-                        let containerWidth = tv.textContainer?.containerSize.width ?? 400
-                        let newWidth = min(newData.contentWidth, containerWidth)
-                        let newSize = CGSize(width: newWidth, height: newHeight)
-                        att.attachmentCell = TableSizeAttachmentCell(size: newSize)
-                        att.bounds = CGRect(origin: .zero, size: newSize)
-
-                        // Invalidate layout for the attachment character
-                        let fr = NSRange(location: 0, length: ts.length)
-                        ts.enumerateAttribute(.attachment, in: fr, options: []) { val, charRange, stop in
-                            if val as AnyObject === att {
-                                tv.layoutManager?.invalidateLayout(forCharacterRange: charRange, actualCharacterRange: nil)
-                                stop.pointee = true
+                        let apply: (NoteTableData) -> Void = { data in
+                            att.tableData = data
+                            let newHeight = NoteTableOverlayView.computeTableHeight(for: data) + 1 + 36  // +36 for add-row button space
+                            let containerWidth = tv.textContainer?.containerSize.width ?? 400
+                            let newWidth = min(data.contentWidth, containerWidth)
+                            let newSize = CGSize(width: newWidth, height: newHeight)
+                            att.attachmentCell = TableSizeAttachmentCell(size: newSize)
+                            att.bounds = CGRect(origin: .zero, size: newSize)
+                            let fr = NSRange(location: 0, length: ts.length)
+                            ts.enumerateAttribute(.attachment, in: fr, options: []) { val, charRange, stop in
+                                if val as AnyObject === att {
+                                    tv.layoutManager?.invalidateLayout(forCharacterRange: charRange, actualCharacterRange: nil)
+                                    stop.pointee = true
+                                }
                             }
                         }
-                        // Do not call `syncText()` here: column divider drags fire this every tick and
-                        // run `styleTodoParagraphs` on the whole note (hides body text). `onResizeGestureEnded`
-                        // runs one `syncText()` after the drag or on discrete edits (see `NoteTableOverlayView`).
+                        if commit, previous != newData {
+                            self.applyMutationWithUndo(
+                                textView: tv,
+                                actionName: "Edit Table",
+                                oldValue: previous,
+                                newValue: newData,
+                                apply: apply
+                            )
+                        } else {
+                            apply(newData)
+                        }
+                    }
+
+                    overlay.onColumnDividerDragBegan = { [weak self, weak attachment] in
+                        guard let self, let att = attachment, let tv = self.textView else { return }
+                        self.pendingTableColumnResizeSnapshot[ObjectIdentifier(att)] = att.tableData
                     }
 
                     overlay.onDeleteTable = { [weak self, weak textStorage, weak textView, weak attachment] in
@@ -313,11 +323,29 @@ extension TodoEditorRepresentable.Coordinator {
 
                 if readOnly {
                     overlay.onDataChanged = nil
+                    overlay.onColumnDividerDragBegan = nil
                     overlay.onResizeGestureEnded = nil
                     overlay.onDeleteTable = nil
                 } else {
-                    overlay.onResizeGestureEnded = { [weak self] in
-                        self?.syncText()
+                    overlay.onResizeGestureEnded = { [weak self, weak textStorage, weak textView, weak attachment] in
+                        guard let self, let ts = textStorage, let tv = textView, let att = attachment else { return }
+                        self.finalizeTableColumnResizeUndoIfNeeded(textView: tv, attachment: att) { data in
+                            att.tableData = data
+                            let newHeight = NoteTableOverlayView.computeTableHeight(for: data) + 1 + 36
+                            let containerWidth = tv.textContainer?.containerSize.width ?? 400
+                            let newWidth = min(data.contentWidth, containerWidth)
+                            let newSize = CGSize(width: newWidth, height: newHeight)
+                            att.attachmentCell = TableSizeAttachmentCell(size: newSize)
+                            att.bounds = CGRect(origin: .zero, size: newSize)
+                            let fr = NSRange(location: 0, length: ts.length)
+                            ts.enumerateAttribute(.attachment, in: fr, options: []) { val, charRange, stop in
+                                if val as AnyObject === att {
+                                    tv.layoutManager?.invalidateLayout(forCharacterRange: charRange, actualCharacterRange: nil)
+                                    stop.pointee = true
+                                }
+                            }
+                        }
+                        self.syncText()
                     }
                 }
 
@@ -445,21 +473,36 @@ extension TodoEditorRepresentable.Coordinator {
                     overlay = CalloutOverlayView(calloutData: attachment.calloutData)
                     overlay.parentTextView = textView
 
-                    overlay.onDataChanged = { [weak self, weak textStorage, weak attachment] newData in
-                        guard let self = self, let ts = textStorage, let att = attachment else { return }
-                        att.calloutData = newData
-                        let newHeight = CalloutOverlayView.heightForData(newData, width: att.bounds.width)
-                        let newSize = CGSize(width: att.bounds.width, height: newHeight)
-                        att.attachmentCell = CalloutSizeAttachmentCell(size: newSize)
-                        att.bounds = CGRect(origin: .zero, size: newSize)
-                        let fr = NSRange(location: 0, length: ts.length)
-                        ts.enumerateAttribute(.attachment, in: fr, options: []) { val, charRange, stop in
-                            if val as AnyObject === att {
-                                textView.layoutManager?.invalidateLayout(forCharacterRange: charRange, actualCharacterRange: nil)
-                                stop.pointee = true
+                    overlay.onDataChanged = { [weak self, weak textStorage, weak textView, weak attachment] newData in
+                        guard let self = self, let ts = textStorage, let tv = textView, let att = attachment else { return }
+                        let previous = att.calloutData
+                        let apply: (CalloutData) -> Void = { data in
+                            att.calloutData = data
+                            let newHeight = CalloutOverlayView.heightForData(data, width: att.bounds.width)
+                            let newSize = CGSize(width: att.bounds.width, height: newHeight)
+                            att.attachmentCell = CalloutSizeAttachmentCell(size: newSize)
+                            att.bounds = CGRect(origin: .zero, size: newSize)
+                            let fr = NSRange(location: 0, length: ts.length)
+                            ts.enumerateAttribute(.attachment, in: fr, options: []) { val, charRange, stop in
+                                if val as AnyObject === att {
+                                    tv.layoutManager?.invalidateLayout(forCharacterRange: charRange, actualCharacterRange: nil)
+                                    stop.pointee = true
+                                }
                             }
+                            self.syncText()
                         }
-                        self.syncText()
+                        self.applyMutationWithUndo(
+                            textView: tv,
+                            actionName: "Edit Callout",
+                            oldValue: previous,
+                            newValue: newData,
+                            apply: apply
+                        )
+                    }
+
+                    overlay.onResizeWidthDragBegan = { [weak self, weak attachment] in
+                        guard let self, let att = attachment, let tv = self.textView else { return }
+                        self.pendingCalloutWidthResizeSnapshot[ObjectIdentifier(att)] = att.calloutData
                     }
 
                     overlay.onDeleteCallout = { [weak self, weak textStorage, weak textView, weak attachment] in
@@ -534,10 +577,34 @@ extension TodoEditorRepresentable.Coordinator {
                     overlay.onDeleteCallout = nil
                     overlay.onWidthChanged = nil
                     overlay.onResizeGestureEnded = nil
+                    overlay.onResizeWidthDragBegan = nil
                 } else {
                     // (Re)wire every pass so overlays created before this callback existed still persist width on gesture end.
-                    overlay.onResizeGestureEnded = { [weak self] in
-                        guard let self else { return }
+                    overlay.onResizeGestureEnded = { [weak self, weak textStorage, weak textView, weak attachment] in
+                        guard let self, let ts = textStorage, let tv = textView, let att = attachment else { return }
+                        self.finalizeCalloutWidthResizeUndoIfNeeded(textView: tv, attachment: att) { data in
+                            guard let tc = tv.textContainer else { return }
+                            let cw = tc.containerSize.width
+                            let effMin = min(CalloutOverlayView.minWidth, cw)
+                            let clamped: CGFloat
+                            if let pref = data.preferredContentWidth {
+                                clamped = max(effMin, min(pref, cw))
+                            } else {
+                                clamped = cw
+                            }
+                            att.calloutData = data
+                            let newHeight = CalloutOverlayView.heightForData(data, width: clamped)
+                            let newSize = CGSize(width: clamped, height: newHeight)
+                            att.attachmentCell = CalloutSizeAttachmentCell(size: newSize)
+                            att.bounds = CGRect(origin: .zero, size: newSize)
+                            let fr = NSRange(location: 0, length: ts.length)
+                            ts.enumerateAttribute(.attachment, in: fr, options: []) { val, charRange, stop in
+                                if val as AnyObject === att {
+                                    tv.layoutManager?.invalidateLayout(forCharacterRange: charRange, actualCharacterRange: nil)
+                                    stop.pointee = true
+                                }
+                            }
+                        }
                         self.syncText()
                     }
                 }
@@ -623,24 +690,38 @@ extension TodoEditorRepresentable.Coordinator {
                     overlay = CodeBlockOverlayView(codeBlockData: attachment.codeBlockData)
                     overlay.parentTextView = textView
 
-                    overlay.onDataChanged = { [weak self, weak textStorage, weak layoutManager, weak attachment] newData in
-                        guard let self = self, let ts = textStorage, let lm = layoutManager, let att = attachment else { return }
-                        att.codeBlockData = newData
-                        // Recalculate height when content changes (lines added/removed)
-                        let newHeight = CodeBlockOverlayView.heightForData(newData, width: att.bounds.width)
-                        if abs(att.bounds.height - newHeight) > 1 {
-                            let newSize = CGSize(width: att.bounds.width, height: newHeight)
-                            att.attachmentCell = CodeBlockSizeAttachmentCell(size: newSize)
-                            att.bounds = CGRect(origin: .zero, size: newSize)
-                        }
-                        let fr = NSRange(location: 0, length: ts.length)
-                        ts.enumerateAttribute(.attachment, in: fr, options: []) { val, charRange, stop in
-                            if val as AnyObject === att {
-                                lm.invalidateLayout(forCharacterRange: charRange, actualCharacterRange: nil)
-                                stop.pointee = true
+                    overlay.onDataChanged = { [weak self, weak textStorage, weak layoutManager, weak textView, weak attachment] newData in
+                        guard let self = self, let ts = textStorage, let lm = layoutManager, let tv = textView, let att = attachment else { return }
+                        let previous = att.codeBlockData
+                        let apply: (CodeBlockData) -> Void = { data in
+                            att.codeBlockData = data
+                            let newHeight = CodeBlockOverlayView.heightForData(data, width: att.bounds.width)
+                            if abs(att.bounds.height - newHeight) > 1 {
+                                let newSize = CGSize(width: att.bounds.width, height: newHeight)
+                                att.attachmentCell = CodeBlockSizeAttachmentCell(size: newSize)
+                                att.bounds = CGRect(origin: .zero, size: newSize)
                             }
+                            let fr = NSRange(location: 0, length: ts.length)
+                            ts.enumerateAttribute(.attachment, in: fr, options: []) { val, charRange, stop in
+                                if val as AnyObject === att {
+                                    lm.invalidateLayout(forCharacterRange: charRange, actualCharacterRange: nil)
+                                    stop.pointee = true
+                                }
+                            }
+                            self.syncText()
                         }
-                        self.syncText()
+                        self.applyMutationWithUndo(
+                            textView: tv,
+                            actionName: "Edit Code Block",
+                            oldValue: previous,
+                            newValue: newData,
+                            apply: apply
+                        )
+                    }
+
+                    overlay.onResizeWidthDragBegan = { [weak self, weak attachment] in
+                        guard let self, let att = attachment, let tv = self.textView else { return }
+                        self.pendingCodeBlockWidthResizeSnapshot[ObjectIdentifier(att)] = att.codeBlockData
                     }
 
                     overlay.onDeleteCodeBlock = { [weak self, weak textStorage, weak textView, weak attachment] in
@@ -707,9 +788,33 @@ extension TodoEditorRepresentable.Coordinator {
                     overlay.onDeleteCodeBlock = nil
                     overlay.onWidthChanged = nil
                     overlay.onResizeGestureEnded = nil
+                    overlay.onResizeWidthDragBegan = nil
                 } else {
-                    overlay.onResizeGestureEnded = { [weak self] in
-                        guard let self else { return }
+                    overlay.onResizeGestureEnded = { [weak self, weak textStorage, weak textView, weak attachment] in
+                        guard let self, let ts = textStorage, let tv = textView, let att = attachment else { return }
+                        self.finalizeCodeBlockWidthResizeUndoIfNeeded(textView: tv, attachment: att) { data in
+                            guard let tc = tv.textContainer else { return }
+                            att.codeBlockData = data
+                            let containerW = max(tc.containerSize.width, 100)
+                            let effectiveMinCode = min(CodeBlockOverlayView.minWidth, containerW)
+                            let desiredWidth: CGFloat
+                            if let pref = data.preferredContentWidth {
+                                desiredWidth = max(effectiveMinCode, min(containerW, pref))
+                            } else {
+                                desiredWidth = containerW
+                            }
+                            let newHeight = CodeBlockOverlayView.heightForData(data, width: desiredWidth)
+                            let newSize = CGSize(width: desiredWidth, height: newHeight)
+                            att.attachmentCell = CodeBlockSizeAttachmentCell(size: newSize)
+                            att.bounds = CGRect(origin: .zero, size: newSize)
+                            let fr = NSRange(location: 0, length: ts.length)
+                            ts.enumerateAttribute(.attachment, in: fr, options: []) { val, charRange, stop in
+                                if val as AnyObject === att {
+                                    tv.layoutManager?.invalidateLayout(forCharacterRange: charRange, actualCharacterRange: nil)
+                                    stop.pointee = true
+                                }
+                            }
+                        }
                         self.syncText()
                     }
                 }
@@ -799,20 +904,40 @@ extension TodoEditorRepresentable.Coordinator {
                     // ── onDataChanged ──
                     overlay.onDataChanged = { [weak self, weak textStorage, weak textView, weak attachment] newData in
                         guard let self = self, let ts = textStorage, let tv = textView, let att = attachment else { return }
-                        att.tabsData = newData
-                        let newHeight = TabsContainerOverlayView.totalHeight(for: newData)
-                        let newSize = CGSize(width: att.bounds.width, height: newHeight)
-                        att.attachmentCell = CodeBlockSizeAttachmentCell(size: newSize)
-                        att.bounds = CGRect(origin: .zero, size: newSize)
-                        let fr = NSRange(location: 0, length: ts.length)
-                        ts.enumerateAttribute(.attachment, in: fr, options: []) { val, charRange, stop in
-                            if val as AnyObject === att {
-                                tv.layoutManager?.invalidateLayout(
-                                    forCharacterRange: charRange, actualCharacterRange: nil)
-                                stop.pointee = true
+                        let previous = att.tabsData
+                        let apply: (TabsContainerData) -> Void = { data in
+                            att.tabsData = data
+                            let newHeight = TabsContainerOverlayView.totalHeight(for: data)
+                            let newSize = CGSize(width: att.bounds.width, height: newHeight)
+                            att.attachmentCell = CodeBlockSizeAttachmentCell(size: newSize)
+                            att.bounds = CGRect(origin: .zero, size: newSize)
+                            let fr = NSRange(location: 0, length: ts.length)
+                            ts.enumerateAttribute(.attachment, in: fr, options: []) { val, charRange, stop in
+                                if val as AnyObject === att {
+                                    tv.layoutManager?.invalidateLayout(
+                                        forCharacterRange: charRange, actualCharacterRange: nil)
+                                    stop.pointee = true
+                                }
                             }
+                            self.syncText()
                         }
-                        self.syncText()
+                        self.applyMutationWithUndo(
+                            textView: tv,
+                            actionName: "Edit Tabs",
+                            oldValue: previous,
+                            newValue: newData,
+                            apply: apply
+                        )
+                    }
+
+                    overlay.onResizeWidthDragBegan = { [weak self, weak attachment] in
+                        guard let self, let att = attachment, let tv = self.textView else { return }
+                        self.pendingTabsWidthResizeSnapshot[ObjectIdentifier(att)] = att.tabsData
+                    }
+
+                    overlay.onResizeHeightDragBegan = { [weak self, weak attachment] in
+                        guard let self, let att = attachment, let tv = self.textView else { return }
+                        self.pendingTabsHeightResizeSnapshot[ObjectIdentifier(att)] = att.tabsData
                     }
 
                     // ── onDeleteTabs ──
@@ -885,7 +1010,7 @@ extension TodoEditorRepresentable.Coordinator {
                                 stop.pointee = true
                             }
                         }
-                        self.syncText()
+                        // Defer `syncText` to `onResizeHeightGestureEnded` so height drags match width (one flush + undo).
                     }
 
                     hostView.addSubview(overlay)
@@ -898,9 +1023,53 @@ extension TodoEditorRepresentable.Coordinator {
                     overlay.onWidthChanged = nil
                     overlay.onHeightChanged = nil
                     overlay.onResizeWidthGestureEnded = nil
+                    overlay.onResizeWidthDragBegan = nil
+                    overlay.onResizeHeightGestureEnded = nil
+                    overlay.onResizeHeightDragBegan = nil
                 } else {
-                    overlay.onResizeWidthGestureEnded = { [weak self] in
-                        guard let self else { return }
+                    overlay.onResizeWidthGestureEnded = { [weak self, weak textStorage, weak textView, weak attachment] in
+                        guard let self, let ts = textStorage, let tv = textView, let att = attachment else { return }
+                        self.finalizeTabsWidthResizeUndoIfNeeded(textView: tv, attachment: att) { data in
+                            guard let tc = tv.textContainer else { return }
+                            att.tabsData = data
+                            let containerW = max(tc.containerSize.width, 100)
+                            let effectiveMin = min(TabsContainerOverlayView.minWidth, containerW)
+                            let desiredWidth: CGFloat
+                            if let pref = data.preferredContentWidth {
+                                desiredWidth = max(effectiveMin, min(containerW, pref))
+                            } else {
+                                desiredWidth = containerW
+                            }
+                            let totalH = TabsContainerOverlayView.totalHeight(for: data)
+                            let newSize = CGSize(width: desiredWidth, height: totalH)
+                            att.attachmentCell = CodeBlockSizeAttachmentCell(size: newSize)
+                            att.bounds = CGRect(origin: .zero, size: newSize)
+                            let fr = NSRange(location: 0, length: ts.length)
+                            ts.enumerateAttribute(.attachment, in: fr, options: []) { val, charRange, stop in
+                                if val as AnyObject === att {
+                                    tv.layoutManager?.invalidateLayout(forCharacterRange: charRange, actualCharacterRange: nil)
+                                    stop.pointee = true
+                                }
+                            }
+                        }
+                        self.syncText()
+                    }
+                    overlay.onResizeHeightGestureEnded = { [weak self, weak textStorage, weak textView, weak attachment] in
+                        guard let self, let ts = textStorage, let tv = textView, let att = attachment else { return }
+                        self.finalizeTabsHeightResizeUndoIfNeeded(textView: tv, attachment: att) { data in
+                            att.tabsData = data
+                            let totalH = TabsContainerOverlayView.totalHeight(for: data)
+                            let newSize = CGSize(width: att.bounds.width, height: totalH)
+                            att.attachmentCell = CodeBlockSizeAttachmentCell(size: newSize)
+                            att.bounds = CGRect(origin: .zero, size: newSize)
+                            let fr = NSRange(location: 0, length: ts.length)
+                            ts.enumerateAttribute(.attachment, in: fr, options: []) { val, charRange, stop in
+                                if val as AnyObject === att {
+                                    tv.layoutManager?.invalidateLayout(forCharacterRange: charRange, actualCharacterRange: nil)
+                                    stop.pointee = true
+                                }
+                            }
+                        }
                         self.syncText()
                     }
                 }
@@ -987,20 +1156,30 @@ extension TodoEditorRepresentable.Coordinator {
                     // ── onDataChanged ──
                     overlay.onDataChanged = { [weak self, weak textStorage, weak textView, weak attachment] newData in
                         guard let self = self, let ts = textStorage, let tv = textView, let att = attachment else { return }
-                        att.cardSectionData = newData
-                        let newHeight = CardSectionOverlayView.totalHeight(for: newData)
-                        let newSize = CGSize(width: att.bounds.width, height: newHeight)
-                        att.attachmentCell = CodeBlockSizeAttachmentCell(size: newSize)
-                        att.bounds = CGRect(origin: .zero, size: newSize)
-                        let fr = NSRange(location: 0, length: ts.length)
-                        ts.enumerateAttribute(.attachment, in: fr, options: []) { val, charRange, stop in
-                            if val as AnyObject === att {
-                                tv.layoutManager?.invalidateLayout(
-                                    forCharacterRange: charRange, actualCharacterRange: nil)
-                                stop.pointee = true
+                        let previous = att.cardSectionData
+                        let apply: (CardSectionData) -> Void = { data in
+                            att.cardSectionData = data
+                            let newHeight = CardSectionOverlayView.totalHeight(for: data)
+                            let newSize = CGSize(width: att.bounds.width, height: newHeight)
+                            att.attachmentCell = CodeBlockSizeAttachmentCell(size: newSize)
+                            att.bounds = CGRect(origin: .zero, size: newSize)
+                            let fr = NSRange(location: 0, length: ts.length)
+                            ts.enumerateAttribute(.attachment, in: fr, options: []) { val, charRange, stop in
+                                if val as AnyObject === att {
+                                    tv.layoutManager?.invalidateLayout(
+                                        forCharacterRange: charRange, actualCharacterRange: nil)
+                                    stop.pointee = true
+                                }
                             }
+                            self.syncText()
                         }
-                        self.syncText()
+                        self.applyMutationWithUndo(
+                            textView: tv,
+                            actionName: "Edit Cards",
+                            oldValue: previous,
+                            newValue: newData,
+                            apply: apply
+                        )
                     }
 
                     // ── onDeleteCardSection ──

@@ -8,13 +8,13 @@
 import CoreGraphics
 import Foundation
 
-struct TabPane {
+struct TabPane: Equatable {
     var name: String
     var content: String
     var colorHex: String?  // nil = default (uncolored)
 }
 
-struct TabsContainerData {
+struct TabsContainerData: Equatable {
     var panes: [TabPane]
     var activeIndex: Int
     var containerHeight: CGFloat

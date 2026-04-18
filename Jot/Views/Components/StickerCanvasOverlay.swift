@@ -14,6 +14,8 @@ struct StickerCanvasOverlay: View {
     @Binding var isPlacingSticker: Bool
     @Binding var selectedStickerID: UUID?
     let onChanged: () -> Void
+    /// When set, sticker mutations register on the note editor's `NSUndoManager` (see `StickerUndoController`).
+    var recordStickerUndo: ((_ before: [Sticker], _ after: [Sticker], _ actionName: String) -> Void)? = nil
 
     @State private var editingStickerID: UUID? = nil
 
@@ -58,7 +60,9 @@ struct StickerCanvasOverlay: View {
             isEditing: editingBinding(for: s.id),
             onSelect: { selectSticker(s.id) },
             onDelete: { deleteSticker(s.id) },
-            onChanged: onChanged
+            onChanged: onChanged,
+            getAllStickers: { stickers },
+            recordStickerUndo: recordStickerUndo
         )
         .position(x: s.positionX + s.size / 2, y: s.positionY + s.size / 2)
         .zIndex(Double(s.zIndex))
@@ -92,11 +96,17 @@ struct StickerCanvasOverlay: View {
             textColorDark: true,
             zIndex: (stickers.map(\.zIndex).max() ?? 0) + 1
         )
-        stickers.append(newSticker)
+        let previous = stickers
+        let next = previous + [newSticker]
+        if let rec = recordStickerUndo {
+            rec(previous, next, "Add Sticker")
+        } else {
+            stickers = next
+            onChanged()
+        }
         selectedStickerID = newSticker.id
         editingStickerID = newSticker.id  // immediate text editing
         isPlacingSticker = false
-        onChanged()
     }
 
     private func selectSticker(_ id: UUID) {
@@ -105,23 +115,36 @@ struct StickerCanvasOverlay: View {
         if let idx = stickers.firstIndex(where: { $0.id == id }) {
             let maxZ = stickers.map(\.zIndex).max() ?? 0
             if stickers[idx].zIndex < maxZ {
+                let previous = stickers
                 // Normalize: sort by current zIndex, reassign 0...n, selected gets top
-                let sorted = stickers.sorted { $0.zIndex < $1.zIndex }
+                var next = stickers
+                let sorted = next.sorted { $0.zIndex < $1.zIndex }
                 for (i, s) in sorted.enumerated() {
-                    if let j = stickers.firstIndex(where: { $0.id == s.id }) {
-                        stickers[j].zIndex = (s.id == id) ? stickers.count : i
+                    if let j = next.firstIndex(where: { $0.id == s.id }) {
+                        next[j].zIndex = (s.id == id) ? next.count : i
                     }
                 }
-                onChanged()
+                if let rec = recordStickerUndo {
+                    rec(previous, next, "Reorder Stickers")
+                } else {
+                    stickers = next
+                    onChanged()
+                }
             }
         }
     }
 
     private func deleteSticker(_ id: UUID) {
-        stickers.removeAll { $0.id == id }
+        let previous = stickers
+        let next = stickers.filter { $0.id != id }
+        if let rec = recordStickerUndo {
+            rec(previous, next, "Remove Sticker")
+        } else {
+            stickers = next
+            onChanged()
+        }
         if selectedStickerID == id { selectedStickerID = nil }
         if editingStickerID == id { editingStickerID = nil }
-        onChanged()
     }
 
     private func editingBinding(for id: UUID) -> Binding<Bool> {

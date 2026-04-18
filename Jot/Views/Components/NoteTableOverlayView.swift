@@ -27,15 +27,18 @@ final class NoteTableOverlayView: NSView {
         }
     }
 
-    var onDataChanged: ((NoteTableData) -> Void)?
+    /// `(previousSnapshot, currentTableData, commitToNote)` — host registers undo when `commitToNote` is true.
+    var onDataChanged: ((NoteTableData, NoteTableData, Bool) -> Void)?
     /// Fired once after a discrete table edit or when a column-divider drag ends (host runs `syncText`).
     var onResizeGestureEnded: (() -> Void)?
+    /// Single-click column-divider drag began (host snapshots for one undo step at drag end).
+    var onColumnDividerDragBegan: (() -> Void)?
     var onDeleteTable: (() -> Void)?
     weak var parentTextView: NSTextView?
 
     /// Pushes `tableData` to the text attachment; optionally notifies the host to sync serialized markup.
-    private func publishTableDataChange(commitToNote: Bool) {
-        onDataChanged?(tableData)
+    private func publishTableDataChange(previous: NoteTableData, commitToNote: Bool) {
+        onDataChanged?(previous, tableData, commitToNote)
         if commitToNote {
             onResizeGestureEnded?()
         }
@@ -1202,6 +1205,7 @@ final class NoteTableOverlayView: NSView {
             if event.clickCount == 2 {
                 // Double-click: auto-fit the left column to its widest content
                 let col = dividerIdx
+                let previousTableSnapshot = tableData
                 let headerFont = NSFont.systemFont(ofSize: 13, weight: .semibold)
                 let bodyFont = NSFont.systemFont(ofSize: 13, weight: .regular)
                 var maxTextWidth: CGFloat = 0
@@ -1218,7 +1222,7 @@ final class NoteTableOverlayView: NSView {
                 }
                 let fitWidth = max(minColumnWidth, maxTextWidth + 2 * cellPaddingH)
                 tableData.columnWidths[col] = fitWidth
-                publishTableDataChange(commitToNote: true)
+                publishTableDataChange(previous: previousTableSnapshot, commitToNote: true)
                 needsDisplay = true
                 return
             }
@@ -1226,6 +1230,7 @@ final class NoteTableOverlayView: NSView {
             draggingDividerIndex = dividerIdx
             dividerStartX = point.x
             dividerStartWidths = tableData.columnWidths
+            onColumnDividerDragBegan?()
             NSCursor.resizeLeftRight.set()
             return
         }
@@ -1268,13 +1273,15 @@ final class NoteTableOverlayView: NSView {
 
         // + buttons
         if addRowButtonRect.contains(point) {
+            let previousTableSnapshot = tableData
             tableData.addRow()
-            publishTableDataChange(commitToNote: true)
+            publishTableDataChange(previous: previousTableSnapshot, commitToNote: true)
             return
         }
         if addColumnButtonViewRect.contains(point) {
+            let previousTableSnapshot = tableData
             tableData.addColumn()
-            publishTableDataChange(commitToNote: true)
+            publishTableDataChange(previous: previousTableSnapshot, commitToNote: true)
             return
         }
 
@@ -1296,9 +1303,10 @@ final class NoteTableOverlayView: NSView {
             let idx = draggingDividerIndex
             guard idx >= 0, idx < dividerStartWidths.count else { return }
             // Only adjust the left column's width
+            let previousTableSnapshot = tableData
             let newWidth = max(minColumnWidth, dividerStartWidths[idx] + delta)
             tableData.columnWidths[idx] = newWidth
-            publishTableDataChange(commitToNote: false)
+            publishTableDataChange(previous: previousTableSnapshot, commitToNote: false)
             NSCursor.resizeLeftRight.set()
             needsDisplay = true
             return
@@ -1354,8 +1362,9 @@ final class NoteTableOverlayView: NSView {
             let target = dragTargetIndex(isRow: true)
             let dest = target > dragSourceIndex ? target - 1 : target
             if dest != dragSourceIndex && dest >= 0 && dest < tableData.rows {
+                let previousTableSnapshot = tableData
                 tableData.moveRow(from: dragSourceIndex, to: dest)
-                publishTableDataChange(commitToNote: true)
+                publishTableDataChange(previous: previousTableSnapshot, commitToNote: true)
             }
             isDraggingRow = false
             dragSourceIndex = -1
@@ -1368,8 +1377,9 @@ final class NoteTableOverlayView: NSView {
             let target = dragTargetIndex(isRow: false)
             let dest = target > dragSourceIndex ? target - 1 : target
             if dest != dragSourceIndex && dest >= 0 && dest < tableData.columns {
+                let previousTableSnapshot = tableData
                 tableData.moveColumn(from: dragSourceIndex, to: dest)
-                publishTableDataChange(commitToNote: true)
+                publishTableDataChange(previous: previousTableSnapshot, commitToNote: true)
             }
             isDraggingColumn = false
             dragSourceIndex = -1
@@ -1381,11 +1391,12 @@ final class NoteTableOverlayView: NSView {
         if isDraggingCell {
             if let src = dragCellSource, let target = cellAt(point: dragCellMousePos),
                !(target.row == src.row && target.column == src.column) {
+                let previousTableSnapshot = tableData
                 let srcText = tableData.cells[src.row][src.column]
                 let dstText = tableData.cells[target.row][target.column]
                 tableData.updateCell(row: src.row, column: src.column, text: dstText)
                 tableData.updateCell(row: target.row, column: target.column, text: srcText)
-                publishTableDataChange(commitToNote: true)
+                publishTableDataChange(previous: previousTableSnapshot, commitToNote: true)
             }
             isDraggingCell = false
             dragCellSource = nil
@@ -1533,33 +1544,45 @@ final class NoteTableOverlayView: NSView {
     // MARK: - Menu Actions
 
     @objc private func addRowAbove(_ sender: Any?) {
+        let previousTableSnapshot = tableData
         tableData.addRow(at: contextRowIndex)
-        publishTableDataChange(commitToNote: true)
+        publishTableDataChange(previous: previousTableSnapshot, commitToNote: true)
     }
 
     @objc private func addRowBelow(_ sender: Any?) {
+        let previousTableSnapshot = tableData
         tableData.addRow(at: contextRowIndex + 1)
-        publishTableDataChange(commitToNote: true)
+        publishTableDataChange(previous: previousTableSnapshot, commitToNote: true)
     }
 
     @objc private func addColumnBefore(_ sender: Any?) {
+        let previousTableSnapshot = tableData
         tableData.addColumn(at: contextColumnIndex)
-        publishTableDataChange(commitToNote: true)
+        publishTableDataChange(previous: previousTableSnapshot, commitToNote: true)
     }
 
     @objc private func addColumnAfter(_ sender: Any?) {
+        let previousTableSnapshot = tableData
         tableData.addColumn(at: contextColumnIndex + 1)
-        publishTableDataChange(commitToNote: true)
+        publishTableDataChange(previous: previousTableSnapshot, commitToNote: true)
     }
 
     @objc private func deleteRow(_ sender: Any?) {
         if tableData.rows <= 1 { onDeleteTable?() }
-        else { tableData.deleteRow(at: contextRowIndex); publishTableDataChange(commitToNote: true) }
+        else {
+            let previousTableSnapshot = tableData
+            tableData.deleteRow(at: contextRowIndex)
+            publishTableDataChange(previous: previousTableSnapshot, commitToNote: true)
+        }
     }
 
     @objc private func deleteColumn(_ sender: Any?) {
         if tableData.columns <= 1 { onDeleteTable?() }
-        else { tableData.deleteColumn(at: contextColumnIndex); publishTableDataChange(commitToNote: true) }
+        else {
+            let previousTableSnapshot = tableData
+            tableData.deleteColumn(at: contextColumnIndex)
+            publishTableDataChange(previous: previousTableSnapshot, commitToNote: true)
+        }
     }
 
     @objc private func deleteTable(_ sender: Any?) {
@@ -1567,8 +1590,9 @@ final class NoteTableOverlayView: NSView {
     }
 
     @objc private func toggleWrapText(_ sender: Any?) {
+        let previousTableSnapshot = tableData
         tableData.wrapText.toggle()
-        publishTableDataChange(commitToNote: true)
+        publishTableDataChange(previous: previousTableSnapshot, commitToNote: true)
     }
 
     // MARK: - Cell Editing
@@ -1600,8 +1624,9 @@ final class NoteTableOverlayView: NSView {
         guard let field = editField, let cell = editingCell else { return }
         let newValue = field.stringValue
         if tableData.cells[cell.row][cell.column] != newValue {
+            let previousTableSnapshot = tableData
             tableData.updateCell(row: cell.row, column: cell.column, text: newValue)
-            publishTableDataChange(commitToNote: true)
+            publishTableDataChange(previous: previousTableSnapshot, commitToNote: true)
         }
         field.removeFromSuperview()
         editField = nil
@@ -1632,8 +1657,9 @@ final class NoteTableOverlayView: NSView {
 
         // Add new row at the BOTTOM if we go past the last row
         if targetRow >= tableData.rows {
+            let previousTableSnapshot = tableData
             tableData.addRow()
-            publishTableDataChange(commitToNote: true)
+            publishTableDataChange(previous: previousTableSnapshot, commitToNote: true)
             targetRow = tableData.rows - 1
             targetCol = 0
         }

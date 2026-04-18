@@ -1502,6 +1502,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
     var readOnly: Bool = false
     var onNavigateToNote: ((UUID) -> Void)?
     var fetchNote: ((UUID) -> Note?)?
+    /// Delivers the editor text view's `undoManager` for sticker / pane-level undo integration.
+    var onUndoManagerAvailable: ((UndoManager?) -> Void)? = nil
     private let unlimitedDimension = CGFloat.greatestFiniteMagnitude
 
     func makeNSView(context: Context) -> InlineNSTextView {
@@ -1577,7 +1579,9 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         textView.defaultParagraphStyle = Coordinator.baseParagraphStyle()
 
         context.coordinator.updateColorScheme(initialScheme)
+        context.coordinator.onUndoManagerAvailable = onUndoManagerAvailable
         context.coordinator.configure(with: textView)
+        context.coordinator.onUndoManagerAvailable?(textView.undoManager)
 
         context.coordinator.applyInitialText(text)
 
@@ -1632,6 +1636,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         // Sync navigate callback
         context.coordinator.onNavigateToNote = onNavigateToNote
         context.coordinator.fetchNote = fetchNote
+        context.coordinator.onUndoManagerAvailable = onUndoManagerAvailable
+        context.coordinator.onUndoManagerAvailable?(textView.undoManager)
 
         // Only update text if it has actually changed
         context.coordinator.updateIfNeeded(with: text)
@@ -1816,6 +1822,16 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         /// Reentrancy guard — prevents cascading overlay updates from creating
         /// an infinite layout-invalidation cycle (split-view freeze bug).
         private var isUpdatingOverlays = false
+        /// Snapshot of `NoteTableData` at column-divider drag began; consumed when resize ends.
+        var pendingTableColumnResizeSnapshot: [ObjectIdentifier: NoteTableData] = [:]
+        var pendingCodeBlockWidthResizeSnapshot: [ObjectIdentifier: CodeBlockData] = [:]
+        var pendingCalloutWidthResizeSnapshot: [ObjectIdentifier: CalloutData] = [:]
+        var pendingTabsWidthResizeSnapshot: [ObjectIdentifier: TabsContainerData] = [:]
+        var pendingTabsHeightResizeSnapshot: [ObjectIdentifier: TabsContainerData] = [:]
+
+        /// Parent (e.g. `NoteDetailView`) hooks the editor `NSUndoManager` for sticker mutations.
+        var onUndoManagerAvailable: ((UndoManager?) -> Void)?
+
         /// Coalesces rapid overlay update requests (resize, scroll, layout
         /// completion) into a single pass on the next main-queue turn.
         private var pendingOverlayUpdate: DispatchWorkItem?

@@ -53,7 +53,13 @@ final class TabsContainerOverlayView: NSView {
     var onWidthChanged: ((CGFloat) -> Void)?
     /// Debounced `syncText()` should run after horizontal resize ends (matches `CalloutOverlayView.onResizeGestureEnded`).
     var onResizeWidthGestureEnded: (() -> Void)?
+    /// Horizontal resize drag began (host snapshots `TabsContainerData` for one undo at gesture end).
+    var onResizeWidthDragBegan: (() -> Void)?
     var onHeightChanged: ((CGFloat) -> Void)?
+    /// After bottom-edge height drag completes — host runs `syncText()` once (mirrors width resize).
+    var onResizeHeightGestureEnded: (() -> Void)?
+    /// Vertical resize drag began (host snapshots for one undo at gesture end).
+    var onResizeHeightDragBegan: (() -> Void)?
     var editorInstanceID: UUID?
     private let formatter = TextFormattingManager()
     private var formattingObservers: [NSObjectProtocol] = []
@@ -187,6 +193,9 @@ final class TabsContainerOverlayView: NSView {
         contentBody.addSubview(contentTextView)
 
         // Resize handles
+        resizeHandleRight.onDragBegan = { [weak self] in
+            self?.onResizeWidthDragBegan?()
+        }
         resizeHandleRight.onDrag = { [weak self] newWidth in
             self?.handleResizeWidth(to: newWidth)
         }
@@ -201,8 +210,14 @@ final class TabsContainerOverlayView: NSView {
             }
             self?.onResizeWidthGestureEnded?()
         }
+        resizeHandleBottom.onDragBegan = { [weak self] in
+            self?.onResizeHeightDragBegan?()
+        }
         resizeHandleBottom.onDrag = { [weak self] newHeight in
             self?.handleResizeHeight(to: newHeight)
+        }
+        resizeHandleBottom.onDragEnd = { [weak self] in
+            self?.onResizeHeightGestureEnded?()
         }
         addSubview(resizeHandleRight)
         addSubview(resizeHandleBottom)
@@ -1365,9 +1380,10 @@ private final class _TabsResizeHandle: NSView {
 
     enum Direction { case right, bottom }
 
+    var onDragBegan: (() -> Void)?
     var onDrag: ((CGFloat) -> Void)?
     var onDoubleClick: (() -> Void)?  // Double-click right edge snaps to full containerWidth (setup-doubleclick-handles)
-    /// After a horizontal drag completes (not used for bottom edge).
+    /// After a horizontal or vertical drag completes.
     var onDragEnd: (() -> Void)?
     let direction: Direction
 
@@ -1416,11 +1432,12 @@ private final class _TabsResizeHandle: NSView {
             dragStart = event.locationInWindow.y
             dragStartDimension = superview?.bounds.height ?? 0
         }
+        onDragBegan?()
     }
 
     override func mouseDragged(with event: NSEvent) {
+        didDragThisGesture = true
         if direction == .right {
-            didDragThisGesture = true
             let delta = event.locationInWindow.x - dragStart
             onDrag?(dragStartDimension + delta)
         } else {
@@ -1431,7 +1448,7 @@ private final class _TabsResizeHandle: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
-        if direction == .right, didDragThisGesture {
+        if didDragThisGesture {
             didDragThisGesture = false
             onDragEnd?()
         }

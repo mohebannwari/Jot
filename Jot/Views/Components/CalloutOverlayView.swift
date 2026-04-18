@@ -36,6 +36,8 @@ final class CalloutOverlayView: NSView {
     /// Invoked once when a resize gesture completes (drag release or double-click snap).
     /// Keeps `syncText()` off the hot path so `styleTodoParagraphs` / binding churn does not flash the whole note during drag.
     var onResizeGestureEnded: (() -> Void)?
+    /// Horizontal resize drag began (host snapshots `CalloutData` for a single undo at gesture end).
+    var onResizeWidthDragBegan: (() -> Void)?
     /// Width of the callout block content (attachment width). Layout uses this instead of
     /// `bounds.width` because `bounds.width` includes `resizeHitOutset` for hit testing.
     var contentLayoutWidth: CGFloat = 0
@@ -135,6 +137,9 @@ final class CalloutOverlayView: NSView {
         chipView.addSubview(chevronView)
 
         // Resize handle
+        resizeHandle.onDragBegan = { [weak self] in
+            self?.onResizeWidthDragBegan?()
+        }
         resizeHandle.onDrag = { [weak self] newWidth in
             self?.handleResize(to: newWidth)
         }
@@ -415,6 +420,7 @@ extension CalloutOverlayView: NSTextFieldDelegate {
 
 private final class _CalloutResizeHandle: NSView {
 
+    var onDragBegan: (() -> Void)?
     var onDrag: ((CGFloat) -> Void)?
     var onDoubleClick: (() -> Void)?  // Supports double-click on right edge to snap to full container width (per user request for callout/code/tab blocks etc.)
     /// Called on mouse up after the user actually dragged (not plain click / double-click).
@@ -454,6 +460,7 @@ private final class _CalloutResizeHandle: NSView {
         }
         didDragThisGesture = false
         dragStartX = event.locationInWindow.x
+        onDragBegan?()
         // Use content width, not overlay bounds.width (bounds include resizeHitOutset on the right).
         if let overlay = superview as? CalloutOverlayView {
             dragStartWidth = overlay.contentLayoutWidth > 0

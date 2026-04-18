@@ -176,6 +176,21 @@ struct FloatingSearch: View {
         }
     }
 
+    /// Fill for footer shortcut legend keycaps (chevrons, Return, esc). Light mode stays on
+    /// `SurfaceElevatedColor`; dark uses **stone-700** via `InlineCodeBgColor` so the small shells
+    /// read slightly above the palette chrome (stone-800), matching the design-system pair in
+    /// AGENTS.md / Figma.
+    private var floatingSearchFooterKeycapFill: Color {
+        switch colorScheme {
+        case .dark:
+            Color("InlineCodeBgColor")
+        case .light:
+            Color("SurfaceElevatedColor")
+        @unknown default:
+            Color("SurfaceElevatedColor")
+        }
+    }
+
     private enum SearchAnimations {
         static let appear = Animation.bouncy(duration: 0.35)
         static let disappear = Animation.snappy(duration: 0.24)
@@ -1062,7 +1077,7 @@ struct FloatingSearch: View {
                 HStack(spacing: 4) {
                     ZStack {
                         RoundedRectangle(cornerRadius: 4, style: .continuous)
-                            .fill(Color("SurfaceElevatedColor"))
+                            .fill(floatingSearchFooterKeycapFill)
                         Text("esc")
                             .font(FontManager.metadata(size: 9, weight: .semibold))
                             .foregroundColor(Color("SecondaryTextColor"))
@@ -1089,7 +1104,7 @@ struct FloatingSearch: View {
     private func footerChevronKeycap(imageName: String) -> some View {
         ZStack {
             RoundedRectangle(cornerRadius: 4, style: .continuous)
-                .fill(Color("SurfaceElevatedColor"))
+                .fill(floatingSearchFooterKeycapFill)
             Image(imageName)
                 .renderingMode(.template)
                 .resizable()
@@ -1106,7 +1121,7 @@ struct FloatingSearch: View {
     private var footerSelectKeycap: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 4, style: .continuous)
-                .fill(Color("SurfaceElevatedColor"))
+                .fill(floatingSearchFooterKeycapFill)
             Image(systemName: "return.left")
                 .font(.system(size: 7, weight: .semibold))
                 .foregroundStyle(Color("SecondaryTextColor"))
