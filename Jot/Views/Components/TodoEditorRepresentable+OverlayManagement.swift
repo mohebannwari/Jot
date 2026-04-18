@@ -253,7 +253,8 @@ extension TodoEditorRepresentable.Coordinator {
                         guard let self = self, let ts = textStorage, let tv = textView, let att = attachment else { return }
                         att.tableData = newData
 
-                        // Recalculate attachment size from content width
+                        // Recalculate attachment width from the text-column viewport; the overlay
+                        // itself paints overflow past that viewport to match card sections.
                         let newHeight = NoteTableOverlayView.computeTableHeight(for: newData) + 1 + 36  // +36 for add-row button space
                         let containerWidth = tv.textContainer?.containerSize.width ?? 400
                         let newWidth = min(newData.contentWidth, containerWidth)
@@ -331,6 +332,9 @@ extension TodoEditorRepresentable.Coordinator {
                 )
                 overlay.frame = expandedRect.integral
                 overlay.bounds.origin = CGPoint(x: -insets.left, y: -insets.top)
+                // Viewport matches the reserved text-layout width, like card sections. The table
+                // renderer can still draw overflow outside this viewport because the parent clip
+                // view is relaxed in `completeDeferredSetup`.
                 overlay.tableWidth = attachment.bounds.width
             }
 

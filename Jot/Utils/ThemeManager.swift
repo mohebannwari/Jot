@@ -577,6 +577,28 @@ final class ThemeManager: ObservableObject {
         return baseSRGB.blended(withFraction: CGFloat(intensity), of: targetSRGB) ?? baseSRGB
     }
 
+    /// NSColor for inline code pill backgrounds in the editor. Same tint **targets** and
+    /// intensity contract as `tintedBlockContainerNS`, but the dark base is **stone-700**
+    /// (`#44403C`) so small monospace pills read slightly lighter than full block chrome
+    /// (stone-800 `#292524`).
+    nonisolated static func tintedInlineCodePillNS(isDark: Bool) -> NSColor {
+        let base: NSColor = isDark
+            ? NSColor(srgbRed: 68 / 255, green: 64 / 255, blue: 60 / 255, alpha: 1)   // #44403C stone-700
+            : NSColor(srgbRed: 214 / 255, green: 211 / 255, blue: 209 / 255, alpha: 1) // #D6D3D1 stone-300
+
+        let intensity = currentTintIntensity()
+        guard intensity > 0 else { return base }
+
+        let hue = CGFloat(currentTintHue())
+        let target: NSColor = isDark
+            ? NSColor(hue: hue, saturation: 0.45, brightness: 0.22, alpha: 1)
+            : NSColor(hue: hue, saturation: 0.14, brightness: 0.88, alpha: 1)
+
+        let baseSRGB = base.usingColorSpace(.sRGB) ?? base
+        let targetSRGB = target.usingColorSpace(.sRGB) ?? target
+        return baseSRGB.blended(withFraction: CGFloat(intensity), of: targetSRGB) ?? baseSRGB
+    }
+
     /// NSColor variant of `tintedPaneSurface(for:)` for AppKit overlays (e.g. inline
     /// table horizontal scroll fade) that must match the note detail pane wash.
     /// Reads tint from `UserDefaults.standard` like `tintedBlockContainerNS`.

@@ -470,6 +470,14 @@ final class TypingAnimationLayoutManager: NSLayoutManager {
         // extent is computed from font metrics (capHeight + descender) rather than from
         // `boundingRect(forGlyphRange:in:)`, which returns line-fragment-sized rects and would
         // leave the pill much taller than the actual glyphs.
+        //
+        // Fill uses stone-300 / stone-700 (dark) with the same UserDefaults tint blend **targets**
+        // as block chrome (`ThemeManager.tintedInlineCodePillNS`), not the static asset name.
+        let pillAppearance = animatingTextView?.window?.effectiveAppearance
+            ?? animatingTextView?.effectiveAppearance
+            ?? NSApp.effectiveAppearance
+        let isDarkPill = pillAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let inlineCodeFill = ThemeManager.tintedInlineCodePillNS(isDark: isDarkPill)
         textStorage.enumerateAttribute(.inlineCode, in: safeCharRange, options: []) { value, attrRange, _ in
             guard value as? Bool == true else { return }
             let fullGlyphRange = self.glyphRange(forCharacterRange: attrRange, actualCharacterRange: nil)
@@ -492,7 +500,7 @@ final class TypingAnimationLayoutManager: NSLayoutManager {
                     font: font
                 )
                 let pillRect = tightRect.offsetBy(dx: origin.x, dy: origin.y)
-                (NSColor(named: "InlineCodeBgColor") ?? NSColor.labelColor.withAlphaComponent(0.08)).setFill()
+                inlineCodeFill.setFill()
                 NSBezierPath(roundedRect: pillRect, xRadius: 3, yRadius: 3).fill()
             }
         }
@@ -3378,6 +3386,18 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 }
             }
 
+            // Inline-code pill fills read tint from UserDefaults in `drawBackground`; redraw when
+            // hue or intensity changes so pills match tabs / code-block chip without a note switch.
+            let tintDidChangeObserver = NotificationCenter.default.addObserver(
+                forName: ThemeManager.tintDidChangeNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.textView?.needsDisplay = true
+                }
+            }
+
             // MARK: Replace search match
             let replaceMatch = NotificationCenter.default.addObserver(
                 forName: .replaceCurrentSearchMatch, object: nil, queue: .main
@@ -3589,7 +3609,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 codePasteSelectCodeBlock, codePasteSelectPlainText, codePasteDismissObserver,
                 applyColor, removeColor, applyHighlight, removeHighlight, setHighlightRange,
                 applyFontSize, applyFontFamily,
-                settingsObserver, syncMenuState, printNote, quickLookTrigger, quickLookHoverTrigger,
+                settingsObserver, tintDidChangeObserver, syncMenuState, printNote, quickLookTrigger, quickLookHoverTrigger,
                 fileExtractTrigger,
                 flushSerializationBeforeNoteSwitch,
                 flushSerializationBeforeTerminate,
@@ -4025,23 +4045,38 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 registerFrameObserverIfNeeded(for: textView)
             }
 
-            // Disable layer clipping on the text view and its immediate
-            // SwiftUI hosting ancestors so table/callout/code-block overlays
-            // can extend beyond the text view frame (e.g. add-column button).
+            // Disable layer clipping on the text view and hosting ancestors so block overlays
+            // (tables, cards, callouts) can extend past the text column. Previously the loop
+            // bailed on `NSClipView` without changing it, so the scroll document stayed hard-clipped
+            // horizontally — wide tables looked "boxed" with a sharp right edge.
             if !hasDisabledAncestorClipping {
                 hasDisabledAncestorClipping = true
                 textView.clipsToBounds = false
                 var ancestor: NSView? = textView.superview
-                for _ in 0..<4 {
+                for _ in 0..<24 {
                     guard let view = ancestor else { break }
-                    // Stop before disabling clipping on scroll views —
-                    // they need it for vertical content scrolling.
-                    if view is NSScrollView || view is NSClipView { break }
+                    if view is NSWindow { break }
+                    if view is NSScrollView { break }
+                    if view is NSClipView {
+                        view.clipsToBounds = false
+                        if view.wantsLayer, let layer = view.layer {
+                            layer.masksToBounds = false
+                        }
+                        break
+                    }
                     view.clipsToBounds = false
                     if view.wantsLayer, let layer = view.layer {
                         layer.masksToBounds = false
                     }
                     ancestor = view.superview
+                }
+                // Some hierarchies wrap the document view so the clip view is not the first
+                // superview; always relax the enclosing scroll view's content clip if present.
+                if let clip = textView.enclosingScrollView?.contentView {
+                    clip.clipsToBounds = false
+                    if clip.wantsLayer, let layer = clip.layer {
+                        layer.masksToBounds = false
+                    }
                 }
             }
 
@@ -6273,6 +6308,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         func makeTableAttachment(tableData: NoteTableData) -> NSMutableAttributedString {
             var containerWidth = textView?.textContainer?.containerSize.width ?? 400
             if containerWidth < 1 { containerWidth = 400 }
+            // Match card sections: reserve the note-column viewport in text layout, then let the
+            // overlay render wide content past that viewport without the old mask gradients.
             let tableWidth = min(tableData.contentWidth, containerWidth)
 
             let tableHeight = NoteTableOverlayView.computeTableHeight(for: tableData) + 1  // +1 for border

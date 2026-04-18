@@ -161,12 +161,6 @@ final class NoteTableOverlayView: NSView {
             : .white
     }
 
-    /// Matches the **tinted** note detail pane surface (`ThemeManager.tintedPaneSurface`)
-    /// so horizontal scroll fade edges blend into the same wash as the editor chrome.
-    private var paneBackgroundColor: NSColor {
-        ThemeManager.tintedPaneSurfaceNS(isDark: isDarkMode)
-    }
-
     private var iconSecondaryColor: NSColor {
         NSColor(named: "IconSecondaryColor") ?? .secondaryLabelColor
     }
@@ -447,10 +441,10 @@ final class NoteTableOverlayView: NSView {
     private var interactiveRect: NSRect {
         let margin = handleGap + handleHitThickness + 4
         let bottomMargin = addButtonGap + addButtonHeight + 4
-        let rightMargin: CGFloat = needsHorizontalScroll ? 4 : (addButtonGap + addButtonHeight + 4)
+        let fullContentWidth = contentWidth + addButtonGap + addButtonHeight
         return NSRect(
-            x: -margin, y: -margin,
-            width: viewportWidth + margin + rightMargin,
+            x: -scrollOffset - margin, y: -margin,
+            width: fullContentWidth + margin * 2,
             height: tableHeight + margin + bottomMargin
         )
     }
@@ -477,31 +471,9 @@ final class NoteTableOverlayView: NSView {
     }
 
     private func updateShadowPath() {
-        // Shadow must fade *under* the gradient overlays so no hard edge is visible.
-        // Inset the shadow path from any edge that has a gradient fade.
-        let visibleTableEnd = contentWidth - scrollOffset
-        let vp = viewportWidth > 0 ? viewportWidth : contentWidth
-        let visibleRight = min(visibleTableEnd, vp)
-
-        let fadeInset: CGFloat = 32  // pull shadow back so gradient covers its edge
-
-        var left: CGFloat = 0
-        var right: CGFloat = visibleRight
-
-        if needsHorizontalScroll {
-            // Right overflow → pull shadow back from right edge
-            let rightOverflow = contentWidth - scrollOffset - viewportWidth
-            if rightOverflow > 1 {
-                right = visibleRight - fadeInset
-            }
-            // Left overflow (scrolled past start) → pull shadow back from left edge
-            if scrollOffset > 1 {
-                left = fadeInset
-            }
-        }
-
-        let width = max(0, right - left)
-        let rect = NSRect(x: left, y: 0, width: width, height: tableHeight)
+        // Keep the shadow anchored to the translated table chrome so horizontal panning and
+        // resize-driven overflow move together.
+        let rect = NSRect(x: -scrollOffset, y: 0, width: contentWidth, height: tableHeight)
         layer?.shadowPath = continuousPath(for: rect, radius: outerCornerRadius)
     }
 
@@ -551,78 +523,6 @@ final class NoteTableOverlayView: NSView {
         }
     }
 
-    // MARK: - Scroll Fade Edges
-
-    /// Draws gradient fade overlays on the edges where content is clipped.
-    /// Uses the tinted pane surface color so the fade matches the note detail
-    /// background (including app-wide hue wash), not the untinted asset alone.
-    /// Drawn OUTSIDE the table's content clip so it overlays the hard edge.
-    private func drawScrollFadeEdges() {
-        guard needsHorizontalScroll else { return }
-        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
-
-        let fadeWidth: CGFloat = 48
-        let bgColor = paneBackgroundColor
-
-        // --- Right fade (when content overflows right) ---
-        let rightOverflow = contentWidth - scrollOffset - viewportWidth
-        if rightOverflow > 1 {
-            let rightFadeW = min(fadeWidth, rightOverflow)
-            // Push inward slightly so the fade is noticeable before the edge
-            let inset: CGFloat = 4
-            let startX = viewportWidth - rightFadeW - inset
-            let endX = viewportWidth
-            let fadeRect = NSRect(x: startX, y: 0, width: endX - startX, height: tableHeight)
-
-            ctx.saveGState()
-            ctx.clip(to: fadeRect)
-
-            let colorSpace = CGColorSpaceCreateDeviceRGB()
-            if let gradient = CGGradient(colorsSpace: colorSpace, colors: [
-                bgColor.withAlphaComponent(0).cgColor,
-                bgColor.withAlphaComponent(0.18).cgColor,
-                bgColor.withAlphaComponent(0.45).cgColor,
-                bgColor.withAlphaComponent(0.80).cgColor,
-                bgColor.withAlphaComponent(0.96).cgColor,
-                bgColor.cgColor
-            ] as CFArray, locations: [0.0, 0.18, 0.35, 0.60, 0.82, 1.0]) {
-                ctx.drawLinearGradient(gradient,
-                                       start: CGPoint(x: startX, y: 0),
-                                       end: CGPoint(x: endX, y: 0),
-                                       options: [])
-            }
-            ctx.restoreGState()
-        }
-
-        // --- Left fade (when scrolled past the start) ---
-        if scrollOffset > 1 {
-            let leftFadeW = min(fadeWidth, scrollOffset)
-            let inset: CGFloat = 4
-            let startX: CGFloat = 0
-            let endX = leftFadeW + inset
-            let fadeRect = NSRect(x: startX, y: 0, width: endX, height: tableHeight)
-
-            ctx.saveGState()
-            ctx.clip(to: fadeRect)
-
-            let colorSpace = CGColorSpaceCreateDeviceRGB()
-            if let gradient = CGGradient(colorsSpace: colorSpace, colors: [
-                bgColor.cgColor,
-                bgColor.withAlphaComponent(0.96).cgColor,
-                bgColor.withAlphaComponent(0.80).cgColor,
-                bgColor.withAlphaComponent(0.45).cgColor,
-                bgColor.withAlphaComponent(0.18).cgColor,
-                bgColor.withAlphaComponent(0).cgColor
-            ] as CFArray, locations: [0.0, 0.18, 0.40, 0.65, 0.82, 1.0]) {
-                ctx.drawLinearGradient(gradient,
-                                       start: CGPoint(x: startX, y: 0),
-                                       end: CGPoint(x: endX, y: 0),
-                                       options: [])
-            }
-            ctx.restoreGState()
-        }
-    }
-
     // MARK: - Drawing
 
     override func draw(_ dirtyRect: NSRect) {
@@ -631,10 +531,9 @@ final class NoteTableOverlayView: NSView {
 
         clampScrollOffset()
 
-        // --- Table content (clipped for horizontal scroll) ---
-        let clipWidth = needsHorizontalScroll ? viewportWidth : contentWidth
+        // Match cards: translate overflowing content horizontally, but do not hard-clip it to the
+        // reserved viewport width. Ancestor clipping is disabled in `completeDeferredSetup`.
         ctx.saveGState()
-        ctx.clip(to: NSRect(x: 0, y: 0, width: clipWidth, height: tableHeight))
         ctx.translateBy(x: -scrollOffset, y: 0)
 
         drawTableBackground()
@@ -644,8 +543,8 @@ final class NoteTableOverlayView: NSView {
         drawTableBorder()
         drawInsertionIndicator()
 
-        // Draw add-column button inside the scroll-clipped region so it
-        // scrolls with content and isn't clipped by the NSClipView boundary.
+        // Draw add-column inside the translated content pass so horizontal panning keeps
+        // the button attached to the trailing edge of the table.
         if isHoveringAddColumn && needsHorizontalScroll {
             drawAddColumnButton()
         }
@@ -683,8 +582,6 @@ final class NoteTableOverlayView: NSView {
             drawColumnDividerIndicator()
         }
 
-        // Gradient fade edges (replaces scroll indicator bar)
-        drawScrollFadeEdges()
     }
 
     private func drawTableBackground() {
@@ -811,8 +708,7 @@ final class NoteTableOverlayView: NSView {
         let dragOffset = dragCurrentPos - dragStartPos
         let srcH = rowH(dragSourceIndex)
         let floatingY = rowY(dragSourceIndex) + dragOffset
-        let visibleWidth = min(contentWidth, viewportWidth)
-        let floatingRect = NSRect(x: 0, y: floatingY, width: visibleWidth, height: srcH)
+        let floatingRect = NSRect(x: -scrollOffset, y: floatingY, width: contentWidth, height: srcH)
 
         ctx.saveGState()
         ctx.setShadow(offset: CGSize(width: 0, height: 2), blur: 8,
@@ -1544,6 +1440,8 @@ final class NoteTableOverlayView: NSView {
         if needsHorizontalScroll && abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY) {
             scrollOffset -= event.scrollingDeltaX
             clampScrollOffset()
+            updateTrackingAreas()
+            window?.invalidateCursorRects(for: self)
             updateShadowPath()
             needsDisplay = true
         } else {

@@ -23,7 +23,7 @@ All semantic colors live in `Jot/Ressources/Assets.xcassets/`. Reference by name
 | `FolderBadgeBgColor`           | `#FFFFFF5C` (36% white)            | `#FFFFFF1F` (12% white)            |
 | `HoverBackgroundColor`         | `#D1D3D0`                          | `#444040`                          |
 | `IconSecondaryColor`           | `#1A1A1AB3` (70% black)            | `#A8A29E`                          |
-| `InlineCodeBgColor`            | `#93C5FD` (blue-300)               | `#1E40AF` (blue-800)               |
+| `InlineCodeBgColor`            | `#D6D3D1` (stone-300)              | `#44403C` (stone-700)              |
 | `MenuButtonColor`              | `#1A1A1AB3` (70% black)            | `#FFFFFFB3` (70% white)            |
 | `PinnedBgColor`                | `#FEF08A` (amber)                  | `#854D0E` (amber-dark)             |
 | `PinnedIconColor`              | `#854D0E`                          | `#FEEF8A`                          |
@@ -43,6 +43,8 @@ All semantic colors live in `Jot/Ressources/Assets.xcassets/`. Reference by name
 | `TagBackgroundColor`           | `#608DFA59` (35% accent)           | `#608DFA40` (25% accent)           |
 | `TagTextColor`                 | `#1A1A1A`                          | `#FFFFFF`                          |
 | `TertiaryTextColor`            | `#52525B`                          | `#A19FA9`                          |
+
+**`InlineCodeBgColor`:** Inline code pills use `ThemeManager.tintedInlineCodePillNS(isDark:)` — stone-300 / stone-700 with the same tint blend **targets** as block chrome (lighter dark base than stone-800). The asset holds the untinted pair for any `Color("InlineCodeBgColor")` usage.
 
 ### Primitive Colors (Figma Variables)
 
