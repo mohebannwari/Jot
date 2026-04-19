@@ -397,6 +397,78 @@ final class ThemeManagerTests: XCTestCase {
         XCTAssertFalse(translucentVisiblePrimary.showsSplitParentShadowPlate(isPaneActive: true))
     }
 
+    func testSplitPaneCornerRadiusPolicyMatchesSidebarAndZenModes() {
+        XCTAssertEqual(
+            SplitPaneCornerRadiusPolicy.radius(
+                isSidebarVisible: true,
+                needsPendingPadding: false,
+                windowCornerRadius: 16,
+                windowContentPadding: 8
+            ),
+            8
+        )
+
+        XCTAssertEqual(
+            SplitPaneCornerRadiusPolicy.radius(
+                isSidebarVisible: false,
+                needsPendingPadding: false,
+                windowCornerRadius: 16,
+                windowContentPadding: 8
+            ),
+            8
+        )
+
+        XCTAssertEqual(
+            SplitPaneCornerRadiusPolicy.radius(
+                isSidebarVisible: false,
+                needsPendingPadding: true,
+                windowCornerRadius: 16,
+                windowContentPadding: 8
+            ),
+            8
+        )
+    }
+
+    func testSplitZenInterPaneGapWidensOnlyForZenSplit() {
+        XCTAssertEqual(
+            SplitZenInterPaneGapPolicy.effectiveGap(
+                baseGap: 8,
+                paneCornerRadius: 8,
+                isZenModeWithoutSidebar: false,
+                isActiveSplitLayout: true
+            ),
+            8
+        )
+        XCTAssertEqual(
+            SplitZenInterPaneGapPolicy.effectiveGap(
+                baseGap: 8,
+                paneCornerRadius: 8,
+                isZenModeWithoutSidebar: true,
+                isActiveSplitLayout: false
+            ),
+            8
+        )
+        XCTAssertEqual(
+            SplitZenInterPaneGapPolicy.effectiveGap(
+                baseGap: 8,
+                paneCornerRadius: 8,
+                isZenModeWithoutSidebar: true,
+                isActiveSplitLayout: true
+            ),
+            16
+        )
+        XCTAssertEqual(
+            SplitZenInterPaneGapPolicy.effectiveGap(
+                baseGap: 8,
+                paneCornerRadius: 12,
+                isZenModeWithoutSidebar: true,
+                isActiveSplitLayout: true
+            ),
+            16,
+            "Gap is capped at spacing base (16)"
+        )
+    }
+
     private func isolatedDefaults() -> (UserDefaults, String) {
         let suiteName = "ThemeManagerTests.\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suiteName) else {

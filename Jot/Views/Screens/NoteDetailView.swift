@@ -18,6 +18,9 @@ struct NoteDetailView: View {
   let focusRequestID: UUID
   let contentTopInsetAdjustment: CGFloat
   let stickyHeaderTopPadding: CGFloat
+  /// Matches ``ClippedEditorChromeContainer``'s continuous radius so sticky scroll fades (material/paper)
+  /// are not axis-aligned rects under the clip — that mismatch showed square “ghost” corners on translucent panes.
+  let chromeCornerRadius: CGFloat
   var onSave: (Note) -> Void
   var availableNotes: [NotePickerItem] = []
   var onNavigateToNote: ((UUID) -> Void)?
@@ -179,6 +182,7 @@ struct NoteDetailView: View {
     focusRequestID: UUID,
     contentTopInsetAdjustment: CGFloat = 0,
     stickyHeaderTopPadding: CGFloat = 12,
+    chromeCornerRadius: CGFloat = 0,
     onSave: @escaping (Note) -> Void,
     availableNotes: [NotePickerItem] = [],
     onNavigateToNote: ((UUID) -> Void)? = nil,
@@ -191,6 +195,7 @@ struct NoteDetailView: View {
     self.focusRequestID = focusRequestID
     self.contentTopInsetAdjustment = contentTopInsetAdjustment
     self.stickyHeaderTopPadding = stickyHeaderTopPadding
+    self.chromeCornerRadius = chromeCornerRadius
     self.onSave = onSave
     self.availableNotes = availableNotes
     self.onNavigateToNote = onNavigateToNote
@@ -480,31 +485,23 @@ struct NoteDetailView: View {
         }
       }
 
-      // Bottom content fade
-      VStack {
-        Spacer()
-        Rectangle()
-          .fill(Color.clear)
-          .frame(height: 180)
-          .background(
-            maskedStickyChromeFade(mask: Self.footerMaskGradient)
-          )
-      }
-      .frame(maxWidth: .infinity, maxHeight: .infinity)
-      .allowsHitTesting(false)
-      .zIndex(14)
+      // Bottom scroll fade: avoid a full-width `Rectangle` host (axis-aligned layer) over the rounded
+      // pane; pin the fade to the bottom with frames so material/glass composites only inside the strip.
+      maskedStickyChromeFade(mask: Self.footerMaskGradient, placement: .footer)
+        .frame(maxWidth: .infinity)
+        .frame(height: 180, alignment: .bottom)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+        .allowsHitTesting(false)
+        .zIndex(14)
 
       // Sticky header
       if showStickyHeader {
         ZStack(alignment: .top) {
-          // Gradient fade — extends into the safe area (title bar zone)
-          Rectangle()
-            .fill(Color.clear)
-            .frame(height: 180)
-            .background(
-              maskedStickyChromeFade(mask: Self.headerMaskGradient)
-                .ignoresSafeArea(edges: .top)
-            )
+          // Same layout idea as the bottom fade: no axis-aligned `Rectangle` host over the pane chrome.
+          maskedStickyChromeFade(mask: Self.headerMaskGradient, placement: .header)
+            .frame(maxWidth: .infinity)
+            .frame(height: 180, alignment: .top)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .ignoresSafeArea(edges: .top)
 
           // Title — lives in normal content space (same as overlay icons)
@@ -1525,22 +1522,52 @@ struct NoteDetailView: View {
     min(1, max(0, themeManager.detailPaneTranslucency))
   }
 
+  private enum StickyChromeFadePlacement {
+    case header
+    case footer
+  }
+
+  /// Corner radii for the fade plate only on the edge that meets the pane chrome (top for header, bottom for footer).
+  private func stickyFadeCornerRadii(for placement: StickyChromeFadePlacement) -> RectangleCornerRadii? {
+    let r = chromeCornerRadius
+    guard r > 0 else { return nil }
+    switch placement {
+    case .header:
+      return RectangleCornerRadii(topLeading: r, bottomLeading: 0, bottomTrailing: 0, topTrailing: r)
+    case .footer:
+      return RectangleCornerRadii(topLeading: 0, bottomLeading: r, bottomTrailing: r, topTrailing: 0)
+    }
+  }
+
   /// Sticky title strip + bottom scroll fade.
   /// - Reduce Transparency / opaque pane: solid `tintedPaneSurface` (paper) under the mask.
   /// - Translucent pane: **blur-only** chrome — no tinted paper crossfade, so the strip does not reintroduce
   ///   the cream/dark wash on top of neutral Liquid Glass (Real Detail Transparency plan).
+  /// - When ``chromeCornerRadius`` is set from the pane chrome, the fade uses ``UnevenRoundedRectangle`` so
+  ///   material corners follow the same continuous curve as ``ClippedEditorChromeContainer`` (avoids square slivers).
   @ViewBuilder
-  private func maskedStickyChromeFade(mask: LinearGradient) -> some View {
+  private func maskedStickyChromeFade(mask: LinearGradient, placement: StickyChromeFadePlacement) -> some View {
     let paper = themeManager.tintedPaneSurface(for: colorScheme)
-    if reduceTransparency || detailTranslucency < 0.001 {
+    if let radii = stickyFadeCornerRadii(for: placement) {
+      if reduceTransparency || detailTranslucency < 0.001 {
+        UnevenRoundedRectangle(cornerRadii: radii, style: .continuous)
+          .fill(paper)
+          .mask(mask)
+      } else {
+        // Fill material directly on the shape so sampling stays inside the rounded path. A clear fill plus
+        // `.background(.ultraThinMaterial)` still laid out a rectangular material backing that peeked past
+        // continuous corners next to the split gutter on translucent zen panes.
+        UnevenRoundedRectangle(cornerRadii: radii, style: .continuous)
+          .fill(.ultraThinMaterial)
+          .mask(mask)
+      }
+    } else if reduceTransparency || detailTranslucency < 0.001 {
       Rectangle()
         .fill(paper)
         .mask(mask)
     } else {
-      // Localized material reads as frosted chrome; avoids `.regularMaterial` milkiness on macOS 26+ glass panes.
       Rectangle()
-        .fill(Color.clear)
-        .background(.ultraThinMaterial)
+        .fill(.ultraThinMaterial)
         .mask(mask)
     }
   }

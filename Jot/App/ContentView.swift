@@ -61,6 +61,30 @@ struct PropertiesPanelChromePolicy {
     }
 }
 
+struct SplitPaneCornerRadiusPolicy {
+    static func radius(
+        isSidebarVisible: Bool,
+        needsPendingPadding: Bool,
+        windowCornerRadius: CGFloat,
+        windowContentPadding: CGFloat
+    ) -> CGFloat {
+        windowCornerRadius - windowContentPadding
+    }
+}
+
+/// Zen split uses a wider gutter than ``splitGap`` so each pane’s inner corners read as rounded (capped at spacing `base` = 16).
+struct SplitZenInterPaneGapPolicy {
+    static func effectiveGap(
+        baseGap: CGFloat,
+        paneCornerRadius: CGFloat,
+        isZenModeWithoutSidebar: Bool,
+        isActiveSplitLayout: Bool
+    ) -> CGFloat {
+        guard isActiveSplitLayout, isZenModeWithoutSidebar else { return baseGap }
+        return min(16, max(baseGap, paneCornerRadius * 2))
+    }
+}
+
 struct SplitSession: Identifiable, Equatable, Codable {
     let id: UUID
     var primaryNoteID: UUID?
@@ -268,6 +292,7 @@ private struct DetailPaneChromeBackgroundView: View {
         } else if #available(macOS 26.0, iOS 26.0, *) {
             // `.clear` for transmission; `.tint` scales with `colorWashStrength` so at 100% translucency
             // there is no chroma wash (Colors still define the hue whenever strength > 0).
+            // Clip after glass so Liquid Glass cannot halo past the pane radius (parent clip alone was not enough when translucency is on).
             Group {
                 if glassTintOpacity > 0.001 {
                     shape
@@ -284,6 +309,8 @@ private struct DetailPaneChromeBackgroundView: View {
                         .glassEffect(.clear.interactive(false), in: shape)
                 }
             }
+            .clipShape(shape)
+            .contentShape(shape)
         } else {
             ZStack {
                 // Match main window: blur content behind the window so wallpaper shows through.
@@ -292,6 +319,44 @@ private struct DetailPaneChromeBackgroundView: View {
             }
             .clipShape(shape)
         }
+    }
+}
+
+/// Editor column chrome: plate + ``DetailPaneChromeBackgroundView`` + content under one ``clipShape`` so
+/// glass, tint, hairline, and split shadow plate stay concentric in zen split (no outer plate outside the mask).
+private struct ClippedEditorChromeContainer<Content: View>: View {
+    let cornerRadius: CGFloat
+    let showsBackingPlate: Bool
+    let backingPlateColor: Color
+    let colorScheme: ColorScheme
+    let suppressHairlineInDarkMode: Bool
+    @ViewBuilder var content: () -> Content
+
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+    }
+
+    private var showHairline: Bool {
+        showsBackingPlate && cornerRadius > 0
+            && !(colorScheme == .dark && suppressHairlineInDarkMode)
+    }
+
+    var body: some View {
+        // Hairline lives inside the ZStack so the same clipShape masks it; stroke half outside the path no longer paints on the window backdrop after translucency.
+        ZStack {
+            if showsBackingPlate {
+                shape.fill(backingPlateColor)
+            }
+            DetailPaneChromeBackgroundView(cornerRadius: cornerRadius)
+            content()
+            if showHairline {
+                // `stroke` is centered on the path; half the line sits outside the fill and can show as square
+                // micro-slivers at continuous corners once translucency composites. `strokeBorder` keeps the
+                // hairline fully inside the rounded rect so the outer clip and the stroke share one contour.
+                shape.strokeBorder(Color("BorderSubtleColor"), lineWidth: 1)
+            }
+        }
+        .clipShape(shape)
     }
 }
 
@@ -660,6 +725,26 @@ struct ContentView: View {
         return notesManager.notes.first(where: { $0.id == noteID })
     }
 
+    private var splitNoteOpeningContext: SplitNoteOpeningContext {
+        SplitNoteOpeningContext(
+            isSplitVisible: shouldShowSplitLayout,
+            primaryNoteID: activeSplit?.primaryNoteID,
+            secondaryNoteID: activeSplit?.secondaryNoteID,
+            focusedPane: splitNoteOpeningPane
+        )
+    }
+
+    private var splitNoteOpeningPane: SplitNoteOpeningPane? {
+        switch activeSplitPane {
+        case .primary:
+            return .primary
+        case .secondary:
+            return .secondary
+        case nil:
+            return nil
+        }
+    }
+
     private var isActiveSplitPending: Bool {
         activeSplitID != nil && activeSplitID == pendingSplitID
     }
@@ -688,12 +773,7 @@ struct ContentView: View {
     /// Navigate to a note by ID (from notelink click).
     private func navigateToNote(_ noteID: UUID) {
         guard let target = notesManager.notes.first(where: { $0.id == noteID }) else { return }
-        discardPreviousNoteIfEmpty(switching: target)
-        if let cur = selectedNote?.id, cur != target.id {
-            postEditorSerializationFlushAllVisibleEditors()
-        }
-        selectedNote = target
-        selectedNoteIDs = [target.id]
+        openNotePreservingVisibleSplit(target, withHaptic: false)
     }
 
     /// Find all notes that contain a `[[notelink|targetID|...]]` reference to the given note.
@@ -1334,22 +1414,31 @@ struct ContentView: View {
                 : needsPendingPadding
                     ? availableWidth - windowContentPadding * 2
                     : availableWidth
-            let cornerRadius: CGFloat = (isSidebarVisible || needsPendingPadding)
-                ? windowCornerRadius - windowContentPadding : 0
+            let cornerRadius = SplitPaneCornerRadiusPolicy.radius(
+                isSidebarVisible: isSidebarVisible,
+                needsPendingPadding: needsPendingPadding,
+                windowCornerRadius: windowCornerRadius,
+                windowContentPadding: windowContentPadding
+            )
+            let interPaneGap = effectiveSplitInterPaneGap(paneCornerRadius: cornerRadius)
             ZStack {
                 if shouldShowSplitLayout {
                     let primaryNote = activePrimaryNote ?? selectedNote ?? Note(title: "", content: "")
-                    splitDetailLayout(primaryNote: primaryNote, totalWidth: totalDetailWidth, cornerRadius: cornerRadius)
+                    splitDetailLayout(
+                        primaryNote: primaryNote,
+                        totalWidth: totalDetailWidth,
+                        cornerRadius: cornerRadius,
+                        interPaneGap: interPaneGap
+                    )
                 } else {
-                    let splitRadius = windowCornerRadius - windowContentPadding
                     let dragging = isDragSplitTargeted
-                    let primW = dragging ? ((totalDetailWidth - splitGap) * 0.5).rounded() : totalDetailWidth
-                    let secW = dragging ? (totalDetailWidth - primW - splitGap).rounded() : 0
+                    let primW = dragging ? ((totalDetailWidth - interPaneGap) * 0.5).rounded() : totalDetailWidth
+                    let secW = dragging ? (totalDetailWidth - primW - interPaneGap).rounded() : 0
 
                     let placeholderRect = ZStack {
-                        RoundedRectangle(cornerRadius: splitRadius, style: .continuous)
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                             .fill(Color.accentColor.opacity(colorScheme == .dark ? 0.18 : 0.08))
-                        RoundedRectangle(cornerRadius: splitRadius, style: .continuous)
+                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                             .strokeBorder(style: StrokeStyle(lineWidth: 1, lineCap: .round, dash: [4, 3]))
                             .foregroundColor(Color.accentColor.opacity(colorScheme == .dark ? 0.55 : 0.4))
                         Image(systemName: "plus")
@@ -1363,14 +1452,14 @@ struct ContentView: View {
                     HStack(spacing: 0) {
                         if dragging && dragSplitSide == .left {
                             placeholderRect
-                                .padding(.trailing, splitGap)
+                                .padding(.trailing, interPaneGap)
                         }
 
-                        singleNotePane(note: note, width: primW, cornerRadius: dragging ? splitRadius : cornerRadius)
+                        singleNotePane(note: note, width: primW, cornerRadius: cornerRadius, interPaneGap: interPaneGap)
 
                         if !dragging || dragSplitSide == .right {
                             placeholderRect
-                                .padding(.leading, dragging ? splitGap : 0)
+                                .padding(.leading, dragging ? interPaneGap : 0)
                         }
                     }
                 }
@@ -1416,6 +1505,16 @@ struct ContentView: View {
         noteDetailUsesTransparentStack ? Color.white.opacity(0.015) : detailBg
     }
 
+    /// Inter-pane width between split editors; widens in zen so inner rounded corners match outer pane polish.
+    private func effectiveSplitInterPaneGap(paneCornerRadius: CGFloat) -> CGFloat {
+        SplitZenInterPaneGapPolicy.effectiveGap(
+            baseGap: splitGap,
+            paneCornerRadius: paneCornerRadius,
+            isZenModeWithoutSidebar: !isSidebarVisible,
+            isActiveSplitLayout: shouldShowSplitLayout
+        )
+    }
+
     private func createSplitFromDrop(primaryNote: Note, droppedNoteID: UUID, position: SplitPosition) {
         isDragSplitTargeted = false
 
@@ -1437,9 +1536,9 @@ struct ContentView: View {
         saveSplitSessions()
     }
 
-    private func focusSplitPane(_ pane: SplitPickerPane) {
-        guard activeSplitPane != pane else { return }
+    private func focusSplitPane(_ pane: SplitPickerPane, requestFocus: Bool = true) {
         activeSplitPane = pane
+        guard requestFocus else { return }
         if pane == .primary {
             detailFocusRequestID = UUID()
         } else {
@@ -1447,9 +1546,9 @@ struct ContentView: View {
         }
     }
 
-    private func singleNotePane(note: Note, width: CGFloat, cornerRadius: CGFloat) -> some View {
-        // When the properties column owns the chrome for this pane, both siblings use split-style radius
-        // so the pair reads like a real split and the old shared outer shell stays out of the way.
+    private func singleNotePane(note: Note, width: CGFloat, cornerRadius: CGFloat, interPaneGap: CGFloat) -> some View {
+        // When the properties column owns the chrome for this pane, both siblings inherit the parent
+        // layout radius so zen mode stays flush while inset layouts keep their split-card chrome.
         let propertiesOpen = isPropertiesPanelVisible && propertiesPanelPane == .primary
         let chromeState = PropertiesPanelChromePolicy.state(
             isPropertiesPanelVisible: isPropertiesPanelVisible,
@@ -1457,35 +1556,35 @@ struct ContentView: View {
             propertiesPanelPane: propertiesPanelPane,
             pane: .primary
         )
-        let splitStyleRadius = windowCornerRadius - windowContentPadding
-        let effectiveRadius = chromeState.showsPerPaneChrome ? splitStyleRadius : cornerRadius
-        let editorWidth = propertiesOpen ? width - splitGap - splitMinPaneWidth : width
+        let effectiveRadius = cornerRadius
+        let editorWidth = propertiesOpen ? width - interPaneGap - splitMinPaneWidth : width
+        // Per-pane plate when properties splits chrome; split-parent plate when this pane is active in split (inlined into one clip).
+        let editorBackingPlateActive =
+            chromeState.showsPerPaneShadowPlate
+            || (shouldShowSplitLayout
+                && chromeState.showsSplitParentShadowPlate(isPaneActive: activeSplitPane == .primary))
 
         return HStack(spacing: 0) {
-            detailPane(note: note)
-                .frame(maxWidth: .infinity)
-                .frame(width: editorWidth)
-                .frame(maxHeight: .infinity)
-                .background {
-                    DetailPaneChromeBackgroundView(cornerRadius: effectiveRadius)
-                }
-                .clipShape(RoundedRectangle(cornerRadius: effectiveRadius, style: .continuous))
-                // When the properties column is open, the editor side carries its own per-pane plate
-                // so the gap edge reads as a distinct tile at any translucency setting.
-                .splitPaneChromePlate(
-                    isActive: chromeState.showsPerPaneShadowPlate,
-                    cornerRadius: effectiveRadius,
-                    backgroundColor: notePaneShadowPlateColor,
-                    colorScheme: colorScheme,
-                    suppressHairlineInDarkMode: suppressesNotePaneDarkModeBorderForGlass
-                )
+            ClippedEditorChromeContainer(
+                cornerRadius: effectiveRadius,
+                showsBackingPlate: editorBackingPlateActive,
+                backingPlateColor: notePaneShadowPlateColor,
+                colorScheme: colorScheme,
+                suppressHairlineInDarkMode: suppressesNotePaneDarkModeBorderForGlass
+            ) {
+                detailPane(note: note, chromeCornerRadius: effectiveRadius)
+                    .frame(maxWidth: .infinity)
+                    .frame(width: editorWidth)
+                    .frame(maxHeight: .infinity)
+            }
 
             propertiesPanelSlot(
                 isVisible: propertiesOpen,
                 note: note,
                 editorInstanceID: primaryEditorID,
                 paneCornerRadius: effectiveRadius,
-                showsPerPaneShadowPlate: chromeState.showsPerPaneShadowPlate
+                showsPerPaneShadowPlate: chromeState.showsPerPaneShadowPlate,
+                interPaneGap: interPaneGap
             )
         }
         .animation(Self.propertiesPanelAnimation, value: propertiesOpen)
@@ -1560,28 +1659,20 @@ struct ContentView: View {
     }
 
     @ViewBuilder
-    private func splitDetailLayout(primaryNote: Note, totalWidth: CGFloat, cornerRadius: CGFloat) -> some View {
-        let splitRadius = windowCornerRadius - windowContentPadding
+    private func splitDetailLayout(
+        primaryNote: Note,
+        totalWidth: CGFloat,
+        cornerRadius: CGFloat,
+        interPaneGap: CGFloat
+    ) -> some View {
         let position = activeSplit?.position ?? .right
         let ratio = activeSplit?.ratio ?? 0.5
-        let primaryChromeState = PropertiesPanelChromePolicy.state(
-            isPropertiesPanelVisible: isPropertiesPanelVisible,
-            isPropertiesPanelAnimating: isPropertiesPanelAnimating,
-            propertiesPanelPane: propertiesPanelPane,
-            pane: .primary
-        )
-        let secondaryChromeState = PropertiesPanelChromePolicy.state(
-            isPropertiesPanelVisible: isPropertiesPanelVisible,
-            isPropertiesPanelAnimating: isPropertiesPanelAnimating,
-            propertiesPanelPane: propertiesPanelPane,
-            pane: .secondary
-        )
 
-        let availableForSplit = totalWidth - splitGap
+        let availableForSplit = totalWidth - interPaneGap
         let baseSecW = availableForSplit * ratio
-        let maxW = totalWidth - splitMinPaneWidth - splitGap
+        let maxW = totalWidth - splitMinPaneWidth - interPaneGap
         let secW = max(splitMinPaneWidth, min(maxW, baseSecW + splitDragDelta)).rounded()
-        let primW = totalWidth - secW - splitGap
+        let primW = totalWidth - secW - interPaneGap
 
         let isPending = isActiveSplitPending
         let hasPrimary = activeSplit?.primaryNoteID != nil
@@ -1591,15 +1682,13 @@ struct ContentView: View {
             HStack(spacing: 0) {
                 // Left = primary
                 if hasPrimary {
-                    singleNotePane(note: primaryNote, width: primW, cornerRadius: splitRadius)
-                        .splitPaneDimming(isInactive: activeSplitPane != .primary, cornerRadius: splitRadius, colorScheme: colorScheme)
-                        .splitPaneChromePlate(
-                            isActive: primaryChromeState.showsSplitParentShadowPlate(isPaneActive: activeSplitPane == .primary),
-                            cornerRadius: splitRadius,
-                            backgroundColor: notePaneShadowPlateColor,
-                            colorScheme: colorScheme,
-                            suppressHairlineInDarkMode: suppressesNotePaneDarkModeBorderForGlass
-                        )
+                    singleNotePane(
+                        note: primaryNote,
+                        width: primW,
+                        cornerRadius: cornerRadius,
+                        interPaneGap: interPaneGap
+                    )
+                        .splitPaneDimming(isInactive: activeSplitPane != .primary, cornerRadius: cornerRadius, colorScheme: colorScheme)
                         .zIndex(activeSplitPane == .primary ? 1 : 0)
                         .overlay(alignment: .topTrailing) {
                             if !isPending {
@@ -1611,54 +1700,50 @@ struct ContentView: View {
                             splitPickerOverlayView(for: .primary, primaryNote: primaryNote)
                         }
                 } else {
-                    splitPickerPane(width: primW, cornerRadius: splitRadius, excludingNote: activeSecondaryNote, isPrimary: true)
+                    splitPickerPane(width: primW, cornerRadius: cornerRadius, excludingNote: activeSecondaryNote, isPrimary: true)
                 }
-                splitPaneResizeHandle(totalWidth: totalWidth)
+                splitPaneResizeHandle(totalWidth: totalWidth, interPaneGap: interPaneGap)
                 // Right = secondary
                 if hasSecondary, let secNote = activeSecondaryNote {
-                    secondaryNotePane(note: secNote, width: secW, cornerRadius: splitRadius, primaryNote: primaryNote)
-                        .splitPaneDimming(isInactive: activeSplitPane != .secondary, cornerRadius: splitRadius, colorScheme: colorScheme)
-                        .splitPaneChromePlate(
-                            isActive: secondaryChromeState.showsSplitParentShadowPlate(isPaneActive: activeSplitPane == .secondary),
-                            cornerRadius: splitRadius,
-                            backgroundColor: notePaneShadowPlateColor,
-                            colorScheme: colorScheme,
-                            suppressHairlineInDarkMode: suppressesNotePaneDarkModeBorderForGlass
-                        )
+                    secondaryNotePane(
+                        note: secNote,
+                        width: secW,
+                        cornerRadius: cornerRadius,
+                        primaryNote: primaryNote,
+                        interPaneGap: interPaneGap
+                    )
+                        .splitPaneDimming(isInactive: activeSplitPane != .secondary, cornerRadius: cornerRadius, colorScheme: colorScheme)
                         .zIndex(activeSplitPane == .secondary ? 1 : 0)
                 } else {
-                    splitPickerPane(width: secW, cornerRadius: splitRadius, excludingNote: activePrimaryNote, isPrimary: false)
+                    splitPickerPane(width: secW, cornerRadius: cornerRadius, excludingNote: activePrimaryNote, isPrimary: false)
                 }
             }
         } else {
             HStack(spacing: 0) {
                 // Left = secondary
                 if hasSecondary, let secNote = activeSecondaryNote {
-                    secondaryNotePane(note: secNote, width: secW, cornerRadius: splitRadius, primaryNote: primaryNote)
-                        .splitPaneDimming(isInactive: activeSplitPane != .secondary, cornerRadius: splitRadius, colorScheme: colorScheme)
-                        .splitPaneChromePlate(
-                            isActive: secondaryChromeState.showsSplitParentShadowPlate(isPaneActive: activeSplitPane == .secondary),
-                            cornerRadius: splitRadius,
-                            backgroundColor: notePaneShadowPlateColor,
-                            colorScheme: colorScheme,
-                            suppressHairlineInDarkMode: suppressesNotePaneDarkModeBorderForGlass
-                        )
+                    secondaryNotePane(
+                        note: secNote,
+                        width: secW,
+                        cornerRadius: cornerRadius,
+                        primaryNote: primaryNote,
+                        interPaneGap: interPaneGap
+                    )
+                        .splitPaneDimming(isInactive: activeSplitPane != .secondary, cornerRadius: cornerRadius, colorScheme: colorScheme)
                         .zIndex(activeSplitPane == .secondary ? 1 : 0)
                 } else {
-                    splitPickerPane(width: secW, cornerRadius: splitRadius, excludingNote: activePrimaryNote, isPrimary: false)
+                    splitPickerPane(width: secW, cornerRadius: cornerRadius, excludingNote: activePrimaryNote, isPrimary: false)
                 }
-                splitPaneResizeHandle(totalWidth: totalWidth)
+                splitPaneResizeHandle(totalWidth: totalWidth, interPaneGap: interPaneGap)
                 // Right = primary
                 if hasPrimary {
-                    singleNotePane(note: primaryNote, width: primW, cornerRadius: splitRadius)
-                        .splitPaneDimming(isInactive: activeSplitPane != .primary, cornerRadius: splitRadius, colorScheme: colorScheme)
-                        .splitPaneChromePlate(
-                            isActive: primaryChromeState.showsSplitParentShadowPlate(isPaneActive: activeSplitPane == .primary),
-                            cornerRadius: splitRadius,
-                            backgroundColor: notePaneShadowPlateColor,
-                            colorScheme: colorScheme,
-                            suppressHairlineInDarkMode: suppressesNotePaneDarkModeBorderForGlass
-                        )
+                    singleNotePane(
+                        note: primaryNote,
+                        width: primW,
+                        cornerRadius: cornerRadius,
+                        interPaneGap: interPaneGap
+                    )
+                        .splitPaneDimming(isInactive: activeSplitPane != .primary, cornerRadius: cornerRadius, colorScheme: colorScheme)
                         .zIndex(activeSplitPane == .primary ? 1 : 0)
                         .overlay(alignment: .topTrailing) {
                             if !isPending {
@@ -1670,7 +1755,7 @@ struct ContentView: View {
                             splitPickerOverlayView(for: .primary, primaryNote: primaryNote)
                         }
                 } else {
-                    splitPickerPane(width: primW, cornerRadius: splitRadius, excludingNote: activeSecondaryNote, isPrimary: true)
+                    splitPickerPane(width: primW, cornerRadius: cornerRadius, excludingNote: activeSecondaryNote, isPrimary: true)
                 }
             }
         }
@@ -1716,7 +1801,13 @@ struct ContentView: View {
     }
 
     @ViewBuilder
-    private func secondaryNotePane(note: Note, width: CGFloat, cornerRadius: CGFloat, primaryNote: Note) -> some View {
+    private func secondaryNotePane(
+        note: Note,
+        width: CGFloat,
+        cornerRadius: CGFloat,
+        primaryNote: Note,
+        interPaneGap: CGFloat
+    ) -> some View {
         let position = activeSplit?.position ?? .right
         let isLeftPane = (position == .left)
         let isSplitLocked = note.isLocked && !authManager.isUnlocked(note.id)
@@ -1727,60 +1818,62 @@ struct ContentView: View {
             propertiesPanelPane: propertiesPanelPane,
             pane: .secondary
         )
-        let editorWidth = propertiesOpen ? width - splitGap - splitMinPaneWidth : width
+        let editorWidth = propertiesOpen ? width - interPaneGap - splitMinPaneWidth : width
+        let editorBackingPlateActive =
+            chromeState.showsPerPaneShadowPlate
+            || (shouldShowSplitLayout
+                && chromeState.showsSplitParentShadowPlate(isPaneActive: activeSplitPane == .secondary))
 
         HStack(spacing: 0) {
-            ZStack {
-                NoteDetailView(
-                    note: note,
-                    editorInstanceID: splitEditorID,
-                    focusRequestID: splitFocusRequestID,
-                    contentTopInsetAdjustment: detailToggleToContentExtraSpacingWhenSidebarHidden,
-                    stickyHeaderTopPadding: splitControlsTopPadding,
-                    onSave: { saveSplitNote($0) },
-                    availableNotes: notePickerItems(excluding: note.id),
-                    onNavigateToNote: navigateToNote,
-                    backlinks: backlinks(for: note.id),
-                    isSidebarAnimating: isSidebarAnimating,
-                    isPanelAnimating: isPropertiesPanelAnimating
-                )
-                .blur(radius: isSplitLocked ? 20 : 0)
-                .allowsHitTesting(!isSplitLocked)
-                .opacity(previewingVersion != nil && versionHistoryPane == .secondary ? 0 : 1)
-
-                if isSplitLocked {
-                    noteLockOverlay(for: note)
-                }
-
-                // Version preview overlay
-                if let version = previewingVersion, versionHistoryPane == .secondary {
-                    versionPreviewPane(version: version)
-                        .transition(.opacity)
-                }
-            }
-            .animation(.easeInOut(duration: 0.15), value: previewingVersion?.id)
-            .frame(maxWidth: .infinity)
-            .frame(width: editorWidth)
-            .frame(maxHeight: .infinity)
-            .background {
-                DetailPaneChromeBackgroundView(cornerRadius: chromeState.showsPerPaneChrome ? windowCornerRadius - windowContentPadding : cornerRadius)
-            }
-            .clipShape(RoundedRectangle(cornerRadius: chromeState.showsPerPaneChrome ? windowCornerRadius - windowContentPadding : cornerRadius, style: .continuous))
-            // Same per-pane plate rule as `singleNotePane` when properties is open on this split half.
-            .splitPaneChromePlate(
-                isActive: chromeState.showsPerPaneShadowPlate,
-                cornerRadius: chromeState.showsPerPaneChrome ? windowCornerRadius - windowContentPadding : cornerRadius,
-                backgroundColor: notePaneShadowPlateColor,
+            ClippedEditorChromeContainer(
+                cornerRadius: cornerRadius,
+                showsBackingPlate: editorBackingPlateActive,
+                backingPlateColor: notePaneShadowPlateColor,
                 colorScheme: colorScheme,
                 suppressHairlineInDarkMode: suppressesNotePaneDarkModeBorderForGlass
-            )
+            ) {
+                ZStack {
+                    NoteDetailView(
+                        note: note,
+                        editorInstanceID: splitEditorID,
+                        focusRequestID: splitFocusRequestID,
+                        contentTopInsetAdjustment: detailToggleToContentExtraSpacingWhenSidebarHidden,
+                        stickyHeaderTopPadding: splitControlsTopPadding,
+                        chromeCornerRadius: cornerRadius,
+                        onSave: { saveSplitNote($0) },
+                        availableNotes: notePickerItems(excluding: note.id),
+                        onNavigateToNote: navigateToNote,
+                        backlinks: backlinks(for: note.id),
+                        isSidebarAnimating: isSidebarAnimating,
+                        isPanelAnimating: isPropertiesPanelAnimating
+                    )
+                    .blur(radius: isSplitLocked ? 20 : 0)
+                    .allowsHitTesting(!isSplitLocked)
+                    .opacity(previewingVersion != nil && versionHistoryPane == .secondary ? 0 : 1)
+
+                    if isSplitLocked {
+                        noteLockOverlay(for: note)
+                    }
+
+                    // Version preview overlay
+                    if let version = previewingVersion, versionHistoryPane == .secondary {
+                        versionPreviewPane(version: version)
+                            .transition(.opacity)
+                    }
+                }
+                .animation(.easeInOut(duration: 0.15), value: previewingVersion?.id)
+                .frame(maxWidth: .infinity)
+                .frame(width: editorWidth)
+                .frame(maxHeight: .infinity)
+            }
 
             propertiesPanelSlot(
                 isVisible: propertiesOpen,
                 note: note,
                 editorInstanceID: splitEditorID,
-                paneCornerRadius: chromeState.showsPerPaneChrome ? windowCornerRadius - windowContentPadding : cornerRadius,
-                showsPerPaneShadowPlate: chromeState.showsPerPaneShadowPlate
+                paneCornerRadius: cornerRadius,
+                showsPerPaneShadowPlate: chromeState.showsPerPaneShadowPlate,
+                interPaneGap: interPaneGap
             )
         }
         .animation(Self.propertiesPanelAnimation, value: propertiesOpen)
@@ -1815,7 +1908,7 @@ struct ContentView: View {
         }
     }
 
-    private func splitPaneResizeHandle(totalWidth: CGFloat) -> some View {
+    private func splitPaneResizeHandle(totalWidth: CGFloat, interPaneGap: CGFloat) -> some View {
         let position = activeSplit?.position ?? .right
         let ratio = activeSplit?.ratio ?? 0.5
         return ZStack {
@@ -1823,7 +1916,7 @@ struct ContentView: View {
                 .fill(Color("IconSecondaryColor"))
                 .frame(width: 4, height: 18)
         }
-        .frame(width: splitGap)
+        .frame(width: interPaneGap)
         .frame(maxHeight: .infinity)
         .contentShape(Rectangle())
         .onHover { hovering in
@@ -1871,9 +1964,9 @@ struct ContentView: View {
                     let delta = position == .right
                         ? -value.translation.width
                         :  value.translation.width
-                    let availableForSplit = totalWidth - splitGap
+                    let availableForSplit = totalWidth - interPaneGap
                     let baseSecW = availableForSplit * ratio
-                    let maxW = totalWidth - splitMinPaneWidth - splitGap
+                    let maxW = totalWidth - splitMinPaneWidth - interPaneGap
                     let finalSecW = max(splitMinPaneWidth, min(maxW, baseSecW + delta))
                     if let idx = activeSplitIndex {
                         splitSessions[idx].ratio = finalSecW / availableForSplit
@@ -2934,7 +3027,7 @@ struct ContentView: View {
                 isPresented: $isSearchPresented,
                 openIntent: $floatingSearchOpenIntent,
                 onNoteSelected: { note in
-                    openNote(note)
+                    openNotePreservingVisibleSplit(note)
                 },
                 onNoteSelectedStartMeeting: { note in
                     openNoteAndStartMeeting(note)
@@ -3301,7 +3394,7 @@ struct ContentView: View {
     // MARK: - Detail Pane
 
     @ViewBuilder
-    private func detailPane(note: Note) -> some View {
+    private func detailPane(note: Note, chromeCornerRadius: CGFloat) -> some View {
         let isNoteLocked = note.isLocked && !authManager.isUnlocked(note.id)
         ZStack {
             NoteDetailView(
@@ -3310,6 +3403,7 @@ struct ContentView: View {
                 focusRequestID: detailFocusRequestID,
                 contentTopInsetAdjustment: isSidebarVisible ? 0 : detailToggleToContentExtraSpacingWhenSidebarHidden,
                 stickyHeaderTopPadding: splitControlsTopPadding,
+                chromeCornerRadius: chromeCornerRadius,
                 onSave: { updated in saveUpdatedNote(updated) },
                 availableNotes: notePickerItems(excluding: note.id),
                 onNavigateToNote: navigateToNote,
@@ -3835,7 +3929,12 @@ struct ContentView: View {
                 }
                 .buttonStyle(.plain)
                 .macPointingHandCursor()
-                .glassTooltip(isLeftPane ? "Close left split" : "Close right split", below: true)
+                // Trailing edge of icon: pill grows leftward so it stays inside the pane on both columns (leading anchor extended into the gutter).
+                .glassTooltip(
+                    isLeftPane ? "Close left split" : "Close right split",
+                    edge: .trailing,
+                    below: true
+                )
                 .hoverContainer(cornerRadius: 8)
 
                 // Properties panel toggle
@@ -3846,7 +3945,7 @@ struct ContentView: View {
 
     // MARK: - Properties Panel
 
-    /// Properties column uses `splitMinPaneWidth` + `splitGap` (see `propertiesPanelSlot`); no separate width constants so it always matches a split sibling.
+    /// Properties column uses `splitMinPaneWidth` + the same inter-pane gap as the active split (see `propertiesPanelSlot`).
     /// Trailing offset when collapsed so open/close reads as a slide from the right (paired with width animation).
     private static let propertiesPanelSlideOffset: CGFloat = 18
     /// Duration for properties panel show/hide (ease-in-out, no spring overshoot).
@@ -3862,30 +3961,34 @@ struct ContentView: View {
     ).combined(with: .move(edge: .trailing))
 
     /// Always-present panel slot that avoids view insertion/removal.
-    /// Own `DetailPaneChromeBackgroundView` + clip so it reads as a split sibling; width uses `splitGap` + `splitMinPaneWidth` (no drag handle). Carries its own per-pane shadow (matching `splitDetailLayout`) so the panel reads as a distinct elevated tile next to the editor at any translucency level.
+    /// Chrome matches the editor column: one clipped stack; width uses the same inter-pane gap + `splitMinPaneWidth` (no drag handle).
     @ViewBuilder
-    private func propertiesPanelSlot(isVisible: Bool, note: Note, editorInstanceID: UUID?, paneCornerRadius: CGFloat, showsPerPaneShadowPlate: Bool) -> some View {
+    private func propertiesPanelSlot(
+        isVisible: Bool,
+        note: Note,
+        editorInstanceID: UUID?,
+        paneCornerRadius: CGFloat,
+        showsPerPaneShadowPlate: Bool,
+        interPaneGap: CGFloat
+    ) -> some View {
         HStack(spacing: 0) {
             Color.clear
-                .frame(width: isVisible ? splitGap : 0)
+                .frame(width: isVisible ? interPaneGap : 0)
 
-            propertiesPanelContent(for: note, editorInstanceID: editorInstanceID)
-                .frame(width: splitMinPaneWidth)
-                .frame(maxHeight: .infinity, alignment: .top)
-                .background {
-                    DetailPaneChromeBackgroundView(cornerRadius: paneCornerRadius)
-                }
-                .clipShape(RoundedRectangle(cornerRadius: paneCornerRadius, style: .continuous))
-                .splitPaneChromePlate(
-                    isActive: showsPerPaneShadowPlate,
-                    cornerRadius: paneCornerRadius,
-                    backgroundColor: notePaneShadowPlateColor,
-                    colorScheme: colorScheme,
-                    suppressHairlineInDarkMode: suppressesNotePaneDarkModeBorderForGlass
-                )
-                .offset(x: isVisible ? 0 : Self.propertiesPanelSlideOffset)
+            ClippedEditorChromeContainer(
+                cornerRadius: paneCornerRadius,
+                showsBackingPlate: showsPerPaneShadowPlate,
+                backingPlateColor: notePaneShadowPlateColor,
+                colorScheme: colorScheme,
+                suppressHairlineInDarkMode: suppressesNotePaneDarkModeBorderForGlass
+            ) {
+                propertiesPanelContent(for: note, editorInstanceID: editorInstanceID)
+                    .frame(width: splitMinPaneWidth)
+                    .frame(maxHeight: .infinity, alignment: .top)
+            }
+            .offset(x: isVisible ? 0 : Self.propertiesPanelSlideOffset)
         }
-        .frame(width: isVisible ? (splitGap + splitMinPaneWidth) : 0, alignment: .leading)
+        .frame(width: isVisible ? (interPaneGap + splitMinPaneWidth) : 0, alignment: .leading)
         // Intentional `.clipped()` on width-collapsing container: the inner view is rendered at full width then the outer frame animates to 0. Without clipping, the unclipped overflow would paint over sibling views during the collapse animation. Exception to the CLAUDE.md no-clipping-on-containers rule is deliberate here.
         .clipped()
         .opacity(isVisible ? 1 : 0)
@@ -4171,7 +4274,50 @@ struct ContentView: View {
         notesManager.discardNote(id: freshPrev.id)
     }
 
+    private func applyNoteSelectionState(_ note: Note) {
+        selectedNote = note
+        selectedNoteIDs = [note.id]
+        selectionAnchorID = note.id
+    }
+
+    private func updateLockStateForNavigation(from previousNote: Note?, to nextNote: Note) {
+        if let previousNote, previousNote.id != nextNote.id, previousNote.isLocked, authManager.isUnlocked(previousNote.id) {
+            authManager.scheduleRelock(for: previousNote.id)
+        }
+
+        if nextNote.isLocked, authManager.isUnlocked(nextNote.id) {
+            authManager.cancelRelock(for: nextNote.id)
+        }
+    }
+
+    private func openNotePreservingVisibleSplit(
+        _ note: Note,
+        focusEditor: Bool = true,
+        withHaptic: Bool = true
+    ) {
+        performNoteOpen(
+            note,
+            focusEditor: focusEditor,
+            withHaptic: withHaptic,
+            preservingVisibleSplit: true
+        )
+    }
+
     private func openNote(_ note: Note, focusEditor: Bool = true, withHaptic: Bool = true) {
+        performNoteOpen(
+            note,
+            focusEditor: focusEditor,
+            withHaptic: withHaptic,
+            preservingVisibleSplit: false
+        )
+    }
+
+    private func performNoteOpen(
+        _ note: Note,
+        focusEditor: Bool,
+        withHaptic: Bool,
+        preservingVisibleSplit: Bool
+    ) {
         if withHaptic {
             HapticManager.shared.noteInteraction()
         }
@@ -4187,22 +4333,20 @@ struct ContentView: View {
         // Discard the note we're leaving if it was never given a title or content
         discardPreviousNoteIfEmpty(switching: freshNote)
 
-        // Schedule re-lock for the note we're leaving (if it was locked + unlocked)
-        if let prev = selectedNote, prev.id != freshNote.id, prev.isLocked, authManager.isUnlocked(prev.id) {
-            authManager.scheduleRelock(for: prev.id)
+        if preservingVisibleSplit, openNoteInVisibleSplitIfNeeded(freshNote, focusEditor: focusEditor) {
+            lockPasswordInput = ""
+            lockAuthFailed = false
+            hasAppliedInitialLaunchSelection = true
+            return
         }
 
-        // Cancel re-lock timer if we're returning to this note
-        if freshNote.isLocked, authManager.isUnlocked(freshNote.id) {
-            authManager.cancelRelock(for: freshNote.id)
-        }
+        // Schedule re-lock for the note we're leaving (if it was locked + unlocked)
+        updateLockStateForNavigation(from: selectedNote, to: freshNote)
 
         if let prev = selectedNote, prev.id != freshNote.id {
             postEditorSerializationFlushAllVisibleEditors()
         }
-        selectedNote = freshNote
-        selectedNoteIDs = [freshNote.id]
-        selectionAnchorID = freshNote.id
+        applyNoteSelectionState(freshNote)
         lockPasswordInput = ""
         lockAuthFailed = false
 
@@ -4212,9 +4356,53 @@ struct ContentView: View {
         }
     }
 
+    private func openNoteInVisibleSplitIfNeeded(_ note: Note, focusEditor: Bool) -> Bool {
+        guard shouldShowSplitLayout, let splitIndex = activeSplitIndex else { return false }
+
+        let result = SplitNoteOpeningPolicy.resolve(
+            targetNoteID: note.id,
+            context: splitNoteOpeningContext
+        )
+
+        switch result.action {
+        case .openSingle:
+            return false
+        case .focusExistingPrimary:
+            applyNoteSelectionState(note)
+            focusSplitPane(.primary, requestFocus: focusEditor)
+            return true
+        case .focusExistingSecondary:
+            applyNoteSelectionState(note)
+            focusSplitPane(.secondary, requestFocus: focusEditor)
+            return true
+        case .replacePrimary:
+            let previousPrimary = activePrimaryNote
+            updateLockStateForNavigation(from: previousPrimary, to: note)
+            if previousPrimary?.id != note.id {
+                postEditorSerializationFlushAllVisibleEditors()
+            }
+            splitSessions[splitIndex].primaryNoteID = result.primaryNoteID
+            applyNoteSelectionState(note)
+            focusSplitPane(.primary, requestFocus: focusEditor)
+            saveSplitSessions()
+            return true
+        case .replaceSecondary:
+            let previousSecondary = activeSecondaryNote
+            updateLockStateForNavigation(from: previousSecondary, to: note)
+            if previousSecondary?.id != note.id {
+                postEditorSerializationFlush(editorInstanceID: splitEditorID)
+            }
+            splitSessions[splitIndex].secondaryNoteID = result.secondaryNoteID
+            applyNoteSelectionState(note)
+            focusSplitPane(.secondary, requestFocus: focusEditor)
+            saveSplitSessions()
+            return true
+        }
+    }
+
     /// Command palette “Start meeting session” flow: open the note, then start recording on the shared manager.
     private func openNoteAndStartMeeting(_ note: Note) {
-        openNote(note)
+        openNotePreservingVisibleSplit(note)
         meetingRecorderManager.startRecording(for: note.id)
     }
 
@@ -4630,15 +4818,7 @@ struct ContentView: View {
     /// Navigate to a specific note by UUID -- used by Spotlight deep links.
     private func openNoteByID(_ noteID: UUID) {
         guard let note = notesManager.notes.first(where: { $0.id == noteID }) else { return }
-        discardPreviousNoteIfEmpty(switching: note)
-        if let cur = selectedNote?.id, cur != note.id {
-            postEditorSerializationFlushAllVisibleEditors()
-        }
-        withAnimation(.jotSpring) {
-            selectedNote = note
-            selectedNoteIDs = [note.id]
-            selectionAnchorID = note.id
-        }
+        openNotePreservingVisibleSplit(note, withHaptic: false)
     }
 
     private func processPendingShares() {
@@ -6217,7 +6397,7 @@ private extension View {
             .overlay {
                 if showHairline {
                     RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .stroke(Color("BorderSubtleColor"), lineWidth: 1)
+                        .strokeBorder(Color("BorderSubtleColor"), lineWidth: 1)
                 }
             }
     }
