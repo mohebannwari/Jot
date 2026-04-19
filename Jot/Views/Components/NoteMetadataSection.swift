@@ -3,8 +3,12 @@
 //  Jot
 //
 //  Side-panel properties view showing note metadata (created date, tags,
-//  todos, links, attachments, backlinks). Displayed as a slide-in panel
-//  in the detail pane, separated by a vertical divider.
+//  todos, links, attachments, backlinks). Rendered as its own split-sibling pane
+//  in ContentView: it inherits its glass chrome and corner radius from
+//  `propertiesPanelSlot` (which uses `DetailPaneChromeBackgroundView`), so this
+//  view paints no background of its own — that would create glass-on-glass.
+//  Scroll content fades to transparent at the bottom via `.mask(...)`, letting
+//  the pane chrome show through cleanly with no extra translucent layer.
 //
 
 import SwiftUI
@@ -27,7 +31,6 @@ struct NoteMetadataSection: View {
     @State private var newTagText = ""
     @FocusState private var tagFieldFocused: Bool
     @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @EnvironmentObject private var themeManager: ThemeManager
 
     // MARK: - Content-Derived Metadata (cached, updated on content change)
@@ -174,16 +177,6 @@ struct NoteMetadataSection: View {
         themeManager.tintedBlockContainer(for: colorScheme)
     }
 
-    /// Same translucency slider as the note detail pane — properties chrome should track it too.
-    private var detailTranslucency: Double {
-        min(1, max(0, themeManager.detailPaneTranslucency))
-    }
-
-    /// 1 when opaque / translucency off → full tinted wash; 0 at full translucency → neutral frosted stack only.
-    private var propertiesColorWashStrength: Double {
-        1.0 - detailTranslucency
-    }
-
     // MARK: - Date Formatting
 
     private static let absoluteFormatter: DateFormatter = {
@@ -222,111 +215,104 @@ struct NoteMetadataSection: View {
                 .padding(.horizontal, 16)
                 .padding(.bottom, 12)
 
-            ZStack(alignment: .bottom) {
-                ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: -4) {
-                        // Created
-                        propertyRow(label: "Created") {
-                            Text(Self.absoluteFormatter.string(from: note.createdAt))
-                                .font(.system(size: 12, weight: .medium))
-                                .tracking(-0.3)
-                                .foregroundColor(Color("PrimaryTextColor"))
-                        }
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: -4) {
+                    // Created
+                    propertyRow(label: "Created") {
+                        Text(Self.absoluteFormatter.string(from: note.createdAt))
+                            .font(.system(size: 12, weight: .medium))
+                            .tracking(-0.3)
+                            .foregroundColor(Color("PrimaryTextColor"))
+                    }
 
-                        // Folder
-                        propertyRow(label: "Folder") {
-                            if let folder {
-                                let pillFg: Color = (colorScheme == .dark && folder.folderColorNeedsDarkForeground)
-                                    ? .black : .white
+                    // Folder
+                    propertyRow(label: "Folder") {
+                        if let folder {
+                            let pillFg: Color = (colorScheme == .dark && folder.folderColorNeedsDarkForeground)
+                                ? .black : .white
 
-                                HStack(spacing: 4) {
-                                    Image("IconFolder1")
-                                        .renderingMode(.template)
-                                        .resizable()
-                                        .scaledToFit()
-                                        .foregroundColor(pillFg)
-                                        .frame(width: 15, height: 15)
+                            HStack(spacing: 4) {
+                                Image("IconFolder1")
+                                    .renderingMode(.template)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .foregroundColor(pillFg)
+                                    .frame(width: 15, height: 15)
 
-                                    Text(folder.name)
-                                        .font(FontManager.heading(size: 11, weight: .medium))
-                                        .tracking(-0.2)
-                                        .foregroundColor(pillFg)
-                                        .lineLimit(1)
-                                }
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(folder.folderDisplayColor(for: colorScheme), in: Capsule())
-                            } else {
-                                noneText
+                                Text(folder.name)
+                                    .font(FontManager.heading(size: 11, weight: .medium))
+                                    .tracking(-0.2)
+                                    .foregroundColor(pillFg)
+                                    .lineLimit(1)
                             }
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(folder.folderDisplayColor(for: colorScheme), in: Capsule())
+                        } else {
+                            noneText
                         }
+                    }
 
-                        // Tags
-                        propertyRow(label: "Tags") {
-                            tagsValue
-                        }
+                    // Tags
+                    propertyRow(label: "Tags") {
+                        tagsValue
+                    }
 
-                        // Todos
-                        propertyRow(label: "Todos") {
-                            VStack(alignment: .leading, spacing: 8) {
-                                todosCounterPill
+                    // Todos
+                    propertyRow(label: "Todos") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            todosCounterPill
 
-                                if isTodoExpanded && !cachedTodos.isEmpty {
-                                    expandedTodoList
-                                }
-                            }
-                        }
-
-                        // Links
-                        propertyRow(label: "Links") {
-                            linksValue
-                        }
-
-                        // Attachments
-                        propertyRow(label: "Attachments") {
-                            attachmentsValue
-                        }
-
-                        // Referenced By (backlinks)
-                        if !backlinks.isEmpty {
-                            propertyRow(label: "Referenced By") {
-                                referencedByValue
+                            if isTodoExpanded && !cachedTodos.isEmpty {
+                                expandedTodoList
                             }
                         }
                     }
-                    .padding(.bottom, 180)
-                }
 
-                // Bottom content fade -- mirrors ``NoteDetailView`` footer: paper when opaque,
-                // frosted material only when translucency is on (no tinted wash strip at 100%).
-                Rectangle()
-                    .fill(Color.clear)
-                    .frame(height: 180)
-                    .background(propertiesBottomFadeMask())
-                    .allowsHitTesting(false)
+                    // Links
+                    propertyRow(label: "Links") {
+                        linksValue
+                    }
+
+                    // Attachments
+                    propertyRow(label: "Attachments") {
+                        attachmentsValue
+                    }
+
+                    // Referenced By (backlinks)
+                    if !backlinks.isEmpty {
+                        propertyRow(label: "Referenced By") {
+                            referencedByValue
+                        }
+                    }
+                }
+                .padding(.bottom, 180)
             }
+            // Mask the scroll content so it fades to transparent over the bottom 180pt.
+            // The pane chrome (provided by `propertiesPanelSlot`) shows through cleanly
+            // with no extra glass or tint layer painted on top.
+            .mask(scrollContentFadeMask)
         }
-        .background(.ultraThinMaterial)
-        .background(
-            themeManager.tintedPaneSurface(for: colorScheme)
-                .opacity(reduceTransparency || detailTranslucency < 0.001 ? 0.5 : 0.5 * propertiesColorWashStrength)
-        )
+        // No self-applied glass or tint: the panel inherits its surface from
+        // `DetailPaneChromeBackgroundView` in `propertiesPanelSlot`, exactly like the detail pane.
         .onAppear { reparseContent() }
         .onChange(of: note.content) { reparseContent() }
     }
 
-    @ViewBuilder
-    private func propertiesBottomFadeMask() -> some View {
-        let paper = themeManager.tintedPaneSurface(for: colorScheme)
-        if reduceTransparency || detailTranslucency < 0.001 {
-            Rectangle()
-                .fill(paper)
-                .mask(Self.bottomFadeGradient)
-        } else {
-            Rectangle()
-                .fill(Color.clear)
-                .background(.ultraThinMaterial)
-                .mask(Self.bottomFadeGradient)
+    /// Vertical mask: fully opaque above the bottom strip, easing to transparent over the last 180pt.
+    private var scrollContentFadeMask: some View {
+        VStack(spacing: 0) {
+            Rectangle().fill(Color.white)
+            LinearGradient(
+                gradient: Gradient(stops: (0...40).map { i in
+                    let t = Double(i) / 40.0
+                    let eased = t * t * t * (t * (t * 6 - 15) + 10)
+                    return .init(color: Color.white.opacity(1 - eased), location: t)
+                }),
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: 180)
         }
     }
 
@@ -699,17 +685,6 @@ struct NoteMetadataSection: View {
     }
 
     // MARK: - Shared
-
-    private static let bottomFadeGradient: LinearGradient = {
-        // Perlin smootherstep (6t^5 - 15t^4 + 10t^3) -- matches NoteDetailView footer exactly.
-        let steps = 40
-        let stops: [Gradient.Stop] = (0...steps).map { i in
-            let t = Double(i) / Double(steps)
-            let eased = t * t * t * (t * (t * 6 - 15) + 10)
-            return .init(color: Color.white.opacity(eased), location: t)
-        }
-        return LinearGradient(gradient: Gradient(stops: stops), startPoint: .top, endPoint: .bottom)
-    }()
 
     private var noneText: some View {
         Text("None")

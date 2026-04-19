@@ -818,7 +818,7 @@ struct ContentView: View {
                         isPropertiesPanelVisible = true
                     }
                 }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + Self.propertiesPanelAnimationClearDelay) {
                     isPropertiesPanelAnimating = false
                 }
             }
@@ -1419,30 +1419,48 @@ struct ContentView: View {
     }
 
     private func singleNotePane(note: Note, width: CGFloat, cornerRadius: CGFloat) -> some View {
-        HStack(spacing: 0) {
+        // When the properties column is open, both siblings use split-style radius so the pair reads like a real split (no shared outer chrome).
+        let propertiesOpen = isPropertiesPanelVisible && propertiesPanelPane == .primary
+        let splitStyleRadius = windowCornerRadius - windowContentPadding
+        let effectiveRadius = propertiesOpen ? splitStyleRadius : cornerRadius
+        let editorWidth = propertiesOpen ? width - splitGap - splitMinPaneWidth : width
+
+        return HStack(spacing: 0) {
             detailPane(note: note)
                 .frame(maxWidth: .infinity)
+                .frame(width: editorWidth)
+                .frame(maxHeight: .infinity)
+                .background {
+                    DetailPaneChromeBackgroundView(cornerRadius: effectiveRadius)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: effectiveRadius, style: .continuous))
+                .overlay {
+                    if colorScheme == .dark && effectiveRadius > 0 && !suppressesNotePaneDarkModeBorderForGlass {
+                        RoundedRectangle(cornerRadius: effectiveRadius, style: .continuous)
+                            .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                    }
+                }
+                // When the properties column is open, the editor side carries its own per-pane
+                // shadow (mirroring how `splitDetailLayout` shadows each split half) so the inner
+                // edge facing the gap reads as a distinct tile at any translucency setting.
+                .splitPaneShadow(isActive: propertiesOpen, cornerRadius: effectiveRadius, backgroundColor: notePaneShadowPlateColor, colorScheme: colorScheme)
 
             propertiesPanelSlot(
-                isVisible: isPropertiesPanelVisible && propertiesPanelPane == .primary,
+                isVisible: propertiesOpen,
                 note: note,
-                editorInstanceID: primaryEditorID
+                editorInstanceID: primaryEditorID,
+                paneCornerRadius: effectiveRadius
             )
         }
+        .animation(Self.propertiesPanelAnimation, value: propertiesOpen)
         .geometryGroup()
         .frame(width: width)
-            .frame(maxHeight: .infinity)
-            .background {
-                DetailPaneChromeBackgroundView(cornerRadius: cornerRadius)
-            }
-            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-        .overlay {
-            if colorScheme == .dark && cornerRadius > 0 && !suppressesNotePaneDarkModeBorderForGlass {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(Color.white.opacity(0.10), lineWidth: 1)
-            }
-        }
-        .splitPaneShadow(isActive: !shouldShowSplitLayout, cornerRadius: cornerRadius, backgroundColor: notePaneShadowPlateColor, colorScheme: .light)
+        .frame(maxHeight: .infinity)
+        // One shadow plate for the whole column in single-note mode; turns OFF when properties is
+        // open so the per-pane shadows above (editor side) and inside `propertiesPanelSlot`
+        // (properties side) take over and the gap shows real elevation between two tiles.
+        // Split mode applies shadow on this view from the parent instead (`isActive` false here).
+        .splitPaneShadow(isActive: !shouldShowSplitLayout && !propertiesOpen, cornerRadius: effectiveRadius, backgroundColor: notePaneShadowPlateColor, colorScheme: .light)
         .onPreferenceChange(BottomOverlayActivePreferenceKey.self) { primaryBottomOverlayActive = $0 }
         .onPreferenceChange(BottomInputOverlayActivePreferenceKey.self) { primaryBottomInputOverlayActive = $0 }
         .onPreferenceChange(ToolbarExpandedPreferenceKey.self) { primaryToolbarExpanded = $0 }
@@ -1453,7 +1471,7 @@ struct ContentView: View {
         }
         .overlay(alignment: .bottomLeading) {
             if !(primaryBottomOverlayActive || primaryBottomInputOverlayActive) {
-                NoteToolsBar(note: note, editorInstanceID: primaryEditorID, paneWidth: width, aiToolsExpanded: aiToolsState == .expanded)
+                NoteToolsBar(note: note, editorInstanceID: primaryEditorID, paneWidth: editorWidth, aiToolsExpanded: aiToolsState == .expanded)
                     .padding(.leading, 14).padding(.bottom, 14)
                     .transition(.opacity)
             }
@@ -1463,7 +1481,7 @@ struct ContentView: View {
         }
         .animation(Self.propertiesPanelAnimation, value: isVersionHistoryVisible)
         .overlay(alignment: .topTrailing) {
-            if !shouldShowSplitLayout && !(isPropertiesPanelVisible && propertiesPanelPane == .primary) && !(isVersionHistoryVisible && versionHistoryPane == .primary) {
+            if !shouldShowSplitLayout && !propertiesOpen && !(isVersionHistoryVisible && versionHistoryPane == .primary) {
                 PropertiesPanelButton(editorInstanceID: primaryEditorID)
                     .padding(.top, splitControlsTopPadding)
                     .padding(.trailing, 8)
@@ -1625,6 +1643,8 @@ struct ContentView: View {
         let position = activeSplit?.position ?? .right
         let isLeftPane = (position == .left)
         let isSplitLocked = note.isLocked && !authManager.isUnlocked(note.id)
+        let propertiesOpen = isPropertiesPanelVisible && propertiesPanelPane == .secondary
+        let editorWidth = propertiesOpen ? width - splitGap - splitMinPaneWidth : width
 
         HStack(spacing: 0) {
             ZStack {
@@ -1657,26 +1677,34 @@ struct ContentView: View {
             }
             .animation(.easeInOut(duration: 0.15), value: previewingVersion?.id)
             .frame(maxWidth: .infinity)
+            .frame(width: editorWidth)
+            .frame(maxHeight: .infinity)
+            .background {
+                DetailPaneChromeBackgroundView(cornerRadius: cornerRadius)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .overlay {
+                if colorScheme == .dark && cornerRadius > 0 && !suppressesNotePaneDarkModeBorderForGlass {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                }
+            }
+            // Same per-pane shadow rule as `singleNotePane`: when the properties column is open
+            // inside this split half, the editor side gets its own halo so the gap to the
+            // properties panel reads as real elevation between two distinct tiles.
+            .splitPaneShadow(isActive: propertiesOpen, cornerRadius: cornerRadius, backgroundColor: notePaneShadowPlateColor, colorScheme: colorScheme)
 
             propertiesPanelSlot(
-                isVisible: isPropertiesPanelVisible && propertiesPanelPane == .secondary,
+                isVisible: propertiesOpen,
                 note: note,
-                editorInstanceID: splitEditorID
+                editorInstanceID: splitEditorID,
+                paneCornerRadius: cornerRadius
             )
         }
+        .animation(Self.propertiesPanelAnimation, value: propertiesOpen)
         .geometryGroup()
         .frame(width: width)
         .frame(maxHeight: .infinity)
-        .background {
-            DetailPaneChromeBackgroundView(cornerRadius: cornerRadius)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-        .overlay {
-            if colorScheme == .dark && cornerRadius > 0 && !suppressesNotePaneDarkModeBorderForGlass {
-                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(Color.white.opacity(0.10), lineWidth: 1)
-            }
-        }
         .onPreferenceChange(BottomOverlayActivePreferenceKey.self) { splitBottomOverlayActive = $0 }
         .onPreferenceChange(BottomInputOverlayActivePreferenceKey.self) { splitBottomInputOverlayActive = $0 }
         .onPreferenceChange(ToolbarExpandedPreferenceKey.self) { splitToolbarExpanded = $0 }
@@ -1687,7 +1715,7 @@ struct ContentView: View {
         }
         .overlay(alignment: .bottomLeading) {
             if !(splitBottomOverlayActive || splitBottomInputOverlayActive) {
-                NoteToolsBar(note: note, editorInstanceID: splitEditorID, paneWidth: width, aiToolsExpanded: splitAiToolsState == .expanded)
+                NoteToolsBar(note: note, editorInstanceID: splitEditorID, paneWidth: editorWidth, aiToolsExpanded: splitAiToolsState == .expanded)
                     .padding(.leading, 14).padding(.bottom, 14)
                     .transition(.opacity)
             }
@@ -3736,8 +3764,14 @@ struct ContentView: View {
 
     // MARK: - Properties Panel
 
-    private static let propertiesPanelAnimation: Animation = .spring(response: 0.35, dampingFraction: 0.88)
-    private static let propertiesPanelWidth: CGFloat = 340
+    /// Properties column uses `splitMinPaneWidth` + `splitGap` (see `propertiesPanelSlot`); no separate width constants so it always matches a split sibling.
+    /// Trailing offset when collapsed so open/close reads as a slide from the right (paired with width animation).
+    private static let propertiesPanelSlideOffset: CGFloat = 18
+    /// Duration for properties panel show/hide (ease-in-out, no spring overshoot).
+    private static let propertiesPanelAnimationDuration: TimeInterval = 0.32
+    /// Small buffer after the animation so `isPropertiesPanelAnimating` stays true until the transaction finishes.
+    private static let propertiesPanelAnimationClearDelay: TimeInterval = propertiesPanelAnimationDuration + 0.06
+    private static let propertiesPanelAnimation: Animation = .easeInOut(duration: propertiesPanelAnimationDuration)
 
     /// Slide + fade transition for floating panels (version history).
     private static let floatingPanelTransition: AnyTransition = .modifier(
@@ -3746,22 +3780,37 @@ struct ContentView: View {
     ).combined(with: .move(edge: .trailing))
 
     /// Always-present panel slot that avoids view insertion/removal.
-    /// Width and opacity animate smoothly without HStack relayout jank.
+    /// Own `DetailPaneChromeBackgroundView` + clip so it reads as a split sibling; width uses `splitGap` + `splitMinPaneWidth` (no drag handle). Carries its own per-pane shadow (matching `splitDetailLayout`) so the panel reads as a distinct elevated tile next to the editor at any translucency level.
     @ViewBuilder
-    private func propertiesPanelSlot(isVisible: Bool, note: Note, editorInstanceID: UUID?) -> some View {
-        Divider()
-            .opacity(isVisible ? 1 : 0)
+    private func propertiesPanelSlot(isVisible: Bool, note: Note, editorInstanceID: UUID?, paneCornerRadius: CGFloat) -> some View {
+        HStack(spacing: 0) {
+            Color.clear
+                .frame(width: isVisible ? splitGap : 0)
 
-        propertiesPanelContent(for: note, editorInstanceID: editorInstanceID)
-            .frame(width: Self.propertiesPanelWidth)
-            .frame(width: isVisible ? Self.propertiesPanelWidth : 0, alignment: .leading)
-            // Intentional `.clipped()` on width-collapsing container: the inner view is rendered
-            // at full 340pt width then the outer frame animates to 0. Without clipping, the
-            // unclipped overflow would paint over sibling views during the collapse animation.
-            // Exception to the CLAUDE.md no-clipping-on-containers rule is deliberate here.
-            .clipped()
-            .opacity(isVisible ? 1 : 0)
-            .allowsHitTesting(isVisible)
+            propertiesPanelContent(for: note, editorInstanceID: editorInstanceID)
+                .frame(width: splitMinPaneWidth)
+                .frame(maxHeight: .infinity, alignment: .top)
+                .background {
+                    DetailPaneChromeBackgroundView(cornerRadius: paneCornerRadius)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: paneCornerRadius, style: .continuous))
+                .overlay {
+                    if colorScheme == .dark && paneCornerRadius > 0 && !suppressesNotePaneDarkModeBorderForGlass {
+                        RoundedRectangle(cornerRadius: paneCornerRadius, style: .continuous)
+                            .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                    }
+                }
+                // Per-pane shadow so the properties tile floats above the window background just
+                // like a real split half. Theme-aware halo (black in light, white in dark) keeps
+                // the gap-edge visibly separated from the editor at any translucency setting.
+                .splitPaneShadow(isActive: isVisible, cornerRadius: paneCornerRadius, backgroundColor: notePaneShadowPlateColor, colorScheme: colorScheme)
+                .offset(x: isVisible ? 0 : Self.propertiesPanelSlideOffset)
+        }
+        .frame(width: isVisible ? (splitGap + splitMinPaneWidth) : 0, alignment: .leading)
+        // Intentional `.clipped()` on width-collapsing container: the inner view is rendered at full width then the outer frame animates to 0. Without clipping, the unclipped overflow would paint over sibling views during the collapse animation. Exception to the CLAUDE.md no-clipping-on-containers rule is deliberate here.
+        .clipped()
+        .opacity(isVisible ? 1 : 0)
+        .allowsHitTesting(isVisible)
     }
 
     private func propertiesPanelContent(for note: Note, editorInstanceID: UUID?) -> some View {
@@ -3785,7 +3834,7 @@ struct ContentView: View {
                 withAnimation(Self.propertiesPanelAnimation) {
                     isPropertiesPanelVisible = false
                 }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + Self.propertiesPanelAnimationClearDelay) {
                     isPropertiesPanelAnimating = false
                 }
             }
