@@ -443,6 +443,11 @@ struct NoteDetailView: View {
         ScrollView(showsIndicators: false) {
           editorScrollContent
         }
+        // Otherwise SwiftUI paints an opaque scroll surface over the pane chrome and hides
+        // Liquid Glass / desktop blur when detail translucency is enabled (see ContentView).
+        .scrollContentBackground(
+          themeManager.detailPaneTranslucency > 0.001 ? .hidden : .automatic
+        )
         .onAppear {
           stickerUndoController.bind(stickers: $editedStickers)
           stickerUndoController.onAfterMutation = { scheduleAutosave() }
@@ -482,8 +487,7 @@ struct NoteDetailView: View {
           .fill(Color.clear)
           .frame(height: 180)
           .background(
-            headerMaterialBase
-              .mask(Self.footerMaskGradient)
+            maskedStickyChromeFade(mask: Self.footerMaskGradient)
           )
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -498,8 +502,7 @@ struct NoteDetailView: View {
             .fill(Color.clear)
             .frame(height: 180)
             .background(
-              headerMaterialBase
-                .mask(Self.headerMaskGradient)
+              maskedStickyChromeFade(mask: Self.headerMaskGradient)
                 .ignoresSafeArea(edges: .top)
             )
             .ignoresSafeArea(edges: .top)
@@ -1518,9 +1521,28 @@ struct NoteDetailView: View {
 
   // MARK: - Header Styling Helpers
 
+  private var detailTranslucency: Double {
+    min(1, max(0, themeManager.detailPaneTranslucency))
+  }
+
+  /// Sticky title strip + bottom scroll fade.
+  /// - Reduce Transparency / opaque pane: solid `tintedPaneSurface` (paper) under the mask.
+  /// - Translucent pane: **blur-only** chrome — no tinted paper crossfade, so the strip does not reintroduce
+  ///   the cream/dark wash on top of neutral Liquid Glass (Real Detail Transparency plan).
   @ViewBuilder
-  private var headerMaterialBase: some View {
-    Rectangle().fill(themeManager.tintedPaneSurface(for: colorScheme))
+  private func maskedStickyChromeFade(mask: LinearGradient) -> some View {
+    let paper = themeManager.tintedPaneSurface(for: colorScheme)
+    if reduceTransparency || detailTranslucency < 0.001 {
+      Rectangle()
+        .fill(paper)
+        .mask(mask)
+    } else {
+      // Localized material reads as frosted chrome; avoids `.regularMaterial` milkiness on macOS 26+ glass panes.
+      Rectangle()
+        .fill(Color.clear)
+        .background(.ultraThinMaterial)
+        .mask(mask)
+    }
   }
 
   private static let headerMaskGradient: LinearGradient = {

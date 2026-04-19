@@ -78,7 +78,8 @@ struct MeetingNotesFloatingPanel: View {
         isSummaryLoading ? .continuous : .oneShot
     }
 
-    var body: some View {
+    /// Micro / full chrome with morph animation — split out so `body` can branch on glow (pre-26 only).
+    private var meetingChromeRoot: some View {
         Group {
             if isMicroPillActive {
                 microPillChrome
@@ -89,7 +90,18 @@ struct MeetingNotesFloatingPanel: View {
             }
         }
         .animation(meetingMorphAnimation, value: isMicroPillActive)
-        .appleIntelligenceGlow(cornerRadius: panelRadius, mode: intelligenceGlowMode)
+    }
+
+    var body: some View {
+        Group {
+            // Glow reads as an artifact on macOS 26+ where the shell already uses Liquid Glass (`MeetingPanelBackgroundModifier`).
+            if #available(macOS 26.0, iOS 26.0, *) {
+                meetingChromeRoot
+            } else {
+                meetingChromeRoot
+                    .appleIntelligenceGlow(cornerRadius: panelRadius, mode: intelligenceGlowMode)
+            }
+        }
         .alert("Stop Recording?", isPresented: $showStopConfirmation) {
             Button("Stop", role: .destructive, action: onStop)
             Button("Cancel", role: .cancel) {}
@@ -234,7 +246,16 @@ struct MeetingNotesFloatingPanel: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(colorScheme == .dark ? Color("DetailPaneColor") : Color.white)
+        .background {
+            if #available(macOS 26.0, iOS 26.0, *) {
+                // Neutral inner well: avoid opaque paper that looked like pane tint leaking through glass.
+                RoundedRectangle(cornerRadius: contentRadius, style: .continuous)
+                    .fill(.ultraThinMaterial)
+            } else {
+                RoundedRectangle(cornerRadius: contentRadius, style: .continuous)
+                    .fill(colorScheme == .dark ? Color("DetailPaneColor") : Color.white)
+            }
+        }
         .clipShape(RoundedRectangle(cornerRadius: contentRadius, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: contentRadius, style: .continuous)
@@ -715,7 +736,7 @@ private struct MeetingPanelBackgroundModifier: ViewModifier {
         if #available(macOS 26.0, iOS 26.0, *) {
             content
                 .glassEffect(
-                    .regular.interactive(false),
+                    .clear.interactive(false),
                     in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 )
         } else {

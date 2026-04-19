@@ -132,6 +132,8 @@ final class ThemeManager: ObservableObject {
     // Appearance tint keys
     static let tintHueKey = "AppTintHue"
     static let tintIntensityKey = "AppTintIntensity"
+    /// Note detail pane chrome: 0 = opaque paper fill, 1 = strongest Liquid Glass tint (see ContentView).
+    static let detailPaneTranslucencyKey = "DetailPaneTranslucency"
 
     /// Duplicated string literals for `nonisolated` UserDefaults reads (must stay equal to keys above).
     private nonisolated static let tintHueUserDefaultsKey = "AppTintHue"
@@ -325,6 +327,14 @@ final class ThemeManager: ObservableObject {
         }
     }
 
+    /// Strength of Liquid Glass / blur translucency on the note detail pane chrome, 0...1.
+    /// Zero keeps the historical opaque `tintedPaneSurface` fill (default on upgrade).
+    @Published var detailPaneTranslucency: Double {
+        didSet {
+            guard hasFinishedInitialization else { return }
+            userDefaults.set(min(1, max(0, detailPaneTranslucency)), forKey: Self.detailPaneTranslucencyKey)
+        }
+    }
 
     init(userDefaults: UserDefaults = .standard) {
         self.userDefaults = userDefaults
@@ -364,6 +374,10 @@ final class ThemeManager: ObservableObject {
         self.tintHue = savedTintHue ?? 0.55
         let savedTintIntensity = userDefaults.object(forKey: Self.tintIntensityKey) as? Double
         self.tintIntensity = savedTintIntensity ?? 0.0
+
+        let savedDetailPaneTranslucency =
+            userDefaults.object(forKey: Self.detailPaneTranslucencyKey) as? Double ?? 0.0
+        self.detailPaneTranslucency = min(1, max(0, savedDetailPaneTranslucency))
 
         let savedSortOrder = userDefaults.string(forKey: Self.noteSortOrderKey) ?? NoteSortOrder.dateEdited.rawValue
         self.noteSortOrder = NoteSortOrder(rawValue: savedSortOrder) ?? .dateEdited

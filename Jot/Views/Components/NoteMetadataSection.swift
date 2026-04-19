@@ -27,6 +27,7 @@ struct NoteMetadataSection: View {
     @State private var newTagText = ""
     @FocusState private var tagFieldFocused: Bool
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @EnvironmentObject private var themeManager: ThemeManager
 
     // MARK: - Content-Derived Metadata (cached, updated on content change)
@@ -173,6 +174,16 @@ struct NoteMetadataSection: View {
         themeManager.tintedBlockContainer(for: colorScheme)
     }
 
+    /// Same translucency slider as the note detail pane — properties chrome should track it too.
+    private var detailTranslucency: Double {
+        min(1, max(0, themeManager.detailPaneTranslucency))
+    }
+
+    /// 1 when opaque / translucency off → full tinted wash; 0 at full translucency → neutral frosted stack only.
+    private var propertiesColorWashStrength: Double {
+        1.0 - detailTranslucency
+    }
+
     // MARK: - Date Formatting
 
     private static let absoluteFormatter: DateFormatter = {
@@ -286,21 +297,37 @@ struct NoteMetadataSection: View {
                     .padding(.bottom, 180)
                 }
 
-                // Bottom content fade -- identical to NoteDetailView footer
+                // Bottom content fade -- mirrors ``NoteDetailView`` footer: paper when opaque,
+                // frosted material only when translucency is on (no tinted wash strip at 100%).
                 Rectangle()
                     .fill(Color.clear)
                     .frame(height: 180)
-                    .background(
-                        Rectangle().fill(themeManager.tintedPaneSurface(for: colorScheme))
-                            .mask(Self.bottomFadeGradient)
-                    )
+                    .background(propertiesBottomFadeMask())
                     .allowsHitTesting(false)
             }
         }
         .background(.ultraThinMaterial)
-        .background(themeManager.tintedPaneSurface(for: colorScheme).opacity(0.5))
+        .background(
+            themeManager.tintedPaneSurface(for: colorScheme)
+                .opacity(reduceTransparency || detailTranslucency < 0.001 ? 0.5 : 0.5 * propertiesColorWashStrength)
+        )
         .onAppear { reparseContent() }
         .onChange(of: note.content) { reparseContent() }
+    }
+
+    @ViewBuilder
+    private func propertiesBottomFadeMask() -> some View {
+        let paper = themeManager.tintedPaneSurface(for: colorScheme)
+        if reduceTransparency || detailTranslucency < 0.001 {
+            Rectangle()
+                .fill(paper)
+                .mask(Self.bottomFadeGradient)
+        } else {
+            Rectangle()
+                .fill(Color.clear)
+                .background(.ultraThinMaterial)
+                .mask(Self.bottomFadeGradient)
+        }
     }
 
     // MARK: - Row Builder

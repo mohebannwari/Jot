@@ -205,9 +205,10 @@ struct AIGlassModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         if #available(macOS 26.0, iOS 26.0, *) {
+            // `.clear` keeps overlay cards distinct without the milky `.regular` stack against transparent note chrome.
             content
                 .glassEffect(
-                    .regular.interactive(false),
+                    .clear.interactive(false),
                     in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 )
         } else {

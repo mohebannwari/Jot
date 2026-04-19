@@ -164,8 +164,8 @@ private struct FloatingSidebarBackgroundModifier: ViewModifier {
         if #available(macOS 26.0, iOS 26.0, *) {
             content
                 .glassEffect(
-                    .regular.interactive(true)
-                        .tint(themeManager.tintedPaneSurface(for: colorScheme).opacity(0.80)),
+                    // Floating sidebar should stay as untinted Liquid Glass on macOS 26+.
+                    .regular.interactive(true),
                     in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 )
                 .shadow(color: .black.opacity(0.04), radius: 9.5, x: 0, y: 9)
@@ -187,6 +187,82 @@ private struct FloatingSidebarBackgroundModifier: ViewModifier {
                 )
                 .shadow(color: .black.opacity(0.08), radius: 12, x: 0, y: 6)
                 .shadow(color: .black.opacity(0.03), radius: 24, x: 0, y: 20)
+        }
+    }
+}
+
+/// Note detail / split pane chrome: opaque `tintedPaneSurface` by default, optional Liquid Glass
+/// whose `.tint()` uses the same surface color so hue + tint intensity sliders stay in sync.
+private struct DetailPaneChromeBackgroundView: View {
+    let cornerRadius: CGFloat
+
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @EnvironmentObject private var themeManager: ThemeManager
+
+    private var detailSurface: Color {
+        themeManager.tintedPaneSurface(for: colorScheme)
+    }
+
+    /// Slider 0…1 — higher values show more through the pane; color wash from Colors scales **down** (see plan).
+    private var translucency: Double {
+        min(1, max(0, themeManager.detailPaneTranslucency))
+    }
+
+    /// 1 at opaque / low translucency → full `tintedPaneSurface` contribution; 0 at full translucency → neutral glass.
+    private var colorWashStrength: Double {
+        1.0 - translucency
+    }
+
+    /// Peak `.tint()` alpha when translucency is just above zero (still on glass path); multiplied by `colorWashStrength`.
+    private static let glassTintPeakOpacity: Double = 0.85
+
+    /// macOS 26+ Liquid Glass: hue/tint from Colors, weakened as translucency rises; zero wash at 100%.
+    private var glassTintOpacity: Double {
+        Self.glassTintPeakOpacity * colorWashStrength
+    }
+
+    /// Pre–26: color wash over `BackdropBlurView`, same `(1 - t)` rule so at 100% translucency only blur remains.
+    private static let legacyColorWashPeakOpacity: Double = 0.45
+
+    private var legacyTintOpacity: Double {
+        Self.legacyColorWashPeakOpacity * colorWashStrength
+    }
+
+    private var useOpaqueFill: Bool {
+        reduceTransparency || translucency < 0.001
+    }
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        if useOpaqueFill {
+            shape.fill(detailSurface)
+        } else if #available(macOS 26.0, iOS 26.0, *) {
+            // `.clear` for transmission; `.tint` scales with `colorWashStrength` so at 100% translucency
+            // there is no chroma wash (Colors still define the hue whenever strength > 0).
+            Group {
+                if glassTintOpacity > 0.001 {
+                    shape
+                        .fill(Color.clear)
+                        .glassEffect(
+                            .clear
+                                .interactive(false)
+                                .tint(detailSurface.opacity(glassTintOpacity)),
+                            in: shape
+                        )
+                } else {
+                    shape
+                        .fill(Color.clear)
+                        .glassEffect(.clear.interactive(false), in: shape)
+                }
+            }
+        } else {
+            ZStack {
+                // Match main window: blur content behind the window so wallpaper shows through.
+                BackdropBlurView(material: .hudWindow, blendingMode: .behindWindow)
+                detailSurface.opacity(legacyTintOpacity)
+            }
+            .clipShape(shape)
         }
     }
 }
@@ -318,6 +394,25 @@ struct ContentView: View {
     @State private var previewDismissWorkItem: DispatchWorkItem? = nil
 
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceTransparency) private var accessibilityReduceTransparency
+
+    /// When macOS 26+ shows Liquid Glass on detail chrome (note pane or Settings), skip the dark-mode hairline.
+    /// Opaque detail surfaces keep the stroke for separation from the window.
+    private var suppressesNotePaneDarkModeBorderForGlass: Bool {
+        if #available(macOS 26.0, iOS 26.0, *) {
+            return themeManager.detailPaneTranslucency > 0.001 && !accessibilityReduceTransparency
+        }
+        return false
+    }
+
+    /// True when the note detail uses the transparent glass stack (macOS 26+, slider on, Reduce Transparency off).
+    /// Drives neutral window backdrops, split shadow plates, and sibling chrome so the pane is not stacked on global tint.
+    private var noteDetailUsesTransparentStack: Bool {
+        if #available(macOS 26.0, iOS 26.0, *) {
+            return themeManager.detailPaneTranslucency > 0.001 && !accessibilityReduceTransparency
+        }
+        return false
+    }
 
     // Window corner radius from JotApp containerShape
     private let windowCornerRadius: CGFloat = 16
@@ -777,22 +872,44 @@ struct ContentView: View {
             mainLayout(geometry: geometry)
         }
         .background {
+            // Transparent note panes and the Settings route sit on a neutral blur stack so sidebar chrome
+            // stays untinted and Liquid Glass is not stacked on full-window tinted glass.
             if #available(macOS 26.0, iOS 26.0, *) {
-                Color.clear
-                    .padding(-40)
-                    .ignoresSafeArea()
-                    .tintedLiquidGlass(
-                        in: Rectangle(),
-                        tint: themeManager.tintedPaneSurface(for: colorScheme),
-                        tintOpacity: 0.80
-                    )
-            } else {
-                ZStack {
-                    BackdropBlurView(material: .hudWindow, blendingMode: .behindWindow)
-                    themeManager.tintedPaneSurface(for: colorScheme)
-                        .opacity(0.95)
+                if usesNeutralWindowBackdropBehindMainChrome {
+                    Color.clear
+                        .padding(-40)
+                        .ignoresSafeArea()
+                        .background {
+                            ZStack {
+                                BackdropBlurView(material: .hudWindow, blendingMode: .behindWindow)
+                                Color("BackgroundColor").opacity(colorScheme == .light ? 0.22 : 0.32)
+                            }
+                        }
+                } else {
+                    Color.clear
+                        .padding(-40)
+                        .ignoresSafeArea()
+                        .tintedLiquidGlass(
+                            in: Rectangle(),
+                            tint: themeManager.tintedPaneSurface(for: colorScheme),
+                            tintOpacity: 0.80
+                        )
                 }
-                .ignoresSafeArea()
+            } else {
+                if usesNeutralWindowBackdropBehindMainChrome {
+                    ZStack {
+                        BackdropBlurView(material: .hudWindow, blendingMode: .behindWindow)
+                        Color.white.opacity(colorScheme == .light ? 0.06 : 0.10)
+                    }
+                    .ignoresSafeArea()
+                } else {
+                    ZStack {
+                        BackdropBlurView(material: .hudWindow, blendingMode: .behindWindow)
+                        themeManager.tintedPaneSurface(for: colorScheme)
+                            .opacity(0.95)
+                    }
+                    .ignoresSafeArea()
+                }
             }
         }
         .background(WindowTransparencyView())
@@ -1166,24 +1283,21 @@ struct ContentView: View {
             let cornerRadius: CGFloat = isSidebarVisible
                 ? windowCornerRadius - windowContentPadding : 0
 
-            let settingsBg = detailBg
-
             SettingsPage(isPresented: $isSettingsPresented, titleTopPadding: splitControlsTopPadding)
                 .environmentObject(themeManager)
                 .frame(width: totalDetailWidth)
                 .frame(maxHeight: .infinity)
-                .background(
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .fill(settingsBg)
-                )
+                .background {
+                    DetailPaneChromeBackgroundView(cornerRadius: cornerRadius)
+                }
                 .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
                 .overlay {
-                    if colorScheme == .dark && cornerRadius > 0 {
+                    if colorScheme == .dark && cornerRadius > 0 && !suppressesNotePaneDarkModeBorderForGlass {
                         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                             .stroke(Color.white.opacity(0.10), lineWidth: 1)
                     }
                 }
-                .splitPaneShadow(isActive: true, cornerRadius: cornerRadius, backgroundColor: settingsBg, colorScheme: .light)
+                .splitPaneShadow(isActive: true, cornerRadius: cornerRadius, backgroundColor: notePaneShadowPlateColor, colorScheme: .light)
                 .padding(.leading, sidebarDetailGap)
         } else if let note = selectedNote {
             let needsPendingPadding = isActiveSplitPending && !isSidebarVisible
@@ -1260,7 +1374,18 @@ struct ContentView: View {
         themeManager.tintedPaneSurface(for: colorScheme)
     }
 
+    /// When the note stack is transparent, skip full-window `tintedLiquidGlass` so the detail region is not washed
+    /// by a second tinted plate under `DetailPaneChromeBackgroundView`. Apply the same neutral window backdrop
+    /// while Settings is visible so the pinned / floating sidebars keep the untinted glass look there too.
+    private var usesNeutralWindowBackdropBehindMainChrome: Bool {
+        noteDetailUsesTransparentStack && (isSettingsPresented || selectedNote != nil || shouldShowSplitLayout)
+    }
 
+    /// `splitPaneShadow` draws a filled rounded rect behind the pane for drop shadows. Using `detailBg` there
+    /// reintroduces an opaque paper layer under Liquid Glass; use a nearly invisible fill instead when transparent.
+    private var notePaneShadowPlateColor: Color {
+        noteDetailUsesTransparentStack ? Color.white.opacity(0.015) : detailBg
+    }
 
     private func createSplitFromDrop(primaryNote: Note, droppedNoteID: UUID, position: SplitPosition) {
         isDragSplitTargeted = false
@@ -1307,15 +1432,17 @@ struct ContentView: View {
         .geometryGroup()
         .frame(width: width)
             .frame(maxHeight: .infinity)
-            .background(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).fill(detailBg))
+            .background {
+                DetailPaneChromeBackgroundView(cornerRadius: cornerRadius)
+            }
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .overlay {
-            if colorScheme == .dark && cornerRadius > 0 {
+            if colorScheme == .dark && cornerRadius > 0 && !suppressesNotePaneDarkModeBorderForGlass {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .stroke(Color.white.opacity(0.10), lineWidth: 1)
             }
         }
-        .splitPaneShadow(isActive: !shouldShowSplitLayout, cornerRadius: cornerRadius, backgroundColor: detailBg, colorScheme: .light)
+        .splitPaneShadow(isActive: !shouldShowSplitLayout, cornerRadius: cornerRadius, backgroundColor: notePaneShadowPlateColor, colorScheme: .light)
         .onPreferenceChange(BottomOverlayActivePreferenceKey.self) { primaryBottomOverlayActive = $0 }
         .onPreferenceChange(BottomInputOverlayActivePreferenceKey.self) { primaryBottomInputOverlayActive = $0 }
         .onPreferenceChange(ToolbarExpandedPreferenceKey.self) { primaryToolbarExpanded = $0 }
@@ -1395,7 +1522,7 @@ struct ContentView: View {
                 if hasPrimary {
                     singleNotePane(note: primaryNote, width: primW, cornerRadius: splitRadius)
                         .splitPaneDimming(isInactive: activeSplitPane != .primary, cornerRadius: splitRadius, colorScheme: colorScheme)
-                        .splitPaneShadow(isActive: activeSplitPane == .primary, cornerRadius: splitRadius, backgroundColor: detailBg, colorScheme: colorScheme)
+                        .splitPaneShadow(isActive: activeSplitPane == .primary, cornerRadius: splitRadius, backgroundColor: notePaneShadowPlateColor, colorScheme: colorScheme)
                         .zIndex(activeSplitPane == .primary ? 1 : 0)
                         .overlay(alignment: .topTrailing) {
                             if !isPending {
@@ -1414,7 +1541,7 @@ struct ContentView: View {
                 if hasSecondary, let secNote = activeSecondaryNote {
                     secondaryNotePane(note: secNote, width: secW, cornerRadius: splitRadius, primaryNote: primaryNote)
                         .splitPaneDimming(isInactive: activeSplitPane != .secondary, cornerRadius: splitRadius, colorScheme: colorScheme)
-                        .splitPaneShadow(isActive: activeSplitPane == .secondary, cornerRadius: splitRadius, backgroundColor: detailBg, colorScheme: colorScheme)
+                        .splitPaneShadow(isActive: activeSplitPane == .secondary, cornerRadius: splitRadius, backgroundColor: notePaneShadowPlateColor, colorScheme: colorScheme)
                         .zIndex(activeSplitPane == .secondary ? 1 : 0)
                 } else {
                     splitPickerPane(width: secW, cornerRadius: splitRadius, excludingNote: activePrimaryNote, isPrimary: false)
@@ -1426,7 +1553,7 @@ struct ContentView: View {
                 if hasSecondary, let secNote = activeSecondaryNote {
                     secondaryNotePane(note: secNote, width: secW, cornerRadius: splitRadius, primaryNote: primaryNote)
                         .splitPaneDimming(isInactive: activeSplitPane != .secondary, cornerRadius: splitRadius, colorScheme: colorScheme)
-                        .splitPaneShadow(isActive: activeSplitPane == .secondary, cornerRadius: splitRadius, backgroundColor: detailBg, colorScheme: colorScheme)
+                        .splitPaneShadow(isActive: activeSplitPane == .secondary, cornerRadius: splitRadius, backgroundColor: notePaneShadowPlateColor, colorScheme: colorScheme)
                         .zIndex(activeSplitPane == .secondary ? 1 : 0)
                 } else {
                     splitPickerPane(width: secW, cornerRadius: splitRadius, excludingNote: activePrimaryNote, isPrimary: false)
@@ -1436,7 +1563,7 @@ struct ContentView: View {
                 if hasPrimary {
                     singleNotePane(note: primaryNote, width: primW, cornerRadius: splitRadius)
                         .splitPaneDimming(isInactive: activeSplitPane != .primary, cornerRadius: splitRadius, colorScheme: colorScheme)
-                        .splitPaneShadow(isActive: activeSplitPane == .primary, cornerRadius: splitRadius, backgroundColor: detailBg, colorScheme: colorScheme)
+                        .splitPaneShadow(isActive: activeSplitPane == .primary, cornerRadius: splitRadius, backgroundColor: notePaneShadowPlateColor, colorScheme: colorScheme)
                         .zIndex(activeSplitPane == .primary ? 1 : 0)
                         .overlay(alignment: .topTrailing) {
                             if !isPending {
@@ -1540,10 +1667,12 @@ struct ContentView: View {
         .geometryGroup()
         .frame(width: width)
         .frame(maxHeight: .infinity)
-        .background(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).fill(detailBg))
+        .background {
+            DetailPaneChromeBackgroundView(cornerRadius: cornerRadius)
+        }
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         .overlay {
-            if colorScheme == .dark && cornerRadius > 0 {
+            if colorScheme == .dark && cornerRadius > 0 && !suppressesNotePaneDarkModeBorderForGlass {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .stroke(Color.white.opacity(0.10), lineWidth: 1)
             }

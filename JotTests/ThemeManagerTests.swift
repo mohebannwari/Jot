@@ -93,6 +93,54 @@ final class ThemeManagerTests: XCTestCase {
         XCTAssertEqual(manager.tintIntensity, 0.85, accuracy: 0.0001)
     }
 
+    // MARK: - Detail pane translucency
+
+    func testDetailPaneTranslucency_defaultsToZero_onFirstLaunch() {
+        let (defaults, suiteName) = isolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let manager = ThemeManager(userDefaults: defaults)
+        XCTAssertEqual(manager.detailPaneTranslucency, 0.0, accuracy: 0.0001)
+    }
+
+    func testSetDetailPaneTranslucency_persistsToUserDefaults() {
+        let (defaults, suiteName) = isolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let manager = ThemeManager(userDefaults: defaults)
+        manager.detailPaneTranslucency = 0.72
+
+        XCTAssertEqual(
+            defaults.object(forKey: ThemeManager.detailPaneTranslucencyKey) as? Double ?? -1,
+            0.72,
+            accuracy: 0.0001
+        )
+    }
+
+    func testInit_readsPersistedDetailPaneTranslucency() {
+        let (defaults, suiteName) = isolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        defaults.set(0.41, forKey: ThemeManager.detailPaneTranslucencyKey)
+
+        let manager = ThemeManager(userDefaults: defaults)
+
+        XCTAssertEqual(manager.detailPaneTranslucency, 0.41, accuracy: 0.0001)
+    }
+
+    func testInit_clampsOutOfRangeDetailPaneTranslucency() {
+        let (defaults, suiteName) = isolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        defaults.set(1.9, forKey: ThemeManager.detailPaneTranslucencyKey)
+        let manager = ThemeManager(userDefaults: defaults)
+        XCTAssertEqual(manager.detailPaneTranslucency, 1.0, accuracy: 0.0001)
+
+        defaults.set(-0.5, forKey: ThemeManager.detailPaneTranslucencyKey)
+        let manager2 = ThemeManager(userDefaults: defaults)
+        XCTAssertEqual(manager2.detailPaneTranslucency, 0.0, accuracy: 0.0001)
+    }
+
     func testInit_distinguishesUnsetFromZero() {
         // If a user deliberately sets intensity to 0 and relaunches, we must
         // honor that explicit 0 rather than re-applying the "first launch"

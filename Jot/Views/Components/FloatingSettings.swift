@@ -7,6 +7,12 @@ struct SettingsPage: View {
 
     @EnvironmentObject private var themeManager: ThemeManager
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    /// Mirrors ``NoteDetailView`` sticky header reveal: top frosted mask only after the settings body scrolls.
+    @State private var showSettingsScrollChrome = false
+
+    private let settingsScrollCoordinateSpaceName = "settingsScroll"
 
     @State private var activeTab: SettingsTab = .general
     @State private var hoveredTab: SettingsTab?
@@ -54,6 +60,11 @@ struct SettingsPage: View {
         }
         return LinearGradient(gradient: Gradient(stops: stops), startPoint: .top, endPoint: .bottom)
     }()
+
+    /// Same translucency gate as the note pane chrome so Settings responds identically to the slider.
+    private var detailTranslucency: Double {
+        min(1, max(0, themeManager.detailPaneTranslucency))
+    }
 
     /// Scroll (and tab) content starts below the overlaid title chrome; matches title row + gap under it.
     private var settingsContentTopInsetUnderChrome: CGFloat {
@@ -186,40 +197,79 @@ struct SettingsPage: View {
             }
         }
         #endif
+        .onChange(of: activeTab) { _, _ in
+            showSettingsScrollChrome = false
+        }
     }
 
     // MARK: - Title chrome (matches NoteDetailView sticky header material + mask)
 
-    private var settingsTitleChrome: some View {
-        VStack(spacing: 0) {
-            // Opaque band flush to the pane top so scrolled content cannot peek above the mask strip.
+    @ViewBuilder
+    private func settingsMaskedTitleChromeFade(mask: LinearGradient) -> some View {
+        let paper = themeManager.tintedPaneSurface(for: colorScheme)
+        if reduceTransparency || detailTranslucency < 0.001 {
             Rectangle()
-                .fill(themeManager.tintedPaneSurface(for: colorScheme))
-                .frame(height: titleTopPadding)
-                .allowsHitTesting(false)
+                .fill(paper)
+                .mask(mask)
+        } else {
+            // Keep Settings on the same frosted-only chrome path as the note pane when translucency is active.
+            Rectangle()
+                .fill(Color.clear)
+                .background(.ultraThinMaterial)
+                .mask(mask)
+        }
+    }
 
-            ZStack(alignment: .top) {
+    private var settingsTitleChrome: some View {
+        ZStack(alignment: .top) {
+            if showSettingsScrollChrome {
                 Rectangle()
-                    .fill(themeManager.tintedPaneSurface(for: colorScheme))
-                    .mask(Self.settingsHeaderMaskGradient)
-                    .frame(height: settingsTitleChromeHeight)
+                    .fill(Color.clear)
+                    .frame(height: titleTopPadding + settingsTitleChromeHeight)
+                    .background(
+                        settingsMaskedTitleChromeFade(mask: Self.settingsHeaderMaskGradient)
+                            .ignoresSafeArea(edges: .top)
+                    )
+                    .ignoresSafeArea(edges: .top)
                     .allowsHitTesting(false)
-
-                HStack {
-                    Spacer()
-                    Text("Settings")
-                        .font(FontManager.heading(size: FontManager.noteDetailOverlayHeadingSize, weight: .medium))
-                        .foregroundColor(Color("PrimaryTextColor").opacity(0.5))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .padding(.horizontal, 80)
-                    Spacer()
-                }
-                .frame(height: 24)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .zIndex(0)
             }
+
+            HStack {
+                Spacer()
+                Text("Settings")
+                    .font(FontManager.heading(size: FontManager.noteDetailOverlayHeadingSize, weight: .medium))
+                    .foregroundColor(Color("PrimaryTextColor").opacity(0.5))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .padding(.horizontal, 80)
+                Spacer()
+            }
+            .frame(height: 24)
+            .padding(.top, titleTopPadding)
+            .zIndex(1)
         }
         .frame(maxWidth: .infinity, alignment: .top)
+        .animation(.smooth(duration: 0.3), value: showSettingsScrollChrome)
         .allowsHitTesting(false)
+    }
+
+    /// Zero-height probe at the top of each settings scroll column. When it moves above the scroll origin,
+    /// the user has scrolled content upward — same trigger as the note title crossing y=0.
+    private var settingsScrollTopSentinel: some View {
+        GeometryReader { geo in
+            Color.clear
+                .onChange(of: geo.frame(in: .named(settingsScrollCoordinateSpaceName)).minY) { _, newValue in
+                    let shouldShow = newValue < 0
+                    if shouldShow != showSettingsScrollChrome {
+                        withAnimation(.smooth(duration: 0.3)) {
+                            showSettingsScrollChrome = shouldShow
+                        }
+                    }
+                }
+        }
+        .frame(height: 0)
     }
 
     /// Selected tab uses the main text token at full opacity; inactive matches sticky-title opacity parity.
@@ -280,7 +330,7 @@ struct SettingsPage: View {
             case .appearance:
                 appearancePanel
             case .data:
-                BackupSettingsPanel(scrollContentTopInset: settingsContentTopInsetUnderChrome + contentVerticalPadding)
+                BackupSettingsPanel(scrollContentTopInset: settingsContentTopInsetUnderChrome + contentVerticalPadding, scrollChromeActive: $showSettingsScrollChrome, scrollCoordinateSpaceName: settingsScrollCoordinateSpaceName)
             case .about:
                 aboutPanel
             case .contact:
@@ -296,6 +346,7 @@ struct SettingsPage: View {
     private var generalPanel: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 48) {
+                settingsScrollTopSentinel
                 // Sort options
                 VStack(alignment: .leading, spacing: 12) {
                     sectionLabel("Sort options")
@@ -580,6 +631,7 @@ struct SettingsPage: View {
             .padding(.top, settingsContentTopInsetUnderChrome + contentVerticalPadding)
             .padding(.bottom, contentVerticalPadding)
         }
+        .coordinateSpace(name: settingsScrollCoordinateSpaceName)
         .scrollClipDisabled()
     }
 
@@ -711,7 +763,9 @@ struct SettingsPage: View {
     private var appearancePanel: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 48) {
+                settingsScrollTopSentinel
                 themeSection
+                detailPaneTranslucencySection
                 tintSection
                 typographySection
                 bodyFontSection
@@ -720,6 +774,7 @@ struct SettingsPage: View {
             .padding(.top, settingsContentTopInsetUnderChrome + contentVerticalPadding)
             .padding(.bottom, contentVerticalPadding)
         }
+        .coordinateSpace(name: settingsScrollCoordinateSpaceName)
         .scrollClipDisabled()
     }
 
@@ -782,6 +837,34 @@ struct SettingsPage: View {
                 hoveredTheme = theme
             } else if hoveredTheme == theme {
                 hoveredTheme = nil
+            }
+        }
+    }
+
+    // MARK: - Detail pane translucency
+
+    private var detailPaneTranslucencySection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionLabel("Note pane")
+
+            VStack(alignment: .leading, spacing: 8) {
+                settingsGroupedCard {
+                    tintRow(
+                        title: "Translucency",
+                        caption: "Liquid Glass on the note editor background; respects Reduce Transparency",
+                        trailing: "\(Int((themeManager.detailPaneTranslucency * 100).rounded()))%"
+                    ) {
+                        Slider(value: $themeManager.detailPaneTranslucency, in: 0...1)
+                            .tint(Color("AccentColor"))
+                            .frame(width: 140)
+                    }
+                }
+
+                Text("Glass uses the same tint as Colors below, so hue and tint strength stay aligned with light and dark mode.")
+                    .font(FontManager.heading(size: 11, weight: .regular))
+                    .foregroundColor(Color("SettingsPlaceholderTextColor"))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 14)
             }
         }
     }
@@ -1064,12 +1147,14 @@ struct SettingsPage: View {
     private var contactPanel: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 48) {
+                settingsScrollTopSentinel
                 emailSection
                 feedbackSection
             }
             .padding(.top, settingsContentTopInsetUnderChrome + contentVerticalPadding)
             .padding(.bottom, contentVerticalPadding)
         }
+        .coordinateSpace(name: settingsScrollCoordinateSpaceName)
         .scrollClipDisabled()
     }
 

@@ -3,6 +3,9 @@ import SwiftUI
 struct BackupSettingsPanel: View {
     /// Matches ``SettingsPage`` scroll top inset so the first row clears the overlaid title chrome.
     var scrollContentTopInset: CGFloat = 0
+    /// When provided, toggles the same top frosted chrome reveal as the main settings scroll columns.
+    var scrollChromeActive: Binding<Bool>? = nil
+    var scrollCoordinateSpaceName: String = "settingsScroll"
 
     @EnvironmentObject private var themeManager: ThemeManager
     @EnvironmentObject private var notesManager: SimpleSwiftDataManager
@@ -17,13 +20,37 @@ struct BackupSettingsPanel: View {
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 48) {
+                settingsScrollTopSentinel
                 backupsSection
                 noteHistorySection
             }
             .padding(.top, scrollContentTopInset)
         }
+        .coordinateSpace(name: scrollCoordinateSpaceName)
+        .scrollClipDisabled()
         .onAppear {
             availableBackups = backupManager.listAvailableBackups()
+        }
+    }
+
+    private var settingsScrollTopSentinel: some View {
+        Group {
+            if let scrollChromeActive {
+                GeometryReader { geo in
+                    Color.clear
+                        .onChange(of: geo.frame(in: .named(scrollCoordinateSpaceName)).minY) { _, newValue in
+                            let shouldShow = newValue < 0
+                            if shouldShow != scrollChromeActive.wrappedValue {
+                                withAnimation(.smooth(duration: 0.3)) {
+                                    scrollChromeActive.wrappedValue = shouldShow
+                                }
+                            }
+                        }
+                }
+                .frame(height: 0)
+            } else {
+                Color.clear.frame(height: 0)
+            }
         }
     }
 
