@@ -19,15 +19,19 @@ struct BackupSettingsPanel: View {
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 48) {
+            VStack(alignment: .leading, spacing: 0) {
                 settingsScrollTopSentinel
-                backupsSection
-                noteHistorySection
+                VStack(alignment: .leading, spacing: 48) {
+                    backupsSection
+                    noteHistorySection
+                }
             }
             .padding(.top, scrollContentTopInset)
         }
         .coordinateSpace(name: scrollCoordinateSpaceName)
         .scrollClipDisabled()
+        // Keep the backup tab aligned with the shared settings content column on macOS.
+        .contentMargins(.zero, for: .scrollContent)
         .onAppear {
             availableBackups = backupManager.listAvailableBackups()
         }

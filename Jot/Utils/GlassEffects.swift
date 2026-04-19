@@ -199,16 +199,17 @@ extension View {
 /// Applies Liquid Glass on macOS 26+ and the Apple Intelligence glow on older OS versions.
 /// Use on AI panels (Translate, Edit Content, Text Gen, Summary, Key Points, Meeting Detail)
 /// whose solid background is already conditionally removed on macOS 26+.
+/// On macOS 26+, uses ``GlassEffectStyle/regular`` so panels read as real Liquid Glass on the note canvas
+/// (clear glass was too subtle on bright paper).
 struct AIGlassModifier: ViewModifier {
     let cornerRadius: CGFloat
     var glowMode: GlowMode = .oneShot
 
     func body(content: Content) -> some View {
         if #available(macOS 26.0, iOS 26.0, *) {
-            // `.clear` keeps overlay cards distinct without the milky `.regular` stack against transparent note chrome.
             content
                 .glassEffect(
-                    .clear.interactive(false),
+                    .regular.interactive(true),
                     in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 )
         } else {

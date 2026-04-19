@@ -734,11 +734,15 @@ private struct MeetingPanelBackgroundModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         if #available(macOS 26.0, iOS 26.0, *) {
+            // Match `CreateFolderSheet`: `liquidGlass` uses `.regular` (not `.clear`) plus the same
+            // shadow stack so the recording panel reads as frosted glass with depth, not flat tint.
             content
                 .glassEffect(
-                    .clear.interactive(false),
+                    .regular.interactive(true),
                     in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 )
+                .shadow(color: Color.black.opacity(0.12), radius: 24, x: 0, y: 8)
+                .shadow(color: Color.black.opacity(0.06), radius: 6, x: 0, y: 2)
         } else {
             content
                 .background(

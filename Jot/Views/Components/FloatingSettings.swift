@@ -1,5 +1,37 @@
 import SwiftUI
 
+struct SettingsLayoutMetrics {
+    static let tabLeadingInset: CGFloat = 40
+    static let tabVerticalSpacing: CGFloat = 12
+    static let titleToBodySpacing: CGFloat = 16
+    static let contentVerticalPadding: CGFloat = 8
+    static let titleChromeHeight: CGFloat = 84
+
+    static func bodyTopAnchor(titleTopPadding: CGFloat) -> CGFloat {
+        titleTopPadding + titleChromeHeight + titleToBodySpacing + contentVerticalPadding
+    }
+
+    static func tabColumnTopPadding(titleTopPadding: CGFloat) -> CGFloat {
+        bodyTopAnchor(titleTopPadding: titleTopPadding)
+    }
+
+    static func contentColumnTopPadding(titleTopPadding: CGFloat) -> CGFloat {
+        bodyTopAnchor(titleTopPadding: titleTopPadding)
+    }
+
+    static func scrollContentTopPadding(titleTopPadding: CGFloat) -> CGFloat {
+        0
+    }
+
+    static func backupPanelTopPadding(titleTopPadding: CGFloat) -> CGFloat {
+        0
+    }
+
+    static func aboutPanelTopSpacerHeight(titleTopPadding: CGFloat) -> CGFloat {
+        0
+    }
+}
+
 struct SettingsPage: View {
     @Binding var isPresented: Bool
     /// Matches note detail sticky header vertical inset (traffic lights vs inset pane).
@@ -40,15 +72,15 @@ struct SettingsPage: View {
     @State private var hoveredPasswordDismiss = false
 
     /// Leading inset for the settings tab list from the detail pane edge.
-    private let tabLeadingInset: CGFloat = 40
+    private let tabLeadingInset: CGFloat = SettingsLayoutMetrics.tabLeadingInset
     /// Vertical gap between tab labels only (no per-tab padding).
-    private let tabVerticalSpacing: CGFloat = 12
+    private let tabVerticalSpacing: CGFloat = SettingsLayoutMetrics.tabVerticalSpacing
     /// Space between the compact title row and the tab/content body.
-    private let titleToBodySpacing: CGFloat = 16
-    private let contentVerticalPadding: CGFloat = 8
+    private let titleToBodySpacing: CGFloat = SettingsLayoutMetrics.titleToBodySpacing
+    private let contentVerticalPadding: CGFloat = SettingsLayoutMetrics.contentVerticalPadding
 
     /// Pinned "Settings" title strip: title row plus a taller masked fade so scrolled content clears the title.
-    private let settingsTitleChromeHeight: CGFloat = 84
+    private let settingsTitleChromeHeight: CGFloat = SettingsLayoutMetrics.titleChromeHeight
 
     /// Same smootherstep mask as ``NoteDetailView.headerMaskGradient`` (scroll-underlay fade).
     private static let settingsHeaderMaskGradient: LinearGradient = {
@@ -163,7 +195,7 @@ struct SettingsPage: View {
     var body: some View {
         ZStack(alignment: .top) {
             ZStack(alignment: .topLeading) {
-                HStack(spacing: 0) {
+                HStack(alignment: .top, spacing: 0) {
                     Spacer(minLength: 0)
                     contentColumn
                     Spacer(minLength: 0)
@@ -174,7 +206,7 @@ struct SettingsPage: View {
                 tabColumn
                     .fixedSize(horizontal: true, vertical: false)
                     .padding(.leading, tabLeadingInset)
-                    .padding(.top, settingsContentTopInsetUnderChrome + contentVerticalPadding)
+                    .padding(.top, SettingsLayoutMetrics.tabColumnTopPadding(titleTopPadding: titleTopPadding))
                     .zIndex(1)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -330,7 +362,11 @@ struct SettingsPage: View {
             case .appearance:
                 appearancePanel
             case .data:
-                BackupSettingsPanel(scrollContentTopInset: settingsContentTopInsetUnderChrome + contentVerticalPadding, scrollChromeActive: $showSettingsScrollChrome, scrollCoordinateSpaceName: settingsScrollCoordinateSpaceName)
+                BackupSettingsPanel(
+                    scrollContentTopInset: SettingsLayoutMetrics.backupPanelTopPadding(titleTopPadding: titleTopPadding),
+                    scrollChromeActive: $showSettingsScrollChrome,
+                    scrollCoordinateSpaceName: settingsScrollCoordinateSpaceName
+                )
             case .about:
                 aboutPanel
             case .contact:
@@ -339,14 +375,16 @@ struct SettingsPage: View {
         }
         .frame(width: 482, alignment: .topLeading)
         .frame(maxHeight: .infinity, alignment: .top)
+        .padding(.top, SettingsLayoutMetrics.contentColumnTopPadding(titleTopPadding: titleTopPadding))
     }
 
     // MARK: - General Panel
 
     private var generalPanel: some View {
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 48) {
+            VStack(alignment: .leading, spacing: 0) {
                 settingsScrollTopSentinel
+                VStack(alignment: .leading, spacing: 48) {
                 // Sort options
                 VStack(alignment: .leading, spacing: 12) {
                     sectionLabel("Sort options")
@@ -627,12 +665,16 @@ struct SettingsPage: View {
                     }
                     .padding(.horizontal, 14)
                 }
+                }
             }
-            .padding(.top, settingsContentTopInsetUnderChrome + contentVerticalPadding)
+            .padding(.top, SettingsLayoutMetrics.scrollContentTopPadding(titleTopPadding: titleTopPadding))
             .padding(.bottom, contentVerticalPadding)
         }
         .coordinateSpace(name: settingsScrollCoordinateSpaceName)
         .scrollClipDisabled()
+        // ScrollView applies default safe-area scroll content margins; the tab column does not.
+        // We already inset the VStack to clear the title chrome — zero margins keeps the body aligned with tabs.
+        .contentMargins(.zero, for: .scrollContent)
     }
 
     // MARK: - General Panel Helpers
@@ -762,20 +804,23 @@ struct SettingsPage: View {
 
     private var appearancePanel: some View {
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 48) {
+            VStack(alignment: .leading, spacing: 0) {
                 settingsScrollTopSentinel
-                themeSection
-                detailPaneTranslucencySection
-                tintSection
-                typographySection
-                bodyFontSection
-                lineSpacingSection
+                VStack(alignment: .leading, spacing: 48) {
+                    themeSection
+                    detailPaneTranslucencySection
+                    tintSection
+                    typographySection
+                    bodyFontSection
+                    lineSpacingSection
+                }
             }
-            .padding(.top, settingsContentTopInsetUnderChrome + contentVerticalPadding)
+            .padding(.top, SettingsLayoutMetrics.scrollContentTopPadding(titleTopPadding: titleTopPadding))
             .padding(.bottom, contentVerticalPadding)
         }
         .coordinateSpace(name: settingsScrollCoordinateSpaceName)
         .scrollClipDisabled()
+        .contentMargins(.zero, for: .scrollContent)
     }
 
     // MARK: - Theme Section
@@ -1093,7 +1138,7 @@ struct SettingsPage: View {
         VStack(spacing: 0) {
             // Push the card down so its top aligns with the first sidebar tab (same inset as ``tabColumn``).
             Color.clear
-                .frame(height: settingsContentTopInsetUnderChrome + contentVerticalPadding)
+                .frame(height: SettingsLayoutMetrics.aboutPanelTopSpacerHeight(titleTopPadding: titleTopPadding))
 
             VStack(spacing: 0) {
                 Spacer(minLength: 0)
@@ -1146,16 +1191,19 @@ struct SettingsPage: View {
 
     private var contactPanel: some View {
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 48) {
+            VStack(alignment: .leading, spacing: 0) {
                 settingsScrollTopSentinel
-                emailSection
-                feedbackSection
+                VStack(alignment: .leading, spacing: 48) {
+                    emailSection
+                    feedbackSection
+                }
             }
-            .padding(.top, settingsContentTopInsetUnderChrome + contentVerticalPadding)
+            .padding(.top, SettingsLayoutMetrics.scrollContentTopPadding(titleTopPadding: titleTopPadding))
             .padding(.bottom, contentVerticalPadding)
         }
         .coordinateSpace(name: settingsScrollCoordinateSpaceName)
         .scrollClipDisabled()
+        .contentMargins(.zero, for: .scrollContent)
     }
 
     // MARK: - Email Section

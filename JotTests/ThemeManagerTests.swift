@@ -326,6 +326,77 @@ final class ThemeManagerTests: XCTestCase {
         XCTAssertFalse(manager.smartDashesEnabled)
     }
 
+    // MARK: - Settings / properties layout policy
+
+    func testSettingsBodyTopAnchorAlignsTabRowAndAllContentVariants() {
+        let titleTopPadding: CGFloat = 14
+        let anchor = SettingsLayoutMetrics.bodyTopAnchor(titleTopPadding: titleTopPadding)
+
+        XCTAssertEqual(SettingsLayoutMetrics.tabColumnTopPadding(titleTopPadding: titleTopPadding), anchor)
+        XCTAssertEqual(SettingsLayoutMetrics.contentColumnTopPadding(titleTopPadding: titleTopPadding), anchor)
+        XCTAssertEqual(SettingsLayoutMetrics.scrollContentTopPadding(titleTopPadding: titleTopPadding), 0)
+        XCTAssertEqual(SettingsLayoutMetrics.backupPanelTopPadding(titleTopPadding: titleTopPadding), 0)
+        XCTAssertEqual(SettingsLayoutMetrics.aboutPanelTopSpacerHeight(titleTopPadding: titleTopPadding), 0)
+    }
+
+    func testPropertiesPanelChromePolicyDisablesCombinedShellForFullPanelTransition() {
+        let visiblePrimary = PropertiesPanelChromePolicy.state(
+            isPropertiesPanelVisible: true,
+            isPropertiesPanelAnimating: false,
+            propertiesPanelPane: .primary,
+            pane: .primary
+        )
+        XCTAssertFalse(visiblePrimary.showsCombinedColumnChrome)
+        XCTAssertTrue(visiblePrimary.showsPerPaneChrome)
+        XCTAssertTrue(visiblePrimary.showsPerPaneShadowPlate)
+        XCTAssertFalse(visiblePrimary.showsSplitParentShadowPlate(isPaneActive: true))
+
+        let animatingOpenPrimary = PropertiesPanelChromePolicy.state(
+            isPropertiesPanelVisible: true,
+            isPropertiesPanelAnimating: true,
+            propertiesPanelPane: .primary,
+            pane: .primary
+        )
+        XCTAssertFalse(animatingOpenPrimary.showsCombinedColumnChrome)
+        XCTAssertTrue(animatingOpenPrimary.showsPerPaneChrome)
+        XCTAssertTrue(animatingOpenPrimary.showsPerPaneShadowPlate)
+        XCTAssertFalse(animatingOpenPrimary.showsSplitParentShadowPlate(isPaneActive: true))
+
+        let animatingClosePrimary = PropertiesPanelChromePolicy.state(
+            isPropertiesPanelVisible: false,
+            isPropertiesPanelAnimating: true,
+            propertiesPanelPane: .primary,
+            pane: .primary
+        )
+        XCTAssertFalse(animatingClosePrimary.showsCombinedColumnChrome)
+        XCTAssertTrue(animatingClosePrimary.showsPerPaneChrome)
+        XCTAssertTrue(animatingClosePrimary.showsPerPaneShadowPlate)
+        XCTAssertFalse(animatingClosePrimary.showsSplitParentShadowPlate(isPaneActive: true))
+
+        let idleSecondary = PropertiesPanelChromePolicy.state(
+            isPropertiesPanelVisible: false,
+            isPropertiesPanelAnimating: false,
+            propertiesPanelPane: .primary,
+            pane: .secondary
+        )
+        XCTAssertTrue(idleSecondary.showsCombinedColumnChrome)
+        XCTAssertFalse(idleSecondary.showsPerPaneChrome)
+        XCTAssertFalse(idleSecondary.showsPerPaneShadowPlate)
+        XCTAssertTrue(idleSecondary.showsSplitParentShadowPlate(isPaneActive: true))
+        XCTAssertFalse(idleSecondary.showsSplitParentShadowPlate(isPaneActive: false))
+
+        let translucentVisiblePrimary = PropertiesPanelChromePolicy.state(
+            isPropertiesPanelVisible: true,
+            isPropertiesPanelAnimating: false,
+            propertiesPanelPane: .primary,
+            pane: .primary
+        )
+        XCTAssertFalse(translucentVisiblePrimary.showsCombinedColumnChrome)
+        XCTAssertTrue(translucentVisiblePrimary.showsPerPaneChrome)
+        XCTAssertTrue(translucentVisiblePrimary.showsPerPaneShadowPlate)
+        XCTAssertFalse(translucentVisiblePrimary.showsSplitParentShadowPlate(isPaneActive: true))
+    }
+
     private func isolatedDefaults() -> (UserDefaults, String) {
         let suiteName = "ThemeManagerTests.\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suiteName) else {

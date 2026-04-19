@@ -33,6 +33,34 @@ struct NotePreviewAnchorKey: PreferenceKey {
 enum SplitPosition: String, Codable { case left, right }
 enum SplitPickerPane { case primary, secondary }
 
+struct PropertiesPanelChromePolicy {
+    struct State {
+        let showsCombinedColumnChrome: Bool
+        let showsPerPaneChrome: Bool
+        let showsPerPaneShadowPlate: Bool
+
+        func showsSplitParentShadowPlate(isPaneActive: Bool) -> Bool {
+            isPaneActive && showsCombinedColumnChrome
+        }
+    }
+
+    static func state(
+        isPropertiesPanelVisible: Bool,
+        isPropertiesPanelAnimating: Bool,
+        propertiesPanelPane: SplitPickerPane,
+        pane: SplitPickerPane
+    ) -> State {
+        let panelOwnsPaneChrome = (isPropertiesPanelVisible || isPropertiesPanelAnimating) && propertiesPanelPane == pane
+        return State(
+            showsCombinedColumnChrome: !panelOwnsPaneChrome,
+            showsPerPaneChrome: panelOwnsPaneChrome,
+            // Per-pane backing plate whenever the properties column splits chrome off the combined shell
+            // (see splitPaneChromePlate + notePaneShadowPlateColor).
+            showsPerPaneShadowPlate: panelOwnsPaneChrome
+        )
+    }
+}
+
 struct SplitSession: Identifiable, Equatable, Codable {
     let id: UUID
     var primaryNoteID: UUID?
@@ -1291,13 +1319,13 @@ struct ContentView: View {
                     DetailPaneChromeBackgroundView(cornerRadius: cornerRadius)
                 }
                 .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-                .overlay {
-                    if colorScheme == .dark && cornerRadius > 0 && !suppressesNotePaneDarkModeBorderForGlass {
-                        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                            .stroke(Color.white.opacity(0.10), lineWidth: 1)
-                    }
-                }
-                .splitPaneShadow(isActive: true, cornerRadius: cornerRadius, backgroundColor: notePaneShadowPlateColor, colorScheme: .light)
+                .splitPaneChromePlate(
+                    isActive: true,
+                    cornerRadius: cornerRadius,
+                    backgroundColor: notePaneShadowPlateColor,
+                    colorScheme: colorScheme,
+                    suppressHairlineInDarkMode: suppressesNotePaneDarkModeBorderForGlass
+                )
                 .padding(.leading, sidebarDetailGap)
         } else if let note = selectedNote {
             let needsPendingPadding = isActiveSplitPending && !isSidebarVisible
@@ -1367,7 +1395,7 @@ struct ContentView: View {
         // Single choke point for the detail pane's "paper" color, used by:
         // - Main detail pane body fill (line 1256)
         // - Split-view secondary pane fill (line 1487)
-        // - `splitPaneShadow` background color for cast shadows (4 call sites)
+        // - `splitPaneChromePlate` background color for the backing plate (call sites in ContentView)
         // - Settings overlay background (line 1122)
         // Routing through `tintedPaneSurface(for:)` makes all of these absorb
         // the user's app-wide hue tint simultaneously.
@@ -1381,7 +1409,8 @@ struct ContentView: View {
         noteDetailUsesTransparentStack && (isSettingsPresented || selectedNote != nil || shouldShowSplitLayout)
     }
 
-    /// `splitPaneShadow` draws a filled rounded rect behind the pane for drop shadows. Using `detailBg` there
+    /// `splitPaneChromePlate` draws a filled rounded rect behind the pane (no NSTextView rasterization on content).
+    /// Using `detailBg` there
     /// reintroduces an opaque paper layer under Liquid Glass; use a nearly invisible fill instead when transparent.
     private var notePaneShadowPlateColor: Color {
         noteDetailUsesTransparentStack ? Color.white.opacity(0.015) : detailBg
@@ -1419,10 +1448,17 @@ struct ContentView: View {
     }
 
     private func singleNotePane(note: Note, width: CGFloat, cornerRadius: CGFloat) -> some View {
-        // When the properties column is open, both siblings use split-style radius so the pair reads like a real split (no shared outer chrome).
+        // When the properties column owns the chrome for this pane, both siblings use split-style radius
+        // so the pair reads like a real split and the old shared outer shell stays out of the way.
         let propertiesOpen = isPropertiesPanelVisible && propertiesPanelPane == .primary
+        let chromeState = PropertiesPanelChromePolicy.state(
+            isPropertiesPanelVisible: isPropertiesPanelVisible,
+            isPropertiesPanelAnimating: isPropertiesPanelAnimating,
+            propertiesPanelPane: propertiesPanelPane,
+            pane: .primary
+        )
         let splitStyleRadius = windowCornerRadius - windowContentPadding
-        let effectiveRadius = propertiesOpen ? splitStyleRadius : cornerRadius
+        let effectiveRadius = chromeState.showsPerPaneChrome ? splitStyleRadius : cornerRadius
         let editorWidth = propertiesOpen ? width - splitGap - splitMinPaneWidth : width
 
         return HStack(spacing: 0) {
@@ -1434,33 +1470,38 @@ struct ContentView: View {
                     DetailPaneChromeBackgroundView(cornerRadius: effectiveRadius)
                 }
                 .clipShape(RoundedRectangle(cornerRadius: effectiveRadius, style: .continuous))
-                .overlay {
-                    if colorScheme == .dark && effectiveRadius > 0 && !suppressesNotePaneDarkModeBorderForGlass {
-                        RoundedRectangle(cornerRadius: effectiveRadius, style: .continuous)
-                            .stroke(Color.white.opacity(0.10), lineWidth: 1)
-                    }
-                }
-                // When the properties column is open, the editor side carries its own per-pane
-                // shadow (mirroring how `splitDetailLayout` shadows each split half) so the inner
-                // edge facing the gap reads as a distinct tile at any translucency setting.
-                .splitPaneShadow(isActive: propertiesOpen, cornerRadius: effectiveRadius, backgroundColor: notePaneShadowPlateColor, colorScheme: colorScheme)
+                // When the properties column is open, the editor side carries its own per-pane plate
+                // so the gap edge reads as a distinct tile at any translucency setting.
+                .splitPaneChromePlate(
+                    isActive: chromeState.showsPerPaneShadowPlate,
+                    cornerRadius: effectiveRadius,
+                    backgroundColor: notePaneShadowPlateColor,
+                    colorScheme: colorScheme,
+                    suppressHairlineInDarkMode: suppressesNotePaneDarkModeBorderForGlass
+                )
 
             propertiesPanelSlot(
                 isVisible: propertiesOpen,
                 note: note,
                 editorInstanceID: primaryEditorID,
-                paneCornerRadius: effectiveRadius
+                paneCornerRadius: effectiveRadius,
+                showsPerPaneShadowPlate: chromeState.showsPerPaneShadowPlate
             )
         }
         .animation(Self.propertiesPanelAnimation, value: propertiesOpen)
         .geometryGroup()
         .frame(width: width)
         .frame(maxHeight: .infinity)
-        // One shadow plate for the whole column in single-note mode; turns OFF when properties is
-        // open so the per-pane shadows above (editor side) and inside `propertiesPanelSlot`
-        // (properties side) take over and the gap shows real elevation between two tiles.
-        // Split mode applies shadow on this view from the parent instead (`isActive` false here).
-        .splitPaneShadow(isActive: !shouldShowSplitLayout && !propertiesOpen, cornerRadius: effectiveRadius, backgroundColor: notePaneShadowPlateColor, colorScheme: .light)
+        // One backing plate for the whole column in single-note mode; turns OFF when properties is
+        // open so per-pane plates on the editor and inside `propertiesPanelSlot` take over.
+        // Split mode applies chrome from the parent instead (`isActive` false here).
+        .splitPaneChromePlate(
+            isActive: !shouldShowSplitLayout && chromeState.showsCombinedColumnChrome,
+            cornerRadius: effectiveRadius,
+            backgroundColor: notePaneShadowPlateColor,
+            colorScheme: colorScheme,
+            suppressHairlineInDarkMode: suppressesNotePaneDarkModeBorderForGlass
+        )
         .onPreferenceChange(BottomOverlayActivePreferenceKey.self) { primaryBottomOverlayActive = $0 }
         .onPreferenceChange(BottomInputOverlayActivePreferenceKey.self) { primaryBottomInputOverlayActive = $0 }
         .onPreferenceChange(ToolbarExpandedPreferenceKey.self) { primaryToolbarExpanded = $0 }
@@ -1523,6 +1564,18 @@ struct ContentView: View {
         let splitRadius = windowCornerRadius - windowContentPadding
         let position = activeSplit?.position ?? .right
         let ratio = activeSplit?.ratio ?? 0.5
+        let primaryChromeState = PropertiesPanelChromePolicy.state(
+            isPropertiesPanelVisible: isPropertiesPanelVisible,
+            isPropertiesPanelAnimating: isPropertiesPanelAnimating,
+            propertiesPanelPane: propertiesPanelPane,
+            pane: .primary
+        )
+        let secondaryChromeState = PropertiesPanelChromePolicy.state(
+            isPropertiesPanelVisible: isPropertiesPanelVisible,
+            isPropertiesPanelAnimating: isPropertiesPanelAnimating,
+            propertiesPanelPane: propertiesPanelPane,
+            pane: .secondary
+        )
 
         let availableForSplit = totalWidth - splitGap
         let baseSecW = availableForSplit * ratio
@@ -1540,7 +1593,13 @@ struct ContentView: View {
                 if hasPrimary {
                     singleNotePane(note: primaryNote, width: primW, cornerRadius: splitRadius)
                         .splitPaneDimming(isInactive: activeSplitPane != .primary, cornerRadius: splitRadius, colorScheme: colorScheme)
-                        .splitPaneShadow(isActive: activeSplitPane == .primary, cornerRadius: splitRadius, backgroundColor: notePaneShadowPlateColor, colorScheme: colorScheme)
+                        .splitPaneChromePlate(
+                            isActive: primaryChromeState.showsSplitParentShadowPlate(isPaneActive: activeSplitPane == .primary),
+                            cornerRadius: splitRadius,
+                            backgroundColor: notePaneShadowPlateColor,
+                            colorScheme: colorScheme,
+                            suppressHairlineInDarkMode: suppressesNotePaneDarkModeBorderForGlass
+                        )
                         .zIndex(activeSplitPane == .primary ? 1 : 0)
                         .overlay(alignment: .topTrailing) {
                             if !isPending {
@@ -1559,7 +1618,13 @@ struct ContentView: View {
                 if hasSecondary, let secNote = activeSecondaryNote {
                     secondaryNotePane(note: secNote, width: secW, cornerRadius: splitRadius, primaryNote: primaryNote)
                         .splitPaneDimming(isInactive: activeSplitPane != .secondary, cornerRadius: splitRadius, colorScheme: colorScheme)
-                        .splitPaneShadow(isActive: activeSplitPane == .secondary, cornerRadius: splitRadius, backgroundColor: notePaneShadowPlateColor, colorScheme: colorScheme)
+                        .splitPaneChromePlate(
+                            isActive: secondaryChromeState.showsSplitParentShadowPlate(isPaneActive: activeSplitPane == .secondary),
+                            cornerRadius: splitRadius,
+                            backgroundColor: notePaneShadowPlateColor,
+                            colorScheme: colorScheme,
+                            suppressHairlineInDarkMode: suppressesNotePaneDarkModeBorderForGlass
+                        )
                         .zIndex(activeSplitPane == .secondary ? 1 : 0)
                 } else {
                     splitPickerPane(width: secW, cornerRadius: splitRadius, excludingNote: activePrimaryNote, isPrimary: false)
@@ -1571,7 +1636,13 @@ struct ContentView: View {
                 if hasSecondary, let secNote = activeSecondaryNote {
                     secondaryNotePane(note: secNote, width: secW, cornerRadius: splitRadius, primaryNote: primaryNote)
                         .splitPaneDimming(isInactive: activeSplitPane != .secondary, cornerRadius: splitRadius, colorScheme: colorScheme)
-                        .splitPaneShadow(isActive: activeSplitPane == .secondary, cornerRadius: splitRadius, backgroundColor: notePaneShadowPlateColor, colorScheme: colorScheme)
+                        .splitPaneChromePlate(
+                            isActive: secondaryChromeState.showsSplitParentShadowPlate(isPaneActive: activeSplitPane == .secondary),
+                            cornerRadius: splitRadius,
+                            backgroundColor: notePaneShadowPlateColor,
+                            colorScheme: colorScheme,
+                            suppressHairlineInDarkMode: suppressesNotePaneDarkModeBorderForGlass
+                        )
                         .zIndex(activeSplitPane == .secondary ? 1 : 0)
                 } else {
                     splitPickerPane(width: secW, cornerRadius: splitRadius, excludingNote: activePrimaryNote, isPrimary: false)
@@ -1581,7 +1652,13 @@ struct ContentView: View {
                 if hasPrimary {
                     singleNotePane(note: primaryNote, width: primW, cornerRadius: splitRadius)
                         .splitPaneDimming(isInactive: activeSplitPane != .primary, cornerRadius: splitRadius, colorScheme: colorScheme)
-                        .splitPaneShadow(isActive: activeSplitPane == .primary, cornerRadius: splitRadius, backgroundColor: notePaneShadowPlateColor, colorScheme: colorScheme)
+                        .splitPaneChromePlate(
+                            isActive: primaryChromeState.showsSplitParentShadowPlate(isPaneActive: activeSplitPane == .primary),
+                            cornerRadius: splitRadius,
+                            backgroundColor: notePaneShadowPlateColor,
+                            colorScheme: colorScheme,
+                            suppressHairlineInDarkMode: suppressesNotePaneDarkModeBorderForGlass
+                        )
                         .zIndex(activeSplitPane == .primary ? 1 : 0)
                         .overlay(alignment: .topTrailing) {
                             if !isPending {
@@ -1644,6 +1721,12 @@ struct ContentView: View {
         let isLeftPane = (position == .left)
         let isSplitLocked = note.isLocked && !authManager.isUnlocked(note.id)
         let propertiesOpen = isPropertiesPanelVisible && propertiesPanelPane == .secondary
+        let chromeState = PropertiesPanelChromePolicy.state(
+            isPropertiesPanelVisible: isPropertiesPanelVisible,
+            isPropertiesPanelAnimating: isPropertiesPanelAnimating,
+            propertiesPanelPane: propertiesPanelPane,
+            pane: .secondary
+        )
         let editorWidth = propertiesOpen ? width - splitGap - splitMinPaneWidth : width
 
         HStack(spacing: 0) {
@@ -1680,25 +1763,24 @@ struct ContentView: View {
             .frame(width: editorWidth)
             .frame(maxHeight: .infinity)
             .background {
-                DetailPaneChromeBackgroundView(cornerRadius: cornerRadius)
+                DetailPaneChromeBackgroundView(cornerRadius: chromeState.showsPerPaneChrome ? windowCornerRadius - windowContentPadding : cornerRadius)
             }
-            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            .overlay {
-                if colorScheme == .dark && cornerRadius > 0 && !suppressesNotePaneDarkModeBorderForGlass {
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .stroke(Color.white.opacity(0.10), lineWidth: 1)
-                }
-            }
-            // Same per-pane shadow rule as `singleNotePane`: when the properties column is open
-            // inside this split half, the editor side gets its own halo so the gap to the
-            // properties panel reads as real elevation between two distinct tiles.
-            .splitPaneShadow(isActive: propertiesOpen, cornerRadius: cornerRadius, backgroundColor: notePaneShadowPlateColor, colorScheme: colorScheme)
+            .clipShape(RoundedRectangle(cornerRadius: chromeState.showsPerPaneChrome ? windowCornerRadius - windowContentPadding : cornerRadius, style: .continuous))
+            // Same per-pane plate rule as `singleNotePane` when properties is open on this split half.
+            .splitPaneChromePlate(
+                isActive: chromeState.showsPerPaneShadowPlate,
+                cornerRadius: chromeState.showsPerPaneChrome ? windowCornerRadius - windowContentPadding : cornerRadius,
+                backgroundColor: notePaneShadowPlateColor,
+                colorScheme: colorScheme,
+                suppressHairlineInDarkMode: suppressesNotePaneDarkModeBorderForGlass
+            )
 
             propertiesPanelSlot(
                 isVisible: propertiesOpen,
                 note: note,
                 editorInstanceID: splitEditorID,
-                paneCornerRadius: cornerRadius
+                paneCornerRadius: chromeState.showsPerPaneChrome ? windowCornerRadius - windowContentPadding : cornerRadius,
+                showsPerPaneShadowPlate: chromeState.showsPerPaneShadowPlate
             )
         }
         .animation(Self.propertiesPanelAnimation, value: propertiesOpen)
@@ -3782,7 +3864,7 @@ struct ContentView: View {
     /// Always-present panel slot that avoids view insertion/removal.
     /// Own `DetailPaneChromeBackgroundView` + clip so it reads as a split sibling; width uses `splitGap` + `splitMinPaneWidth` (no drag handle). Carries its own per-pane shadow (matching `splitDetailLayout`) so the panel reads as a distinct elevated tile next to the editor at any translucency level.
     @ViewBuilder
-    private func propertiesPanelSlot(isVisible: Bool, note: Note, editorInstanceID: UUID?, paneCornerRadius: CGFloat) -> some View {
+    private func propertiesPanelSlot(isVisible: Bool, note: Note, editorInstanceID: UUID?, paneCornerRadius: CGFloat, showsPerPaneShadowPlate: Bool) -> some View {
         HStack(spacing: 0) {
             Color.clear
                 .frame(width: isVisible ? splitGap : 0)
@@ -3794,16 +3876,13 @@ struct ContentView: View {
                     DetailPaneChromeBackgroundView(cornerRadius: paneCornerRadius)
                 }
                 .clipShape(RoundedRectangle(cornerRadius: paneCornerRadius, style: .continuous))
-                .overlay {
-                    if colorScheme == .dark && paneCornerRadius > 0 && !suppressesNotePaneDarkModeBorderForGlass {
-                        RoundedRectangle(cornerRadius: paneCornerRadius, style: .continuous)
-                            .stroke(Color.white.opacity(0.10), lineWidth: 1)
-                    }
-                }
-                // Per-pane shadow so the properties tile floats above the window background just
-                // like a real split half. Theme-aware halo (black in light, white in dark) keeps
-                // the gap-edge visibly separated from the editor at any translucency setting.
-                .splitPaneShadow(isActive: isVisible, cornerRadius: paneCornerRadius, backgroundColor: notePaneShadowPlateColor, colorScheme: colorScheme)
+                .splitPaneChromePlate(
+                    isActive: showsPerPaneShadowPlate,
+                    cornerRadius: paneCornerRadius,
+                    backgroundColor: notePaneShadowPlateColor,
+                    colorScheme: colorScheme,
+                    suppressHairlineInDarkMode: suppressesNotePaneDarkModeBorderForGlass
+                )
                 .offset(x: isVisible ? 0 : Self.propertiesPanelSlideOffset)
         }
         .frame(width: isVisible ? (splitGap + splitMinPaneWidth) : 0, alignment: .leading)
@@ -6105,7 +6184,7 @@ struct FlowLayout: Layout {
     }
 }
 
-// MARK: - Split Pane Shadow
+// MARK: - Detail pane chrome plate (backing + hairline, no cast shadow)
 
 private extension View {
     /// Dims an inactive split pane with a color overlay instead of `.opacity()`,
@@ -6114,25 +6193,32 @@ private extension View {
         self
     }
 
-    /// Applies a layered shadow via a background shape instead of directly on the content.
-    /// This prevents SwiftUI from rasterizing the content (which kills NSTextView's cursor blink timer).
-    func splitPaneShadow(isActive: Bool, cornerRadius: CGFloat, backgroundColor: Color, colorScheme: ColorScheme, showStroke: Bool = false) -> some View {
-        let base: Color = colorScheme == .dark ? .white : .black
-        let strokeColor: Color = colorScheme == .dark
-            ? .white.opacity(isActive && showStroke ? 0.50 : 0)
-            : .black.opacity(isActive && showStroke ? 0.50 : 0)
+    /// Rounded backing plate behind the clipped pane (keeps elevation logic off the live editor content).
+    /// Hairline uses ``BorderSubtleColor`` (theme-aware). In dark mode, hairline can be suppressed when
+    /// Liquid Glass detail chrome already separates the pane (same rule as former dark-only overlay).
+    func splitPaneChromePlate(
+        isActive: Bool,
+        cornerRadius: CGFloat,
+        backgroundColor: Color,
+        colorScheme: ColorScheme,
+        suppressHairlineInDarkMode: Bool
+    ) -> some View {
+        // Inactive panes still own their own chrome via `DetailPaneChromeBackgroundView`.
+        // Leaving this plate filled when inactive creates a second rounded shell behind combined stacks.
+        let plateFill: Color = isActive ? backgroundColor : .clear
+        let showHairline =
+            isActive && cornerRadius > 0 && !(colorScheme == .dark && suppressHairlineInDarkMode)
+
         return self
             .background {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(backgroundColor)
-                    .shadow(color: base.opacity(isActive ? 0.20 : 0), radius: 1, x: 0, y: 0)
-                    .shadow(color: base.opacity(isActive ? 0.15 : 0), radius: 6, x: 0, y: 2)
-                    .shadow(color: base.opacity(isActive ? 0.10 : 0), radius: 20, x: 0, y: 6)
+                    .fill(plateFill)
             }
             .overlay {
-                RoundedRectangle(cornerRadius: cornerRadius - 1, style: .continuous)
-                    .strokeBorder(strokeColor, lineWidth: 2)
-                    .padding(1)
+                if showHairline {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .stroke(Color("BorderSubtleColor"), lineWidth: 1)
+                }
             }
     }
 }
