@@ -61,6 +61,30 @@ final class SimpleSwiftDataManager: ObservableObject {
         hasCompletedMigrationCheck = true
     }
 
+    /// Creates a manager backed by a real on-disk store at a test-controlled URL.
+    /// Never call this in production code.
+    init(storeURLForTesting storeURL: URL) throws {
+        let schema = Schema([NoteEntity.self, FolderEntity.self, NoteVersionEntity.self])
+        let configuration = ModelConfiguration(
+            "JotTests",
+            schema: schema,
+            url: storeURL,
+            allowsSave: true,
+            cloudKitDatabase: .none
+        )
+        self.modelContainer = try ModelContainer(for: schema, configurations: [configuration])
+        self.modelContext = ModelContext(modelContainer)
+        modelContext.autosaveEnabled = true
+
+        hasLoadedInitialNotes = false
+        hasCompletedMigrationCheck = true
+        loadFolders()
+
+        Task { @MainActor in
+            self.loadNotes(isInitialLoad: true)
+        }
+    }
+
     init() throws {
         // Setup SwiftData container
         let schema = Schema([NoteEntity.self, FolderEntity.self, NoteVersionEntity.self])
@@ -76,9 +100,6 @@ final class SimpleSwiftDataManager: ObservableObject {
         // Configure main context for UI
         modelContext.autosaveEnabled = true
 
-        // Cleanup any leftover performance test notes
-        cleanupPerformanceNotes()
-
         // Load initial data
         hasLoadedInitialNotes = false
         hasCompletedMigrationCheck = true
@@ -86,26 +107,6 @@ final class SimpleSwiftDataManager: ObservableObject {
 
         Task { @MainActor in
             self.loadNotes(isInitialLoad: true)
-        }
-    }
-
-    private func cleanupPerformanceNotes() {
-        do {
-            let descriptor = FetchDescriptor<NoteEntity>(
-                predicate: #Predicate<NoteEntity> { $0.title.contains("Performance Note") }
-            )
-            let entities = try modelContext.fetch(descriptor)
-            
-            guard !entities.isEmpty else { return }
-            
-            logger.info("Found \(entities.count) performance notes to cleanup")
-            for entity in entities {
-                modelContext.delete(entity)
-            }
-            try modelContext.save()
-            logger.info("Successfully removed performance notes")
-        } catch {
-            logger.error("Failed to cleanup performance notes: \(error)")
         }
     }
 
@@ -170,6 +171,20 @@ final class SimpleSwiftDataManager: ObservableObject {
                 }
             }
         }
+    }
+
+    func allNotesForBackup() throws -> [Note] {
+        let descriptor = FetchDescriptor<NoteEntity>(
+            sortBy: [SortDescriptor(\.modifiedAt, order: .reverse)]
+        )
+        return try modelContext.fetch(descriptor).map { $0.toNote() }
+    }
+
+    func allFoldersForBackup() throws -> [Folder] {
+        let descriptor = FetchDescriptor<FolderEntity>(
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+        )
+        return try modelContext.fetch(descriptor).map { $0.toFolder() }
     }
 
     /// Lightweight check that populates archivedNotes/archivedFolders only if
@@ -858,9 +873,15 @@ final class SimpleSwiftDataManager: ObservableObject {
             noteEntity.isLocked.toggle()
             try modelContext.save()
 
+            let updatedNote: Note
             if let index = notes.firstIndex(where: { $0.id == id }) {
                 notes[index].isLocked.toggle()
+                updatedNote = notes[index]
+            } else {
+                updatedNote = noteEntity.toNote()
             }
+
+            SpotlightIndexer.shared.indexNote(updatedNote)
 
             logger.info("Toggled lock for note with ID: \(id)")
 

@@ -92,8 +92,9 @@ struct AIToolsOverlay: View {
     private var expandedToolBar: some View {
         HStack(spacing: 2) {
             toolBarButton(icon: "IconBroomSparkle", tooltip: "Proofread") {
-                NotificationCenter.default.post(name: .aiEditRequestSelection, object: nil, userInfo: eidInfo)
-                NotificationCenter.default.post(name: .aiToolAction, object: AITool.proofread, userInfo: eidInfo)
+                var info: [String: Any] = ["followWithTool": AITool.proofread.rawValue]
+                if let eid = editorInstanceID { info["editorInstanceID"] = eid }
+                NotificationCenter.default.post(name: .aiEditRequestSelection, object: nil, userInfo: info)
                 state = .collapsed
             }
             toolBarButton(icon: "IconListSparkle", tooltip: "Key Points") {

@@ -13,6 +13,7 @@ final class SimpleSwiftDataManagerTests: XCTestCase {
     }
 
     override func tearDown() async throws {
+        SpotlightIndexer.shared.onIndexNoteForTesting = nil
         manager = nil
         try await super.tearDown()
     }
@@ -276,5 +277,94 @@ final class SimpleSwiftDataManagerTests: XCTestCase {
         XCTAssertEqual(converted.name, folder.name)
         XCTAssertEqual(converted.createdAt, folder.createdAt)
         XCTAssertEqual(converted.modifiedAt, folder.modifiedAt)
+    }
+
+    func testAllNotesForBackupIncludesArchivedAndDeletedNotesBeyondSidebarCap() throws {
+        let active = manager.addNote(title: "Active", content: "Body")
+
+        var archivedIDs = Set<UUID>()
+        for index in 0..<505 {
+            archivedIDs.insert(manager.addNote(title: "Archived \(index)", content: "Body").id)
+        }
+        XCTAssertEqual(manager.archiveNotes(ids: archivedIDs), 505)
+
+        var deletedIDs = Set<UUID>()
+        for index in 0..<506 {
+            deletedIDs.insert(manager.addNote(title: "Deleted \(index)", content: "Body").id)
+        }
+        XCTAssertEqual(manager.moveToTrash(ids: deletedIDs), 506)
+
+        let activeFolder = manager.createFolder(name: "Projects")
+        let archivedFolder = manager.createFolder(name: "Archive Me")
+        XCTAssertNotNil(activeFolder)
+        XCTAssertNotNil(archivedFolder)
+        if let archivedFolder {
+            manager.archiveFolder(archivedFolder)
+        }
+
+        let snapshot = try BackupManager.shared.backupSnapshot(from: manager)
+
+        XCTAssertEqual(snapshot.notes.count, 1 + 505 + 506)
+        XCTAssertEqual(snapshot.notes.filter(\.isArchived).count, 505)
+        XCTAssertTrue(snapshot.notes.contains(where: { $0.id == active.id }))
+        XCTAssertEqual(snapshot.notes.filter { deletedIDs.contains($0.id) }.count, 506)
+        XCTAssertTrue(snapshot.folders.contains(where: { $0.name == activeFolder?.name }))
+        XCTAssertTrue(snapshot.folders.contains(where: { $0.name == archivedFolder?.name && $0.isArchived }))
+
+        XCTAssertEqual(manager.archivedNotes.count, 500)
+        XCTAssertEqual(manager.deletedNotes.count, 500)
+    }
+
+    func testPersistentInitPreservesPerformanceNoteTitles() async throws {
+        let storeDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SimpleSwiftDataManagerTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: storeDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: storeDirectory) }
+
+        let storeURL = storeDirectory.appendingPathComponent("JotTests.store")
+
+        var firstLaunchManager: SimpleSwiftDataManager? = try SimpleSwiftDataManager(
+            storeURLForTesting: storeURL
+        )
+        guard let createdManager = firstLaunchManager else {
+            XCTFail("Expected first persistent manager")
+            return
+        }
+        await waitForReadiness(of: createdManager)
+
+        let note = createdManager.addNote(
+            title: "Performance Note Legitimate User Content",
+            content: "Keep this note"
+        )
+        firstLaunchManager = nil
+
+        let relaunchedManager = try SimpleSwiftDataManager(storeURLForTesting: storeURL)
+        await waitForReadiness(of: relaunchedManager)
+
+        let persisted = try XCTUnwrap(relaunchedManager.notes.first(where: { $0.id == note.id }))
+        XCTAssertEqual(persisted.title, "Performance Note Legitimate User Content")
+        XCTAssertEqual(persisted.content, "Keep this note")
+    }
+
+    func testToggleLockReindexesSpotlightWithUpdatedPrivacyState() throws {
+        let note = manager.addNote(title: "Secret", content: "Private body")
+        var indexedNotes: [Note] = []
+        SpotlightIndexer.shared.onIndexNoteForTesting = { indexedNotes.append($0) }
+
+        manager.toggleLock(id: note.id)
+        manager.toggleLock(id: note.id)
+
+        XCTAssertEqual(indexedNotes.count, 2)
+
+        let locked = indexedNotes[0]
+        XCTAssertTrue(locked.isLocked)
+        XCTAssertNil(SpotlightIndexer.shared.buildSearchableItem(for: locked).attributeSet.contentDescription)
+
+        let unlocked = indexedNotes[1]
+        XCTAssertFalse(unlocked.isLocked)
+        XCTAssertEqual(
+            SpotlightIndexer.shared.buildSearchableItem(for: unlocked).attributeSet.contentDescription,
+            "Private body"
+        )
     }
 }

@@ -18,6 +18,7 @@ public final class ImageStorageManager {
     public static let shared = ImageStorageManager()
 
     private let logger = Logger(subsystem: "com.jot", category: "ImageStorageManager")
+    private let storageBaseURLOverride: URL?
 
     // Directory name within Documents folder
     private let storageDirectoryName = "JotImages"
@@ -29,7 +30,15 @@ public final class ImageStorageManager {
     private let compressionQuality: CGFloat = 0.8
     
     private init() {
+        self.storageBaseURLOverride = nil
         // Ensure storage directory exists on initialization
+        Task { [weak self] in
+            await self?.ensureStorageDirectoryExists()
+        }
+    }
+
+    init(storageBaseURL: URL) {
+        self.storageBaseURLOverride = storageBaseURL
         Task { [weak self] in
             await self?.ensureStorageDirectoryExists()
         }
@@ -106,14 +115,17 @@ public final class ImageStorageManager {
     /// - Parameter filename: The image filename
     /// - Returns: Full URL to the image file, or nil if not found
     public func getImageURL(for filename: String) -> URL? {
+        guard let validFilename = validatedStoredFilename(filename) else {
+            return nil
+        }
         guard let storageURL = try? getStorageDirectorySync() else {
             return nil
         }
-        let imageURL = storageURL.appendingPathComponent(filename)
+        let imageURL = storageURL.appendingPathComponent(validFilename, isDirectory: false)
         
         // Verify file exists
         guard FileManager.default.fileExists(atPath: imageURL.path) else {
-            logger.error("Image file not found: \(filename)")
+            logger.error("Image file not found: \(validFilename)")
             return nil
         }
         
@@ -235,7 +247,9 @@ public final class ImageStorageManager {
 
     private func getStorageDirectorySync() throws -> URL {
         let base: URL
-        if let groupURL = FileManager.default.containerURL(
+        if let storageBaseURLOverride {
+            base = storageBaseURLOverride
+        } else if let groupURL = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: Self.appGroupID) {
             base = groupURL
         } else {
@@ -246,6 +260,21 @@ public final class ImageStorageManager {
                 create: true)
         }
         return base.appendingPathComponent(storageDirectoryName, isDirectory: true)
+    }
+
+    private func validatedStoredFilename(_ filename: String) -> String? {
+        guard !filename.isEmpty else { return nil }
+        guard !filename.contains("\\") else { return nil }
+
+        let components = (filename as NSString).pathComponents
+        guard components.count == 1, let component = components.first else {
+            return nil
+        }
+        guard component != ".", component != ".." else {
+            return nil
+        }
+
+        return component
     }
 
     /// One-time migration: moves images from the old sandbox Documents/JotImages/
@@ -351,4 +380,3 @@ public final class ImageStorageManager {
         }.value
     }
 }
-

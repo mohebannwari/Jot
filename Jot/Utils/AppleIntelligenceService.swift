@@ -23,12 +23,18 @@ enum AITool: String, Equatable {
     case meetingNotes
 }
 
-// MARK: - Proofread Annotation
+// MARK: - Proofread Models
+
+struct ProofreadSuggestion: Equatable {
+    let original: String
+    let replacement: String
+}
 
 struct ProofreadAnnotation: Identifiable, Equatable {
     let id: UUID = UUID()
     let original: String
     let replacement: String
+    let range: NSRange
 }
 
 // MARK: - AI Panel State
@@ -345,7 +351,7 @@ final class AppleIntelligenceService {
         return response.content.points
     }
 
-    func proofread(text: String) async throws -> [ProofreadAnnotation] {
+    func proofread(text: String) async throws -> [ProofreadSuggestion] {
         guard #available(macOS 26.0, *) else {
             throw AIServiceError.unavailable(unavailabilityReason)
         }
@@ -360,7 +366,7 @@ final class AppleIntelligenceService {
         )
         try Task.checkCancellation()
         return response.content.annotations.map {
-            ProofreadAnnotation(original: $0.original, replacement: $0.replacement)
+            ProofreadSuggestion(original: $0.original, replacement: $0.replacement)
         }
     }
 
@@ -488,7 +494,7 @@ final class AppleIntelligenceService {
         throw AIServiceError.unavailable(unavailabilityReason)
     }
 
-    func proofread(text: String) async throws -> [ProofreadAnnotation] {
+    func proofread(text: String) async throws -> [ProofreadSuggestion] {
         throw AIServiceError.unavailable(unavailabilityReason)
     }
 

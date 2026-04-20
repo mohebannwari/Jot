@@ -719,7 +719,15 @@ struct NoteDetailView: View {
         }
         guard let tool = notification.object as? AITool else { return }
         currentAITask?.cancel()
-        currentAITask = Task { await handleAITool(tool) }
+        let selectionTextOverride = notification.userInfo?["selectedText"] as? String
+        let selectionRangeOverride = (notification.userInfo?["selectedRange"] as? NSValue)?.rangeValue
+        currentAITask = Task {
+          await handleAITool(
+            tool,
+            selectionTextOverride: selectionTextOverride,
+            selectionRangeOverride: selectionRangeOverride
+          )
+        }
       }
       .onReceive(NotificationCenter.default.publisher(for: .aiEditSubmit)) { notification in
         if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID {
@@ -772,7 +780,13 @@ struct NoteDetailView: View {
           let original = userInfo["original"] as? String
         else { return }
         if case .proofread(var annotations) = aiPanelState {
-          annotations.removeAll { $0.original == original }
+          let originalRange = (userInfo["originalRange"] as? NSValue)?.rangeValue
+          annotations.removeAll {
+            if let originalRange {
+              return $0.range == originalRange
+            }
+            return $0.original == original
+          }
           currentProofreadIndex =
             annotations.isEmpty ? 0 : min(currentProofreadIndex, annotations.count - 1)
           withAnimation(.jotSpring) { aiPanelState = .proofread(annotations) }
@@ -1113,6 +1127,21 @@ struct NoteDetailView: View {
               NotificationCenter.default.post(
                 name: .removeTextColor, object: nil,
                 userInfo: ["editorInstanceID": editorInstanceID]
+              )
+            },
+            onProofread: { [editorInstanceID] in
+              // Dismiss the bar immediately (proofread is not in `anyAIPanelVisible`, unlike translate/edit panels).
+              withAnimation(.smooth(duration: 0.15)) {
+                showFloatingToolbar = false
+                activeToolbarSubmenu = nil
+              }
+              // Single request: Coordinator captures selection synchronously then posts `.aiToolAction` with `selectedText`.
+              NotificationCenter.default.post(
+                name: .aiEditRequestSelection, object: nil,
+                userInfo: [
+                  "editorInstanceID": editorInstanceID,
+                  "followWithTool": AITool.proofread.rawValue,
+                ]
               )
             }
           )

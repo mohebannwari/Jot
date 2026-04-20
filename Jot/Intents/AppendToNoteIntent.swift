@@ -22,6 +22,9 @@ struct AppendToNoteIntent: AppIntent {
         guard var existingNote = manager.notes.first(where: { $0.id == note.id }) else {
             throw IntentError.noteNotFound
         }
+        guard existingNote.isAvailableToAppIntents else {
+            throw IntentError.noteLocked
+        }
 
         let separator = existingNote.content.isEmpty ? "" : "\n"
         existingNote.content += separator + text

@@ -6,6 +6,18 @@ final class AppIntentTests: XCTestCase {
 
     var manager: SimpleSwiftDataManager!
 
+    private func makeLockedNote(
+        title: String = "Locked Note",
+        content: String = "Secret"
+    ) throws -> Note {
+        let note = manager.addNote(title: title, content: content)
+        manager.toggleLock(id: note.id)
+
+        let lockedNote = try XCTUnwrap(manager.notes.first(where: { $0.id == note.id }))
+        XCTAssertTrue(lockedNote.isLocked)
+        return lockedNote
+    }
+
     override func setUp() async throws {
         try await super.setUp()
         manager = try SimpleSwiftDataManager(inMemoryForTesting: true)
@@ -73,5 +85,60 @@ final class AppIntentTests: XCTestCase {
             return
         }
         XCTAssertTrue(updated.content.contains("Appended"))
+    }
+
+    // MARK: - NoteQuery
+
+    func testNoteQueryEntitiesForExcludesLockedNotes() async throws {
+        let unlocked = manager.addNote(title: "Unlocked", content: "Visible")
+        let locked = try makeLockedNote()
+
+        let entities = try await NoteQuery().entities(for: [unlocked.id, locked.id])
+
+        XCTAssertEqual(entities.map(\.id), [unlocked.id])
+    }
+
+    func testNoteQueryEntitiesMatchingExcludesLockedNotes() async throws {
+        _ = manager.addNote(title: "Trip Plan", content: "Visible match")
+        _ = try makeLockedNote(title: "Trip Secret", content: "Hidden match")
+
+        let entities = try await NoteQuery().entities(matching: "Trip")
+
+        XCTAssertEqual(entities.map(\.title), ["Trip Plan"])
+    }
+
+    func testNoteQuerySuggestedEntitiesExcludesLockedNotesBeforeApplyingLimit() async throws {
+        var unlockedIDs: [UUID] = []
+        for index in 0..<10 {
+            let note = manager.addNote(title: "Unlocked \(index)", content: "Visible")
+            unlockedIDs.append(note.id)
+        }
+        let locked = try makeLockedNote(title: "Newest Locked", content: "Hidden")
+
+        let suggestions = try await NoteQuery().suggestedEntities()
+
+        XCTAssertEqual(suggestions.count, 10)
+        XCTAssertFalse(suggestions.contains(where: { $0.id == locked.id }))
+        XCTAssertEqual(Set(suggestions.map(\.id)), Set(unlockedIDs))
+    }
+
+    func testAppendToNoteIntentPerformThrowsForLockedNote() async throws {
+        let locked = try makeLockedNote(title: "Locked Target", content: "Original")
+
+        var intent = AppendToNoteIntent()
+        intent.note = NoteAppEntity(from: locked)
+        intent.text = "Appended"
+
+        do {
+            _ = try await intent.perform()
+            XCTFail("Expected appending to a locked note to fail")
+        } catch let error as IntentError {
+            XCTAssertEqual(error, .noteLocked)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+
+        let unchanged = try XCTUnwrap(manager.notes.first(where: { $0.id == locked.id }))
+        XCTAssertEqual(unchanged.content, "Original")
     }
 }

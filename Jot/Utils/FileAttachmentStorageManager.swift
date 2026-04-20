@@ -26,8 +26,17 @@ public final class FileAttachmentStorageManager {
 
     private let logger = Logger(subsystem: "com.jot", category: "FileAttachmentStorageManager")
     private let storageDirectoryName = "JotFiles"
+    private let storageBaseURLOverride: URL?
 
     private init() {
+        self.storageBaseURLOverride = nil
+        Task {
+            await ensureStorageDirectoryExists()
+        }
+    }
+
+    init(storageBaseURL: URL) {
+        self.storageBaseURLOverride = storageBaseURL
         Task {
             await ensureStorageDirectoryExists()
         }
@@ -66,12 +75,15 @@ public final class FileAttachmentStorageManager {
     }
 
     public func fileURL(for storedFilename: String) -> URL? {
+        guard let validFilename = validatedStoredFilename(storedFilename) else {
+            return nil
+        }
         guard let storageURL = try? storageDirectoryURLSync() else {
             return nil
         }
-        let fileURL = storageURL.appendingPathComponent(storedFilename, isDirectory: false)
+        let fileURL = storageURL.appendingPathComponent(validFilename, isDirectory: false)
         guard FileManager.default.fileExists(atPath: fileURL.path) else {
-            logger.error("fileURL: Missing stored file \(storedFilename)")
+            logger.error("fileURL: Missing stored file \(validFilename)")
             return nil
         }
         return fileURL
@@ -206,7 +218,9 @@ public final class FileAttachmentStorageManager {
         // and survive app binary deletion. Fall back to sandbox Documents for
         // unit tests where the App Group entitlement is unavailable.
         let base: URL
-        if let groupURL = FileManager.default.containerURL(
+        if let storageBaseURLOverride {
+            base = storageBaseURLOverride
+        } else if let groupURL = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: Self.appGroupID) {
             base = groupURL
         } else {
@@ -217,6 +231,21 @@ public final class FileAttachmentStorageManager {
                 create: true)
         }
         return base.appendingPathComponent(storageDirectoryName, isDirectory: true)
+    }
+
+    private func validatedStoredFilename(_ filename: String) -> String? {
+        guard !filename.isEmpty else { return nil }
+        guard !filename.contains("\\") else { return nil }
+
+        let components = (filename as NSString).pathComponents
+        guard components.count == 1, let component = components.first else {
+            return nil
+        }
+        guard component != ".", component != ".." else {
+            return nil
+        }
+
+        return component
     }
 
     /// One-time migration: moves files from the old sandbox Documents/JotFiles/

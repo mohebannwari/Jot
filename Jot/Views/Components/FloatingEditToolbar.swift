@@ -70,6 +70,8 @@ struct FloatingEditToolbar: View {
     var onFontFamilySelected: ((BodyFontStyle) -> Void)?
     var onColorSelected: ((String) -> Void)?
     var onColorRemoved: (() -> Void)?
+    /// Proofread via Apple Intelligence (same notification flow as the bottom AI row).
+    var onProofread: (() -> Void)? = nil
 
     // Animation
     @State private var toolsVisible = false
@@ -132,9 +134,12 @@ struct FloatingEditToolbar: View {
             if isAIAvailable {
                 dotDivider
 
-                // Section 3: AI tools (translate, edit content)
+                // Section 3: AI tools (translate, proofread, edit content)
                 HStack(spacing: 8) {
                     submenuIconButton("IconAiTranslate", submenu: .translate)
+                    if let onProofread {
+                        proofreadIconButton(action: onProofread)
+                    }
                     submenuIconButton("IconArrowsAllSides2", submenu: .editContent)
                 }
                 .opacity(toolsVisible ? 1 : 0)
@@ -327,6 +332,30 @@ struct FloatingEditToolbar: View {
         .background(GeometryReader { geo in
             Color.clear.preference(key: PillOffsetKey.self, value: [.color: geo.frame(in: .named("toolbar")).midX])
         })
+    }
+
+    // MARK: - Proofread (direct action, matches bottom AI bar)
+
+    private func proofreadIconButton(action: @escaping () -> Void) -> some View {
+        Button {
+            HapticManager.shared.toolbarAction()
+            withAnimation(.spring(duration: 0.2)) {
+                activeSubmenu = nil
+            }
+            action()
+        } label: {
+            Image("IconBroomSparkle")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 15, height: 15)
+                .foregroundColor(Color("IconSecondaryColor"))
+        }
+        .buttonStyle(.plain)
+        .frame(width: 28, height: 28)
+        .contentShape(Rectangle())
+        // Intentionally no glassTooltip / hoverContainer: matches `submenuIconButton` so proofread
+        // does not show a persistent hover chip or tooltip over the proofread results UI.
     }
 
     // MARK: - Icon Button Helper

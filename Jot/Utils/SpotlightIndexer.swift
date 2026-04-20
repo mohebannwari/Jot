@@ -11,6 +11,7 @@ final class SpotlightIndexer {
     private let index = CSSearchableIndex.default()
     private let domainID = "com.jot.notes"
     private let contentPreviewLimit = 300
+    var onIndexNoteForTesting: ((Note) -> Void)?
 
     private init() {}
 
@@ -43,6 +44,7 @@ final class SpotlightIndexer {
             return
         }
 
+        onIndexNoteForTesting?(note)
         let item = buildSearchableItem(for: note)
         index.indexSearchableItems([item])
     }

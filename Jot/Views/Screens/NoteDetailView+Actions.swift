@@ -17,7 +17,11 @@ extension NoteDetailView {
     // MARK: - Apple Intelligence
 
     @MainActor
-    func handleAITool(_ tool: AITool) async {
+    func handleAITool(
+        _ tool: AITool,
+        selectionTextOverride: String? = nil,
+        selectionRangeOverride: NSRange? = nil
+    ) async {
         let content = AppleIntelligenceService.stripMarkupForAI(editedContent)
         guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         withAnimation(.jotSpring) {
@@ -41,14 +45,42 @@ extension NoteDetailView {
                 }
                 scheduleAutosave()
             case .proofread:
-                let textToProofread = capturedSelectionText.isEmpty ? content : capturedSelectionText
-                let rawAnnotations = try await AppleIntelligenceService.shared.proofread(text: textToProofread)
-                let nsContent = content as NSString  // filter against full document for overlay positioning
-                let annotations = rawAnnotations.filter {
-                    // Use case-insensitive matching to tolerate minor casing differences
-                    // from the model while still requiring the substring to exist in the doc
-                    nsContent.range(of: $0.original, options: [.literal, .caseInsensitive]).location != NSNotFound
+                let nsContent = content as NSString
+                let fullDocumentRange = NSRange(location: 0, length: nsContent.length)
+
+                let proofreadScope: NSRange
+                let textToProofread: String
+                if let explicitScope = TodoEditorRepresentable.Coordinator.validatedProofreadScope(
+                    selectionRangeOverride,
+                    in: nsContent
+                ) {
+                    proofreadScope = explicitScope
+                    if let selectionTextOverride, !selectionTextOverride.isEmpty {
+                        textToProofread = selectionTextOverride
+                    } else {
+                        textToProofread = nsContent.substring(with: explicitScope)
+                    }
+                } else if let capturedScope = TodoEditorRepresentable.Coordinator.validatedProofreadScope(
+                    capturedSelectionRange,
+                    in: nsContent
+                ) {
+                    proofreadScope = capturedScope
+                    if !capturedSelectionText.isEmpty {
+                        textToProofread = capturedSelectionText
+                    } else {
+                        textToProofread = nsContent.substring(with: capturedScope)
+                    }
+                } else {
+                    proofreadScope = fullDocumentRange
+                    textToProofread = content
                 }
+
+                let rawSuggestions = try await AppleIntelligenceService.shared.proofread(text: textToProofread)
+                let annotations = TodoEditorRepresentable.Coordinator.resolveProofreadAnnotations(
+                    in: nsContent,
+                    suggestions: rawSuggestions,
+                    scope: proofreadScope
+                )
                 currentProofreadIndex = 0
                 withAnimation(.jotSpring) { aiPanelState = .proofread(annotations) }
                 NotificationCenter.default.post(name: .aiProofreadClearOverlays, object: nil, userInfo: ["editorInstanceID": editorInstanceID])
@@ -56,7 +88,11 @@ extension NoteDetailView {
                     NotificationCenter.default.post(
                         name: .aiProofreadShowAnnotations,
                         object: annotations,
-                        userInfo: ["activeIndex": 0, "editorInstanceID": editorInstanceID]
+                        userInfo: [
+                            "activeIndex": 0,
+                            "editorInstanceID": editorInstanceID,
+                            "scopeRange": NSValue(range: proofreadScope)
+                        ]
                     )
                 }
             case .editContent:
@@ -126,7 +162,8 @@ extension NoteDetailView {
         var info: [String: Any] = [
             "original": isFullDocument ? "" : originalText,
             "replacement": revised,
-            "editorInstanceID": editorInstanceID
+            "editorInstanceID": editorInstanceID,
+            "originalRange": NSValue(range: range)
         ]
         if aiCaptureIsCardOrigin { info["cardOrigin"] = true }
         NotificationCenter.default.post(
@@ -232,7 +269,8 @@ extension NoteDetailView {
         var info: [String: Any] = [
             "original": isFullDocument ? "" : originalText,
             "replacement": translated,
-            "editorInstanceID": editorInstanceID
+            "editorInstanceID": editorInstanceID,
+            "originalRange": NSValue(range: range)
         ]
         if aiCaptureIsCardOrigin { info["cardOrigin"] = true }
         NotificationCenter.default.post(

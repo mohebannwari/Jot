@@ -1,0 +1,1 @@
+../../../../.cursor/commands/speckit.checklist.md

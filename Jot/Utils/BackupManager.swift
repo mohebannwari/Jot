@@ -26,6 +26,30 @@ final class BackupManager: ObservableObject {
         let folderCount: Int
     }
 
+    struct BackupSnapshot {
+        let notes: [Note]
+        let folders: [Folder]
+    }
+
+    struct ValidatedRestorePayload {
+        let backupURL: URL
+        let notes: [Note]
+        let folders: [Folder]
+    }
+
+    private enum RestoreValidationError: LocalizedError {
+        case missingRequiredFile(String)
+
+        var errorDescription: String? {
+            switch self {
+            case .missingRequiredFile(let name):
+                return "Missing required restore file: \(name)"
+            }
+        }
+    }
+
+    private static var pendingValidatedRestore: ValidatedRestorePayload?
+
     private init() {
         lastBackupDate = userDefaults.object(forKey: ThemeManager.lastBackupDateKey) as? Date
         updateBackupFolderName()
@@ -127,15 +151,14 @@ final class BackupManager: ObservableObject {
         do {
             try fileManager.createDirectory(at: backupURL, withIntermediateDirectories: true)
 
+            let snapshot = try backupSnapshot(from: notesManager)
+
             // Serialize notes
-            let allNotes = gatherAllNotes(from: notesManager)
-            let notesData = try JSONEncoder.jotBackup.encode(allNotes)
+            let notesData = try JSONEncoder.jotBackup.encode(snapshot.notes)
             try notesData.write(to: backupURL.appendingPathComponent("notes.json"))
 
             // Serialize folders
-            notesManager.loadArchivedFolders()
-            let allFolders = notesManager.folders + notesManager.archivedFolders
-            let foldersData = try JSONEncoder.jotBackup.encode(allFolders)
+            let foldersData = try JSONEncoder.jotBackup.encode(snapshot.folders)
             try foldersData.write(to: backupURL.appendingPathComponent("folders.json"))
 
             // Write manifest
@@ -143,8 +166,8 @@ final class BackupManager: ObservableObject {
                 appVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown",
                 schemaVersion: 1,
                 timestamp: Date(),
-                noteCount: allNotes.count,
-                folderCount: allFolders.count
+                noteCount: snapshot.notes.count,
+                folderCount: snapshot.folders.count
             )
             let manifestData = try JSONEncoder.jotBackup.encode(manifest)
             try manifestData.write(to: backupURL.appendingPathComponent("manifest.json"))
@@ -162,7 +185,7 @@ final class BackupManager: ObservableObject {
             lastBackupDate = now
             userDefaults.set(now, forKey: ThemeManager.lastBackupDateKey)
 
-            logger.info("Backup completed: \(backupFolderName) (\(allNotes.count) notes, \(allFolders.count) folders)")
+            logger.info("Backup completed: \(backupFolderName) (\(snapshot.notes.count) notes, \(snapshot.folders.count) folders)")
 
             // Prune old backups
             pruneOldBackups(in: baseURL)
@@ -240,8 +263,12 @@ final class BackupManager: ObservableObject {
     /// Checks for and executes a pending restore on app launch.
     /// Returns the security-scoped URL that must be stopped after `performPostInitRestore`.
     /// Must be called BEFORE SimpleSwiftDataManager is constructed.
-    static func checkAndPerformPendingRestore() -> URL? {
-        let defaults = UserDefaults.standard
+    static func checkAndPerformPendingRestore(
+        userDefaults: UserDefaults = .standard,
+        fileManager: FileManager = .default,
+        storeBaseURL: URL? = nil
+    ) -> URL? {
+        let defaults = userDefaults
         guard let backupPath = defaults.string(forKey: "pendingRestoreBackupPath") else {
             return nil
         }
@@ -249,7 +276,7 @@ final class BackupManager: ObservableObject {
 
         let logger = Logger(subsystem: "com.jot.app", category: "BackupManager")
         let backupURL = URL(fileURLWithPath: backupPath)
-        let fm = FileManager.default
+        let fm = fileManager
 
         // Resolve security-scoped bookmark for the parent folder
         var accessedURL: URL?
@@ -267,56 +294,66 @@ final class BackupManager: ObservableObject {
             }
         }
 
-        guard fm.fileExists(atPath: backupURL.appendingPathComponent("manifest.json").path) else {
-            logger.error("Pending restore aborted: manifest.json not found at \(backupPath)")
+        do {
+            let validatedRestore = try validateRestorePayload(at: backupURL, fileManager: fm)
+            try removeStoreFiles(
+                at: storeBaseURL ?? defaultStoreBaseURL(using: fm),
+                fileManager: fm
+            )
+            pendingValidatedRestore = validatedRestore
+            defaults.set(backupPath, forKey: "pendingImportBackupPath")
+            logger.info("Pending restore validated and staged for import from \(backupPath)")
+            return accessedURL
+        } catch {
+            pendingValidatedRestore = nil
+            defaults.removeObject(forKey: "pendingImportBackupPath")
+            logger.error("Pending restore aborted before store replacement: \(error.localizedDescription)")
             accessedURL?.stopAccessingSecurityScopedResource()
             return nil
         }
-
-        // Locate and replace the SwiftData store
-        let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let storeDir = appSupport.appendingPathComponent("default.store", isDirectory: false)
-
-        // Remove existing SwiftData files
-        let storeExtensions = ["", "-wal", "-shm"]
-        for ext in storeExtensions {
-            let file = URL(fileURLWithPath: storeDir.path + ext)
-            try? fm.removeItem(at: file)
-        }
-
-        logger.info("Pending restore: cleared existing store. Will import data on next manager init.")
-
-        // Store the backup path for import after SimpleSwiftDataManager initializes
-        defaults.set(backupPath, forKey: "pendingImportBackupPath")
-        return accessedURL
     }
 
     /// Called after SimpleSwiftDataManager is initialized to import backup data.
-    static func performPostInitRestore(into notesManager: SimpleSwiftDataManager) {
-        let defaults = UserDefaults.standard
-        guard let backupPath = defaults.string(forKey: "pendingImportBackupPath") else { return }
-        defaults.removeObject(forKey: "pendingImportBackupPath")
+    static func performPostInitRestore(
+        into notesManager: SimpleSwiftDataManager,
+        userDefaults: UserDefaults = .standard,
+        fileManager: FileManager = .default
+    ) {
+        let defaults = userDefaults
+        let payload: ValidatedRestorePayload
+
+        if let stagedPayload = pendingValidatedRestore {
+            payload = stagedPayload
+            pendingValidatedRestore = nil
+            defaults.removeObject(forKey: "pendingImportBackupPath")
+        } else {
+            guard let backupPath = defaults.string(forKey: "pendingImportBackupPath") else { return }
+            defaults.removeObject(forKey: "pendingImportBackupPath")
+            do {
+                payload = try validateRestorePayload(
+                    at: URL(fileURLWithPath: backupPath),
+                    fileManager: fileManager
+                )
+            } catch {
+                let logger = Logger(subsystem: "com.jot.app", category: "BackupManager")
+                logger.error("Post-init restore failed validation: \(error.localizedDescription)")
+                return
+            }
+        }
 
         let logger = Logger(subsystem: "com.jot.app", category: "BackupManager")
-        let backupURL = URL(fileURLWithPath: backupPath)
 
         do {
-            let notesData = try Data(contentsOf: backupURL.appendingPathComponent("notes.json"))
-            let notes = try JSONDecoder.jotBackup.decode([Note].self, from: notesData)
-
-            let foldersData = try Data(contentsOf: backupURL.appendingPathComponent("folders.json"))
-            let folders = try JSONDecoder.jotBackup.decode([Folder].self, from: foldersData)
-
-            notesManager.importBackup(notes: notes, folders: folders)
+            notesManager.importBackup(notes: payload.notes, folders: payload.folders)
 
             // Restore images and files into the App Group container
             let restoreBase = FileManager.default.containerURL(
                 forSecurityApplicationGroupIdentifier: appGroupID)
                 ?? FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-            try restoreDirectory(named: "JotImages", from: backupURL, to: restoreBase)
-            try restoreDirectory(named: "JotFiles", from: backupURL, to: restoreBase)
+            try restoreDirectory(named: "JotImages", from: payload.backupURL, to: restoreBase)
+            try restoreDirectory(named: "JotFiles", from: payload.backupURL, to: restoreBase)
 
-            logger.info("Restore complete: \(notes.count) notes, \(folders.count) folders")
+            logger.info("Restore complete: \(payload.notes.count) notes, \(payload.folders.count) folders")
         } catch {
             logger.error("Post-init restore failed: \(error)")
         }
@@ -330,13 +367,13 @@ final class BackupManager: ObservableObject {
             rawValue: userDefaults.string(forKey: ThemeManager.backupFrequencyKey) ?? "manual"
         ) ?? .manual
 
-        guard frequency != .manual else { return }
-        guard resolvedBackupFolderURL() != nil else { return }
-
-        let interval: TimeInterval = frequency == .daily ? 86400 : 604800
         let lastBackup = userDefaults.object(forKey: ThemeManager.lastBackupDateKey) as? Date ?? .distantPast
-
-        guard Date().timeIntervalSince(lastBackup) >= interval else { return }
+        guard shouldRunAutoBackup(
+            frequency: frequency,
+            lastBackupDate: lastBackup,
+            hasBackupDestination: resolvedBackupFolderURL() != nil,
+            hasLoadedInitialNotes: notesManager.hasLoadedInitialNotes
+        ) else { return }
 
         Task { @MainActor [weak self] in
             guard let self else { return }
@@ -365,18 +402,71 @@ final class BackupManager: ObservableObject {
 
     // MARK: - Private Helpers
 
-    private func gatherAllNotes(from manager: SimpleSwiftDataManager) -> [Note] {
-        // Ensure archived and deleted notes are loaded before backup
-        manager.loadArchivedNotes()
-        manager.loadDeletedNotes()
+    func backupSnapshot(from manager: SimpleSwiftDataManager) throws -> BackupSnapshot {
+        BackupSnapshot(
+            notes: try manager.allNotesForBackup(),
+            folders: try manager.allFoldersForBackup()
+        )
+    }
 
-        var all = manager.notes
-        all.append(contentsOf: manager.archivedNotes)
-        all.append(contentsOf: manager.deletedNotes)
-        return all
+    func shouldRunAutoBackup(
+        frequency: BackupFrequency,
+        lastBackupDate: Date,
+        hasBackupDestination: Bool,
+        hasLoadedInitialNotes: Bool,
+        now: Date = Date()
+    ) -> Bool {
+        guard frequency != .manual else { return false }
+        guard hasBackupDestination else { return false }
+        guard hasLoadedInitialNotes else { return false }
+
+        let interval: TimeInterval = frequency == .daily ? 86400 : 604800
+        return now.timeIntervalSince(lastBackupDate) >= interval
     }
 
     private static let appGroupID = "group.com.mohebanwari.Jot"
+
+    private static func validateRestorePayload(
+        at backupURL: URL,
+        fileManager: FileManager
+    ) throws -> ValidatedRestorePayload {
+        let manifestURL = backupURL.appendingPathComponent("manifest.json")
+        let notesURL = backupURL.appendingPathComponent("notes.json")
+        let foldersURL = backupURL.appendingPathComponent("folders.json")
+
+        for url in [manifestURL, notesURL, foldersURL] {
+            guard fileManager.fileExists(atPath: url.path) else {
+                throw RestoreValidationError.missingRequiredFile(url.lastPathComponent)
+            }
+        }
+
+        _ = try JSONDecoder.jotBackup.decode(
+            BackupManifest.self,
+            from: Data(contentsOf: manifestURL)
+        )
+        let notes = try JSONDecoder.jotBackup.decode([Note].self, from: Data(contentsOf: notesURL))
+        let folders = try JSONDecoder.jotBackup.decode([Folder].self, from: Data(contentsOf: foldersURL))
+
+        return ValidatedRestorePayload(
+            backupURL: backupURL,
+            notes: notes,
+            folders: folders
+        )
+    }
+
+    private static func defaultStoreBaseURL(using fileManager: FileManager) -> URL {
+        let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        return appSupport.appendingPathComponent("default.store", isDirectory: false)
+    }
+
+    private static func removeStoreFiles(at storeBaseURL: URL, fileManager: FileManager) throws {
+        for ext in ["", "-wal", "-shm"] {
+            let file = URL(fileURLWithPath: storeBaseURL.path + ext)
+            if fileManager.fileExists(atPath: file.path) {
+                try fileManager.removeItem(at: file)
+            }
+        }
+    }
 
     private func copyDirectory(named name: String, to backupURL: URL) {
         let baseDir = fileManager.containerURL(

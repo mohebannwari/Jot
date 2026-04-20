@@ -246,15 +246,11 @@ struct MeetingNotesFloatingPanel: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // Opaque well (same token as detail text surfaces) so transcript/notes keep a stable base
+        // and do not show the note canvas through—aligned with `TextGenFloatingPanel` content read.
         .background {
-            if #available(macOS 26.0, iOS 26.0, *) {
-                // Neutral inner well: avoid opaque paper that looked like pane tint leaking through glass.
-                RoundedRectangle(cornerRadius: contentRadius, style: .continuous)
-                    .fill(.ultraThinMaterial)
-            } else {
-                RoundedRectangle(cornerRadius: contentRadius, style: .continuous)
-                    .fill(colorScheme == .dark ? Color("DetailPaneColor") : Color.white)
-            }
+            RoundedRectangle(cornerRadius: contentRadius, style: .continuous)
+                .fill(colorScheme == .dark ? Color("DetailPaneColor") : Color.white)
         }
         .clipShape(RoundedRectangle(cornerRadius: contentRadius, style: .continuous))
         .overlay(
@@ -715,6 +711,8 @@ private struct MeetingFloatingPanelTranscriptTabContent: View {
                     }
                 }
             }
+            // Avoid AppKit scroll view chrome painting an opaque backing over the glass well.
+            .scrollContentBackground(.hidden)
         }
     }
 

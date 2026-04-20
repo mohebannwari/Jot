@@ -2019,6 +2019,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         // Proofread inline overlay tracking: (pill view, highlighted NSRange, original text color attributes)
         private var proofreadPillViews: [(view: NSView, range: NSRange)] = []
         private var proofreadHighlightedRanges: [NSRange] = []
+        private var proofreadScopeRange: NSRange = NSRange(location: NSNotFound, length: 0)
 
         // Last known non-empty selection — cached here so clicking the AI tools button
         // (which clears the NSTextView selection) doesn't lose context for Edit Content.
@@ -3113,8 +3114,13 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                    let myID = self?.editorInstanceID, nid != myID { return }
                 guard let annotations = notification.object as? [ProofreadAnnotation] else { return }
                 let activeIndex = notification.userInfo?["activeIndex"] as? Int ?? 0
+                let scopeRange = (notification.userInfo?["scopeRange"] as? NSValue)?.rangeValue
                 Task { @MainActor [weak self] in
-                    self?.applyProofreadAnnotations(annotations, activeIndex: activeIndex)
+                    self?.applyProofreadAnnotations(
+                        annotations,
+                        activeIndex: activeIndex,
+                        scopeRange: scopeRange
+                    )
                 }
             }
 
@@ -3138,27 +3144,48 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 guard let userInfo = notification.userInfo,
                       let original = userInfo["original"] as? String,
                       let replacement = userInfo["replacement"] as? String else { return }
+                let originalRange = (userInfo["originalRange"] as? NSValue)?.rangeValue
                 Task { @MainActor [weak self] in
-                    self?.applyProofreadSuggestion(original: original, replacement: replacement)
+                    self?.applyProofreadSuggestion(
+                        original: original,
+                        replacement: replacement,
+                        originalRange: originalRange
+                    )
                 }
             }
 
             // MARK: Edit Content — capture selection
+            // Runs synchronously on the main queue so `.aiEditCaptureSelection` is posted before any
+            // chained `.aiToolAction` (e.g. proofread with `followWithTool`) is handled.
             let captureSelection = NotificationCenter.default.addObserver(
                 forName: .aiEditRequestSelection, object: nil, queue: .main
             ) { [weak self] notification in
                 if let nid = notification.userInfo?["editorInstanceID"] as? UUID,
                    let myID = self?.editorInstanceID, nid != myID { return }
-                Task { @MainActor [weak self] in
-                    guard let self = self, let textView = self.textView else { return }
-                    // Skip if a card text view is first responder — the card overlay
-                    // captures its own selection. But DO NOT skip for field editors
-                    // (e.g. the TranslateInputSubmenu's TextField), which are also
-                    // NSTextView instances but aren't card editors.
-                    if let firstResp = textView.window?.firstResponder as? NSTextView,
-                       firstResp !== textView,
-                       !firstResp.isFieldEditor { return }
-                    self.captureSelectionForEditContent()
+                guard let self = self, let textView = self.textView else { return }
+                // Skip if a card text view is first responder — the card overlay
+                // captures its own selection. But DO NOT skip for field editors
+                // (e.g. the TranslateInputSubmenu's TextField), which are also
+                // NSTextView instances but aren't card editors.
+                if let firstResp = textView.window?.firstResponder as? NSTextView,
+                   firstResp !== textView,
+                   !firstResp.isFieldEditor { return }
+                self.captureSelectionForEditContent()
+                // Proofread: chain tool after capture so `handleAITool` gets `selectedText` in userInfo
+                // (avoids race with SwiftUI `capturedSelectionText` and async Task ordering).
+                if let raw = notification.userInfo?["followWithTool"] as? String,
+                   raw == AITool.proofread.rawValue {
+                    var info: [String: Any] = [:]
+                    if let eid = self.editorInstanceID { info["editorInstanceID"] = eid }
+                    if self.lastKnownSelectionRange.length > 0 {
+                        info["selectedText"] = self.lastKnownSelectionText
+                        info["selectedRange"] = NSValue(range: self.lastKnownSelectionRange)
+                    }
+                    NotificationCenter.default.post(
+                        name: .aiToolAction,
+                        object: AITool.proofread,
+                        userInfo: info
+                    )
                 }
             }
 
@@ -3454,8 +3481,13 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 guard let userInfo = notification.userInfo,
                       let original = userInfo["original"] as? String,
                       let replacement = userInfo["replacement"] as? String else { return }
+                let originalRange = (userInfo["originalRange"] as? NSValue)?.rangeValue
                 Task { @MainActor [weak self] in
-                    self?.applyEditContentReplacement(original: original, replacement: replacement)
+                    self?.applyEditContentReplacement(
+                        original: original,
+                        replacement: replacement,
+                        originalRange: originalRange
+                    )
                 }
             }
 
@@ -3664,6 +3696,11 @@ struct TodoEditorRepresentable: NSViewRepresentable {
 
         // MARK: - Quick Look
 
+        private struct QuickLookPreviewTarget {
+            let url: URL
+            let requiresSecurityScope: Bool
+        }
+
         @MainActor
         private func triggerQuickLookForLinkAtCursor() {
             guard let textView = self.textView as? InlineNSTextView,
@@ -3677,13 +3714,12 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 return
             }
 
-            guard let previewURL = resolveQuickLookURL(at: loc, in: textStorage) else {
+            guard let previewTarget = resolveQuickLookTarget(at: loc, in: textStorage) else {
                 NSSound.beep()
                 return
             }
 
-            textView.quickLookPreviewURL = previewURL
-            QLPreviewPanel.shared()?.makeKeyAndOrderFront(nil)
+            openQuickLookPreview(previewTarget, in: textView)
         }
 
         @MainActor
@@ -3692,13 +3728,12 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                   let textStorage = textView.textStorage,
                   charIndex < textStorage.length else { return }
 
-            guard let previewURL = resolveQuickLookURL(at: charIndex, in: textStorage) else {
+            guard let previewTarget = resolveQuickLookTarget(at: charIndex, in: textStorage) else {
                 NSSound.beep()
                 return
             }
 
-            textView.quickLookPreviewURL = previewURL
-            QLPreviewPanel.shared()?.makeKeyAndOrderFront(nil)
+            openQuickLookPreview(previewTarget, in: textView)
         }
 
         /// Extracts a file attachment from tag mode into an inline preview.
@@ -3845,62 +3880,109 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             }
         }
 
+        @MainActor
+        private func openQuickLookPreview(_ previewTarget: QuickLookPreviewTarget, in textView: InlineNSTextView) {
+            var stopAccessing: (() -> Void)?
+            if previewTarget.requiresSecurityScope {
+                guard previewTarget.url.startAccessingSecurityScopedResource() else {
+                    NSSound.beep()
+                    return
+                }
+                stopAccessing = { previewTarget.url.stopAccessingSecurityScopedResource() }
+            }
+
+            textView.setQuickLookPreview(url: previewTarget.url, stopAccessing: stopAccessing)
+            QLPreviewPanel.shared()?.makeKeyAndOrderFront(nil)
+        }
+
         /// Examines text attributes at the given character index and returns a Quick Look-compatible file URL.
         /// For web URLs, creates a temporary `.webloc` file so QLPreviewPanel can render the page.
         @MainActor
-        private func resolveQuickLookURL(at charIndex: Int, in textStorage: NSTextStorage) -> URL? {
+        private func resolveQuickLookTarget(at charIndex: Int, in textStorage: NSTextStorage) -> QuickLookPreviewTarget? {
             let attrs = textStorage.attributes(at: charIndex, effectiveRange: nil)
 
             // 1. File link with security-scoped bookmark
             if let fileLinkAttachment = attrs[.attachment] as? FileLinkAttachment {
-                return resolveFileLinkURL(path: fileLinkAttachment.filePath, bookmark: fileLinkAttachment.bookmarkBase64)
+                return resolveFileLinkPreviewTarget(
+                    path: fileLinkAttachment.filePath,
+                    bookmark: fileLinkAttachment.bookmarkBase64
+                )
             }
             if let filePath = attrs[.fileLinkPath] as? String {
                 let bookmark = (attrs[.fileLinkBookmark] as? String) ?? ""
-                return resolveFileLinkURL(path: filePath, bookmark: bookmark)
+                return resolveFileLinkPreviewTarget(path: filePath, bookmark: bookmark)
             }
 
             // 2. Stored file attachment
             if let storedFilename = attrs[.fileStoredFilename] as? String,
                let fileURL = FileAttachmentStorageManager.shared.fileURL(for: storedFilename) {
-                return fileURL
+                return QuickLookPreviewTarget(url: fileURL, requiresSecurityScope: false)
             }
 
             // Note mention — serialize note content to a temp HTML file
             if let idStr = attrs[.notelinkID] as? String,
                let noteID = UUID(uuidString: idStr),
                let note = fetchNote?(noteID) {
-                return generateNotePreviewHTML(for: note)
+                guard let previewURL = generateNotePreviewHTML(for: note) else { return nil }
+                return QuickLookPreviewTarget(url: previewURL, requiresSecurityScope: false)
             }
 
             // 3. Web clip URL
             if attrs[.webClipTitle] != nil,
                let linkStr = Self.linkURLString(from: attrs),
                let webURL = URL(string: linkStr) {
-                return createWeblocFile(for: webURL)
+                guard let previewURL = createWeblocFile(for: webURL) else { return nil }
+                return QuickLookPreviewTarget(url: previewURL, requiresSecurityScope: false)
             }
 
             // 3b. Link card URL
             if let linkCard = attrs[.attachment] as? NoteLinkCardAttachment,
                let webURL = URL(string: linkCard.url) {
-                return createWeblocFile(for: webURL)
+                guard let previewURL = createWeblocFile(for: webURL) else { return nil }
+                return QuickLookPreviewTarget(url: previewURL, requiresSecurityScope: false)
             }
 
             // 4. Plain link URL
             if let linkStr = attrs[.plainLinkURL] as? String,
                let webURL = URL(string: linkStr) {
-                return createWeblocFile(for: webURL)
+                guard let previewURL = createWeblocFile(for: webURL) else { return nil }
+                return QuickLookPreviewTarget(url: previewURL, requiresSecurityScope: false)
             }
 
             // 5. Standard .link attribute (bare link text)
             if let url = attrs[.link] as? URL {
-                return url.isFileURL ? url : createWeblocFile(for: url)
+                if url.isFileURL {
+                    return QuickLookPreviewTarget(url: url, requiresSecurityScope: false)
+                }
+                guard let previewURL = createWeblocFile(for: url) else { return nil }
+                return QuickLookPreviewTarget(url: previewURL, requiresSecurityScope: false)
             }
             if let linkStr = attrs[.link] as? String, let url = URL(string: linkStr) {
-                return url.isFileURL ? url : createWeblocFile(for: url)
+                if url.isFileURL {
+                    return QuickLookPreviewTarget(url: url, requiresSecurityScope: false)
+                }
+                guard let previewURL = createWeblocFile(for: url) else { return nil }
+                return QuickLookPreviewTarget(url: previewURL, requiresSecurityScope: false)
             }
 
             return nil
+        }
+
+        private func resolveFileLinkPreviewTarget(path: String, bookmark: String) -> QuickLookPreviewTarget? {
+            if !bookmark.isEmpty, let data = Data(base64Encoded: bookmark) {
+                var isStale = false
+                if let resolvedURL = try? URL(
+                    resolvingBookmarkData: data,
+                    options: .withSecurityScope,
+                    relativeTo: nil,
+                    bookmarkDataIsStale: &isStale
+                ) {
+                    return QuickLookPreviewTarget(url: resolvedURL, requiresSecurityScope: true)
+                }
+            }
+
+            guard let resolvedURL = resolveFileLinkURL(path: path, bookmark: "") else { return nil }
+            return QuickLookPreviewTarget(url: resolvedURL, requiresSecurityScope: false)
         }
 
         private func resolveFileLinkURL(path: String, bookmark: String) -> URL? {
@@ -3912,7 +3994,6 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     relativeTo: nil,
                     bookmarkDataIsStale: &isStale
                 ) {
-                    _ = resolved.startAccessingSecurityScopedResource()
                     return resolved
                 }
             }
@@ -4111,35 +4192,164 @@ struct TodoEditorRepresentable: NSViewRepresentable {
 
         // MARK: - Proofread Overlay Helpers
 
-        private func applyProofreadAnnotations(_ annotations: [ProofreadAnnotation], activeIndex: Int = 0) {
+        nonisolated static func validatedProofreadScope(
+            _ candidateRange: NSRange?,
+            in fullString: NSString
+        ) -> NSRange? {
+            guard let candidateRange else { return nil }
+            guard candidateRange.location != NSNotFound else { return nil }
+            guard candidateRange.length > 0 else { return nil }
+            guard NSMaxRange(candidateRange) <= fullString.length else { return nil }
+            return candidateRange
+        }
+
+        private nonisolated static func proofreadRangesOverlap(_ lhs: NSRange, _ rhs: NSRange) -> Bool {
+            NSIntersectionRange(lhs, rhs).length > 0
+        }
+
+        private nonisolated static func firstUnconsumedProofreadMatch(
+            of original: String,
+            in fullString: NSString,
+            scope: NSRange,
+            usedRanges: [NSRange],
+            caseInsensitive: Bool
+        ) -> NSRange? {
+            let options: NSString.CompareOptions = caseInsensitive ? [.literal, .caseInsensitive] : .literal
+            let scopeEnd = NSMaxRange(scope)
+            var searchLocation = scope.location
+
+            while searchLocation < scopeEnd {
+                let searchRange = NSRange(location: searchLocation, length: scopeEnd - searchLocation)
+                let found = fullString.range(of: original, options: options, range: searchRange)
+                guard found.location != NSNotFound else { return nil }
+                if !usedRanges.contains(where: { Self.proofreadRangesOverlap($0, found) }) {
+                    return found
+                }
+                searchLocation = max(found.location + max(found.length, 1), searchLocation + 1)
+            }
+
+            return nil
+        }
+
+        nonisolated static func resolveProofreadAnnotations(
+            in fullString: NSString,
+            suggestions: [ProofreadSuggestion],
+            scope: NSRange
+        ) -> [ProofreadAnnotation] {
+            guard let validatedScope = validatedProofreadScope(scope, in: fullString) else { return [] }
+
+            var usedRanges: [NSRange] = []
+            var resolved: [ProofreadAnnotation] = []
+
+            for suggestion in suggestions {
+                let found =
+                    firstUnconsumedProofreadMatch(
+                        of: suggestion.original,
+                        in: fullString,
+                        scope: validatedScope,
+                        usedRanges: usedRanges,
+                        caseInsensitive: false
+                    )
+                    ?? firstUnconsumedProofreadMatch(
+                        of: suggestion.original,
+                        in: fullString,
+                        scope: validatedScope,
+                        usedRanges: usedRanges,
+                        caseInsensitive: true
+                    )
+
+                guard let found else { continue }
+                usedRanges.append(found)
+                resolved.append(
+                    ProofreadAnnotation(
+                        original: fullString.substring(with: found),
+                        replacement: suggestion.replacement,
+                        range: found
+                    )
+                )
+            }
+
+            return resolved.sorted {
+                if $0.range.location == $1.range.location {
+                    return $0.range.length < $1.range.length
+                }
+                return $0.range.location < $1.range.location
+            }
+        }
+
+        private nonisolated static func derivedProofreadScope(
+            from annotations: [ProofreadAnnotation],
+            fullLength: Int
+        ) -> NSRange? {
+            guard let first = annotations.min(by: { $0.range.location < $1.range.location }),
+                  let last = annotations.max(by: { NSMaxRange($0.range) < NSMaxRange($1.range) }) else {
+                return nil
+            }
+            let location = first.range.location
+            let upperBound = min(NSMaxRange(last.range), fullLength)
+            guard upperBound > location else { return nil }
+            return NSRange(location: location, length: upperBound - location)
+        }
+
+        nonisolated static func validProofreadAnnotationsForReplacement(
+            in fullString: NSString,
+            annotations: [ProofreadAnnotation]
+        ) -> [ProofreadAnnotation] {
+            annotations
+                .filter { annotation in
+                    resolvedAIReplacementRange(
+                        in: fullString,
+                        original: annotation.original,
+                        originalRange: annotation.range
+                    ) != nil
+                }
+                .sorted {
+                    if $0.range.location == $1.range.location {
+                        return $0.range.length > $1.range.length
+                    }
+                    return $0.range.location > $1.range.location
+                }
+        }
+
+        private func applyProofreadAnnotations(
+            _ annotations: [ProofreadAnnotation],
+            activeIndex: Int = 0,
+            scopeRange: NSRange? = nil
+        ) {
             guard let textView = self.textView,
                   let storage = textView.textStorage else { return }
 
-            clearProofreadOverlays()
+            clearProofreadOverlays(resetScope: false)
 
             let fullString = storage.string as NSString
 
-            // First pass: resolve all annotation ranges
-            var resolved: [(annotation: ProofreadAnnotation, range: NSRange)] = []
-            for annotation in annotations {
-                let found = fullString.range(
-                    of: annotation.original,
-                    options: .literal,
-                    range: NSRange(location: 0, length: fullString.length)
-                )
-                guard found.location != NSNotFound else { continue }
-                resolved.append((annotation, found))
+            let resolved = annotations.filter { annotation in
+                Self.resolvedAIReplacementRange(
+                    in: fullString,
+                    original: annotation.original,
+                    originalRange: annotation.range
+                ) != nil
+            }
+
+            if let explicitScope = Self.validatedProofreadScope(scopeRange, in: fullString) {
+                proofreadScopeRange = explicitScope
+            } else if Self.validatedProofreadScope(proofreadScopeRange, in: fullString) == nil {
+                proofreadScopeRange =
+                    Self.derivedProofreadScope(from: resolved, fullLength: storage.length)
+                    ?? NSRange(location: 0, length: storage.length)
             }
 
             let isDark = currentColorScheme == .dark
             let dimColor: NSColor = (isDark ? NSColor.white : NSColor.black)
                 .withAlphaComponent(isDark ? 0.4 : 0.25)
 
-            let fullRange = NSRange(location: 0, length: storage.length)
+            let dimRange =
+                Self.validatedProofreadScope(proofreadScopeRange, in: fullString)
+                ?? NSRange(location: 0, length: storage.length)
             let clampedIndex = resolved.isEmpty ? 0 : min(activeIndex, resolved.count - 1)
 
             guard let layoutManager = textView.layoutManager else { return }
-            layoutManager.addTemporaryAttribute(.foregroundColor, value: dimColor, forCharacterRange: fullRange)
+            layoutManager.addTemporaryAttribute(.foregroundColor, value: dimColor, forCharacterRange: dimRange)
             if !resolved.isEmpty {
                 layoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: resolved[clampedIndex].range)
             }
@@ -4155,13 +4365,16 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             }
         }
 
-        private func clearProofreadOverlays() {
+        private func clearProofreadOverlays(resetScope: Bool = true) {
             guard let textView = self.textView,
                   let layoutManager = textView.layoutManager,
                   let storage = textView.textStorage else {
                 proofreadPillViews.forEach { $0.view.removeFromSuperview() }
                 proofreadPillViews.removeAll()
                 proofreadHighlightedRanges.removeAll()
+                if resetScope {
+                    proofreadScopeRange = NSRange(location: NSNotFound, length: 0)
+                }
                 return
             }
 
@@ -4175,22 +4388,43 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 layoutManager.removeTemporaryAttribute(.foregroundColor, forCharacterRange: fullRange)
             }
             proofreadHighlightedRanges.removeAll()
+            if resetScope {
+                proofreadScopeRange = NSRange(location: NSNotFound, length: 0)
+            }
         }
 
-        private func applyProofreadSuggestion(original: String, replacement: String) {
+        private func applyProofreadSuggestion(
+            original: String,
+            replacement: String,
+            originalRange: NSRange?
+        ) {
             guard let textView = self.textView,
                   let storage = textView.textStorage else { return }
 
-            // Search from the cursor position first to find the nearest match,
-            // avoiding wrong-occurrence replacement when the same text appears multiple times
             let fullString = storage.string as NSString
-            let cursorLoc = textView.selectedRange().location
-            var found = fullString.range(of: original, options: .literal,
-                                         range: NSRange(location: cursorLoc, length: fullString.length - cursorLoc))
-            if found.location == NSNotFound {
-                // Fall back to searching from the beginning
-                found = fullString.range(of: original, options: .literal,
-                                         range: NSRange(location: 0, length: fullString.length))
+            let found: NSRange
+            if let resolvedRange = Self.resolvedAIReplacementRange(
+                in: fullString,
+                original: original,
+                originalRange: originalRange
+            ) {
+                found = resolvedRange
+            } else {
+                // Preserve the legacy path for callers that do not yet send `originalRange`.
+                let cursorLoc = textView.selectedRange().location
+                var fallback = fullString.range(
+                    of: original,
+                    options: .literal,
+                    range: NSRange(location: cursorLoc, length: fullString.length - cursorLoc)
+                )
+                if fallback.location == NSNotFound {
+                    fallback = fullString.range(
+                        of: original,
+                        options: .literal,
+                        range: NSRange(location: 0, length: fullString.length)
+                    )
+                }
+                found = fallback
             }
             guard found.location != NSNotFound else {
                 clearProofreadOverlays()
@@ -4209,7 +4443,24 @@ struct TodoEditorRepresentable: NSViewRepresentable {
 
         // MARK: - Edit Content Replacement (via notification)
 
-        private func applyEditContentReplacement(original: String, replacement: String) {
+        nonisolated static func resolvedAIReplacementRange(
+            in fullString: NSString,
+            original: String,
+            originalRange: NSRange?
+        ) -> NSRange? {
+            guard let originalRange else { return nil }
+            guard originalRange.location != NSNotFound else { return nil }
+            guard originalRange.length > 0 else { return nil }
+            guard NSMaxRange(originalRange) <= fullString.length else { return nil }
+            guard fullString.substring(with: originalRange) == original else { return nil }
+            return originalRange
+        }
+
+        private func applyEditContentReplacement(
+            original: String,
+            replacement: String,
+            originalRange: NSRange?
+        ) {
             guard let textView = self.textView,
                   let storage = textView.textStorage else { return }
 
@@ -4232,10 +4483,12 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     textView.didChangeText()
                 }
             } else {
-                // Selection replacement -- find original text in storage
                 let fullString = storage.string as NSString
-                let found = fullString.range(of: original, options: .literal)
-                guard found.location != NSNotFound else { return }
+                guard let found = Self.resolvedAIReplacementRange(
+                    in: fullString,
+                    original: original,
+                    originalRange: originalRange
+                ) else { return }
 
                 if textView.shouldChangeText(in: found, replacementString: replacement) {
                     storage.beginEditing()
@@ -4253,22 +4506,23 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                   let storage = textView.textStorage else { return }
 
             let fullString = storage.string as NSString
-            var resolved: [(annotation: ProofreadAnnotation, location: Int)] = annotations.compactMap { ann in
-                let range = fullString.range(of: ann.original, options: .literal)
-                guard range.location != NSNotFound else { return nil }
-                return (ann, range.location)
-            }
-            resolved.sort { $0.location > $1.location }  // Descending to preserve indices
+            let resolved = Self.validProofreadAnnotationsForReplacement(
+                in: fullString,
+                annotations: annotations
+            )
 
             guard !resolved.isEmpty else { return }
 
             textView.undoManager?.beginUndoGrouping()
-            for entry in resolved {
+            for annotation in resolved {
                 let ns = storage.string as NSString
-                let range = ns.range(of: entry.annotation.original, options: .literal)
-                if range.location != NSNotFound,
-                   textView.shouldChangeText(in: range, replacementString: entry.annotation.replacement) {
-                    storage.replaceCharacters(in: range, with: entry.annotation.replacement)
+                guard let range = Self.resolvedAIReplacementRange(
+                    in: ns,
+                    original: annotation.original,
+                    originalRange: annotation.range
+                ) else { continue }
+                if textView.shouldChangeText(in: range, replacementString: annotation.replacement) {
+                    storage.replaceCharacters(in: range, with: annotation.replacement)
                     textView.didChangeText()
                 }
             }
@@ -7196,7 +7450,24 @@ final class InlineNSTextView: NSTextView, QLPreviewPanelDataSource, QLPreviewPan
 
     /// Set before calling QLPreviewPanel.shared.makeKeyAndOrderFront(nil).
     var quickLookPreviewURL: URL?
+    var quickLookStopAccessingHandler: (() -> Void)?
     private var qlClickOutsideMonitor: Any?
+
+    func setQuickLookPreview(url: URL, stopAccessing: (() -> Void)? = nil) {
+        releaseQuickLookPreviewAccess()
+        quickLookPreviewURL = url
+        quickLookStopAccessingHandler = stopAccessing
+    }
+
+    func releaseQuickLookPreviewAccess() {
+        quickLookStopAccessingHandler?()
+        quickLookStopAccessingHandler = nil
+    }
+
+    func clearQuickLookPreview() {
+        releaseQuickLookPreviewAccess()
+        quickLookPreviewURL = nil
+    }
 
     override func acceptsPreviewPanelControl(_ panel: QLPreviewPanel!) -> Bool {
         return quickLookPreviewURL != nil
@@ -7219,7 +7490,7 @@ final class InlineNSTextView: NSTextView, QLPreviewPanelDataSource, QLPreviewPan
     override func endPreviewPanelControl(_ panel: QLPreviewPanel!) {
         panel.dataSource = nil
         panel.delegate = nil
-        quickLookPreviewURL = nil
+        clearQuickLookPreview()
         if let monitor = qlClickOutsideMonitor {
             NSEvent.removeMonitor(monitor)
             qlClickOutsideMonitor = nil

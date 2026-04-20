@@ -453,7 +453,7 @@ private struct NotesEditor: View {
             .scrollIndicators(.never)
             .padding(8)
             .frame(minHeight: 80, maxHeight: .infinity)
-            // Match `MeetingNotesFloatingPanel.contentBlock`: same inner chrome as the live recording notes tab.
+            // Match `MeetingNotesFloatingPanel.contentBlock`: opaque detail well, not glass-through.
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(notesEditorChromeFill)

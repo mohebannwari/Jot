@@ -5,9 +5,10 @@
 
 import Foundation
 
-enum IntentError: Error, CustomLocalizedStringResourceConvertible {
+enum IntentError: Error, Equatable, CustomLocalizedStringResourceConvertible {
     case managerUnavailable
     case noteNotFound
+    case noteLocked
 
     var localizedStringResource: LocalizedStringResource {
         switch self {
@@ -15,7 +16,15 @@ enum IntentError: Error, CustomLocalizedStringResourceConvertible {
             return "Jot is still loading. Please try again in a moment."
         case .noteNotFound:
             return "The note could not be found. It may have been deleted."
+        case .noteLocked:
+            return "That note is locked. Unlock it in Jot before using this shortcut."
         }
+    }
+}
+
+extension Note {
+    var isAvailableToAppIntents: Bool {
+        !isLocked
     }
 }
 

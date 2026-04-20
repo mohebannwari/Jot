@@ -152,4 +152,40 @@ final class NoteQuickLookTests: XCTestCase {
         let html = NotePreviewHTMLGenerator.generate(note: note)
         XCTAssertTrue(html.contains("Untitled"), "Empty title should fall back to 'Untitled'")
     }
+
+    @MainActor
+    func testInlineTextViewClearQuickLookPreviewStopsSecurityScope() {
+        let textView = InlineNSTextView(frame: .zero)
+        var stopCount = 0
+
+        textView.setQuickLookPreview(
+            url: URL(fileURLWithPath: "/tmp/preview-a"),
+            stopAccessing: { stopCount += 1 }
+        )
+        textView.clearQuickLookPreview()
+
+        XCTAssertEqual(stopCount, 1)
+        XCTAssertNil(textView.quickLookPreviewURL)
+    }
+
+    @MainActor
+    func testInlineTextViewReplacingQuickLookPreviewReleasesPreviousSecurityScope() {
+        let textView = InlineNSTextView(frame: .zero)
+        var firstStopCount = 0
+        var secondStopCount = 0
+
+        textView.setQuickLookPreview(
+            url: URL(fileURLWithPath: "/tmp/preview-a"),
+            stopAccessing: { firstStopCount += 1 }
+        )
+        textView.setQuickLookPreview(
+            url: URL(fileURLWithPath: "/tmp/preview-b"),
+            stopAccessing: { secondStopCount += 1 }
+        )
+        textView.clearQuickLookPreview()
+
+        XCTAssertEqual(firstStopCount, 1)
+        XCTAssertEqual(secondStopCount, 1)
+        XCTAssertNil(textView.quickLookPreviewURL)
+    }
 }

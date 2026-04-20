@@ -719,13 +719,17 @@ final class TabsContainerOverlayView: NSView {
             guard let self = self, let tv = self.aiTargetTabTV else { return }
             guard let replacement = n.userInfo?["replacement"] as? String else { return }
             let original = n.userInfo?["original"] as? String ?? ""
+            let originalRange = (n.userInfo?["originalRange"] as? NSValue)?.rangeValue
             if original.isEmpty {
                 tv.selectAll(nil)
                 tv.insertText(replacement, replacementRange: tv.selectedRange())
             } else {
-                let searchRange = NSRange(location: 0, length: (tv.string as NSString).length)
-                let foundRange = (tv.string as NSString).range(of: original, range: searchRange)
-                if foundRange.location != NSNotFound {
+                let fullString = tv.string as NSString
+                if let foundRange = TodoEditorRepresentable.Coordinator.resolvedAIReplacementRange(
+                    in: fullString,
+                    original: original,
+                    originalRange: originalRange
+                ) {
                     tv.insertText(replacement, replacementRange: foundRange)
                 }
             }

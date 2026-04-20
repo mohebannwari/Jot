@@ -10,6 +10,17 @@ import XCTest
 @MainActor
 final class BackupManagerTests: XCTestCase {
 
+    override func tearDown() {
+        if let manager = try? SimpleSwiftDataManager(inMemoryForTesting: true) {
+            BackupManager.performPostInitRestore(
+                into: manager,
+                userDefaults: UserDefaults.standard,
+                fileManager: FileManager.default
+            )
+        }
+        super.tearDown()
+    }
+
     /// Must write `backupPath` under the "pendingRestoreBackupPath" key so the next
     /// launch's `checkAndPerformPendingRestore` finds the backup to restore from.
     func testPrepareRestore_WritesPendingRestorePath() {
@@ -71,6 +82,115 @@ final class BackupManagerTests: XCTestCase {
         XCTAssertEqual(defaults.string(forKey: "pendingRestoreBackupPath"), path)
     }
 
+    func testPendingRestoreDoesNotDeleteStoreWhenNotesFileIsMissing() throws {
+        let (defaults, suiteName) = isolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let backupURL = try makeBackupDirectory(includeNotes: false)
+        let storeBaseURL = try makeStoreTriplet()
+        defaults.set(backupURL.path, forKey: "pendingRestoreBackupPath")
+
+        let accessURL = BackupManager.checkAndPerformPendingRestore(
+            userDefaults: defaults,
+            fileManager: .default,
+            storeBaseURL: storeBaseURL
+        )
+
+        XCTAssertNil(accessURL)
+        assertStoreTripletExists(at: storeBaseURL)
+        XCTAssertNil(defaults.string(forKey: "pendingImportBackupPath"))
+    }
+
+    func testPendingRestoreDoesNotDeleteStoreWhenFoldersFileIsMissing() throws {
+        let (defaults, suiteName) = isolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let backupURL = try makeBackupDirectory(includeFolders: false)
+        let storeBaseURL = try makeStoreTriplet()
+        defaults.set(backupURL.path, forKey: "pendingRestoreBackupPath")
+
+        let accessURL = BackupManager.checkAndPerformPendingRestore(
+            userDefaults: defaults,
+            fileManager: .default,
+            storeBaseURL: storeBaseURL
+        )
+
+        XCTAssertNil(accessURL)
+        assertStoreTripletExists(at: storeBaseURL)
+        XCTAssertNil(defaults.string(forKey: "pendingImportBackupPath"))
+    }
+
+    func testPendingRestoreDoesNotDeleteStoreWhenPayloadIsCorrupt() throws {
+        let (defaults, suiteName) = isolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let backupURL = try makeBackupDirectory(corruptNotes: true)
+        let storeBaseURL = try makeStoreTriplet()
+        defaults.set(backupURL.path, forKey: "pendingRestoreBackupPath")
+
+        let accessURL = BackupManager.checkAndPerformPendingRestore(
+            userDefaults: defaults,
+            fileManager: .default,
+            storeBaseURL: storeBaseURL
+        )
+
+        XCTAssertNil(accessURL)
+        assertStoreTripletExists(at: storeBaseURL)
+        XCTAssertNil(defaults.string(forKey: "pendingImportBackupPath"))
+    }
+
+    func testPendingRestoreDeletesStoreOnlyAfterValidatedPayloadAndImportsData() throws {
+        let (defaults, suiteName) = isolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let expectedNote = Note(title: "Restored", content: "Body")
+        let expectedFolder = Folder(name: "Recovered")
+        let backupURL = try makeBackupDirectory(notes: [expectedNote], folders: [expectedFolder])
+        let storeBaseURL = try makeStoreTriplet()
+        defaults.set(backupURL.path, forKey: "pendingRestoreBackupPath")
+
+        let accessURL = BackupManager.checkAndPerformPendingRestore(
+            userDefaults: defaults,
+            fileManager: .default,
+            storeBaseURL: storeBaseURL
+        )
+
+        XCTAssertNil(accessURL)
+        assertStoreTripletMissing(at: storeBaseURL)
+        XCTAssertEqual(defaults.string(forKey: "pendingImportBackupPath"), backupURL.path)
+
+        let manager = try SimpleSwiftDataManager(inMemoryForTesting: true)
+        BackupManager.performPostInitRestore(
+            into: manager,
+            userDefaults: defaults,
+            fileManager: .default
+        )
+
+        XCTAssertTrue(manager.notes.contains(where: { $0.id == expectedNote.id }))
+        XCTAssertTrue(manager.folders.contains(where: { $0.id == expectedFolder.id }))
+        XCTAssertNil(defaults.string(forKey: "pendingImportBackupPath"))
+    }
+
+    func testShouldRunAutoBackupWaitsForInitialLoad() {
+        let shouldSkip = BackupManager.shared.shouldRunAutoBackup(
+            frequency: .daily,
+            lastBackupDate: .distantPast,
+            hasBackupDestination: true,
+            hasLoadedInitialNotes: false,
+            now: Date()
+        )
+        XCTAssertFalse(shouldSkip)
+
+        let shouldRun = BackupManager.shared.shouldRunAutoBackup(
+            frequency: .daily,
+            lastBackupDate: .distantPast,
+            hasBackupDestination: true,
+            hasLoadedInitialNotes: true,
+            now: Date()
+        )
+        XCTAssertTrue(shouldRun)
+    }
+
     private func isolatedDefaults() -> (UserDefaults, String) {
         let suiteName = "BackupManagerTests.\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suiteName) else {
@@ -78,5 +198,90 @@ final class BackupManagerTests: XCTestCase {
         }
         defaults.removePersistentDomain(forName: suiteName)
         return (defaults, suiteName)
+    }
+
+    private func makeBackupDirectory(
+        notes: [Note]? = nil,
+        folders: [Folder]? = nil,
+        includeNotes: Bool = true,
+        includeFolders: Bool = true,
+        corruptNotes: Bool = false
+    ) throws -> URL {
+        let notes = notes ?? [Note(title: "Backup Note", content: "Body")]
+        let folders = folders ?? [Folder(name: "Backup Folder")]
+        let backupURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BackupManagerTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: backupURL, withIntermediateDirectories: true)
+
+        let manifest = BackupManager.BackupManifest(
+            appVersion: "test",
+            schemaVersion: 1,
+            timestamp: Date(),
+            noteCount: notes.count,
+            folderCount: folders.count
+        )
+        try makeBackupEncoder().encode(manifest)
+            .write(to: backupURL.appendingPathComponent("manifest.json"))
+
+        if includeNotes {
+            let notesURL = backupURL.appendingPathComponent("notes.json")
+            if corruptNotes {
+                try Data("not-json".utf8).write(to: notesURL)
+            } else {
+                try makeBackupEncoder().encode(notes).write(to: notesURL)
+            }
+        }
+
+        if includeFolders {
+            try makeBackupEncoder().encode(folders)
+                .write(to: backupURL.appendingPathComponent("folders.json"))
+        }
+
+        return backupURL
+    }
+
+    private func makeStoreTriplet() throws -> URL {
+        let directoryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BackupManagerStore-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        let storeBaseURL = directoryURL.appendingPathComponent("default.store", isDirectory: false)
+
+        for suffix in ["", "-wal", "-shm"] {
+            _ = FileManager.default.createFile(
+                atPath: storeBaseURL.path + suffix,
+                contents: Data("store".utf8)
+            )
+        }
+
+        return storeBaseURL
+    }
+
+    private func assertStoreTripletExists(at storeBaseURL: URL, file: StaticString = #filePath, line: UInt = #line) {
+        for suffix in ["", "-wal", "-shm"] {
+            XCTAssertTrue(
+                FileManager.default.fileExists(atPath: storeBaseURL.path + suffix),
+                "Expected store file \(suffix) to exist",
+                file: file,
+                line: line
+            )
+        }
+    }
+
+    private func assertStoreTripletMissing(at storeBaseURL: URL, file: StaticString = #filePath, line: UInt = #line) {
+        for suffix in ["", "-wal", "-shm"] {
+            XCTAssertFalse(
+                FileManager.default.fileExists(atPath: storeBaseURL.path + suffix),
+                "Expected store file \(suffix) to be removed",
+                file: file,
+                line: line
+            )
+        }
+    }
+
+    private func makeBackupEncoder() -> JSONEncoder {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        return encoder
     }
 }

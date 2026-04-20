@@ -577,7 +577,7 @@ extension Notification.Name {
     static let aiProofreadClearOverlays = Notification.Name("AIProofreadClearOverlays")
     // Posted by AIToolsOverlay/NoteDetailView+Actions with object: [ProofreadAnnotation]
     static let aiProofreadShowAnnotations = Notification.Name("AIProofreadShowAnnotations")
-    // Posted by ProofreadPillView; userInfo: ["original": String, "replacement": String]
+    // Posted by ProofreadPillView; userInfo: ["original": String, "replacement": String, "originalRange": NSValue]
     static let aiProofreadApplySuggestion = Notification.Name("AIProofreadApplySuggestion")
 
     // Edit Content -- apply replacement through text storage (not editedContent)

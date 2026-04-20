@@ -223,6 +223,152 @@ final class TodoEditorInsertRegressionTests: XCTestCase {
         )
     }
 
+    func testAIEditReplacementUsesCapturedSelectionRange() {
+        let harness = makeHarness(initialText: "alpha beta alpha")
+
+        NotificationCenter.default.post(
+            name: .aiEditApplyReplacement,
+            object: nil,
+            userInfo: [
+                "editorInstanceID": harness.editorInstanceID,
+                "original": "alpha",
+                "replacement": "omega",
+                "originalRange": NSValue(range: NSRange(location: 11, length: 5)),
+            ]
+        )
+
+        pumpMainLoop(harness)
+
+        XCTAssertEqual(harness.currentText(), "alpha beta omega")
+    }
+
+    func testAIEditReplacementDoesNotFallbackToFirstMatchWhenRangeIsStale() {
+        let harness = makeHarness(initialText: "alpha beta alpha")
+
+        NotificationCenter.default.post(
+            name: .aiEditApplyReplacement,
+            object: nil,
+            userInfo: [
+                "editorInstanceID": harness.editorInstanceID,
+                "original": "alpha",
+                "replacement": "omega",
+                "originalRange": NSValue(range: NSRange(location: 6, length: 4)),
+            ]
+        )
+
+        pumpMainLoop(harness)
+
+        XCTAssertEqual(harness.currentText(), "alpha beta alpha")
+    }
+
+    func testResolveProofreadAnnotationsRestrictsMatchesToSelectedRange() {
+        let text = "typo before\npicked typo typo\ntypo after"
+        let nsText = text as NSString
+        let selectedRange = nsText.range(of: "picked typo typo")
+        let suggestions = [
+            ProofreadSuggestion(original: "typo", replacement: "fixed"),
+            ProofreadSuggestion(original: "typo", replacement: "fixed"),
+            ProofreadSuggestion(original: "before", replacement: "ignored"),
+        ]
+
+        let annotations = TodoEditorRepresentable.Coordinator.resolveProofreadAnnotations(
+            in: nsText,
+            suggestions: suggestions,
+            scope: selectedRange
+        )
+
+        XCTAssertEqual(annotations.map(\.original), ["typo", "typo"])
+        XCTAssertEqual(annotations.count, 2, "Only matches inside the selected range should resolve.")
+        XCTAssertTrue(
+            annotations.allSatisfy { NSLocationInRange($0.range.location, selectedRange) },
+            "Resolved proofread annotations must stay inside the selected range."
+        )
+        XCTAssertEqual(
+            annotations.map(\.range),
+            [
+                NSRange(location: selectedRange.location + 7, length: 4),
+                NSRange(location: selectedRange.location + 12, length: 4),
+            ]
+        )
+    }
+
+    func testResolveProofreadAnnotationsUsesFullDocumentScopeWhenRequested() {
+        let text = "alpha beta alpha"
+        let nsText = text as NSString
+        let fullRange = NSRange(location: 0, length: nsText.length)
+        let suggestions = [
+            ProofreadSuggestion(original: "alpha", replacement: "omega"),
+            ProofreadSuggestion(original: "alpha", replacement: "omega"),
+        ]
+
+        let annotations = TodoEditorRepresentable.Coordinator.resolveProofreadAnnotations(
+            in: nsText,
+            suggestions: suggestions,
+            scope: fullRange
+        )
+
+        XCTAssertEqual(
+            annotations.map(\.range),
+            [
+                NSRange(location: 0, length: 5),
+                NSRange(location: 11, length: 5),
+            ]
+        )
+    }
+
+    func testProofreadReplacementValidationSkipsStaleRanges() {
+        let text = "alpha beta alpha"
+        let nsText = text as NSString
+        let annotations = [
+            ProofreadAnnotation(
+                original: "alpha",
+                replacement: "omega",
+                range: NSRange(location: 11, length: 5)
+            ),
+            ProofreadAnnotation(
+                original: "alpha",
+                replacement: "omega",
+                range: NSRange(location: 6, length: 4)
+            ),
+        ]
+
+        let validAnnotations = TodoEditorRepresentable.Coordinator.validProofreadAnnotationsForReplacement(
+            in: nsText,
+            annotations: annotations
+        )
+
+        XCTAssertEqual(validAnnotations.map(\.range), [NSRange(location: 11, length: 5)])
+    }
+
+    func testProofreadReplaceAllUsesResolvedAnnotationRangesOnly() {
+        let text = "typo before\npicked typo typo\ntypo after"
+        let nsText = text as NSString
+        let selectedRange = nsText.range(of: "picked typo typo")
+        let harness = makeHarness(initialText: text)
+
+        let annotations = TodoEditorRepresentable.Coordinator.resolveProofreadAnnotations(
+            in: nsText,
+            suggestions: [
+                ProofreadSuggestion(original: "typo", replacement: "fixed"),
+                ProofreadSuggestion(original: "typo", replacement: "fixed"),
+            ],
+            scope: selectedRange
+        )
+
+        NotificationCenter.default.post(
+            name: .aiProofreadReplaceAll,
+            object: nil,
+            userInfo: [
+                "editorInstanceID": harness.editorInstanceID,
+                "annotations": annotations,
+            ]
+        )
+
+        pumpMainLoop(harness)
+
+        XCTAssertEqual(harness.currentText(), "typo before\npicked fixed fixed\ntypo after")
+    }
+
     // MARK: - First-Line Cursor Skip Regression
 
     /// Regression: typing the first character in a brand-new empty note must not
@@ -509,4 +655,3 @@ final class TodoEditorInsertRegressionTests: XCTestCase {
         XCTAssertGreaterThan(ps.headIndent, 0)
     }
 }
-

@@ -31,8 +31,9 @@ struct NoteQuery: EntityStringQuery {
     @MainActor
     func entities(for identifiers: [UUID]) async throws -> [NoteAppEntity] {
         guard let manager = SimpleSwiftDataManager.shared else { return [] }
+        let identifierSet = Set(identifiers)
         return manager.notes
-            .filter { identifiers.contains($0.id) }
+            .filter { identifierSet.contains($0.id) && $0.isAvailableToAppIntents }
             .map { NoteAppEntity(from: $0) }
     }
 
@@ -40,12 +41,17 @@ struct NoteQuery: EntityStringQuery {
     func entities(matching string: String) async throws -> [NoteAppEntity] {
         guard let manager = SimpleSwiftDataManager.shared else { return [] }
         let results = await manager.searchNotes(query: string, limit: 20)
-        return results.map { NoteAppEntity(from: $0) }
+        return results
+            .filter(\.isAvailableToAppIntents)
+            .map { NoteAppEntity(from: $0) }
     }
 
     @MainActor
     func suggestedEntities() async throws -> [NoteAppEntity] {
         guard let manager = SimpleSwiftDataManager.shared else { return [] }
-        return Array(manager.notes.prefix(10)).map { NoteAppEntity(from: $0) }
+        return manager.notes
+            .filter(\.isAvailableToAppIntents)
+            .prefix(10)
+            .map { NoteAppEntity(from: $0) }
     }
 }

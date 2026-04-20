@@ -53,6 +53,12 @@ struct JotApp: App {
         // Start auto-backup timer if configured
         BackupManager.shared.autoBackupIfDue(notesManager: manager)
         BackupManager.shared.scheduleAutoBackup(notesManager: manager)
+        Task { @MainActor in
+            while !manager.hasLoadedInitialNotes {
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            BackupManager.shared.autoBackupIfDue(notesManager: manager)
+        }
 
         // Clean up temporary files on app launch
         Self.cleanupTemporaryFiles()
