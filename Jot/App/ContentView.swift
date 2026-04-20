@@ -672,8 +672,14 @@ struct ContentView: View {
         }
         activeSplitID = session.id
         isSplitViewVisible = true
-        selectedNote = note
-        selectedNoteIDs = [note.id]
+        let activation = SplitPresentationPolicy.resolveSplitSessionActivation(
+            primaryNoteID: session.primaryNoteID ?? note.id,
+            secondaryNoteID: session.secondaryNoteID ?? note.id,
+            targetNoteID: note.id
+        )
+        let pane: SplitPickerPane = activation.focusedPane == .secondary ? .secondary : .primary
+        focusSplitPane(pane, requestFocus: false)
+        applyNoteSelectionState(note)
     }
 
     /// All note IDs currently participating in any split session
@@ -725,26 +731,6 @@ struct ContentView: View {
         return notesManager.notes.first(where: { $0.id == noteID })
     }
 
-    private var splitNoteOpeningContext: SplitNoteOpeningContext {
-        SplitNoteOpeningContext(
-            isSplitVisible: shouldShowSplitLayout,
-            primaryNoteID: activeSplit?.primaryNoteID,
-            secondaryNoteID: activeSplit?.secondaryNoteID,
-            focusedPane: splitNoteOpeningPane
-        )
-    }
-
-    private var splitNoteOpeningPane: SplitNoteOpeningPane? {
-        switch activeSplitPane {
-        case .primary:
-            return .primary
-        case .secondary:
-            return .secondary
-        case nil:
-            return nil
-        }
-    }
-
     private var isActiveSplitPending: Bool {
         activeSplitID != nil && activeSplitID == pendingSplitID
     }
@@ -773,7 +759,7 @@ struct ContentView: View {
     /// Navigate to a note by ID (from notelink click).
     private func navigateToNote(_ noteID: UUID) {
         guard let target = notesManager.notes.first(where: { $0.id == noteID }) else { return }
-        openNotePreservingVisibleSplit(target, withHaptic: false)
+        openNote(target, withHaptic: false)
     }
 
     /// Find all notes that contain a `[[notelink|targetID|...]]` reference to the given note.
@@ -3027,7 +3013,7 @@ struct ContentView: View {
                 isPresented: $isSearchPresented,
                 openIntent: $floatingSearchOpenIntent,
                 onNoteSelected: { note in
-                    openNotePreservingVisibleSplit(note)
+                    openSingleNoteFromGlobalSearch(note)
                 },
                 onNoteSelectedStartMeeting: { note in
                     openNoteAndStartMeeting(note)
@@ -3725,12 +3711,21 @@ struct ContentView: View {
             activeSplitID = session.id
             isSplitViewVisible = true
             if let primaryID = session.primaryNoteID,
+               let secondaryID = session.secondaryNoteID,
                let pNote = notesManager.notes.first(where: { $0.id == primaryID }) {
+                let activation = SplitPresentationPolicy.resolveSplitSessionActivation(
+                    primaryNoteID: primaryID,
+                    secondaryNoteID: secondaryID,
+                    targetNoteID: nil
+                )
+                let pane: SplitPickerPane = activation.focusedPane == .secondary ? .secondary : .primary
+                focusSplitPane(pane, requestFocus: false)
                 if let cur = selectedNote?.id, cur != pNote.id {
                     postEditorSerializationFlushAllVisibleEditors()
                 }
-                selectedNote = pNote
-                selectedNoteIDs = [pNote.id]
+                applyNoteSelectionState(pNote)
+            } else {
+                focusSplitPane(.primary, requestFocus: false)
             }
         } label: {
             HStack(spacing: 4) {
@@ -4290,34 +4285,7 @@ struct ContentView: View {
         }
     }
 
-    private func openNotePreservingVisibleSplit(
-        _ note: Note,
-        focusEditor: Bool = true,
-        withHaptic: Bool = true
-    ) {
-        performNoteOpen(
-            note,
-            focusEditor: focusEditor,
-            withHaptic: withHaptic,
-            preservingVisibleSplit: true
-        )
-    }
-
     private func openNote(_ note: Note, focusEditor: Bool = true, withHaptic: Bool = true) {
-        performNoteOpen(
-            note,
-            focusEditor: focusEditor,
-            withHaptic: withHaptic,
-            preservingVisibleSplit: false
-        )
-    }
-
-    private func performNoteOpen(
-        _ note: Note,
-        focusEditor: Bool,
-        withHaptic: Bool,
-        preservingVisibleSplit: Bool
-    ) {
         if withHaptic {
             HapticManager.shared.noteInteraction()
         }
@@ -4332,13 +4300,6 @@ struct ContentView: View {
 
         // Discard the note we're leaving if it was never given a title or content
         discardPreviousNoteIfEmpty(switching: freshNote)
-
-        if preservingVisibleSplit, openNoteInVisibleSplitIfNeeded(freshNote, focusEditor: focusEditor) {
-            lockPasswordInput = ""
-            lockAuthFailed = false
-            hasAppliedInitialLaunchSelection = true
-            return
-        }
 
         // Schedule re-lock for the note we're leaving (if it was locked + unlocked)
         updateLockStateForNavigation(from: selectedNote, to: freshNote)
@@ -4356,53 +4317,64 @@ struct ContentView: View {
         }
     }
 
-    private func openNoteInVisibleSplitIfNeeded(_ note: Note, focusEditor: Bool) -> Bool {
-        guard shouldShowSplitLayout, let splitIndex = activeSplitIndex else { return false }
-
-        let result = SplitNoteOpeningPolicy.resolve(
+    private func openSingleNoteFromGlobalSearch(_ note: Note) {
+        let result = SplitPresentationPolicy.resolvePlainGlobalSearchSelection(
             targetNoteID: note.id,
-            context: splitNoteOpeningContext
+            isSplitVisible: shouldShowSplitLayout
         )
+        if result.closesSplit {
+            activeSplitPane = nil
+            activeSplitID = nil
+            isSplitViewVisible = false
+        }
+        openNote(note)
+    }
 
-        switch result.action {
-        case .openSingle:
-            return false
-        case .focusExistingPrimary:
+    private func openNoteWithinVisibleSplitForMeeting(_ note: Note) {
+        guard shouldShowSplitLayout, let splitIndex = activeSplitIndex else {
+            openNote(note)
+            return
+        }
+
+        if activePrimaryNote?.id == note.id {
             applyNoteSelectionState(note)
-            focusSplitPane(.primary, requestFocus: focusEditor)
-            return true
-        case .focusExistingSecondary:
+            focusSplitPane(.primary)
+            return
+        }
+
+        if activeSecondaryNote?.id == note.id {
             applyNoteSelectionState(note)
-            focusSplitPane(.secondary, requestFocus: focusEditor)
-            return true
-        case .replacePrimary:
+            focusSplitPane(.secondary)
+            return
+        }
+
+        let targetPane = activeSplitPane ?? .primary
+        switch targetPane {
+        case .primary:
             let previousPrimary = activePrimaryNote
             updateLockStateForNavigation(from: previousPrimary, to: note)
             if previousPrimary?.id != note.id {
                 postEditorSerializationFlushAllVisibleEditors()
             }
-            splitSessions[splitIndex].primaryNoteID = result.primaryNoteID
+            splitSessions[splitIndex].primaryNoteID = note.id
             applyNoteSelectionState(note)
-            focusSplitPane(.primary, requestFocus: focusEditor)
-            saveSplitSessions()
-            return true
-        case .replaceSecondary:
+            focusSplitPane(.primary)
+        case .secondary:
             let previousSecondary = activeSecondaryNote
             updateLockStateForNavigation(from: previousSecondary, to: note)
             if previousSecondary?.id != note.id {
                 postEditorSerializationFlush(editorInstanceID: splitEditorID)
             }
-            splitSessions[splitIndex].secondaryNoteID = result.secondaryNoteID
+            splitSessions[splitIndex].secondaryNoteID = note.id
             applyNoteSelectionState(note)
-            focusSplitPane(.secondary, requestFocus: focusEditor)
-            saveSplitSessions()
-            return true
+            focusSplitPane(.secondary)
         }
+        saveSplitSessions()
     }
 
     /// Command palette “Start meeting session” flow: open the note, then start recording on the shared manager.
     private func openNoteAndStartMeeting(_ note: Note) {
-        openNotePreservingVisibleSplit(note)
+        openNoteWithinVisibleSplitForMeeting(note)
         meetingRecorderManager.startRecording(for: note.id)
     }
 
@@ -4818,7 +4790,7 @@ struct ContentView: View {
     /// Navigate to a specific note by UUID -- used by Spotlight deep links.
     private func openNoteByID(_ noteID: UUID) {
         guard let note = notesManager.notes.first(where: { $0.id == noteID }) else { return }
-        openNotePreservingVisibleSplit(note, withHaptic: false)
+        openNote(note, withHaptic: false)
     }
 
     private func processPendingShares() {
