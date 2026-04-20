@@ -5760,8 +5760,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             let cursorHeight = max(slashRect.height, 1)
 
             let visibleRect = textView.visibleRect
-            /// Breathing room between the "/" line and the command menu (above or below).
-            let menuVerticalGap: CGFloat = 10
+            let menuVerticalGap = CommandMenuLayout.verticalAnchorGap
             /// Tight inset when clamping into a narrow visible rect (horizontal squeeze).
             let menuEdgeGap: CGFloat = 4
             let safetyMargin: CGFloat = 20
@@ -5806,7 +5805,11 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     "position": NSValue(point: menuPosition),
                     "cursorHeight": cursorHeight,
                     "slashLocation": slashCharacterIndex,
-                    "needsSpace": false
+                    "needsSpace": false,
+                    // SwiftUI recomputes menu top Y from these as the filter narrows
+                    // so the card stays anchored to "/" when placed above the line.
+                    "showsAbove": shouldShowAbove,
+                    "anchorCursorY": NSNumber(value: Double(cursorY))
                 ],
                 userInfo: editorInstanceID.map { ["editorInstanceID": $0] }
             )

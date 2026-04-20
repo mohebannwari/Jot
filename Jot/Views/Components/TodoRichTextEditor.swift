@@ -50,6 +50,10 @@ struct TodoRichTextEditor: View {
     @State private var showCommandMenu = false
     @State private var commandMenuRevealed = false
     @State private var commandMenuPosition: CGPoint = .zero
+    /// Slash line top (text-view Y); with `commandMenuShowsAbove`, drives recomputed menu Y.
+    @State private var commandMenuAnchorY: CGFloat = 0
+    @State private var commandMenuShowsAbove = false
+    @State private var commandMenuCursorHeight: CGFloat = 1
     @State private var commandMenuSelectedIndex = 0
     @State private var commandSlashLocation: Int = -1
     @State private var commandMenuFilterText = ""
@@ -391,6 +395,34 @@ struct TodoRichTextEditor: View {
                 commandMenuSelectedIndex = 0
                 commandMenuFilterText = ""
 
+                // Vertical anchor metadata: SwiftUI recomputes Y from filtered item count
+                // so the menu stays near "/" when it sits above the line and shrinks while searching.
+                if let shows = info["showsAbove"] as? Bool {
+                    commandMenuShowsAbove = shows
+                } else if let num = info["showsAbove"] as? NSNumber {
+                    commandMenuShowsAbove = num.boolValue
+                } else {
+                    commandMenuShowsAbove = false
+                }
+                if let n = info["anchorCursorY"] as? NSNumber {
+                    commandMenuAnchorY = CGFloat(n.doubleValue)
+                } else if let y = info["anchorCursorY"] as? CGFloat {
+                    commandMenuAnchorY = y
+                } else if let y = info["anchorCursorY"] as? Double {
+                    commandMenuAnchorY = CGFloat(y)
+                } else {
+                    commandMenuAnchorY = 0
+                }
+                if let h = info["cursorHeight"] as? CGFloat {
+                    commandMenuCursorHeight = max(h, 1)
+                } else if let n = info["cursorHeight"] as? NSNumber {
+                    commandMenuCursorHeight = max(CGFloat(n.doubleValue), 1)
+                } else if let h = info["cursorHeight"] as? Double {
+                    commandMenuCursorHeight = max(CGFloat(h), 1)
+                } else {
+                    commandMenuCursorHeight = 1
+                }
+
                 // Show the view in the hierarchy
                 showCommandMenu = true
                 // Animate the reveal (scale up from cursor + item cascade)
@@ -706,6 +738,9 @@ struct TodoRichTextEditor: View {
             self.showCommandMenu = false
             self.commandSlashLocation = -1
             self.commandMenuFilterText = ""
+            self.commandMenuShowsAbove = false
+            self.commandMenuAnchorY = 0
+            self.commandMenuCursorHeight = 1
             self.isDismissingCommandMenu = false
         }
     }
@@ -746,9 +781,9 @@ struct TodoRichTextEditor: View {
 
     private func clampedCommandMenuPosition(for geometry: GeometryProxy) -> CGPoint {
         let containerSize = geometry.size
-        // `commandMenuPosition` is the menu card's top-left in text-view /
-        // editor-local coordinates (see `showCommandMenuAtCursor`, which mirrors
-        // `showNotePickerAtCursor` using `visibleRect`).
+        // X stays from AppKit (`visibleRect`-clamped). Y is recomputed from the slash
+        // anchor and live `filteredCommandMenuTools.count` so when the menu sits above
+        // "/" and the list shrinks during search, the bottom edge stays near the line.
         //
         // Do NOT clamp Y against `geometry.size.height`: this `GeometryReader` sits
         // on the editor inside a SwiftUI `ScrollView`, and its reported height is
@@ -762,7 +797,14 @@ struct TodoRichTextEditor: View {
         let maxX = max(0, containerSize.width - Self.commandMenuTotalWidth)
         let clampedX = min(max(commandMenuPosition.x, 0), maxX)
 
-        let clampedY = max(commandMenuPosition.y, 0)
+        let itemCount = max(filteredCommandMenuTools.count, 1)
+        let menuY = CommandMenuLayout.menuTopY(
+            showsAbove: commandMenuShowsAbove,
+            anchorCursorY: commandMenuAnchorY,
+            cursorHeight: commandMenuCursorHeight,
+            itemCount: itemCount
+        )
+        let clampedY = max(menuY, 0)
 
         return CGPoint(x: clampedX, y: clampedY)
     }

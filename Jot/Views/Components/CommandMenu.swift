@@ -20,6 +20,11 @@ enum CommandMenuLayout {
     /// can reason about the menu's true rendered height.
     static let scrollContentPadding: CGFloat = 4
 
+    /// Breathing room between the "/" line and the command menu (above or below).
+    /// Shared by `showCommandMenuAtCursor` (AppKit) and `clampedCommandMenuPosition`
+    /// (SwiftUI) so anchor math cannot drift.
+    static let verticalAnchorGap: CGFloat = 10
+
     /// Height that fits up to `maxVisibleItems` rows — anything beyond scrolls.
     static func idealHeight(for itemCount: Int) -> CGFloat {
         guard itemCount > 0 else { return 0 }
@@ -35,6 +40,22 @@ enum CommandMenuLayout {
     /// anchor character when flipped above.
     static func totalHeight(for itemCount: Int) -> CGFloat {
         idealHeight(for: itemCount) + scrollContentPadding * 2 + outerPadding * 2
+    }
+
+    /// Top Y of the command menu in text-view coordinates. When `showsAbove` is true,
+    /// recomputing with the live `itemCount` keeps the menu bottom anchored near the
+    /// slash as the filtered list shrinks; when false, placement does not depend on height.
+    static func menuTopY(
+        showsAbove: Bool,
+        anchorCursorY: CGFloat,
+        cursorHeight: CGFloat,
+        itemCount: Int
+    ) -> CGFloat {
+        if showsAbove {
+            anchorCursorY - totalHeight(for: itemCount) - verticalAnchorGap
+        } else {
+            anchorCursorY + cursorHeight + verticalAnchorGap
+        }
     }
 }
 

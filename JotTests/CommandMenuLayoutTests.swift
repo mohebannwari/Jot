@@ -49,4 +49,53 @@ final class CommandMenuLayoutTests: XCTestCase {
             accuracy: 0.01
         )
     }
+
+    // MARK: - menuTopY (slash anchor while filtering)
+
+    /// When the menu is above the slash, shrinking `itemCount` moves the top
+    /// downward by exactly the height delta so the bottom stays near the anchor.
+    func testMenuTopY_above_shiftsTopByHeightDeltaWhenItemCountShrinks() {
+        let anchor: CGFloat = 500
+        let cursorH: CGFloat = 18
+        let yFull = CommandMenuLayout.menuTopY(
+            showsAbove: true,
+            anchorCursorY: anchor,
+            cursorHeight: cursorH,
+            itemCount: 7
+        )
+        let yFew = CommandMenuLayout.menuTopY(
+            showsAbove: true,
+            anchorCursorY: anchor,
+            cursorHeight: cursorH,
+            itemCount: 2
+        )
+        let delta = yFew - yFull
+        let heightDelta =
+            CommandMenuLayout.totalHeight(for: 7) - CommandMenuLayout.totalHeight(for: 2)
+        XCTAssertEqual(delta, heightDelta, accuracy: 0.01)
+    }
+
+    /// Below the slash, menu top does not depend on filtered item count.
+    func testMenuTopY_below_independentOfItemCount() {
+        let anchor: CGFloat = 100
+        let cursorH: CGFloat = 16
+        let y7 = CommandMenuLayout.menuTopY(
+            showsAbove: false,
+            anchorCursorY: anchor,
+            cursorHeight: cursorH,
+            itemCount: 7
+        )
+        let y2 = CommandMenuLayout.menuTopY(
+            showsAbove: false,
+            anchorCursorY: anchor,
+            cursorHeight: cursorH,
+            itemCount: 2
+        )
+        XCTAssertEqual(y7, y2, accuracy: 0.01)
+        XCTAssertEqual(
+            y7,
+            anchor + cursorH + CommandMenuLayout.verticalAnchorGap,
+            accuracy: 0.01
+        )
+    }
 }
