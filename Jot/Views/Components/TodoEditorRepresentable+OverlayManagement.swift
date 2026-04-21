@@ -45,6 +45,12 @@ extension TodoEditorRepresentable.Coordinator {
             linkCardThumbnailLoadAttempted.removeAll()
             filePreviewOverlays.values.forEach { $0.removeFromSuperview() }
             filePreviewOverlays.removeAll()
+            toggleOverlays.values.forEach { $0.removeFromSuperview() }
+            toggleOverlays.removeAll()
+        }
+
+        private func shouldDisplayOverlay(in range: NSRange) -> Bool {
+            !isRangeHiddenByCollapsedSection(range)
         }
         func updateImageOverlays(in textView: NSTextView) {
             guard let textStorage = textView.textStorage,
@@ -76,6 +82,7 @@ extension TodoEditorRepresentable.Coordinator {
             var attachmentCount = 0
             textStorage.enumerateAttribute(.attachment, in: fullRange, options: []) { val, range, _ in
                 guard let attachment = val as? NoteImageAttachment else { return }
+                guard shouldDisplayOverlay(in: range) else { return }
                 attachmentCount += 1
                 let filename = attachment.storedFilename
                 let id = ObjectIdentifier(attachment)
@@ -210,6 +217,7 @@ extension TodoEditorRepresentable.Coordinator {
 
             textStorage.enumerateAttribute(.attachment, in: fullRange, options: []) { val, range, _ in
                 guard let attachment = val as? NoteTableAttachment else { return }
+                guard shouldDisplayOverlay(in: range) else { return }
                 let id = ObjectIdentifier(attachment)
                 seenIDs.insert(id)
 
@@ -426,6 +434,7 @@ extension TodoEditorRepresentable.Coordinator {
 
             textStorage.enumerateAttribute(.attachment, in: fullRange, options: []) { val, range, _ in
                 guard let attachment = val as? NoteCalloutAttachment else { return }
+                guard shouldDisplayOverlay(in: range) else { return }
                 let id = ObjectIdentifier(attachment)
                 seenIDs.insert(id)
 
@@ -629,6 +638,206 @@ extension TodoEditorRepresentable.Coordinator {
             }
         }
 
+        // MARK: - Toggle Overlay Management
+
+        func updateToggleOverlays(in textView: NSTextView) {
+            guard let textStorage = textView.textStorage,
+                  let layoutManager = textView.layoutManager,
+                  let textContainer = textView.textContainer else { return }
+
+            let hostView: NSView = textView
+            var seenIDs = Set<UUID>()
+            let fullRange = NSRange(location: 0, length: textStorage.length)
+            guard fullRange.length > 0 else {
+                toggleOverlays.values.forEach { $0.removeFromSuperview() }
+                toggleOverlays.removeAll()
+                return
+            }
+
+            textStorage.enumerateAttribute(.attachment, in: fullRange, options: []) { val, range, _ in
+                guard let attachment = val as? NoteToggleAttachment else { return }
+                let toggleID = attachment.toggleID
+                seenIDs.insert(toggleID)
+
+                // ── WIDTH / HEIGHT CORRECTION ──
+                // Callout/Tabs parity: restore preferred width once the container has its real size,
+                // re-measure the height from the current data snapshot (content, expanded state).
+                let containerW = max(textContainer.containerSize.width, 100)
+                let effectiveMin = min(ToggleOverlayView.minWidth, containerW)
+                let currentWidth = attachment.bounds.width
+                let desiredWidth: CGFloat
+                if let preferredWidth = attachment.toggleData.preferredContentWidth {
+                    desiredWidth = max(effectiveMin, min(containerW, preferredWidth))
+                } else {
+                    desiredWidth = containerW
+                }
+                let widthDrift = abs(currentWidth - desiredWidth) > 1
+                let expectedHeight = ToggleOverlayView.heightForData(
+                    attachment.toggleData, width: desiredWidth)
+                let heightDrift = abs(attachment.bounds.height - expectedHeight) > 1
+                if widthDrift || heightDrift {
+                    let newSize = CGSize(width: desiredWidth, height: expectedHeight)
+                    attachment.attachmentCell = ToggleSizeAttachmentCell(size: newSize)
+                    attachment.bounds = CGRect(origin: .zero, size: newSize)
+                    layoutManager.invalidateLayout(forCharacterRange: range, actualCharacterRange: nil)
+                }
+
+                // ── LAYOUT & POSITIONING ──
+                let glyphRange = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+                if glyphRange.length > 0 { layoutManager.ensureLayout(forGlyphRange: glyphRange) }
+                guard glyphRange.length > 0 else { return }
+                let glyphRect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+
+                let overlayRect = CGRect(
+                    x: glyphRect.origin.x + textView.textContainerOrigin.x,
+                    y: glyphRect.origin.y + textView.textContainerOrigin.y,
+                    width: attachment.bounds.width,
+                    height: attachment.bounds.height
+                )
+
+                // ── OVERLAY CREATION OR UPDATE ──
+                let overlay: ToggleOverlayView
+                if let existing = toggleOverlays[toggleID] {
+                    overlay = existing
+                    overlay.applyData(attachment.toggleData)
+                } else {
+                    overlay = ToggleOverlayView(
+                        data: attachment.toggleData,
+                        containerWidth: containerW,
+                        parentTextView: textView,
+                        attachmentID: toggleID,
+                        onDataChanged: { _ in /* rewired below */ },
+                        onExitToParent: { },
+                        onHeightChanged: { _ in },
+                        onWidthChanged: { _ in }
+                    )
+                    hostView.addSubview(overlay)
+                    toggleOverlays[toggleID] = overlay
+                }
+
+                // Disable interaction in read-only mode (version preview).
+                if readOnly {
+                    overlay.onDataChanged   = nil
+                    overlay.onExitToParent  = nil
+                    overlay.onHeightChanged = nil
+                    overlay.onWidthChanged  = nil
+                } else {
+                    // ── onDataChanged ──
+                    // Mirror the Callout pattern: wrap in applyMutationWithUndo, assign toggleData,
+                    // recompute size, invalidate attachment glyph range, then syncText() so the
+                    // serializer (which reads att.toggleData.serialize()) flushes to the binding.
+                    overlay.onDataChanged = { [weak self, weak textStorage, weak textView, weak attachment] newData in
+                        guard let self = self, let ts = textStorage, let tv = textView, let att = attachment else { return }
+                        let previous = att.toggleData
+                        let apply: (ToggleData) -> Void = { data in
+                            att.toggleData = data
+                            let newHeight = ToggleOverlayView.heightForData(data, width: att.bounds.width)
+                            let newSize = CGSize(width: att.bounds.width, height: newHeight)
+                            att.attachmentCell = ToggleSizeAttachmentCell(size: newSize)
+                            att.bounds = CGRect(origin: .zero, size: newSize)
+                            let fr = NSRange(location: 0, length: ts.length)
+                            ts.enumerateAttribute(.attachment, in: fr, options: []) { val, charRange, stop in
+                                if val as AnyObject === att {
+                                    tv.layoutManager?.invalidateLayout(forCharacterRange: charRange, actualCharacterRange: nil)
+                                    stop.pointee = true
+                                }
+                            }
+                            self.syncText()
+                        }
+                        self.applyMutationWithUndo(
+                            textView: tv,
+                            actionName: "Edit Toggle",
+                            oldValue: previous,
+                            newValue: newData,
+                            apply: apply
+                        )
+                    }
+
+                    // ── onExitToParent ──
+                    // Move caret to the character immediately AFTER the attachment in the main
+                    // text view, then transfer first responder back to the main editor.
+                    overlay.onExitToParent = { [weak textStorage, weak textView, weak attachment] in
+                        guard let ts = textStorage, let tv = textView, let att = attachment else { return }
+                        let fr = NSRange(location: 0, length: ts.length)
+                        var caret: Int?
+                        ts.enumerateAttribute(.attachment, in: fr, options: []) { val, charRange, stop in
+                            if val as AnyObject === att {
+                                caret = charRange.location + charRange.length
+                                stop.pointee = true
+                            }
+                        }
+                        if let caret {
+                            tv.setSelectedRange(NSRange(location: min(caret, ts.length), length: 0))
+                        }
+                        tv.window?.makeFirstResponder(tv)
+                    }
+
+                    // ── onHeightChanged ──
+                    // Content edits or expand/collapse toggling change the measured height.
+                    // Resize the attachment cell + bounds, invalidate its glyph range so the
+                    // layout manager re-measures, and ask the text view to refresh layout.
+                    overlay.onHeightChanged = { [weak textStorage, weak textView, weak attachment] newHeight in
+                        guard let ts = textStorage, let tv = textView, let att = attachment else { return }
+                        let newSize = CGSize(width: att.bounds.width, height: newHeight)
+                        att.attachmentCell = ToggleSizeAttachmentCell(size: newSize)
+                        att.bounds = CGRect(origin: .zero, size: newSize)
+                        let fr = NSRange(location: 0, length: ts.length)
+                        ts.enumerateAttribute(.attachment, in: fr, options: []) { val, charRange, stop in
+                            if val as AnyObject === att {
+                                tv.layoutManager?.invalidateLayout(forCharacterRange: charRange, actualCharacterRange: nil)
+                                stop.pointee = true
+                            }
+                        }
+                        tv.needsLayout = true
+                    }
+
+                    // ── onWidthChanged ──
+                    // User width drag. nil means "flush with container" — clear preferredContentWidth.
+                    // Otherwise clamp to [minWidth, containerWidth] and persist on toggleData.
+                    overlay.onWidthChanged = { [weak self, weak textStorage, weak textView, weak attachment] preferred in
+                        guard let self = self, let ts = textStorage, let tv = textView, let att = attachment,
+                              let tc = tv.textContainer else { return }
+                        let cw = tc.containerSize.width
+                        let effMin = min(ToggleOverlayView.minWidth, cw)
+                        let clamped: CGFloat
+                        if let pref = preferred {
+                            clamped = max(effMin, min(pref, cw))
+                        } else {
+                            clamped = cw
+                        }
+                        var nextData = att.toggleData
+                        nextData.preferredContentWidth = (preferred == nil || abs(clamped - cw) < 1) ? nil : clamped
+                        att.toggleData = nextData
+                        let newHeight = ToggleOverlayView.heightForData(nextData, width: clamped)
+                        let newSize = CGSize(width: clamped, height: newHeight)
+                        att.attachmentCell = ToggleSizeAttachmentCell(size: newSize)
+                        att.bounds = CGRect(origin: .zero, size: newSize)
+                        let fr = NSRange(location: 0, length: ts.length)
+                        ts.enumerateAttribute(.attachment, in: fr, options: []) { val, charRange, stop in
+                            if val as AnyObject === att {
+                                tv.layoutManager?.invalidateLayout(forCharacterRange: charRange, actualCharacterRange: nil)
+                                stop.pointee = true
+                            }
+                        }
+                        // Parallel to Callout/Tabs: defer syncText() to end-of-drag to avoid
+                        // flashing the whole note body on every tick. For now the drag
+                        // handle (if any) fires onWidthChanged once on release.
+                        self.syncText()
+                    }
+                }
+
+                overlay.setContainerWidth(containerW)
+                overlay.frame = overlayRect.integral
+            }
+
+            // ── CLEANUP ──
+            let toRemove = toggleOverlays.keys.filter { !seenIDs.contains($0) }
+            for key in toRemove {
+                toggleOverlays[key]?.removeFromSuperview()
+                toggleOverlays.removeValue(forKey: key)
+            }
+        }
+
         // MARK: - Code Block Overlay Management
 
         func updateCodeBlockOverlays(in textView: NSTextView) {
@@ -647,6 +856,7 @@ extension TodoEditorRepresentable.Coordinator {
 
             textStorage.enumerateAttribute(.attachment, in: fullRange, options: []) { val, range, _ in
                 guard let attachment = val as? NoteCodeBlockAttachment else { return }
+                guard shouldDisplayOverlay(in: range) else { return }
                 let id = ObjectIdentifier(attachment)
                 seenIDs.insert(id)
 
@@ -848,6 +1058,7 @@ extension TodoEditorRepresentable.Coordinator {
 
             textStorage.enumerateAttribute(.attachment, in: fullRange, options: []) { val, range, _ in
                 guard let attachment = val as? NoteTabsAttachment else { return }
+                guard shouldDisplayOverlay(in: range) else { return }
                 let id = ObjectIdentifier(attachment)
                 seenIDs.insert(id)
 
@@ -1104,6 +1315,7 @@ extension TodoEditorRepresentable.Coordinator {
 
             textStorage.enumerateAttribute(.attachment, in: fullRange, options: []) { val, range, _ in
                 guard let attachment = val as? NoteCardSectionAttachment else { return }
+                guard shouldDisplayOverlay(in: range) else { return }
                 let id = ObjectIdentifier(attachment)
                 seenIDs.insert(id)
 
@@ -1285,6 +1497,7 @@ extension TodoEditorRepresentable.Coordinator {
 
             textStorage.enumerateAttribute(.attachment, in: fullRange, options: []) { val, range, _ in
                 guard let attachment = val as? NoteLinkCardAttachment else { return }
+                guard shouldDisplayOverlay(in: range) else { return }
                 let id = ObjectIdentifier(attachment)
                 seenIDs.insert(id)
 
@@ -1398,6 +1611,7 @@ extension TodoEditorRepresentable.Coordinator {
 
             textStorage.enumerateAttribute(.attachment, in: fullRange, options: []) { val, range, _ in
                 guard let attachment = val as? NoteFileAttachment,
+                      shouldDisplayOverlay(in: range),
                       attachment.viewMode != .tag else { return }
                 let id = ObjectIdentifier(attachment)
                 seenIDs.insert(id)

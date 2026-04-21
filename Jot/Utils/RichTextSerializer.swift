@@ -334,6 +334,7 @@ enum RichTextSerializer {
                remaining.hasPrefix("[[file|") || remaining.hasPrefix("[[table|") ||
                remaining.hasPrefix("[[callout|") || remaining.hasPrefix("[[code]]") ||
                remaining.hasPrefix("[[tabs|") || remaining.hasPrefix("[[cards|") ||
+               remaining.hasPrefix("[[toggle|") ||
                remaining.hasPrefix("[[divider]]") || remaining.hasPrefix("[[notelink|") {
                 flushBuffer()
                 // Skip to the end of this tag
@@ -363,6 +364,10 @@ enum RichTextSerializer {
                         }
                     } else if remaining.hasPrefix("[[cards|") {
                         if let endRange = text[index...].range(of: "[[/cards]]") {
+                            index = endRange.upperBound
+                        }
+                    } else if remaining.hasPrefix("[[toggle|") {
+                        if let endRange = text[index...].range(of: "[[/toggle]]") {
                             index = endRange.upperBound
                         }
                     }

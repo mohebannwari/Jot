@@ -97,6 +97,7 @@ final class TabsContainerOverlayView: NSView {
         updateContentText()
         setupFormattingObserver()
         setupTintObserver()
+        setupTranslucencyShadowObserver()
     }
 
     /// Observe app-wide tint changes so the stone-300 / stone-800 outer
@@ -110,6 +111,17 @@ final class TabsContainerOverlayView: NSView {
             queue: .main
         ) { [weak self] _ in
             self?.updateColors()
+        }
+        formattingObservers.append(obs)
+    }
+
+    private func setupTranslucencyShadowObserver() {
+        let obs = NotificationCenter.default.addObserver(
+            forName: ThemeManager.detailPaneTranslucencyDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.updatePaperShadowIfNeeded()
         }
         formattingObservers.append(obs)
     }
@@ -270,6 +282,13 @@ final class TabsContainerOverlayView: NSView {
             width: W, height: Self.handleWidth
         )
 
+        updatePaperShadowIfNeeded()
+    }
+
+    private func updatePaperShadowIfNeeded() {
+        let path = NSBezierPath(roundedRect: bounds, xRadius: outerRadius, yRadius: outerRadius).cgPath
+        let enabled = LiquidPaperShadowChrome.shouldShowPaperShadow(effectiveAppearance: effectiveAppearance)
+        LiquidPaperShadowChrome.applyPaperShadow(to: layer, path: path, enabled: enabled)
     }
 
     // MARK: - Tabs Row Rebuild
@@ -850,6 +869,7 @@ final class TabsContainerOverlayView: NSView {
         // Text color
         contentTextView.textColor = NSColor(named: "PrimaryTextColor") ?? .labelColor
 
+        updatePaperShadowIfNeeded()
         needsDisplay = true
     }
 
@@ -859,6 +879,7 @@ final class TabsContainerOverlayView: NSView {
         super.viewDidChangeEffectiveAppearance()
         updateColors()
         rebuildTabsRow()
+        updatePaperShadowIfNeeded()
     }
 }
 

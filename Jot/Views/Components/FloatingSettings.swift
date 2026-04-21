@@ -98,6 +98,11 @@ struct SettingsPage: View {
         min(1, max(0, themeManager.detailPaneTranslucency))
     }
 
+    /// Light-mode white “paper” cards over translucent chrome get a soft liquid-glass-style shadow.
+    private var shouldElevateLightPaperChrome: Bool {
+        colorScheme == .light && !reduceTransparency && detailTranslucency > 0.001
+    }
+
     /// Scroll (and tab) content starts below the overlaid title chrome; matches title row + gap under it.
     private var settingsContentTopInsetUnderChrome: CGFloat {
         titleTopPadding + settingsTitleChromeHeight + titleToBodySpacing
@@ -724,6 +729,7 @@ struct SettingsPage: View {
         .background(
             Capsule()
                 .fill(colorScheme == .light ? Color.white : Color("SettingsOptionCardColor"))
+                .liquidGlassPaperElevatedShadow(enabled: shouldElevateLightPaperChrome)
         )
     }
 
@@ -736,6 +742,7 @@ struct SettingsPage: View {
         .background(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .fill(colorScheme == .light ? Color.white : Color("SettingsOptionCardColor"))
+                .liquidGlassPaperElevatedShadow(enabled: shouldElevateLightPaperChrome)
         )
     }
 
@@ -1015,6 +1022,7 @@ struct SettingsPage: View {
                 ZStack {
                     RoundedRectangle(cornerRadius: bodyFontCardRadius, style: .continuous)
                         .fill(colorScheme == .light ? Color.white : Color("SettingsOptionCardColor"))
+                        .liquidGlassPaperElevatedShadow(enabled: shouldElevateLightPaperChrome)
 
                     Text("Aa")
                         .font(previewFont)
@@ -1062,6 +1070,7 @@ struct SettingsPage: View {
                 ZStack {
                     RoundedRectangle(cornerRadius: lineSpacingCardRadius, style: .continuous)
                         .fill(colorScheme == .light ? Color.white : Color("SettingsOptionCardColor"))
+                        .liquidGlassPaperElevatedShadow(enabled: shouldElevateLightPaperChrome)
 
                     lineSpacingPreview(for: spacing)
                 }
@@ -1174,6 +1183,7 @@ struct SettingsPage: View {
             .background(
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
                     .fill(colorScheme == .light ? Color.white : Color("SettingsOptionCardColor"))
+                    .liquidGlassPaperElevatedShadow(enabled: shouldElevateLightPaperChrome)
             )
         }
         .frame(maxWidth: .infinity, alignment: .top)
@@ -1272,6 +1282,7 @@ struct SettingsPage: View {
             .background(
                 Capsule()
                     .fill(colorScheme == .light ? Color.white : Color("SettingsOptionCardColor"))
+                    .liquidGlassPaperElevatedShadow(enabled: shouldElevateLightPaperChrome)
             )
         }
     }
@@ -1374,6 +1385,7 @@ struct SettingsPage: View {
         .background(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .fill(colorScheme == .light ? Color.white : Color("SettingsOptionCardColor"))
+                .liquidGlassPaperElevatedShadow(enabled: shouldElevateLightPaperChrome)
         )
     }
 

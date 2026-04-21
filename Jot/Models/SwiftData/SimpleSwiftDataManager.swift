@@ -23,11 +23,14 @@ final class SimpleSwiftDataManager: ObservableObject {
     @Published var deletedNotes: [Note] = []
     @Published var folders: [Folder] = []
     @Published var archivedFolders: [Folder] = []
+    @Published var smartFolders: [SmartFolder] = []
 
     // Sidebar groupings — recomputed only when notes change, not on every UI state change.
     // NOT @Published — objectWillChange is sent once manually in recomputeDerivedNotes()
     // to avoid 9 separate SwiftUI invalidation passes per note save.
     private(set) var notesByFolderID: [UUID: [Note]] = [:]
+    /// Virtual folder membership from smart-folder predicates (keys are smart-folder IDs).
+    private(set) var notesBySmartFolderID: [UUID: [Note]] = [:]
     private(set) var unfiledNotes: [Note] = []
     private(set) var pinnedNotes: [Note] = []
     private(set) var lockedNotes: [Note] = []
@@ -52,7 +55,7 @@ final class SimpleSwiftDataManager: ObservableObject {
     /// Never call this in production code.
     init(inMemoryForTesting: Bool) throws {
         precondition(inMemoryForTesting, "Use init() for production; this overload is tests-only")
-        let schema = Schema([NoteEntity.self, FolderEntity.self, NoteVersionEntity.self])
+        let schema = Schema([NoteEntity.self, FolderEntity.self, NoteVersionEntity.self, SmartFolderEntity.self])
         let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
         self.modelContainer = try ModelContainer(for: schema, configurations: [configuration])
         self.modelContext = ModelContext(modelContainer)
@@ -64,7 +67,7 @@ final class SimpleSwiftDataManager: ObservableObject {
     /// Creates a manager backed by a real on-disk store at a test-controlled URL.
     /// Never call this in production code.
     init(storeURLForTesting storeURL: URL) throws {
-        let schema = Schema([NoteEntity.self, FolderEntity.self, NoteVersionEntity.self])
+        let schema = Schema([NoteEntity.self, FolderEntity.self, NoteVersionEntity.self, SmartFolderEntity.self])
         let configuration = ModelConfiguration(
             "JotTests",
             schema: schema,
@@ -87,7 +90,7 @@ final class SimpleSwiftDataManager: ObservableObject {
 
     init() throws {
         // Setup SwiftData container
-        let schema = Schema([NoteEntity.self, FolderEntity.self, NoteVersionEntity.self])
+        let schema = Schema([NoteEntity.self, FolderEntity.self, NoteVersionEntity.self, SmartFolderEntity.self])
         let configuration = ModelConfiguration(
             schema: schema,
             isStoredInMemoryOnly: false,
@@ -187,6 +190,13 @@ final class SimpleSwiftDataManager: ObservableObject {
         return try modelContext.fetch(descriptor).map { $0.toFolder() }
     }
 
+    func allSmartFoldersForBackup() throws -> [SmartFolder] {
+        let descriptor = FetchDescriptor<SmartFolderEntity>(
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+        )
+        return try modelContext.fetch(descriptor).map { $0.toSmartFolder() }
+    }
+
     /// Lightweight check that populates archivedNotes/archivedFolders only if
     /// the database has archived items but the arrays haven't been loaded yet.
     func checkForArchivedItems() {
@@ -224,6 +234,30 @@ final class SimpleSwiftDataManager: ObservableObject {
         }
     }
 
+    /// Matches sidebar / note-list ordering for smart-folder contents.
+    private func sidebarSortComparator() -> (Note, Note) -> Bool {
+        let sortOrderRaw = UserDefaults.standard.string(forKey: ThemeManager.noteSortOrderKey) ?? "dateEdited"
+        let sortOrder = NoteSortOrder(rawValue: sortOrderRaw) ?? .dateEdited
+        switch sortOrder {
+        case .dateEdited: return { $0.date > $1.date }
+        case .dateCreated: return { $0.createdAt > $1.createdAt }
+        case .title: return { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
+        }
+    }
+
+    /// Rebuilds virtual membership for every smart folder from the current note list.
+    private func recomputeSmartFolderMembership(sortedNotes: [Note]) {
+        guard !smartFolders.isEmpty else {
+            notesBySmartFolderID = [:]
+            return
+        }
+        var dict: [UUID: [Note]] = [:]
+        for sf in smartFolders {
+            dict[sf.id] = sortedNotes.filter { sf.predicate.matches($0) }
+        }
+        notesBySmartFolderID = dict
+    }
+
     // Recomputes all derived note collections in a single pass over notes.
     // Called only when notes array changes — not on every UI render.
     private func recomputeDerivedNotes() {
@@ -234,13 +268,7 @@ final class SimpleSwiftDataManager: ObservableObject {
         let sortOrderRaw = UserDefaults.standard.string(forKey: ThemeManager.noteSortOrderKey) ?? "dateEdited"
         let sortOrder = NoteSortOrder(rawValue: sortOrderRaw) ?? .dateEdited
 
-        let sortComparator: (Note, Note) -> Bool = {
-            switch sortOrder {
-            case .dateEdited: return { $0.date > $1.date }
-            case .dateCreated: return { $0.createdAt > $1.createdAt }
-            case .title: return { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
-            }
-        }()
+        let sortComparator = sidebarSortComparator()
 
         let groupDate: (Note) -> Date = sortOrder == .dateCreated ? { $0.createdAt } : { $0.date }
 
@@ -313,6 +341,8 @@ final class SimpleSwiftDataManager: ObservableObject {
         thisMonthNotes = month
         thisYearNotes = year
         olderNotes = older
+
+        recomputeSmartFolderMembership(sortedNotes: sorted)
     }
 
     /// Updates a single note in-place across all derived sidebar collections
@@ -338,6 +368,9 @@ final class SimpleSwiftDataManager: ObservableObject {
                 break
             }
         }
+
+        // Smart folders depend on title/content/tags — refresh without a full derived recompute.
+        recomputeSmartFolderMembership(sortedNotes: notes.sorted(by: sidebarSortComparator()))
     }
 
     /// Re-sorts derived note collections when user changes sort preference.
@@ -358,6 +391,21 @@ final class SimpleSwiftDataManager: ObservableObject {
             logger.error("Failed to load folders: \(error)")
             folders = []
         }
+        loadSmartFolders()
+    }
+
+    private func loadSmartFolders() {
+        do {
+            let descriptor = FetchDescriptor<SmartFolderEntity>(
+                sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+            )
+            let entities = try modelContext.fetch(descriptor)
+            smartFolders = entities.map { $0.toSmartFolder() }
+        } catch {
+            logger.error("Failed to load smart folders: \(error)")
+            smartFolders = []
+        }
+        recomputeSmartFolderMembership(sortedNotes: notes.sorted(by: sidebarSortComparator()))
     }
     
     func loadArchivedFolders() {
@@ -1067,6 +1115,75 @@ final class SimpleSwiftDataManager: ObservableObject {
         }
     }
 
+    // MARK: - Smart Folder Operations
+
+    @discardableResult
+    func createSmartFolder(name: String, predicate: SmartFolderPredicate) -> SmartFolder? {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, predicate.hasAnyActiveCriterion else { return nil }
+
+        let entity = SmartFolderEntity(name: trimmed, predicate: predicate)
+        modelContext.insert(entity)
+
+        do {
+            try modelContext.save()
+            let folder = entity.toSmartFolder()
+            smartFolders.insert(folder, at: 0)
+            recomputeSmartFolderMembership(sortedNotes: notes.sorted(by: sidebarSortComparator()))
+            return folder
+        } catch {
+            logger.error("Failed to create smart folder: \(error)")
+            return nil
+        }
+    }
+
+    func updateSmartFolder(id: UUID, name: String, predicate: SmartFolderPredicate) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, predicate.hasAnyActiveCriterion else { return }
+
+        do {
+            let pid = id
+            let p = #Predicate<SmartFolderEntity> { $0.id == pid }
+            let descriptor = FetchDescriptor(predicate: p)
+            let entities = try modelContext.fetch(descriptor)
+            guard let entity = entities.first else {
+                logger.warning("Smart folder \(id) not found for update")
+                return
+            }
+
+            entity.update(name: trimmed, predicate: predicate)
+            try modelContext.save()
+
+            if let index = smartFolders.firstIndex(where: { $0.id == id }) {
+                smartFolders[index] = entity.toSmartFolder()
+            }
+            recomputeSmartFolderMembership(sortedNotes: notes.sorted(by: sidebarSortComparator()))
+        } catch {
+            logger.error("Failed to update smart folder: \(error)")
+        }
+    }
+
+    func deleteSmartFolder(id: UUID) {
+        do {
+            let pid = id
+            let p = #Predicate<SmartFolderEntity> { $0.id == pid }
+            let descriptor = FetchDescriptor(predicate: p)
+            let entities = try modelContext.fetch(descriptor)
+            guard let entity = entities.first else {
+                logger.warning("Smart folder \(id) not found for deletion")
+                return
+            }
+
+            modelContext.delete(entity)
+            try modelContext.save()
+
+            smartFolders.removeAll { $0.id == id }
+            notesBySmartFolderID[id] = nil
+        } catch {
+            logger.error("Failed to delete smart folder: \(error)")
+        }
+    }
+
     @discardableResult
     func createFolder(withNoteID noteID: UUID, name: String) -> Folder? {
         guard let folder = createFolder(name: name) else {
@@ -1252,7 +1369,7 @@ final class SimpleSwiftDataManager: ObservableObject {
     // MARK: - Backup Import
 
     /// Replaces all notes and folders with data from a backup.
-    func importBackup(notes: [Note], folders: [Folder]) {
+    func importBackup(notes: [Note], folders: [Folder], smartFolders: [SmartFolder] = []) {
         do {
             // Clear all existing notes
             let noteDescriptor = FetchDescriptor<NoteEntity>()
@@ -1263,6 +1380,11 @@ final class SimpleSwiftDataManager: ObservableObject {
             // Clear all existing folders
             let folderDescriptor = FetchDescriptor<FolderEntity>()
             for entity in try modelContext.fetch(folderDescriptor) {
+                modelContext.delete(entity)
+            }
+
+            let smartFolderDescriptor = FetchDescriptor<SmartFolderEntity>()
+            for entity in try modelContext.fetch(smartFolderDescriptor) {
                 modelContext.delete(entity)
             }
 
@@ -1284,6 +1406,11 @@ final class SimpleSwiftDataManager: ObservableObject {
                 modelContext.insert(entity)
             }
 
+            for smartFolder in smartFolders {
+                let entity = SmartFolderEntity(from: smartFolder)
+                modelContext.insert(entity)
+            }
+
             try modelContext.save()
 
             // Reload in-memory state — single-pass partition for efficiency
@@ -1295,24 +1422,26 @@ final class SimpleSwiftDataManager: ObservableObject {
                 else if note.isArchived { archived.append(note) }
                 else { activeNotes.append(note) }
             }
-            self.notes = activeNotes.sorted { $0.date > $1.date }
-            self.archivedNotes = archived
-            self.deletedNotes = deleted
             var activeFolders: [Folder] = []
             var archivedFoldersList: [Folder] = []
             for folder in folders {
                 if folder.isArchived { archivedFoldersList.append(folder) }
                 else { activeFolders.append(folder) }
             }
+            // Smart folders must be set before `notes` so `recomputeDerivedNotes` sees imported predicates.
+            self.smartFolders = smartFolders
             self.folders = activeFolders
             self.archivedFolders = archivedFoldersList
+            self.notes = activeNotes.sorted { $0.date > $1.date }
+            self.archivedNotes = archived
+            self.deletedNotes = deleted
 
             // Re-index in Spotlight
             for note in self.notes {
                 SpotlightIndexer.shared.indexNote(note)
             }
 
-            logger.info("Imported backup: \(notes.count) notes, \(folders.count) folders")
+            logger.info("Imported backup: \(notes.count) notes, \(folders.count) folders, \(smartFolders.count) smart folders")
         } catch {
             logger.error("Failed to import backup: \(error)")
         }
@@ -1333,9 +1462,16 @@ final class SimpleSwiftDataManager: ObservableObject {
             modelContext.delete(folder)
         }
 
+        let smartFolderDescriptor = FetchDescriptor<SmartFolderEntity>()
+        for entity in try modelContext.fetch(smartFolderDescriptor) {
+            modelContext.delete(entity)
+        }
+
         try modelContext.save()
         notes.removeAll()
         folders.removeAll()
+        smartFolders.removeAll()
+        notesBySmartFolderID = [:]
 
         logger.info("Cleared all SwiftData")
     }

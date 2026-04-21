@@ -107,29 +107,14 @@ struct FontManager {
     }
     
     /// NSFont version for AppKit headings.
-    /// Follows the user's body font style setting so headings stay visually coherent
-    /// with the surrounding text (Charter → Charter bold, Mono → monospaced, System → SF Pro).
+    /// Headings are part of the UI type scale and should stay on the system face even when
+    /// the body copy preference switches to Charter or mono.
     nonisolated static func headingNS(size: CGFloat = 24, weight: Weight = .medium) -> NSFont {
         let key = "heading-\(size)-\(weight)"
         fontManagerNSFontCacheLock.lock()
         defer { fontManagerNSFontCacheLock.unlock() }
         if let cached = fontManagerNSFontCache[key] { return cached }
-        let font: NSFont
-        switch currentBodyFontStyle() {
-        case .default:
-            if let charter = NSFont(name: "Charter-Bold", size: size) {
-                font = charter
-            } else if let charter = NSFont(name: "Charter", size: size) {
-                let descriptor = charter.fontDescriptor.withSymbolicTraits(.bold)
-                font = NSFont(descriptor: descriptor, size: size) ?? charter
-            } else {
-                font = NSFont.systemFont(ofSize: size, weight: weight.toNSWeight())
-            }
-        case .system:
-            font = NSFont.systemFont(ofSize: size, weight: weight.toNSWeight())
-        case .mono:
-            font = NSFont.monospacedSystemFont(ofSize: size, weight: weight.toNSWeight())
-        }
+        let font = NSFont.systemFont(ofSize: size, weight: weight.toNSWeight())
         fontManagerNSFontCache[key] = font
         return font
     }

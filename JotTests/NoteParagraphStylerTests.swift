@@ -15,6 +15,17 @@ import XCTest
 @MainActor
 final class NoteParagraphStylerTests: XCTestCase {
 
+    private func makeStorage(_ text: String, h3ParagraphStarts: [Int]) -> NSTextStorage {
+        let storage = NSTextStorage(string: text)
+        let h3Font = NSFont.systemFont(ofSize: TextFormattingManager.HeadingLevel.h3.fontSize)
+        let nsText = text as NSString
+        for start in h3ParagraphStarts where start < nsText.length {
+            let paragraphRange = nsText.paragraphRange(for: NSRange(location: start, length: 0))
+            storage.addAttribute(.font, value: h3Font, range: paragraphRange)
+        }
+        return storage
+    }
+
     // MARK: - Heading level detection
 
     func testHeadingLevel_MapsPointSizeToHeadingLevel() {

@@ -147,6 +147,10 @@ final class ThemeManager: ObservableObject {
     /// background colors without depending on the SwiftUI environment.
     static let tintDidChangeNotification = Notification.Name("JotTintDidChange")
 
+    /// Posted when ``detailPaneTranslucency`` changes so AppKit overlays can
+    /// refresh gated “paper” shadows without polling UserDefaults.
+    static let detailPaneTranslucencyDidChangeNotification = Notification.Name("JotDetailPaneTranslucencyDidChange")
+
     private let userDefaults: UserDefaults
     private var appearanceObserver: NSKeyValueObservation?
 
@@ -333,6 +337,10 @@ final class ThemeManager: ObservableObject {
         didSet {
             guard hasFinishedInitialization else { return }
             userDefaults.set(min(1, max(0, detailPaneTranslucency)), forKey: Self.detailPaneTranslucencyKey)
+            NotificationCenter.default.post(
+                name: Self.detailPaneTranslucencyDidChangeNotification,
+                object: nil
+            )
         }
     }
 

@@ -215,10 +215,11 @@ final class BackupManagerTests: XCTestCase {
 
         let manifest = BackupManager.BackupManifest(
             appVersion: "test",
-            schemaVersion: 1,
+            schemaVersion: 2,
             timestamp: Date(),
             noteCount: notes.count,
-            folderCount: folders.count
+            folderCount: folders.count,
+            smartFolderCount: 0
         )
         try makeBackupEncoder().encode(manifest)
             .write(to: backupURL.appendingPathComponent("manifest.json"))
@@ -236,6 +237,9 @@ final class BackupManagerTests: XCTestCase {
             try makeBackupEncoder().encode(folders)
                 .write(to: backupURL.appendingPathComponent("folders.json"))
         }
+
+        try makeBackupEncoder().encode([SmartFolder]())
+            .write(to: backupURL.appendingPathComponent("smartFolders.json"))
 
         return backupURL
     }

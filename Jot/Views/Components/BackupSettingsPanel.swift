@@ -11,6 +11,7 @@ struct BackupSettingsPanel: View {
     @EnvironmentObject private var notesManager: SimpleSwiftDataManager
     @ObservedObject private var backupManager = BackupManager.shared
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     @State private var showRestoreConfirmation = false
     @State private var selectedRestoreURL: URL?
@@ -326,6 +327,11 @@ struct BackupSettingsPanel: View {
         themeManager.versionRetentionDays == 0 ? "Forever" : "\(themeManager.versionRetentionDays) days"
     }
 
+    private var shouldElevateLightPaperChrome: Bool {
+        colorScheme == .light && !reduceTransparency
+            && min(1, max(0, themeManager.detailPaneTranslucency)) > 0.001
+    }
+
     private func sectionLabel(_ text: String) -> some View {
         Text(text)
             .font(FontManager.heading(size: 11, weight: .medium))
@@ -342,6 +348,7 @@ struct BackupSettingsPanel: View {
         .background(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .fill(colorScheme == .light ? Color.white : Color("SettingsOptionCardColor"))
+                .liquidGlassPaperElevatedShadow(enabled: shouldElevateLightPaperChrome)
         )
     }
 }

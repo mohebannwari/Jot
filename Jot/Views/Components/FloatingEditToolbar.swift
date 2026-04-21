@@ -405,6 +405,7 @@ enum EditTool: String, CaseIterable {
     case body
     case titleCase
     case h1, h2, h3
+    case collapsibleSection
     case bold, italic, underline, strikethrough
     case bulletList, numberedList, dashedList, todo
     case indentLeft, indentRight
@@ -444,6 +445,7 @@ enum EditTool: String, CaseIterable {
         case .h1: return "Heading 1"
         case .h2: return "Heading 2"
         case .h3: return "Heading 3"
+        case .collapsibleSection: return "Toggle"
         case .bold: return "Bold"
         case .italic: return "Italic"
         case .underline: return "Underline"

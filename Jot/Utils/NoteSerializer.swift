@@ -112,6 +112,8 @@ enum NoteSerializer {
                 output.append(tabsAttachment.tabsData.serialize())
             } else if let cardSectionAttachment = attributes[.attachment] as? NoteCardSectionAttachment {
                 output.append(cardSectionAttachment.cardSectionData.serialize())
+            } else if let toggleAttachment = attributes[.attachment] as? NoteToggleAttachment {
+                output.append(toggleAttachment.toggleData.serialize())
             } else if attributes[.attachment] is NoteDividerAttachment {
                 output.append("[[divider]]")
             } else if let notelinkAttachment = attributes[.attachment] as? NotelinkAttachment {

@@ -121,11 +121,14 @@ struct NoteToolsBar: View {
                         postToolAction(.todo)
                     }
                     // Rich Blocks
-                    toolButton(icon: "IconCode", tooltip: "Code Block") {
-                        postToolAction(.codeBlock)
-                    }
                     toolButton(icon: "IconTextBlock", tooltip: "Block Quote") {
                         postToolAction(.blockQuote)
+                    }
+                    toolButton(icon: "IconArrowsHide", tooltip: "Toggle") {
+                        postToolAction(.collapsibleSection)
+                    }
+                    toolButton(icon: "IconCode", tooltip: "Code Block") {
+                        postToolAction(.codeBlock)
                     }
                     toolButton(icon: "IconLightBulbSimple", tooltip: "Callout") {
                         postToolAction(.callout)

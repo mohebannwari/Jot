@@ -117,6 +117,26 @@ final class ThemeManagerTests: XCTestCase {
         )
     }
 
+    func testSetDetailPaneTranslucency_postsNotification() {
+        let (defaults, suiteName) = isolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let manager = ThemeManager(userDefaults: defaults)
+        var received = false
+        let obs = NotificationCenter.default.addObserver(
+            forName: ThemeManager.detailPaneTranslucencyDidChangeNotification,
+            object: nil,
+            queue: nil
+        ) { _ in
+            received = true
+        }
+        defer { NotificationCenter.default.removeObserver(obs) }
+
+        manager.detailPaneTranslucency = 0.5
+
+        XCTAssertTrue(received, "detailPaneTranslucency didSet should post detailPaneTranslucencyDidChangeNotification")
+    }
+
     func testInit_readsPersistedDetailPaneTranslucency() {
         let (defaults, suiteName) = isolatedDefaults()
         defer { defaults.removePersistentDomain(forName: suiteName) }

@@ -927,6 +927,48 @@ final class CalloutSizeAttachmentCell: NSTextAttachmentCell {
     }
 }
 
+// MARK: - Toggle Attachment
+
+final class NoteToggleAttachment: NSTextAttachment {
+    var toggleData: ToggleData
+    let toggleID = UUID()
+
+    init(toggleData: ToggleData) {
+        self.toggleData = toggleData
+        super.init(data: nil, ofType: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("NoteToggleAttachment does not support init(coder:)")
+    }
+}
+
+final class ToggleSizeAttachmentCell: NSTextAttachmentCell {
+    let displaySize: CGSize
+
+    init(size: CGSize) {
+        self.displaySize = size
+        super.init(imageCell: nil)
+    }
+
+    @available(*, unavailable)
+    required init(coder: NSCoder) {
+        fatalError("ToggleSizeAttachmentCell does not support init(coder:)")
+    }
+
+    override var cellSize: NSSize { displaySize }
+    override nonisolated func cellBaselineOffset() -> NSPoint { .zero }
+
+    override func draw(withFrame cellFrame: NSRect, in controlView: NSView?) {
+        // Intentionally empty — overlay view renders the toggle
+    }
+
+    override func draw(withFrame cellFrame: NSRect, in controlView: NSView?, characterIndex charIndex: Int, layoutManager: NSLayoutManager) {
+        // Intentionally empty — overlay view renders the toggle
+    }
+}
+
 // MARK: - Code Block Attachment
 
 final class NoteCodeBlockAttachment: NSTextAttachment {
@@ -1491,11 +1533,11 @@ final class FileLinkAttachment: NSTextAttachment {
     }
 }
 
-
 // MARK: - Representable Implementations
 
 struct TodoEditorRepresentable: NSViewRepresentable {
     @Binding var text: String
+    var noteID: UUID? = nil
     let colorScheme: ColorScheme
     let focusRequestID: UUID?
     let editorInstanceID: UUID?
@@ -1634,6 +1676,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         }
 
         // Sync navigate callback
+        context.coordinator.updateNoteContext(noteID)
         context.coordinator.onNavigateToNote = onNavigateToNote
         context.coordinator.fetchNote = fetchNote
         context.coordinator.onUndoManagerAvailable = onUndoManagerAvailable
@@ -1695,6 +1738,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
     func makeCoordinator() -> Coordinator {
         return Coordinator(
             text: $text,
+            noteID: noteID,
             colorScheme: colorScheme,
             focusRequestID: focusRequestID,
             editorInstanceID: editorInstanceID,
@@ -1756,6 +1800,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         private var textBinding: Binding<String>
         private var lastHandledFocusRequestID: UUID?
         let editorInstanceID: UUID?
+        private var noteID: UUID?
 
         // Debounce timer for fixInconsistentFonts — prevents running on every keystroke
         private var fixFontsWorkItem: DispatchWorkItem?
@@ -1797,6 +1842,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         var linkCardOverlays: [ObjectIdentifier: NSView] = [:]
         var linkCardThumbnailLoadAttempted: Set<ObjectIdentifier> = []
         var filePreviewOverlays: [ObjectIdentifier: FilePreviewOverlayView] = [:]
+        var toggleOverlays: [UUID: ToggleOverlayView] = [:]
 
         /// Last container width we ran the divider-attachment sync against. `updateDividerAttachments`
         /// short-circuits when the width hasn't moved (within 0.5pt) since every `frameDidChange`
@@ -1839,6 +1885,18 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         /// finish the current layout transaction — otherwise glyph rects stay wrong for a frame (G4).
         private var pendingPostNoteSwitchOverlayWork: DispatchWorkItem?
 
+        func updateNoteContext(_ noteID: UUID?) {
+            guard self.noteID != noteID else { return }
+            self.noteID = noteID
+        }
+
+        /// Heading-fold collapsed-section hiding was removed when the Toggle block pivoted
+        /// to a Notion-style attachment. Stub retained for the two call sites in
+        /// TodoEditorRepresentable until they can be cleanly removed in follow-up work.
+        func isRangeHiddenByCollapsedSection(_ range: NSRange) -> Bool {
+            return false
+        }
+
         /// Coalesces overlay update requests so multiple triggers
         /// (updateNSView, didCompleteLayoutFor, boundsDidChange) within
         /// the same run-loop turn collapse into a single pass.
@@ -1874,6 +1932,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             updateTableOverlays(in: textView)
             updateDividerAttachments(in: textView)
             updateCalloutOverlays(in: textView)
+            updateToggleOverlays(in: textView)
             updateCodeBlockOverlays(in: textView)
             updateTabsOverlays(in: textView)
             updateCardSectionOverlays(in: textView)
@@ -2761,8 +2820,9 @@ struct TodoEditorRepresentable: NSViewRepresentable {
 
         let readOnly: Bool
 
-        init(text: Binding<String>, colorScheme: ColorScheme, focusRequestID: UUID?, editorInstanceID: UUID? = nil, readOnly: Bool = false) {
+        init(text: Binding<String>, noteID: UUID? = nil, colorScheme: ColorScheme, focusRequestID: UUID?, editorInstanceID: UUID? = nil, readOnly: Bool = false) {
             self.textBinding = text
+            self.noteID = noteID
             self.currentColorScheme = colorScheme
             self.lastHandledFocusRequestID = focusRequestID
             self.editorInstanceID = editorInstanceID
@@ -2820,6 +2880,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 tableOverlays.removeAll()
                 filePreviewOverlays.values.forEach { $0.removeFromSuperview() }
                 filePreviewOverlays.removeAll()
+                toggleOverlays.values.forEach { $0.removeFromSuperview() }
+                toggleOverlays.removeAll()
                 overlayHostView = newHost
             }
             // Register as layout manager delegate for overlay position tracking
@@ -2925,7 +2987,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 MainActor.assumeIsolated { [weak self] in
                     guard let self = self, let textView = self.textView else { return }
 
-                    let isBlockInsertion = [EditTool.table, .callout, .codeBlock, .tabs, .cards].contains(tool)
+                    let isBlockInsertion = [EditTool.table, .callout, .codeBlock, .tabs, .cards, .collapsibleSection].contains(tool)
 
                     // For inline formatting, skip if another NSTextView has focus
                     // (overlay text views handle their own formatting).
@@ -2957,6 +3019,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                             self.insertTabs()
                         } else if tool == .cards {
                             self.insertCardSection()
+                        } else if tool == .collapsibleSection {
+                            self.insertToggle()
                         }
                         self.isUpdating = false
                     } else {
@@ -3017,7 +3081,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     // Apply the selected tool
                     // Some command-menu tools already call syncText() internally after they
                     // finish their own atomic insert. Avoid a second sync from this wrapper.
-                    let toolPerformsOwnSync = [EditTool.todo, .table, .callout, .codeBlock, .tabs, .cards].contains(tool)
+                    let toolPerformsOwnSync = [EditTool.todo, .table, .callout, .codeBlock, .tabs, .cards, .collapsibleSection].contains(tool)
 
                     if toolPerformsOwnSync {
                         self.isUpdating = true
@@ -3033,6 +3097,8 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                             self.insertTabs()
                         } else if tool == .cards {
                             self.insertCardSection()
+                        } else if tool == .collapsibleSection {
+                            self.insertToggle()
                         }
                         self.isUpdating = false
                     } else {
@@ -4690,6 +4756,9 @@ struct TodoEditorRepresentable: NSViewRepresentable {
 
             // Scroll active match into view and play impulse
             if activeIndex >= 0 && activeIndex < ranges.count {
+                if let textContainer = textView.textContainer {
+                    layoutManager.ensureLayout(for: textContainer)
+                }
                 textView.scrollRangeToVisible(ranges[activeIndex])
                 playMatchGlow(for: ranges[activeIndex])
             }
@@ -6685,6 +6754,76 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             return attributed
         }
 
+        // MARK: - Toggle Insertion
+
+        func makeToggleAttachment(toggleData: ToggleData, initialWidth: CGFloat? = nil) -> NSMutableAttributedString {
+            var containerWidth = textView?.textContainer?.containerSize.width ?? ToggleOverlayView.minWidth
+            if containerWidth < 1 { containerWidth = ToggleOverlayView.minWidth }
+            let effectiveMin = min(ToggleOverlayView.minWidth, containerWidth)
+            let toggleWidth: CGFloat
+            if let pref = toggleData.preferredContentWidth {
+                toggleWidth = max(effectiveMin, min(containerWidth, pref))
+            } else {
+                toggleWidth = containerWidth
+            }
+
+            let toggleHeight = ToggleOverlayView.heightForData(toggleData, width: toggleWidth)
+
+            let attachment = NoteToggleAttachment(toggleData: toggleData)
+            let cellSize = CGSize(width: toggleWidth, height: toggleHeight)
+            attachment.attachmentCell = ToggleSizeAttachmentCell(size: cellSize)
+            attachment.bounds = CGRect(origin: .zero, size: cellSize)
+
+            let attributed = NSMutableAttributedString(attachment: attachment)
+            let range = NSRange(location: 0, length: attributed.length)
+
+            let blockStyle = NSMutableParagraphStyle()
+            blockStyle.alignment = .left
+            blockStyle.paragraphSpacing = 12
+            // Larger leading gap than Callout's 8pt — toggles are often inserted
+            // directly under a note title or H1, where 8pt reads as crowding.
+            blockStyle.paragraphSpacingBefore = 20
+            attributed.addAttribute(.paragraphStyle, value: blockStyle, range: range)
+
+            return attributed
+        }
+
+        private func insertToggle() {
+            let data = ToggleData.empty()
+            guard let textView = textView,
+                  let textStorage = textView.textStorage else { return }
+
+            let baseAttrs = Self.baseTypingAttributes(for: currentColorScheme)
+            let composed = NSMutableAttributedString()
+
+            let insertAt = min(textView.selectedRange().location, textStorage.length)
+            let nsString = textStorage.string as NSString
+
+            if insertAt > 0 {
+                let prevChar = nsString.character(at: insertAt - 1)
+                if let scalar = Unicode.Scalar(prevChar),
+                   !CharacterSet.newlines.contains(scalar) {
+                    composed.append(NSAttributedString(string: "\n", attributes: baseAttrs))
+                }
+            }
+
+            let toggleAttrib = makeToggleAttachment(toggleData: data)
+            composed.append(toggleAttrib)
+            composed.append(NSAttributedString(string: "\n", attributes: baseAttrs))
+
+            let targetRange = NSRange(location: insertAt, length: 0)
+            guard textView.shouldChangeText(in: targetRange, replacementString: composed.string) else { return }
+            textStorage.replaceCharacters(in: targetRange, with: composed)
+            textView.didChangeText()
+
+            textView.setSelectedRange(NSRange(location: insertAt + composed.length, length: 0))
+            textView.layoutManager?.invalidateLayout(
+                forCharacterRange: NSRange(location: insertAt, length: composed.length),
+                actualCharacterRange: nil
+            )
+            syncText()
+        }
+
         func makeDividerAttachment() -> NSMutableAttributedString {
             var containerWidth = textView?.textContainer?.containerSize.width ?? 400
             if containerWidth < 1 { containerWidth = 400 }
@@ -7118,6 +7257,58 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         }
 
         // MARK: - NSLayoutManagerDelegate
+
+        nonisolated func layoutManager(
+            _ layoutManager: NSLayoutManager,
+            shouldGenerateGlyphs glyphs: UnsafePointer<CGGlyph>,
+            properties props: UnsafePointer<NSLayoutManager.GlyphProperty>,
+            characterIndexes charIndexes: UnsafePointer<Int>,
+            font: NSFont,
+            forGlyphRange glyphRange: NSRange
+        ) -> Int {
+            MainActor.assumeIsolated {
+                // `isRangeHiddenByCollapsedSection` is stubbed to always return false since the
+                // heading-fold scaffold was removed when the Toggle block pivoted to a Notion-style
+                // attachment. The short-circuit below keeps the function body correct without the
+                // removed `collapsedBodyRanges` backing store; the two call sites remain valid.
+                guard glyphRange.length > 0 else { return 0 }
+
+                var shouldOverrideGlyphs = false
+                for offset in 0..<glyphRange.length where isRangeHiddenByCollapsedSection(
+                    NSRange(location: charIndexes[offset], length: 0)
+                ) {
+                    shouldOverrideGlyphs = true
+                    break
+                }
+                guard shouldOverrideGlyphs else { return 0 }
+
+                var glyphBuffer = Array(
+                    UnsafeBufferPointer(start: glyphs, count: glyphRange.length)
+                )
+                var propertyBuffer = Array(
+                    UnsafeBufferPointer(start: props, count: glyphRange.length)
+                )
+                let characterIndexBuffer = Array(
+                    UnsafeBufferPointer(start: charIndexes, count: glyphRange.length)
+                )
+
+                for offset in 0..<glyphRange.length where isRangeHiddenByCollapsedSection(
+                    NSRange(location: characterIndexBuffer[offset], length: 0)
+                ) {
+                    propertyBuffer[offset].insert(.null)
+                    glyphBuffer[offset] = 0
+                }
+
+                layoutManager.setGlyphs(
+                    glyphBuffer,
+                    properties: propertyBuffer,
+                    characterIndexes: characterIndexBuffer,
+                    font: font,
+                    forGlyphRange: glyphRange
+                )
+                return glyphRange.length
+            }
+        }
 
         nonisolated func layoutManager(
             _ layoutManager: NSLayoutManager,

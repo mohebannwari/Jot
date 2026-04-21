@@ -389,6 +389,7 @@ struct NoteDetailView: View {
 
       TodoRichTextEditor(
         text: $editedContent,
+        noteID: note.id,
         focusRequestID: localEditorFocusID ?? focusRequestID,
         editorInstanceID: editorInstanceID,
         onToolbarAction: handleEditToolAction,

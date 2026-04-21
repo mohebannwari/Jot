@@ -24,17 +24,21 @@ final class BackupManager: ObservableObject {
         let timestamp: Date
         let noteCount: Int
         let folderCount: Int
+        /// Present in backups from smart-folder support onward; nil in older manifests.
+        let smartFolderCount: Int?
     }
 
     struct BackupSnapshot {
         let notes: [Note]
         let folders: [Folder]
+        let smartFolders: [SmartFolder]
     }
 
     struct ValidatedRestorePayload {
         let backupURL: URL
         let notes: [Note]
         let folders: [Folder]
+        let smartFolders: [SmartFolder]
     }
 
     private enum RestoreValidationError: LocalizedError {
@@ -161,13 +165,17 @@ final class BackupManager: ObservableObject {
             let foldersData = try JSONEncoder.jotBackup.encode(snapshot.folders)
             try foldersData.write(to: backupURL.appendingPathComponent("folders.json"))
 
+            let smartFoldersData = try JSONEncoder.jotBackup.encode(snapshot.smartFolders)
+            try smartFoldersData.write(to: backupURL.appendingPathComponent("smartFolders.json"))
+
             // Write manifest
             let manifest = BackupManifest(
                 appVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown",
-                schemaVersion: 1,
+                schemaVersion: 2,
                 timestamp: Date(),
                 noteCount: snapshot.notes.count,
-                folderCount: snapshot.folders.count
+                folderCount: snapshot.folders.count,
+                smartFolderCount: snapshot.smartFolders.count
             )
             let manifestData = try JSONEncoder.jotBackup.encode(manifest)
             try manifestData.write(to: backupURL.appendingPathComponent("manifest.json"))
@@ -185,7 +193,7 @@ final class BackupManager: ObservableObject {
             lastBackupDate = now
             userDefaults.set(now, forKey: ThemeManager.lastBackupDateKey)
 
-            logger.info("Backup completed: \(backupFolderName) (\(snapshot.notes.count) notes, \(snapshot.folders.count) folders)")
+            logger.info("Backup completed: \(backupFolderName) (\(snapshot.notes.count) notes, \(snapshot.folders.count) folders, \(snapshot.smartFolders.count) smart folders)")
 
             // Prune old backups
             pruneOldBackups(in: baseURL)
@@ -344,7 +352,7 @@ final class BackupManager: ObservableObject {
         let logger = Logger(subsystem: "com.jot.app", category: "BackupManager")
 
         do {
-            notesManager.importBackup(notes: payload.notes, folders: payload.folders)
+            notesManager.importBackup(notes: payload.notes, folders: payload.folders, smartFolders: payload.smartFolders)
 
             // Restore images and files into the App Group container
             let restoreBase = FileManager.default.containerURL(
@@ -353,7 +361,7 @@ final class BackupManager: ObservableObject {
             try restoreDirectory(named: "JotImages", from: payload.backupURL, to: restoreBase)
             try restoreDirectory(named: "JotFiles", from: payload.backupURL, to: restoreBase)
 
-            logger.info("Restore complete: \(payload.notes.count) notes, \(payload.folders.count) folders")
+            logger.info("Restore complete: \(payload.notes.count) notes, \(payload.folders.count) folders, \(payload.smartFolders.count) smart folders")
         } catch {
             logger.error("Post-init restore failed: \(error)")
         }
@@ -405,7 +413,8 @@ final class BackupManager: ObservableObject {
     func backupSnapshot(from manager: SimpleSwiftDataManager) throws -> BackupSnapshot {
         BackupSnapshot(
             notes: try manager.allNotesForBackup(),
-            folders: try manager.allFoldersForBackup()
+            folders: try manager.allFoldersForBackup(),
+            smartFolders: try manager.allSmartFoldersForBackup()
         )
     }
 
@@ -433,6 +442,7 @@ final class BackupManager: ObservableObject {
         let manifestURL = backupURL.appendingPathComponent("manifest.json")
         let notesURL = backupURL.appendingPathComponent("notes.json")
         let foldersURL = backupURL.appendingPathComponent("folders.json")
+        let smartFoldersURL = backupURL.appendingPathComponent("smartFolders.json")
 
         for url in [manifestURL, notesURL, foldersURL] {
             guard fileManager.fileExists(atPath: url.path) else {
@@ -446,11 +456,18 @@ final class BackupManager: ObservableObject {
         )
         let notes = try JSONDecoder.jotBackup.decode([Note].self, from: Data(contentsOf: notesURL))
         let folders = try JSONDecoder.jotBackup.decode([Folder].self, from: Data(contentsOf: foldersURL))
+        let smartFolders: [SmartFolder]
+        if fileManager.fileExists(atPath: smartFoldersURL.path) {
+            smartFolders = try JSONDecoder.jotBackup.decode([SmartFolder].self, from: Data(contentsOf: smartFoldersURL))
+        } else {
+            smartFolders = []
+        }
 
         return ValidatedRestorePayload(
             backupURL: backupURL,
             notes: notes,
-            folders: folders
+            folders: folders,
+            smartFolders: smartFolders
         )
     }
 

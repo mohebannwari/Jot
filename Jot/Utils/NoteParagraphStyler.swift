@@ -302,7 +302,7 @@ enum NoteParagraphStyler {
             // Detect heading paragraphs — apply heading paragraph spacing on the full range
             // (including the trailing newline) so AppKit does not resolve the paragraph from
             // the newline's base style and drop heading spacing after import/round-trip.
-            var isHeadingParagraph = false
+            var headingLevelForParagraph: TextFormattingManager.HeadingLevel?
             if !isTodoParagraph && !isWebClipParagraph && !isNumberedListParagraph && !isBlockQuoteParagraph
                 && !isArrowParagraph
             {
@@ -310,10 +310,11 @@ enum NoteParagraphStyler {
                 // (styleTodoParagraphs itself is what preserves this). A single-point peek
                 // saves N `enumerateAttribute` visits per paragraph on every keystroke.
                 if let f = textStorage.attribute(.font, at: substringRange.location, effectiveRange: nil) as? NSFont,
-                   headingLevel(for: f) != nil {
-                    isHeadingParagraph = true
+                   let level = headingLevel(for: f) {
+                    headingLevelForParagraph = level
                 }
             }
+            let isHeadingParagraph = headingLevelForParagraph != nil
 
             // Apply appropriate paragraph style based on content type
             if isTableParagraph {
@@ -354,9 +355,17 @@ enum NoteParagraphStyler {
                 let headingStyle = NSMutableParagraphStyle()
                 headingStyle.paragraphSpacingBefore = 8
                 headingStyle.paragraphSpacing = 12
+                if headingLevelForParagraph == .h3 {
+                    headingStyle.tailIndent = -24
+                }
                 textStorage.enumerateAttribute(.paragraphStyle, in: substringRange, options: []) { val, _, stop in
-                    if let ps = val as? NSParagraphStyle, ps.alignment != .left {
-                        headingStyle.alignment = ps.alignment
+                    if let ps = val as? NSParagraphStyle {
+                        if ps.alignment != .left {
+                            headingStyle.alignment = ps.alignment
+                        }
+                        if ps.tailIndent < 0 {
+                            headingStyle.tailIndent = ps.tailIndent
+                        }
                         stop.pointee = true
                     }
                 }

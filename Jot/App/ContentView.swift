@@ -417,6 +417,9 @@ struct ContentView: View {
     @State private var isPinnedSectionExpanded: Bool = true
     @State private var isLockedSectionExpanded: Bool = true
     @State private var isFoldersSectionExpanded: Bool = true
+    @State private var expandedSmartFolderIDs: Set<UUID> = []
+    @State private var showAllNotesSmartFolderIDs: Set<UUID> = []
+    @State private var isSmartFoldersSectionExpanded: Bool = true
     @State private var showAllNotesFolderIDs: Set<UUID> = []
     @State private var sidebarSectionFilter: SidebarSectionFilter = .all
     @State private var highlightedFolderID: UUID?
@@ -435,6 +438,8 @@ struct ContentView: View {
     @State private var isCreateFolderAlertPresented = false
     @State private var pendingFolderCreationIntent: FolderCreationIntent = .standalone
     @State private var pendingFolderToEdit: Folder?
+    @State private var isSmartFolderEditorPresented = false
+    @State private var pendingSmartFolderToEdit: SmartFolder?
     @State private var createFolderButtonFrame: CGRect = .zero
 
     @State private var isBatchDeleteConfirmationPresented = false
@@ -452,6 +457,7 @@ struct ContentView: View {
     @State private var isFloatingSidebarVisible = false
     @State private var floatingSidebarDismissWorkItem: DispatchWorkItem?
     @State private var isSplitMenuVisible = false
+    @State private var isFolderCreationMenuVisible = false
     @State private var splitSessions: [SplitSession] = []
     @State private var activeSplitID: UUID? = nil
     @State private var pendingSplitID: UUID? = nil
@@ -1104,6 +1110,10 @@ struct ContentView: View {
             editFolderOverlay(folder: folder)
                 .transition(.opacity)
         }
+        if isSmartFolderEditorPresented {
+            smartFolderEditorOverlay
+                .transition(.opacity)
+        }
     }
 
     @ViewBuilder
@@ -1155,6 +1165,59 @@ struct ContentView: View {
         }
     }
 
+    @ViewBuilder
+    private var smartFolderEditorOverlay: some View {
+        folderSheetOverlay {
+            SmartFolderEditorSheet(
+                notes: notesManager.notes,
+                editingSmartFolder: pendingSmartFolderToEdit,
+                onSave: { name, predicate in
+                    confirmSmartFolderSave(name: name, predicate: predicate)
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                        dismissSmartFolderEditor()
+                    }
+                },
+                onCancel: {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                        dismissSmartFolderEditor()
+                    }
+                }
+            )
+        } onDismiss: {
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                dismissSmartFolderEditor()
+            }
+        }
+    }
+
+    private func dismissSmartFolderEditor() {
+        isSmartFolderEditorPresented = false
+        pendingSmartFolderToEdit = nil
+    }
+
+    private func promptCreateSmartFolder() {
+        pendingSmartFolderToEdit = nil
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+            isSmartFolderEditorPresented = true
+        }
+    }
+
+    private func promptEditSmartFolder(_ smartFolder: SmartFolder) {
+        pendingSmartFolderToEdit = smartFolder
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+            isSmartFolderEditorPresented = true
+        }
+    }
+
+    private func confirmSmartFolderSave(name: String, predicate: SmartFolderPredicate) {
+        HapticManager.shared.buttonTap()
+        if let existing = pendingSmartFolderToEdit {
+            notesManager.updateSmartFolder(id: existing.id, name: name, predicate: predicate)
+        } else if let created = notesManager.createSmartFolder(name: name, predicate: predicate) {
+            expandedSmartFolderIDs.insert(created.id)
+        }
+    }
+
     // MARK: - Main Layout
 
     @ViewBuilder
@@ -1199,10 +1262,15 @@ struct ContentView: View {
             .overlay(alignment: .topLeading) {
                 globalSearchShortcutActivator
             }
-            if isSplitMenuVisible {
+            if isSplitMenuVisible || isFolderCreationMenuVisible {
                 Color.clear
                     .contentShape(Rectangle())
-                    .onTapGesture { withAnimation(.jotSpring) { isSplitMenuVisible = false } }
+                    .onTapGesture {
+                        withAnimation(.jotSpring) {
+                            isSplitMenuVisible = false
+                            isFolderCreationMenuVisible = false
+                        }
+                    }
                     .ignoresSafeArea()
                     .zIndex(199)
             }
@@ -1228,6 +1296,18 @@ struct ContentView: View {
                 .offset(x: max(8, splitMenuButtonFrame.minX - 8), y: splitMenuButtonFrame.maxY + 7)
                 .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .topLeading)))
                 .animation(.jotSpring, value: isSplitMenuVisible)
+            }
+        }
+        .overlay(alignment: .topLeading) {
+            if isFolderCreationMenuVisible {
+                FolderCreationOptionMenu(
+                    onRegularFolder: { promptCreateFolder() },
+                    onSmartFolder: { promptCreateSmartFolder() },
+                    dismiss: { withAnimation(.jotSpring) { isFolderCreationMenuVisible = false } }
+                )
+                .offset(x: max(8, createFolderButtonFrame.minX - 8), y: createFolderButtonFrame.maxY + 7)
+                .transition(.opacity.combined(with: .scale(scale: 0.95, anchor: .topLeading)))
+                .animation(.jotSpring, value: isFolderCreationMenuVisible)
             }
         }
     }
@@ -1462,7 +1542,7 @@ struct ContentView: View {
                     createSplitFromDrop(primaryNote: note, droppedNoteID: droppedNoteID, position: side)
                 }
             ))
-            .disabled(isCreateFolderAlertPresented || pendingFolderToEdit != nil)
+            .disabled(isCreateFolderAlertPresented || pendingFolderToEdit != nil || isSmartFolderEditorPresented || isFolderCreationMenuVisible)
         }
     }
 
@@ -2242,6 +2322,49 @@ struct ContentView: View {
                     )
                 }
 
+                if shouldShowSmartFoldersSection {
+                    SmartFolderSection(
+                        smartFolders: smartFolders,
+                        notesBySmartFolder: notesBySmartFolderID,
+                        selectedNoteIDs: sidebarSelectedNoteIDs,
+                        activeNoteID: sidebarActiveNoteID,
+                        expandedSmartFolderIDs: $expandedSmartFolderIDs,
+                        showAllNotesSmartFolderIDs: $showAllNotesSmartFolderIDs,
+                        allFolders: folders,
+                        onOpenNote: handleNoteTap,
+                        onDeleteNotes: requestDeleteNotes,
+                        onCreateFolderWithNotes: { noteIDs in
+                            promptCreateFolder(withNoteIDs: noteIDs)
+                        },
+                        onMoveNotesToFolder: moveNotesToFolder,
+                        onTogglePinForNotes: setPinState,
+                        onExportNotes: presentExport,
+                        onArchiveNotes: archiveNotes,
+                        onRenameNote: { note, newTitle in
+                            var updatedNote = note
+                            updatedNote.title = newTitle
+                            notesManager.updateNote(updatedNote)
+                        },
+                        onToggleLockNote: { id in
+                            if let note = notesManager.notes.first(where: { $0.id == id }), note.isLocked {
+                                handleLockIconTap(note)
+                            } else {
+                                notesManager.toggleLock(id: id)
+                            }
+                        },
+                        onLockIconTap: { note in handleLockIconTap(note) },
+                        splitNoteIDs: splitNoteIDs,
+                        onSplitIconTap: activateSplitForNote,
+                        onEditSmartFolder: promptEditSmartFolder,
+                        onDeleteSmartFolder: { sf in
+                            notesManager.deleteSmartFolder(id: sf.id)
+                            expandedSmartFolderIDs.remove(sf.id)
+                            showAllNotesSmartFolderIDs.remove(sf.id)
+                        },
+                        isExpanded: $isSmartFoldersSectionExpanded
+                    )
+                }
+
                 if shouldShowPinnedSection {
                     PinnedNotesSection(
                         notes: pinnedNotes,
@@ -2538,6 +2661,10 @@ struct ContentView: View {
         sidebarSectionFilterAllows(sidebarSectionFilter, section: .folders) && !folders.isEmpty
     }
 
+    private var shouldShowSmartFoldersSection: Bool {
+        sidebarSectionFilterAllows(sidebarSectionFilter, section: .folders) && !smartFolders.isEmpty
+    }
+
     private var shouldShowTodaySection: Bool {
         isDateGroupingActive && sidebarSectionFilterAllows(sidebarSectionFilter, section: .today) && !todayNotes.isEmpty
     }
@@ -2679,16 +2806,21 @@ struct ContentView: View {
                 // Only the collapse-all glyph uses a smaller frame; other header icons stay at `sidebarIconSize`.
                 sidebarBareIcon(
                     assetName: "IconFolderCollapseAll",
-                    disabled: expandedFolderIDs.isEmpty && showAllNotesFolderIDs.isEmpty,
+                    disabled: expandedFolderIDs.isEmpty && showAllNotesFolderIDs.isEmpty
+                        && expandedSmartFolderIDs.isEmpty && showAllNotesSmartFolderIDs.isEmpty,
                     iconSize: 13
                 ) {
                     collapseAllExpandedFolders()
                 }
-                .help("Collapse all folders")
+                .help("Collapse all folders and smart folders")
 
                 sidebarBareIcon(assetName: "IconFolderAddRight") {
-                    promptCreateFolder()
+                    withAnimation(.jotSpring) {
+                        isSplitMenuVisible = false
+                        isFolderCreationMenuVisible.toggle()
+                    }
                 }
+                .help("New folder")
                 .background(
                     GeometryReader { geo in
                         Color.clear.onAppear {
@@ -2989,7 +3121,8 @@ struct ContentView: View {
 
     private var anyPanelOverlayActive: Bool {
         isSearchPresented || isTrashPresented
-        || isCreateFolderAlertPresented || pendingFolderToEdit != nil
+        || isCreateFolderAlertPresented || pendingFolderToEdit != nil || isSmartFolderEditorPresented
+        || isFolderCreationMenuVisible
         || isBatchDeleteConfirmationPresented || isBatchMoveAlertPresented
         || isBatchExportSheetPresented || isSplitMenuVisible
         || splitPickerOverlayPane != nil || quickLookContext != nil
@@ -3617,7 +3750,10 @@ struct ContentView: View {
     private func splitMenuIconButton(withHoverBox: Bool = true) -> some View {
         if !isSplitActive {
             sidebarTopBarIcon(assetName: "IconSplit", withHoverBox: withHoverBox) {
-                withAnimation(.jotSpring) { isSplitMenuVisible.toggle() }
+                withAnimation(.jotSpring) {
+                    isFolderCreationMenuVisible = false
+                    isSplitMenuVisible.toggle()
+                }
             }
             .background(
                 GeometryReader { geo in
@@ -4653,6 +4789,8 @@ struct ContentView: View {
         withAnimation(.jotSmoothFast) {
             expandedFolderIDs.removeAll()
             showAllNotesFolderIDs.removeAll()
+            expandedSmartFolderIDs.removeAll()
+            showAllNotesSmartFolderIDs.removeAll()
         }
     }
 
@@ -5103,8 +5241,13 @@ struct ContentView: View {
         notesManager.folders
     }
 
+    private var smartFolders: [SmartFolder] {
+        notesManager.smartFolders
+    }
+
     // These forward to the manager's pre-computed collections — O(1), no recomputation on each render.
     private var notesByFolderID: [UUID: [Note]] { notesManager.notesByFolderID }
+    private var notesBySmartFolderID: [UUID: [Note]] { notesManager.notesBySmartFolderID }
     private var unfiledNotes: [Note] { notesManager.unfiledNotes }
     private var pinnedNotes: [Note] { notesManager.pinnedNotes }
     private var lockedNotes: [Note] { notesManager.lockedNotes }
@@ -5134,6 +5277,9 @@ struct ContentView: View {
             for folder in folders where expandedFolderIDs.contains(folder.id) {
                 ordered.append(contentsOf: visibleFolderNotes(for: folder.id))
             }
+            for smartFolder in smartFolders where expandedSmartFolderIDs.contains(smartFolder.id) {
+                ordered.append(contentsOf: visibleSmartFolderNotes(for: smartFolder.id))
+            }
             if isPinnedSectionExpanded { ordered.append(contentsOf: pinnedNotes) }
             if isLockedSectionExpanded { ordered.append(contentsOf: lockedNotes) }
             ordered.append(contentsOf: todayNotes)
@@ -5145,6 +5291,9 @@ struct ContentView: View {
         case .folders:
             for folder in folders where expandedFolderIDs.contains(folder.id) {
                 ordered.append(contentsOf: visibleFolderNotes(for: folder.id))
+            }
+            for smartFolder in smartFolders where expandedSmartFolderIDs.contains(smartFolder.id) {
+                ordered.append(contentsOf: visibleSmartFolderNotes(for: smartFolder.id))
             }
         case .today:
             ordered.append(contentsOf: todayNotes)
@@ -5162,6 +5311,15 @@ struct ContentView: View {
     private func visibleFolderNotes(for folderID: UUID) -> [Note] {
         let notes = notesByFolderID[folderID] ?? []
         let showsAll = showAllNotesFolderIDs.contains(folderID)
+        if notes.count > 5 && !showsAll {
+            return Array(notes.prefix(5))
+        }
+        return notes
+    }
+
+    private func visibleSmartFolderNotes(for smartFolderID: UUID) -> [Note] {
+        let notes = notesBySmartFolderID[smartFolderID] ?? []
+        let showsAll = showAllNotesSmartFolderIDs.contains(smartFolderID)
         if notes.count > 5 && !showsAll {
             return Array(notes.prefix(5))
         }

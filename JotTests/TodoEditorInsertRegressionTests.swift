@@ -13,7 +13,7 @@ final class TodoEditorInsertRegressionTests: XCTestCase {
         let currentText: () -> String
     }
 
-    private func makeHarness(initialText: String) -> EditorHarness {
+    private func makeHarness(initialText: String, noteID: UUID? = UUID()) -> EditorHarness {
         let editorInstanceID = UUID()
         var textValue = initialText
         var bindingWriteCount = 0
@@ -28,6 +28,7 @@ final class TodoEditorInsertRegressionTests: XCTestCase {
 
         let coordinator = TodoEditorRepresentable.Coordinator(
             text: binding,
+            noteID: noteID,
             colorScheme: .light,
             focusRequestID: nil,
             editorInstanceID: editorInstanceID,
@@ -653,5 +654,114 @@ final class TodoEditorInsertRegressionTests: XCTestCase {
             return
         }
         XCTAssertGreaterThan(ps.headIndent, 0)
+    }
+
+    // MARK: - Toggle (Notion-style collapsible block)
+    //
+    // Pre-pivot this file covered a heading-fold scaffold that inserted an H3
+    // and attached a disclosure button + placeholder label. User pivot to a
+    // Notion-style block deleted all of that; the tests below cover the new
+    // shape: slash menu / toolbar insertion both produce a NoteToggleAttachment
+    // backed by ToggleData, round-trippable via the [[toggle|...]] marker.
+
+    func testCommandMenuCollapsibleSectionInsertsToggleAttachment() {
+        let harness = makeHarness(initialText: "/\nbody")
+        harness.textView.setSelectedRange(NSRange(location: 1, length: 0))
+
+        NotificationCenter.default.post(
+            name: .applyCommandMenuTool,
+            object: [
+                "tool": EditTool.collapsibleSection,
+                "slashLocation": 0,
+                "filterLength": 0,
+            ],
+            userInfo: ["editorInstanceID": harness.editorInstanceID]
+        )
+
+        pumpMainLoop(harness)
+
+        XCTAssertFalse(harness.textView.string.hasPrefix("/"),
+                       "Slash-menu selection must strip the leading `/` marker.")
+
+        guard let storage = harness.textView.textStorage else {
+            XCTFail("Expected text storage")
+            return
+        }
+
+        var toggleCount = 0
+        storage.enumerateAttribute(.attachment, in: NSRange(location: 0, length: storage.length)) { value, _, _ in
+            if value is NoteToggleAttachment { toggleCount += 1 }
+        }
+        XCTAssertEqual(toggleCount, 1,
+                       "Slash-menu /toggle must insert exactly one NoteToggleAttachment — not an H3 paragraph.")
+
+        // Make sure no stray H3 font attributes leaked onto the first
+        // paragraph (that would be the old heading-fold path kicking in).
+        if storage.length > 0,
+           let font = storage.attribute(.font, at: 0, effectiveRange: nil) as? NSFont {
+            XCTAssertNotEqual(font.pointSize, TextFormattingManager.HeadingLevel.h3.fontSize,
+                              accuracy: 0.01,
+                              "First paragraph must not be an H3 — the toggle is a block attachment, not a heading.")
+        }
+    }
+
+    func testToolbarCollapsibleSectionInsertsToggleAttachmentInEmptyDocument() {
+        let harness = makeHarness(initialText: "")
+
+        NotificationCenter.default.post(
+            name: .applyEditTool,
+            object: nil,
+            userInfo: [
+                "editorInstanceID": harness.editorInstanceID,
+                "tool": EditTool.collapsibleSection.rawValue,
+            ]
+        )
+
+        pumpMainLoop(harness)
+
+        guard let storage = harness.textView.textStorage else {
+            XCTFail("Expected text storage")
+            return
+        }
+
+        var toggleCount = 0
+        storage.enumerateAttribute(.attachment, in: NSRange(location: 0, length: storage.length)) { value, _, _ in
+            if value is NoteToggleAttachment { toggleCount += 1 }
+        }
+        XCTAssertEqual(toggleCount, 1,
+                       "Toolbar Toggle on an empty document must still produce a NoteToggleAttachment.")
+    }
+
+    func testSerializedToggleRoundTripsThroughEditor() {
+        // Persist → reload cycle: text containing the [[toggle|...]] marker
+        // should deserialize into a NoteToggleAttachment whose ToggleData
+        // preserves title, body, and expansion state.
+        let data = ToggleData(
+            title: "Round trip",
+            content: "First line\nSecond line",
+            isExpanded: false,
+            preferredContentWidth: nil
+        )
+        let harness = makeHarness(initialText: data.serialize())
+        pumpMainLoop(harness)
+
+        guard let storage = harness.textView.textStorage else {
+            XCTFail("Expected text storage")
+            return
+        }
+
+        var restored: NoteToggleAttachment?
+        storage.enumerateAttribute(.attachment, in: NSRange(location: 0, length: storage.length)) { value, _, _ in
+            if let attachment = value as? NoteToggleAttachment { restored = attachment }
+        }
+
+        guard let attachment = restored else {
+            XCTFail("Deserializer must materialize a NoteToggleAttachment for [[toggle|...]] markers.")
+            return
+        }
+
+        XCTAssertEqual(attachment.toggleData.title, "Round trip")
+        XCTAssertEqual(attachment.toggleData.content, "First line\nSecond line")
+        XCTAssertFalse(attachment.toggleData.isExpanded)
     }
 }

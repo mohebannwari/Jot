@@ -12,6 +12,7 @@ import AppKit
 
 struct TodoRichTextEditor: View {
     @Binding var text: String
+    var noteID: UUID? = nil
     var focusRequestID: UUID?
     var editorInstanceID: UUID?
     var onToolbarAction: ((EditTool) -> Void)?
@@ -25,6 +26,7 @@ struct TodoRichTextEditor: View {
 
     init(
         text: Binding<String>,
+        noteID: UUID? = nil,
         focusRequestID: UUID? = nil,
         editorInstanceID: UUID? = nil,
         onToolbarAction: ((EditTool) -> Void)? = nil,
@@ -35,6 +37,7 @@ struct TodoRichTextEditor: View {
         onUndoManagerAvailable: ((UndoManager?) -> Void)? = nil
     ) {
         self._text = text
+        self.noteID = noteID
         self.focusRequestID = focusRequestID
         self.editorInstanceID = editorInstanceID
         self.onToolbarAction = onToolbarAction
@@ -98,7 +101,7 @@ struct TodoRichTextEditor: View {
     @State private var codePasteRange: NSRange = NSRange(location: 0, length: 0)
     @State private var codePasteLanguage: String = "plaintext"
 
-    static let commandMenuActions: [EditTool] = [.imageUpload, .fileLink, .voiceRecord, .link, .todo, .bulletList, .numberedList, .blockQuote, .codeBlock, .callout, .tabs, .cards, .divider, .table, .sticker]
+    static let commandMenuActions: [EditTool] = [.imageUpload, .fileLink, .voiceRecord, .link, .todo, .bulletList, .numberedList, .blockQuote, .collapsibleSection, .codeBlock, .callout, .tabs, .cards, .divider, .table, .sticker]
     static let commandMenuOuterPadding: CGFloat = CommandMenuLayout.outerPadding
     static let commandMenuHorizontalPadding = commandMenuOuterPadding * 2
     static let commandMenuTotalWidth: CGFloat =
@@ -131,6 +134,7 @@ struct TodoRichTextEditor: View {
         Group {
                 TodoEditorRepresentable(
                     text: $text,
+                    noteID: noteID,
                     colorScheme: colorScheme,
                     focusRequestID: focusRequestID,
                     editorInstanceID: editorInstanceID,
@@ -1131,4 +1135,3 @@ struct CodePasteOptionMenu: View {
         Color("PrimaryTextColor")
     }
 }
-

@@ -227,6 +227,7 @@ final class NoteTableOverlayView: NSView {
     // MARK: - Init
 
     private var tintObserver: NSObjectProtocol?
+    private var translucencyObserver: NSObjectProtocol?
 
     init(tableData: NoteTableData) {
         self.tableData = tableData
@@ -234,6 +235,7 @@ final class NoteTableOverlayView: NSView {
         wantsLayer = true
         layer?.masksToBounds = false
         setupTintObserver()
+        setupTranslucencyShadowObserver()
     }
 
     @available(*, unavailable)
@@ -244,6 +246,9 @@ final class NoteTableOverlayView: NSView {
     deinit {
         if let tintObserver {
             NotificationCenter.default.removeObserver(tintObserver)
+        }
+        if let translucencyObserver {
+            NotificationCenter.default.removeObserver(translucencyObserver)
         }
     }
 
@@ -256,6 +261,16 @@ final class NoteTableOverlayView: NSView {
             queue: .main
         ) { [weak self] _ in
             self?.needsDisplay = true
+        }
+    }
+
+    private func setupTranslucencyShadowObserver() {
+        translucencyObserver = NotificationCenter.default.addObserver(
+            forName: ThemeManager.detailPaneTranslucencyDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.updateShadowPath()
         }
     }
 
@@ -477,7 +492,9 @@ final class NoteTableOverlayView: NSView {
         // Keep the shadow anchored to the translated table chrome so horizontal panning and
         // resize-driven overflow move together.
         let rect = NSRect(x: -scrollOffset, y: 0, width: contentWidth, height: tableHeight)
-        layer?.shadowPath = continuousPath(for: rect, radius: outerCornerRadius)
+        let path = continuousPath(for: rect, radius: outerCornerRadius)
+        let enabled = LiquidPaperShadowChrome.shouldShowPaperShadow(effectiveAppearance: effectiveAppearance)
+        LiquidPaperShadowChrome.applyPaperShadow(to: layer, path: path, enabled: enabled)
     }
 
     // MARK: - Hit Testing
@@ -1463,6 +1480,7 @@ final class NoteTableOverlayView: NSView {
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         needsDisplay = true
+        updateShadowPath()
     }
 
     // MARK: - Context Menus

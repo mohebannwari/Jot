@@ -24,6 +24,13 @@ final class CodeBlockOverlayView: NSView {
     var currentContainerWidth: CGFloat = 0
     private static let handleWidth: CGFloat = 12
 
+    private static let copyButtonSide: CGFloat = 28
+    /// Space from the block’s **right** edge to the copy control’s trailing edge (optical; keeps off the corner curve).
+    private static let copyTrailingInset: CGFloat = 4
+    /// The vertical resize strip is centered on the pane edge, so only ~half its width overlaps the block—reserve that much, not the full 12pt, so the copy control can sit further right.
+    private static let copyTrailingResizeStripClearance: CGFloat = CodeBlockOverlayView.handleWidth / 2 + 2
+    private static let copyBottomInset: CGFloat = 12
+
     // -- Design tokens (matching CalloutOverlayView shell) --------------------
     /// Fixed shell corner radius (points). Matches callout blocks; not derived from size or line count.
     private let blockRadius:        CGFloat = 22
@@ -132,13 +139,51 @@ final class CodeBlockOverlayView: NSView {
 
     private let resizeHandle = _CodeResizeHandle()
 
+    /// Icon-only; copies ``textView`` source (live buffer while editing).
+    private let copyCodeButton: NSButton = {
+        let btn = NSButton()
+        btn.isBordered = false
+        btn.bezelStyle = .shadowlessSquare
+        btn.imagePosition = .imageOnly
+        btn.focusRingType = .none
+        btn.toolTip = "Copy"
+        btn.setAccessibilityLabel("Copy")
+        if let img = NSImage(named: "IconSquareBehindSquare6") {
+            img.isTemplate = true
+            btn.image = img
+        } else if let doc = NSImage(systemSymbolName: "doc.on.doc", accessibilityDescription: "Copy") {
+            doc.isTemplate = true
+            btn.image = doc
+        }
+        return btn
+    }()
+
+    /// Brief “COPIED” affordance after a successful pasteboard write (11pt mono, matches Settings email row).
+    private let copyFeedbackLabel: NSTextField = {
+        let tf = NSTextField(labelWithString: "COPIED")
+        tf.isBordered = false
+        tf.drawsBackground = false
+        tf.isEditable = false
+        tf.isSelectable = false
+        tf.alignment = .right
+        tf.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .medium)
+        tf.textColor = NSColor.secondaryLabelColor
+        tf.isHidden = true
+        tf.setAccessibilityLabel("Copied")
+        return tf
+    }()
+
     // MARK: - State
 
     private var isApplyingHighlight = false
+    /// Swaps the icon button for the mono “COPIED” label until ``copyFeedbackResetWorkItem`` fires.
+    private var isCopyFeedbackVisible = false
+    private var copyFeedbackResetWorkItem: DispatchWorkItem?
 
     override var isFlipped: Bool { true }
 
     private var tintObserver: NSObjectProtocol?
+    private var translucencyObserver: NSObjectProtocol?
 
     // MARK: - Init
 
@@ -149,6 +194,8 @@ final class CodeBlockOverlayView: NSView {
         updateAppearance()
         populate()
         setupTintObserver()
+        setupTranslucencyObserver()
+        setupCopyButton()
     }
 
     @available(*, unavailable)
@@ -158,6 +205,10 @@ final class CodeBlockOverlayView: NSView {
         if let tintObserver {
             NotificationCenter.default.removeObserver(tintObserver)
         }
+        if let translucencyObserver {
+            NotificationCenter.default.removeObserver(translucencyObserver)
+        }
+        copyFeedbackResetWorkItem?.cancel()
     }
 
     /// Subscribe to tint changes so the chip pill recomputes its color
@@ -170,6 +221,24 @@ final class CodeBlockOverlayView: NSView {
         ) { [weak self] _ in
             self?.updateAppearance()
         }
+    }
+
+    private func setupTranslucencyObserver() {
+        translucencyObserver = NotificationCenter.default.addObserver(
+            forName: ThemeManager.detailPaneTranslucencyDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.updatePaperShadowIfNeeded()
+        }
+    }
+
+    private func setupCopyButton() {
+        copyCodeButton.target = self
+        copyCodeButton.action = #selector(copyCodeBlockSourceToPasteboard)
+        blockView.addSubview(copyCodeButton)
+        // Above the scroll view stack so the feedback label paints over code when visible.
+        blockView.addSubview(copyFeedbackLabel)
     }
 
     // MARK: - Build
@@ -273,6 +342,43 @@ final class CodeBlockOverlayView: NSView {
             width: Self.handleWidth,
             height: bounds.height
         )
+
+        layoutCopyButton()
+        updatePaperShadowIfNeeded()
+    }
+
+    private func layoutCopyButton() {
+        // `blockView` is a plain NSView (non-flipped): `origin.y` is the bottom edge.
+        let trailingClearance = Self.copyTrailingInset + Self.copyTrailingResizeStripClearance
+        let copyY = Self.copyBottomInset
+
+        if isCopyFeedbackVisible {
+            copyFeedbackLabel.sizeToFit()
+            let labelW = ceil(copyFeedbackLabel.frame.width)
+            let labelH = max(ceil(copyFeedbackLabel.frame.height), Self.copyButtonSide)
+            var labelX = blockView.bounds.width - trailingClearance - labelW
+            labelX = max(blockPaddingH, labelX)
+            copyFeedbackLabel.frame = CGRect(x: labelX, y: copyY, width: labelW, height: labelH)
+            copyFeedbackLabel.isHidden = false
+            copyCodeButton.isHidden = true
+        } else {
+            copyFeedbackLabel.isHidden = true
+            copyCodeButton.isHidden = false
+            let side = Self.copyButtonSide
+            var copyX = blockView.bounds.width - trailingClearance - side
+            copyX = max(blockPaddingH, copyX)
+            copyCodeButton.frame = CGRect(x: copyX, y: copyY, width: side, height: side)
+        }
+    }
+
+    /// Soft shadow on the root layer when light mode + note translucency (see LiquidPaperShadowChrome).
+    private func updatePaperShadowIfNeeded() {
+        let pO = pillOverflow
+        let blockH = max(bounds.height - pO, 50)
+        let rect = CGRect(x: 0, y: pO, width: bounds.width, height: blockH)
+        let path = NSBezierPath(roundedRect: rect, xRadius: blockRadius, yRadius: blockRadius).cgPath
+        let enabled = LiquidPaperShadowChrome.shouldShowPaperShadow(effectiveAppearance: effectiveAppearance)
+        LiquidPaperShadowChrome.applyPaperShadow(to: layer, path: path, enabled: enabled)
     }
 
     // MARK: - Resize
@@ -357,6 +463,10 @@ final class CodeBlockOverlayView: NSView {
         textView.textColor = dark ? .white : .black
         textView.insertionPointColor = dark ? .white : .black
 
+        copyCodeButton.contentTintColor = NSColor(named: "IconSecondaryColor") ?? .secondaryLabelColor
+        copyFeedbackLabel.textColor = NSColor(named: "SettingsPlaceholderTextColor") ?? .secondaryLabelColor
+
+        updatePaperShadowIfNeeded()
         needsLayout = true
     }
 
@@ -463,6 +573,25 @@ final class CodeBlockOverlayView: NSView {
         return menu
     }
 
+    @objc private func copyCodeBlockSourceToPasteboard() {
+        // Live NSTextView buffer is authoritative while the user edits.
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(textView.string, forType: .string)
+
+        copyFeedbackResetWorkItem?.cancel()
+        isCopyFeedbackVisible = true
+        layoutCopyButton()
+
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            self.isCopyFeedbackVisible = false
+            self.copyFeedbackResetWorkItem = nil
+            self.layoutCopyButton()
+        }
+        copyFeedbackResetWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.35, execute: work)
+    }
+
     @objc private func deleteCodeBlock() {
         onDeleteCodeBlock?()
     }
@@ -473,6 +602,7 @@ final class CodeBlockOverlayView: NSView {
         super.viewDidChangeEffectiveAppearance()
         updateAppearance()
         applyHighlighting()
+        updatePaperShadowIfNeeded()
     }
 
     // MARK: - Cursor
