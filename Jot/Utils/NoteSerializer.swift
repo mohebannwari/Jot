@@ -103,6 +103,10 @@ enum NoteSerializer {
                 }
             } else if let tableAttachment = attributes[.attachment] as? NoteTableAttachment {
                 output.append(tableAttachment.tableData.serialize())
+            } else if let mapAttachment = attributes[.attachment] as? NoteMapAttachment {
+                output.append(mapAttachment.mapData.serialize())
+            } else if let serializedMapData = attributes[.mapSerializedData] as? String {
+                output.append(serializedMapData)
             } else if let calloutAttachment = attributes[.attachment] as? NoteCalloutAttachment {
                 let ser = calloutAttachment.calloutData.serialize()
                 output.append(ser)
@@ -112,8 +116,6 @@ enum NoteSerializer {
                 output.append(tabsAttachment.tabsData.serialize())
             } else if let cardSectionAttachment = attributes[.attachment] as? NoteCardSectionAttachment {
                 output.append(cardSectionAttachment.cardSectionData.serialize())
-            } else if let toggleAttachment = attributes[.attachment] as? NoteToggleAttachment {
-                output.append(toggleAttachment.toggleData.serialize())
             } else if attributes[.attachment] is NoteDividerAttachment {
                 output.append("[[divider]]")
             } else if let notelinkAttachment = attributes[.attachment] as? NotelinkAttachment {

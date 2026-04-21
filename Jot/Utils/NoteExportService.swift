@@ -502,6 +502,9 @@ final class NoteExportService {
         if let regex = try? NSRegularExpression(pattern: #"\[\[image\|\|\|[^\]]+\]\]"#) {
             text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "[Image]")
         }
+        if let regex = try? NSRegularExpression(pattern: #"\[\[map\|([^|]*)\|[^\]]+\]\]"#) {
+            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "[Map: $1]")
+        }
         // Convert file attachments to placeholder
         if let regex = try? NSRegularExpression(pattern: #"\[\[file\|[^|]+\|([^|]+)\|[^\]]*\]\]"#) {
             text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "[File: $1]")
@@ -572,6 +575,9 @@ final class NoteExportService {
         // Images
         if let regex = try? NSRegularExpression(pattern: #"\[\[image\|\|\|([^\]|]+)(?:\|\|\|[0-9]*\.?[0-9]+)?\]\]"#) {
             text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "![Image]($1)")
+        }
+        if let regex = try? NSRegularExpression(pattern: #"\[\[map\|([^|]*)\|[^\]]+\]\]"#) {
+            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "[Map: $1]")
         }
         // File attachments
         if let regex = try? NSRegularExpression(pattern: #"\[\[file\|[^|]+\|([^|]+)\|[^\]]*\]\]"#) {
@@ -662,6 +668,9 @@ final class NoteExportService {
         text = text.replacingOccurrences(of: "[ ] ", with: "<input type=\"checkbox\" disabled> ")
         // Dividers
         text = text.replacingOccurrences(of: "[[divider]]", with: "<hr>")
+        if let regex = try? NSRegularExpression(pattern: #"\[\[map\|([^|]*)\|[^\]]+\]\]"#) {
+            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "<div class=\"attachment\">&#128506; Map: $1</div>")
+        }
         // Links — labeled first, then bare URL-only tags.
         if let regex = try? NSRegularExpression(pattern: #"\[\[link\|([^|\]]+)\|([^\]]+)\]\]"#) {
             let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))

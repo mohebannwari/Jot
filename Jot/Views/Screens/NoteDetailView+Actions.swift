@@ -423,6 +423,7 @@ extension NoteDetailView {
     // MARK: - Link Input
 
     func presentLinkInputOverlay() {
+        hideMapInsertOverlay()
         linkInputText = ""
         showLinkInputOverlay = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
@@ -434,6 +435,32 @@ extension NoteDetailView {
         showLinkInputOverlay = false
         linkInputText = ""
         isLinkInputFocused = false
+    }
+
+    func presentMapInsertOverlay() {
+        hideLinkInputOverlay()
+        dismissSearchOnPage()
+        showVoiceRecorderOverlay = false
+        mapSearchService.reset()
+        showMapInsertOverlay = true
+    }
+
+    func hideMapInsertOverlay() {
+        showMapInsertOverlay = false
+        mapSearchService.reset()
+    }
+
+    @MainActor
+    func submitMapSelection(_ result: MapSearchService.Result) async {
+        guard let mapData = await mapSearchService.resolve(result) else { return }
+
+        HapticManager.shared.toolbarAction()
+        NotificationCenter.default.post(
+            name: .insertMapInEditor,
+            object: mapData.serialize(),
+            userInfo: ["editorInstanceID": editorInstanceID]
+        )
+        hideMapInsertOverlay()
     }
 
     func submitLink() {
@@ -461,6 +488,7 @@ extension NoteDetailView {
     // MARK: - Search on Page
 
     func presentSearchOnPage() {
+        hideMapInsertOverlay()
         searchOnPageQuery = ""
         searchOnPageMatches = []
         searchOnPageCurrentIndex = 0

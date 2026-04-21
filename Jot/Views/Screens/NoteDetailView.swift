@@ -69,6 +69,8 @@ struct NoteDetailView: View {
   @State var showLinkInputOverlay = false
   @State var linkInputText = ""
   @FocusState var isLinkInputFocused: Bool
+  @State var showMapInsertOverlay = false
+  @StateObject var mapSearchService = MapSearchService()
 
   // MARK: - Search on page state (accessed by +Actions extension)
   @State var showSearchOnPageOverlay = false
@@ -561,7 +563,7 @@ struct NoteDetailView: View {
     )
     .preference(
       key: BottomInputOverlayActivePreferenceKey.self,
-      value: showSearchOnPageOverlay || showLinkInputOverlay
+      value: showSearchOnPageOverlay || showLinkInputOverlay || showMapInsertOverlay
     )
   }
 
@@ -680,7 +682,9 @@ struct NoteDetailView: View {
         selectedStickerID = nil
         showVoiceRecorderOverlay = false
         showLinkInputOverlay = false
+        showMapInsertOverlay = false
         showFileLinkPicker = false
+        mapSearchService.reset()
         capturedSelectionRange = NSRange(location: NSNotFound, length: 0)
         capturedSelectionText = ""
         capturedSelectionWindowRect = .zero
@@ -1642,7 +1646,7 @@ struct NoteDetailView: View {
       return false
     }()
     let showAnyOverlay =
-      showVoiceRecorderOverlay || showLinkInputOverlay
+      showVoiceRecorderOverlay || showLinkInputOverlay || showMapInsertOverlay
       || showSearchOnPageOverlay || showProofreadLoading
       || showProofreadSuggestions || showProofreadSuccess || showAIError
 
@@ -1661,6 +1665,15 @@ struct NoteDetailView: View {
           HStack {
             Spacer()
             linkInputPrompt
+              .transition(.move(edge: .bottom).combined(with: .opacity))
+            Spacer()
+          }
+        }
+
+        if showMapInsertOverlay {
+          HStack {
+            Spacer()
+            mapInsertPrompt
               .transition(.move(edge: .bottom).combined(with: .opacity))
             Spacer()
           }
@@ -1715,6 +1728,7 @@ struct NoteDetailView: View {
       .padding(.bottom, 56)
       .animation(.jotSpring, value: showVoiceRecorderOverlay)
       .animation(.jotSpring, value: showLinkInputOverlay)
+      .animation(.jotSpring, value: showMapInsertOverlay)
       .animation(.jotSpring, value: showSearchOnPageOverlay)
       .animation(.jotSpring, value: showProofreadLoading)
       .animation(.jotSpring, value: showProofreadSuggestions)
@@ -1925,6 +1939,18 @@ struct NoteDetailView: View {
     }
   }
 
+  private var mapInsertPrompt: some View {
+    MapInsertPrompt(
+      service: mapSearchService,
+      onSelect: { result in
+        Task { await submitMapSelection(result) }
+      },
+      onCancel: {
+        hideMapInsertOverlay()
+      }
+    )
+  }
+
   // MARK: - Search on Page Overlay
 
   private var searchCountLabel: String {
@@ -2127,14 +2153,19 @@ struct NoteDetailView: View {
     switch tool {
     case .imageUpload:
       hideLinkInputOverlay()
+      hideMapInsertOverlay()
       openImageFilePanel()
       return true
     case .voiceRecord:
       hideLinkInputOverlay()
+      hideMapInsertOverlay()
       showVoiceRecorderOverlay = true
       return true
     case .link:
       presentLinkInputOverlay()
+      return true
+    case .map:
+      presentMapInsertOverlay()
       return true
     case .convertToWebClip:
       NotificationCenter.default.post(
@@ -2153,6 +2184,7 @@ struct NoteDetailView: View {
       return true
     case .fileLink:
       hideLinkInputOverlay()
+      hideMapInsertOverlay()
       showFileLinkPicker = true
       return true
     case .sticker:

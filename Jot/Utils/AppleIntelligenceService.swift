@@ -223,6 +223,8 @@ final class AppleIntelligenceService {
         pattern: #"\[\[filelink\|[^|]*\|([^|]*)\|[^\]]*\]\]"#)
     private static let imageRegex = try! NSRegularExpression(
         pattern: #"\[\[image\|\|\|[^\]]*\]\]"#)
+    private static let mapRegex = try! NSRegularExpression(
+        pattern: #"\[\[map\|([^|]*)\|[^\]]*\]\]"#)
     private static let orderedListRegex = try! NSRegularExpression(
         pattern: #"\[\[ol\|(\d+)\]\]"#)
     private static let alignRegex = try! NSRegularExpression(
@@ -271,6 +273,8 @@ final class AppleIntelligenceService {
         Self.replaceMatches(of: Self.fileLinkRegex, in: &s, with: "[File: $1]")
         // Images → remove entirely
         Self.replaceMatches(of: Self.imageRegex, in: &s, with: "")
+        // Maps → title placeholder
+        Self.replaceMatches(of: Self.mapRegex, in: &s, with: "[Map: $1]")
 
         // 3. Ordered lists → "N. "
         Self.replaceMatches(of: Self.orderedListRegex, in: &s, with: "$1. ")

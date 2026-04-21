@@ -9,6 +9,7 @@
 //
 
 import AppKit
+import QuartzCore
 
 // MARK: - CodeBlockOverlayView
 
@@ -30,6 +31,8 @@ final class CodeBlockOverlayView: NSView {
     /// The vertical resize strip is centered on the pane edge, so only ~half its width overlaps the block—reserve that much, not the full 12pt, so the copy control can sit further right.
     private static let copyTrailingResizeStripClearance: CGFloat = CodeBlockOverlayView.handleWidth / 2 + 2
     private static let copyBottomInset: CGFloat = 12
+    /// Frosted scrim behind the copy glyph so code does not show through; centered in ``copyButtonSide``.
+    private static let copyBackdropSide: CGFloat = 20
 
     // -- Design tokens (matching CalloutOverlayView shell) --------------------
     /// Fixed shell corner radius (points). Matches callout blocks; not derived from size or line count.
@@ -139,6 +142,10 @@ final class CodeBlockOverlayView: NSView {
 
     private let resizeHandle = _CodeResizeHandle()
 
+    /// 15×15 pt template glyphs (fixed slot ``copyButtonSide`` keeps layout stable while feedback runs).
+    private let copyIdleButtonImage: NSImage = CodeBlockOverlayView.makeCopyIdleGlyph()
+    private let copySuccessButtonImage: NSImage = CodeBlockOverlayView.makeCopySuccessGlyph()
+
     /// Icon-only; copies ``textView`` source (live buffer while editing).
     private let copyCodeButton: NSButton = {
         let btn = NSButton()
@@ -148,36 +155,16 @@ final class CodeBlockOverlayView: NSView {
         btn.focusRingType = .none
         btn.toolTip = "Copy"
         btn.setAccessibilityLabel("Copy")
-        if let img = NSImage(named: "IconSquareBehindSquare6") {
-            img.isTemplate = true
-            btn.image = img
-        } else if let doc = NSImage(systemSymbolName: "doc.on.doc", accessibilityDescription: "Copy") {
-            doc.isTemplate = true
-            btn.image = doc
-        }
         return btn
     }()
 
-    /// Brief “COPIED” affordance after a successful pasteboard write (11pt mono, matches Settings email row).
-    private let copyFeedbackLabel: NSTextField = {
-        let tf = NSTextField(labelWithString: "COPIED")
-        tf.isBordered = false
-        tf.drawsBackground = false
-        tf.isEditable = false
-        tf.isSelectable = false
-        tf.alignment = .right
-        tf.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .medium)
-        tf.textColor = NSColor.secondaryLabelColor
-        tf.isHidden = true
-        tf.setAccessibilityLabel("Copied")
-        return tf
-    }()
+    /// Frosted scrim that should sit on the same surface token pair as the code body itself.
+    private let copyBackdropView = _CodeCopyBackdropView()
 
     // MARK: - State
 
     private var isApplyingHighlight = false
-    /// Swaps the icon button for the mono “COPIED” label until ``copyFeedbackResetWorkItem`` fires.
-    private var isCopyFeedbackVisible = false
+    /// Cancels the delayed fade back to the copy icon after a successful pasteboard write.
     private var copyFeedbackResetWorkItem: DispatchWorkItem?
 
     override var isFlipped: Bool { true }
@@ -234,11 +221,31 @@ final class CodeBlockOverlayView: NSView {
     }
 
     private func setupCopyButton() {
+        copyCodeButton.wantsLayer = true
+        copyCodeButton.image = copyIdleButtonImage
         copyCodeButton.target = self
         copyCodeButton.action = #selector(copyCodeBlockSourceToPasteboard)
-        blockView.addSubview(copyCodeButton)
-        // Above the scroll view stack so the feedback label paints over code when visible.
-        blockView.addSubview(copyFeedbackLabel)
+        // IMPORTANT: Do not parent under `blockView`. It uses `masksToBounds` for the rounded shell,
+        // which clips the layer tree and typically forces `NSVisualEffectView` to a **flat** material
+        // (no live blur) — the “dead gray tile” bug. Same pattern as the language chip: add to `self`
+        // and convert frames from `blockView` space (see `layoutCopyButton()`).
+        addSubview(copyBackdropView)
+        addSubview(copyCodeButton)
+    }
+
+    /// Crossfades the button image so feedback does not jump horizontally (same ``copyButtonSide`` frame).
+    private func transitionCopyButton(to image: NSImage, accessibilityLabel: String, tooltip: String, animated: Bool) {
+        copyCodeButton.toolTip = tooltip
+        copyCodeButton.setAccessibilityLabel(accessibilityLabel)
+        guard animated, let layer = copyCodeButton.layer else {
+            copyCodeButton.image = image
+            return
+        }
+        let transition = CATransition()
+        transition.type = .fade
+        transition.duration = Self.copyIconTransitionDuration
+        layer.add(transition, forKey: nil)
+        copyCodeButton.image = image
     }
 
     // MARK: - Build
@@ -351,24 +358,17 @@ final class CodeBlockOverlayView: NSView {
         // `blockView` is a plain NSView (non-flipped): `origin.y` is the bottom edge.
         let trailingClearance = Self.copyTrailingInset + Self.copyTrailingResizeStripClearance
         let copyY = Self.copyBottomInset
+        let side = Self.copyButtonSide
+        var copyX = blockView.bounds.width - trailingClearance - side
+        copyX = max(blockPaddingH, copyX)
 
-        if isCopyFeedbackVisible {
-            copyFeedbackLabel.sizeToFit()
-            let labelW = ceil(copyFeedbackLabel.frame.width)
-            let labelH = max(ceil(copyFeedbackLabel.frame.height), Self.copyButtonSide)
-            var labelX = blockView.bounds.width - trailingClearance - labelW
-            labelX = max(blockPaddingH, labelX)
-            copyFeedbackLabel.frame = CGRect(x: labelX, y: copyY, width: labelW, height: labelH)
-            copyFeedbackLabel.isHidden = false
-            copyCodeButton.isHidden = true
-        } else {
-            copyFeedbackLabel.isHidden = true
-            copyCodeButton.isHidden = false
-            let side = Self.copyButtonSide
-            var copyX = blockView.bounds.width - trailingClearance - side
-            copyX = max(blockPaddingH, copyX)
-            copyCodeButton.frame = CGRect(x: copyX, y: copyY, width: side, height: side)
-        }
+        let copyFrameInBlock = CGRect(x: copyX, y: copyY, width: side, height: side)
+        let backdrop = Self.copyBackdropSide
+        let inset = (side - backdrop) / 2
+        let backdropFrameInBlock = CGRect(x: copyX + inset, y: copyY + inset, width: backdrop, height: backdrop)
+
+        copyCodeButton.frame = blockView.convert(copyFrameInBlock, to: self)
+        copyBackdropView.frame = blockView.convert(backdropFrameInBlock, to: self)
     }
 
     /// Soft shadow on the root layer when light mode + note translucency (see LiquidPaperShadowChrome).
@@ -436,10 +436,8 @@ final class CodeBlockOverlayView: NSView {
     private func updateAppearance() {
         let dark = isDarkMode
 
-        // Block background -- stone-950 dark, pure white light
-        blockView.layer?.backgroundColor = dark
-            ? NSColor(srgbRed: 12/255, green: 10/255, blue: 9/255, alpha: 1).cgColor      // #0C0A09
-            : NSColor.white.cgColor                                                        // #FFFFFF
+        // Block background — same semantic pair used by the shared "bg/blocks" surface.
+        blockView.layer?.backgroundColor = Self.blockBodySurfaceColor(isDark: dark).cgColor
 
         // Chip pill -- always uses the DARK variant of the tinted block
         // container so it reads as a deep, saturated pill in both light
@@ -464,7 +462,8 @@ final class CodeBlockOverlayView: NSView {
         textView.insertionPointColor = dark ? .white : .black
 
         copyCodeButton.contentTintColor = NSColor(named: "IconSecondaryColor") ?? .secondaryLabelColor
-        copyFeedbackLabel.textColor = NSColor(named: "SettingsPlaceholderTextColor") ?? .secondaryLabelColor
+
+        copyBackdropView.updateAppearance(isDark: dark)
 
         updatePaperShadowIfNeeded()
         needsLayout = true
@@ -579,14 +578,22 @@ final class CodeBlockOverlayView: NSView {
         NSPasteboard.general.setString(textView.string, forType: .string)
 
         copyFeedbackResetWorkItem?.cancel()
-        isCopyFeedbackVisible = true
-        layoutCopyButton()
+        transitionCopyButton(
+            to: copySuccessButtonImage,
+            accessibilityLabel: "Copied",
+            tooltip: "Copied",
+            animated: true
+        )
 
         let work = DispatchWorkItem { [weak self] in
             guard let self else { return }
-            self.isCopyFeedbackVisible = false
+            self.transitionCopyButton(
+                to: self.copyIdleButtonImage,
+                accessibilityLabel: "Copy",
+                tooltip: "Copy",
+                animated: true
+            )
             self.copyFeedbackResetWorkItem = nil
-            self.layoutCopyButton()
         }
         copyFeedbackResetWorkItem = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.35, execute: work)
@@ -621,6 +628,139 @@ final class CodeBlockOverlayView: NSView {
         let codeH = CGFloat(lineCount) * lineHeight
         // pillOverflow(13) + paddingTop(24) + content(min 20) + paddingBottom(16)
         return min(13 + 24 + max(codeH, 20) + 16, maxHeight)
+    }
+}
+
+// MARK: - Copy glyph helpers
+
+fileprivate extension CodeBlockOverlayView {
+    /// Matches the code-block text area surface: `SurfaceDefaultColor` in light, `DetailPaneColor` in dark.
+    static func blockBodySurfaceColor(isDark: Bool) -> NSColor {
+        if isDark {
+            return NSColor(named: "DetailPaneColor")
+                ?? NSColor(srgbRed: 12 / 255, green: 10 / 255, blue: 9 / 255, alpha: 1)
+        }
+        return NSColor(named: "SurfaceDefaultColor") ?? .white
+    }
+
+    /// On-screen glyph size (points) for copy + checkmark inside the fixed hit rect.
+    static let copyGlyphPointSize: CGFloat = 15
+    /// Fade duration for copy ↔ checkmark (no horizontal layout change).
+    static let copyIconTransitionDuration: CFTimeInterval = 0.18
+
+    /// Renders a scaled copy so we never mutate the asset catalog instance’s intrinsic size.
+    static func makeScaledTemplateImage(from source: NSImage, pointSize: CGFloat) -> NSImage {
+        let dstSize = NSSize(width: pointSize, height: pointSize)
+        let image = NSImage(size: dstSize, flipped: false) { dst in
+            let srcSize = source.size
+            guard srcSize.width > 0, srcSize.height > 0 else { return false }
+            let srcRect = NSRect(origin: .zero, size: srcSize)
+            source.draw(in: dst, from: srcRect, operation: .sourceOver, fraction: 1.0, respectFlipped: false, hints: nil)
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }
+
+    static func makeCopyIdleGlyph() -> NSImage {
+        if let named = NSImage(named: "IconSquareBehindSquare6") {
+            return makeScaledTemplateImage(from: named, pointSize: copyGlyphPointSize)
+        }
+        if let sys = NSImage(systemSymbolName: "doc.on.doc", accessibilityDescription: "Copy") {
+            return makeScaledTemplateImage(from: sys, pointSize: copyGlyphPointSize)
+        }
+        // Last resort: blank template slot (should never run in a normal app bundle).
+        return NSImage(size: NSSize(width: copyGlyphPointSize, height: copyGlyphPointSize), flipped: false) { _ in true }
+    }
+
+    static func makeCopySuccessGlyph() -> NSImage {
+        if let named = NSImage(named: "IconCheckmark1") {
+            return makeScaledTemplateImage(from: named, pointSize: copyGlyphPointSize)
+        }
+        if let sys = NSImage(systemSymbolName: "checkmark", accessibilityDescription: "Copied") {
+            return makeScaledTemplateImage(from: sys, pointSize: copyGlyphPointSize)
+        }
+        return makeCopyIdleGlyph()
+    }
+}
+
+// MARK: - Copy backdrop (code-surface token + blur)
+
+/// Frosted **20×20** scrim using the same white/`DetailPaneColor` pair as the code body,
+/// with a light tint layer so the underlying material still reads as blur instead of a flat tile.
+/// Must stay **outside** ``blockView``’s `masksToBounds` rounded clip — otherwise AppKit degrades ``NSVisualEffectView`` to a flat fill (no real blur). Do **not** apply a `layer.mask` on top of the material for the same reason.
+private final class _CodeCopyBackdropView: NSView {
+
+    private let effectView = NSVisualEffectView()
+    private let tintView = NSView()
+
+    private static let innerCornerRadius: CGFloat = 7
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.masksToBounds = false
+        // Wide, surface-colored halo so the pill feathers into the code body instead of cutting a rectangle out of it.
+        layer?.shadowOffset = .zero
+        layer?.shadowRadius = 10
+        layer?.shadowOpacity = 0.24
+
+        effectView.material = .popover
+        effectView.blendingMode = .withinWindow
+        effectView.state = .active
+        effectView.wantsLayer = true
+        effectView.layer?.masksToBounds = true
+        effectView.layer?.cornerCurve = .continuous
+        effectView.layer?.cornerRadius = Self.innerCornerRadius
+
+        tintView.wantsLayer = true
+        tintView.layer?.masksToBounds = true
+        tintView.layer?.cornerCurve = .continuous
+        tintView.layer?.cornerRadius = Self.innerCornerRadius
+
+        addSubview(effectView)
+        addSubview(tintView)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError() }
+
+    override func layout() {
+        super.layout()
+        effectView.frame = bounds
+        tintView.frame = bounds
+        let r = Self.innerCornerRadius
+        effectView.layer?.cornerRadius = r
+        tintView.layer?.cornerRadius = r
+        if bounds.width > 1, bounds.height > 1 {
+            layer?.shadowPath = CGPath(
+                roundedRect: bounds,
+                cornerWidth: r,
+                cornerHeight: r,
+                transform: nil
+            )
+        }
+    }
+
+    func updateAppearance(isDark: Bool) {
+        let token = CodeBlockOverlayView.blockBodySurfaceColor(isDark: isDark)
+        let reduce = NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+
+        if reduce {
+            layer?.shadowOpacity = 0
+            layer?.shadowPath = nil
+            effectView.isHidden = true
+            tintView.layer?.backgroundColor = token.cgColor
+        } else {
+            // Opaque fill = the exact text-area token. Material still sits underneath to obscure any syntax-colored
+            // characters that would otherwise bleed through at the rim. Halo uses the same token so the soft edge
+            // reads as an extension of the code surface, not an outline drawn on top of it.
+            layer?.shadowOpacity = isDark ? 0.28 : 0.18
+            effectView.isHidden = false
+            tintView.layer?.backgroundColor = token.cgColor
+            layer?.shadowColor = token.cgColor
+        }
+        needsLayout = true
     }
 }
 

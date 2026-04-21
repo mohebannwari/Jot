@@ -88,6 +88,7 @@ class TextFormattingManager: ObservableObject {
             // Some tools don't require text selection
             let toolsNotRequiringSelection: [EditTool] = [
                 .textSelect, .divider, .lineBreak, .todo, .imageUpload, .voiceRecord,
+                .map,
                 .bulletList, .numberedList, .dashedList, .h1, .h2, .h3, .body, .blockQuote,
             ]
 
@@ -96,7 +97,7 @@ class TextFormattingManager: ObservableObject {
             }
 
             switch tool {
-            case .imageUpload, .voiceRecord:
+            case .imageUpload, .voiceRecord, .map:
                 return
             case .body:
                 applyBodyStyle(to: textView, in: selectedRange)
@@ -151,7 +152,7 @@ class TextFormattingManager: ObservableObject {
                 toggleBlockQuote(to: textView, in: selectedRange)
             case .highlight:
                 return  // Highlight requires a color parameter — handled separately via applyHighlight()
-            case .searchOnPage, .table, .callout, .codeBlock, .fileLink, .sticker, .tabs, .cards, .collapsibleSection, .convertToWebClip, .quickLook:
+            case .searchOnPage, .table, .callout, .codeBlock, .fileLink, .sticker, .tabs, .cards, .convertToWebClip, .quickLook:
                 return
             }
 

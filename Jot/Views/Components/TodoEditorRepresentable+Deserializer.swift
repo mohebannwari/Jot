@@ -486,6 +486,42 @@ extension TodoEditorRepresentable.Coordinator {
                             continue
                         }
                     }
+                } else if text[index...].hasPrefix(AttachmentMarkup.mapMarkupPrefix) {
+                    flushBuffer()
+                    if let endIndex = text[index...].range(of: "]]")?.upperBound {
+                        let mapToken = String(text[index..<endIndex])
+                        if let mapData = MapBlockData.deserialize(from: mapToken) {
+                            let baseAttributes = Self.baseTypingAttributes(for: currentColorScheme)
+                            if result.length > 0,
+                               let lastScalar = result.string.unicodeScalars.last,
+                               !CharacterSet.newlines.contains(lastScalar) {
+                                result.append(NSAttributedString(string: "\n", attributes: baseAttributes))
+                            }
+
+                            result.append(makeMapAttachment(mapData: mapData))
+
+                            if endIndex < text.endIndex {
+                                if !text[endIndex].isNewline {
+                                    result.append(NSAttributedString(string: "\n", attributes: baseAttributes))
+                                }
+                            } else {
+                                result.append(NSAttributedString(string: "\n", attributes: baseAttributes))
+                            }
+
+                            index = endIndex
+                            lastWasWebClip = false
+                            continue
+                        } else {
+                            let baseAttributes = Self.baseTypingAttributes(for: currentColorScheme)
+                            var attrs = baseAttributes
+                            attrs[.corruptedBlock] = mapToken
+                            attrs[.backgroundColor] = NSColor.systemRed.withAlphaComponent(0.1)
+                            result.append(NSAttributedString(string: "[Corrupted map block]", attributes: attrs))
+                            index = endIndex
+                            lastWasWebClip = false
+                            continue
+                        }
+                    }
                 } else if text[index...].hasPrefix("[[table|") {
                     flushBuffer()
                     let remaining = text[index...]
@@ -640,44 +676,33 @@ extension TodoEditorRepresentable.Coordinator {
                         }
                     }
                 } else if text[index...].hasPrefix("[[toggle|") {
+                    // Collapsible toggle blocks were removed from the product; preserve legacy
+                    // `[[toggle|…]][[/toggle]]` blobs as a corrupted placeholder so storage still loads.
                     flushBuffer()
                     let remaining = text[index...]
                     if let closingRange = remaining.range(of: "[[/toggle]]") {
-                        let toggleBlock = String(remaining[remaining.startIndex..<closingRange.upperBound])
-                        if let toggleData = ToggleData.deserialize(from: toggleBlock) {
-                            let baseAttributes = Self.baseTypingAttributes(for: currentColorScheme)
-                            if result.length > 0,
-                               let lastScalar = result.string.unicodeScalars.last,
-                               !CharacterSet.newlines.contains(lastScalar) {
-                                result.append(NSAttributedString(string: "\n", attributes: baseAttributes))
-                            }
-
-                            let attachment = makeToggleAttachment(toggleData: toggleData)
-                            result.append(attachment)
-
-                            let afterClosing = closingRange.upperBound
-                            if afterClosing < text.endIndex {
-                                if !text[afterClosing].isNewline {
-                                    result.append(NSAttributedString(string: "\n", attributes: baseAttributes))
-                                }
-                            } else {
-                                result.append(NSAttributedString(string: "\n", attributes: baseAttributes))
-                            }
-
-                            index = closingRange.upperBound
-                            lastWasWebClip = false
-                            continue
-                        } else {
-                            let rawMarkup = String(remaining[remaining.startIndex..<closingRange.upperBound])
-                            let baseAttributes = Self.baseTypingAttributes(for: currentColorScheme)
-                            var attrs = baseAttributes
-                            attrs[.corruptedBlock] = rawMarkup
-                            attrs[.backgroundColor] = NSColor.systemRed.withAlphaComponent(0.1)
-                            result.append(NSAttributedString(string: "[Corrupted toggle block]", attributes: attrs))
-                            index = closingRange.upperBound
-                            lastWasWebClip = false
-                            continue
+                        let rawMarkup = String(remaining[remaining.startIndex..<closingRange.upperBound])
+                        let baseAttributes = Self.baseTypingAttributes(for: currentColorScheme)
+                        if result.length > 0,
+                           let lastScalar = result.string.unicodeScalars.last,
+                           !CharacterSet.newlines.contains(lastScalar) {
+                            result.append(NSAttributedString(string: "\n", attributes: baseAttributes))
                         }
+                        var attrs = baseAttributes
+                        attrs[.corruptedBlock] = rawMarkup
+                        attrs[.backgroundColor] = NSColor.systemRed.withAlphaComponent(0.1)
+                        result.append(NSAttributedString(string: "[Corrupted toggle block]", attributes: attrs))
+                        let afterClosing = closingRange.upperBound
+                        if afterClosing < text.endIndex {
+                            if !text[afterClosing].isNewline {
+                                result.append(NSAttributedString(string: "\n", attributes: baseAttributes))
+                            }
+                        } else {
+                            result.append(NSAttributedString(string: "\n", attributes: baseAttributes))
+                        }
+                        index = closingRange.upperBound
+                        lastWasWebClip = false
+                        continue
                     }
                 } else if text[index...].hasPrefix("[[callout|") {
                     flushBuffer()

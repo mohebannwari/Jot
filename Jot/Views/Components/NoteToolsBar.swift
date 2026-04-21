@@ -124,9 +124,6 @@ struct NoteToolsBar: View {
                     toolButton(icon: "IconTextBlock", tooltip: "Block Quote") {
                         postToolAction(.blockQuote)
                     }
-                    toolButton(icon: "IconArrowsHide", tooltip: "Toggle") {
-                        postToolAction(.collapsibleSection)
-                    }
                     toolButton(icon: "IconCode", tooltip: "Code Block") {
                         postToolAction(.codeBlock)
                     }
@@ -142,6 +139,9 @@ struct NoteToolsBar: View {
                     // Insertable Objects
                     toolButton(icon: "IconTable", tooltip: "Table") {
                         postToolAction(.table)
+                    }
+                    toolButton(icon: "IconMap", tooltip: "Map") {
+                        postToolAction(.map)
                     }
                     toolButton(icon: "insert link", tooltip: "Insert Link") {
                         postToolAction(.link)

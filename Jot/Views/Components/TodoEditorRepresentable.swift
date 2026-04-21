@@ -8,6 +8,7 @@
 import Combine
 import SwiftUI
 import AppKit
+import MapKit
 import Quartz
 import QuartzCore
 import UniformTypeIdentifiers
@@ -46,6 +47,7 @@ extension NSAttributedString.Key {
     static let linkCardFullURL = NSAttributedString.Key("LinkCardFullURL")
     static let imageFilename = NSAttributedString.Key("ImageFilename")
     static let imageWidthRatio = NSAttributedString.Key("ImageWidthRatio")
+    static let mapSerializedData = NSAttributedString.Key("MapSerializedData")
     static let fileStoredFilename = NSAttributedString.Key("FileStoredFilename")
     static let fileOriginalFilename = NSAttributedString.Key("FileOriginalFilename")
     static let fileTypeIdentifier = NSAttributedString.Key("FileTypeIdentifier")
@@ -73,6 +75,7 @@ struct AttachmentMarkup {
         options: []
     )
     static let fileMarkupPrefix = "[[file|"
+    static let mapMarkupPrefix = MapBlockData.markupPrefix
     static let filePattern = #"\[\[file\|([^|]+)\|([^|]+)\|([^|\]]*?)(?:\|([^\]]*))?\]\]"#
     static let fileRegex: NSRegularExpression? = try? NSRegularExpression(
         pattern: filePattern,
@@ -776,6 +779,20 @@ final class NoteImageAttachment: NSTextAttachment {
     }
 }
 
+final class NoteMapAttachment: NSTextAttachment {
+    var mapData: MapBlockData
+
+    init(mapData: MapBlockData) {
+        self.mapData = mapData
+        super.init(data: nil, ofType: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("NoteMapAttachment does not support init(coder:)")
+    }
+}
+
 /// Cell that allocates space for an image attachment but draws nothing visible.
 /// The InlineImageOverlayView handles rendering.
 final class ImageSizeAttachmentCell: NSTextAttachmentCell {
@@ -801,6 +818,89 @@ final class ImageSizeAttachmentCell: NSTextAttachmentCell {
 
     override func draw(withFrame cellFrame: NSRect, in controlView: NSView?, characterIndex charIndex: Int, layoutManager: NSLayoutManager) {
         // Intentionally empty — overlay view renders the image
+    }
+}
+
+final class MapSizeAttachmentCell: NSTextAttachmentCell {
+    let displaySize: CGSize
+    let mapData: MapBlockData
+
+    init(size: CGSize, mapData: MapBlockData) {
+        self.displaySize = size
+        self.mapData = mapData
+        super.init(imageCell: nil)
+    }
+
+    @available(*, unavailable)
+    required init(coder: NSCoder) {
+        fatalError("MapSizeAttachmentCell does not support init(coder:)")
+    }
+
+    override var cellSize: NSSize { displaySize }
+
+    override nonisolated func cellBaselineOffset() -> NSPoint { .zero }
+
+    override func draw(withFrame cellFrame: NSRect, in controlView: NSView?) {
+        drawSnapshot(in: cellFrame, controlView: controlView)
+    }
+
+    override func draw(withFrame cellFrame: NSRect, in controlView: NSView?, characterIndex charIndex: Int, layoutManager: NSLayoutManager) {
+        drawSnapshot(in: cellFrame, controlView: controlView)
+    }
+
+    private func drawSnapshot(in cellFrame: NSRect, controlView: NSView?) {
+        let appearance = controlView?.effectiveAppearance ?? NSApp.effectiveAppearance
+        let image: NSImage?
+        if let cached = MapBlockSnapshotRenderer.cachedImage(
+            for: mapData,
+            size: displaySize,
+            appearance: appearance
+        ) {
+            image = cached
+        } else if controlView?.window == nil {
+            image = MapBlockSnapshotRenderer.blockingSnapshot(
+                for: mapData,
+                size: displaySize,
+                appearance: appearance
+            )
+        } else {
+            MapBlockSnapshotRenderer.requestSnapshot(
+                for: mapData,
+                size: displaySize,
+                appearance: appearance,
+                controlView: controlView
+            )
+            image = nil
+        }
+
+        NSGraphicsContext.saveGraphicsState()
+        let clipPath = NSBezierPath(
+            roundedRect: cellFrame,
+            xRadius: MapBlockData.cornerRadius,
+            yRadius: MapBlockData.cornerRadius
+        )
+        clipPath.addClip()
+
+        if let image {
+            image.draw(in: cellFrame)
+        } else {
+            let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            (isDark ? NSColor.windowBackgroundColor : NSColor.white).setFill()
+            cellFrame.fill()
+        }
+        let strokePath = NSBezierPath(
+            roundedRect: cellFrame.insetBy(dx: 0.5, dy: 0.5),
+            xRadius: MapBlockData.cornerRadius - 0.5,
+            yRadius: MapBlockData.cornerRadius - 0.5
+        )
+        strokePath.lineWidth = 1
+        let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        (isDark
+            ? NSColor.white.withAlphaComponent(0.06)
+            : NSColor.black.withAlphaComponent(0.08)
+        ).setStroke()
+        strokePath.stroke()
+        NSGraphicsContext.restoreGraphicsState()
     }
 }
 
@@ -924,48 +1024,6 @@ final class CalloutSizeAttachmentCell: NSTextAttachmentCell {
 
     override func draw(withFrame cellFrame: NSRect, in controlView: NSView?, characterIndex charIndex: Int, layoutManager: NSLayoutManager) {
         // Intentionally empty — overlay view renders the callout
-    }
-}
-
-// MARK: - Toggle Attachment
-
-final class NoteToggleAttachment: NSTextAttachment {
-    var toggleData: ToggleData
-    let toggleID = UUID()
-
-    init(toggleData: ToggleData) {
-        self.toggleData = toggleData
-        super.init(data: nil, ofType: nil)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("NoteToggleAttachment does not support init(coder:)")
-    }
-}
-
-final class ToggleSizeAttachmentCell: NSTextAttachmentCell {
-    let displaySize: CGSize
-
-    init(size: CGSize) {
-        self.displaySize = size
-        super.init(imageCell: nil)
-    }
-
-    @available(*, unavailable)
-    required init(coder: NSCoder) {
-        fatalError("ToggleSizeAttachmentCell does not support init(coder:)")
-    }
-
-    override var cellSize: NSSize { displaySize }
-    override nonisolated func cellBaselineOffset() -> NSPoint { .zero }
-
-    override func draw(withFrame cellFrame: NSRect, in controlView: NSView?) {
-        // Intentionally empty — overlay view renders the toggle
-    }
-
-    override func draw(withFrame cellFrame: NSRect, in controlView: NSView?, characterIndex charIndex: Int, layoutManager: NSLayoutManager) {
-        // Intentionally empty — overlay view renders the toggle
     }
 }
 
@@ -1834,6 +1892,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         // MARK: - Inline image overlay tracking
         var imageLoadTasks: [String: Task<Void, Never>] = [:]
         var imageOverlays: [ObjectIdentifier: InlineImageOverlayView] = [:]
+        var mapOverlays: [ObjectIdentifier: MapBlockOverlayView] = [:]
         var tableOverlays: [ObjectIdentifier: NoteTableOverlayView] = [:]
         var calloutOverlays: [ObjectIdentifier: CalloutOverlayView] = [:]
         var codeBlockOverlays: [ObjectIdentifier: CodeBlockOverlayView] = [:]
@@ -1842,7 +1901,6 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         var linkCardOverlays: [ObjectIdentifier: NSView] = [:]
         var linkCardThumbnailLoadAttempted: Set<ObjectIdentifier> = []
         var filePreviewOverlays: [ObjectIdentifier: FilePreviewOverlayView] = [:]
-        var toggleOverlays: [UUID: ToggleOverlayView] = [:]
 
         /// Last container width we ran the divider-attachment sync against. `updateDividerAttachments`
         /// short-circuits when the width hasn't moved (within 0.5pt) since every `frameDidChange`
@@ -1890,13 +1948,6 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             self.noteID = noteID
         }
 
-        /// Heading-fold collapsed-section hiding was removed when the Toggle block pivoted
-        /// to a Notion-style attachment. Stub retained for the two call sites in
-        /// TodoEditorRepresentable until they can be cleanly removed in follow-up work.
-        func isRangeHiddenByCollapsedSection(_ range: NSRange) -> Bool {
-            return false
-        }
-
         /// Coalesces overlay update requests so multiple triggers
         /// (updateNSView, didCompleteLayoutFor, boundsDidChange) within
         /// the same run-loop turn collapse into a single pass.
@@ -1929,10 +1980,10 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             CATransaction.setDisableActions(true)
 
             updateImageOverlays(in: textView)
+            updateMapOverlays(in: textView)
             updateTableOverlays(in: textView)
             updateDividerAttachments(in: textView)
             updateCalloutOverlays(in: textView)
-            updateToggleOverlays(in: textView)
             updateCodeBlockOverlays(in: textView)
             updateTabsOverlays(in: textView)
             updateCardSectionOverlays(in: textView)
@@ -2568,6 +2619,54 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             return attributed
         }
 
+        func resolvedMapBlockWidth(
+            for widthRatio: CGFloat,
+            containerWidth: CGFloat
+        ) -> CGFloat {
+            let clampedContainerWidth = max(containerWidth, 1)
+            let minimumWidth = min(MapBlockData.minWidth, clampedContainerWidth)
+            let proposedWidth = clampedContainerWidth * max(widthRatio, 0.0001)
+            return min(clampedContainerWidth, max(minimumWidth, proposedWidth))
+        }
+
+        func makeMapAttachment(mapData: MapBlockData) -> NSMutableAttributedString {
+            var containerWidth = textView?.textContainer?.containerSize.width ?? 400
+            if containerWidth < 1 { containerWidth = 400 }
+
+            let displayWidth = resolvedMapBlockWidth(
+                for: mapData.widthRatio,
+                containerWidth: containerWidth
+            )
+            let displayHeight = displayWidth * MapBlockData.aspectHeightRatio
+
+            let attachment = NoteMapAttachment(mapData: mapData)
+            let cellSize = CGSize(width: displayWidth, height: displayHeight)
+            attachment.attachmentCell = MapSizeAttachmentCell(size: cellSize, mapData: mapData)
+            attachment.bounds = CGRect(origin: .zero, size: cellSize)
+
+            let attributed = NSMutableAttributedString(attachment: attachment)
+            let range = NSRange(location: 0, length: attributed.length)
+            attributed.addAttribute(.mapSerializedData, value: mapData.serialize(), range: range)
+
+            let blockStyle = NSMutableParagraphStyle()
+            blockStyle.alignment = .left
+            blockStyle.paragraphSpacing = 8
+            blockStyle.paragraphSpacingBefore = 8
+            attributed.addAttribute(.paragraphStyle, value: blockStyle, range: range)
+
+            let appearance = textView?.window?.effectiveAppearance
+                ?? textView?.effectiveAppearance
+                ?? NSApp.effectiveAppearance
+            MapBlockSnapshotRenderer.requestSnapshot(
+                for: mapData,
+                size: cellSize,
+                appearance: appearance,
+                controlView: textView
+            )
+
+            return attributed
+        }
+
         /// Create an inline file attachment tag with metadata
         func makeFileAttachment(metadata: FileAttachmentMetadata)
             -> NSMutableAttributedString
@@ -2790,6 +2889,11 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     return cursor
                 }
             }
+            for (_, overlay) in mapOverlays {
+                if let cursor = overlay.cursorForPoint(windowPoint) {
+                    return cursor
+                }
+            }
             for (_, overlay) in codeBlockOverlays {
                 if let cursor = overlay.cursorForPoint(windowPoint) {
                     return cursor
@@ -2840,6 +2944,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             imageLoadTasks.removeAll()
             nonisolated(unsafe) let manager = typingAnimationManager
             let imgOverlays = imageOverlays.values.map { $0 }
+            let liveMapOverlays = mapOverlays.values.map { $0 }
             let tblOverlays = tableOverlays.values.map { $0 }
             let callOverlays = calloutOverlays.values.map { $0 }
             let codeOverlays = codeBlockOverlays.values.map { $0 }
@@ -2851,6 +2956,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             Task { @MainActor in
                 manager?.clearAllAnimations()
                 imgOverlays.forEach { $0.removeFromSuperview() }
+                liveMapOverlays.forEach { $0.removeFromSuperview() }
                 tblOverlays.forEach { $0.removeFromSuperview() }
                 callOverlays.forEach { $0.removeFromSuperview() }
                 codeOverlays.forEach { $0.removeFromSuperview() }
@@ -2876,12 +2982,12 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             if overlayHostView !== newHost {
                 imageOverlays.values.forEach { $0.removeFromSuperview() }
                 imageOverlays.removeAll()
+                mapOverlays.values.forEach { $0.removeFromSuperview() }
+                mapOverlays.removeAll()
                 tableOverlays.values.forEach { $0.removeFromSuperview() }
                 tableOverlays.removeAll()
                 filePreviewOverlays.values.forEach { $0.removeFromSuperview() }
                 filePreviewOverlays.removeAll()
-                toggleOverlays.values.forEach { $0.removeFromSuperview() }
-                toggleOverlays.removeAll()
                 overlayHostView = newHost
             }
             // Register as layout manager delegate for overlay position tracking
@@ -2977,6 +3083,18 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 }
             }
 
+            let insertMap = NotificationCenter.default.addObserver(
+                forName: .insertMapInEditor, object: nil, queue: .main
+            ) { [weak self] notification in
+                if let nid = notification.userInfo?["editorInstanceID"] as? UUID,
+                   let myID = self?.editorInstanceID, nid != myID { return }
+                guard let serializedMapData = notification.object as? String else { return }
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.insertMap(serializedMapData: serializedMapData)
+                }
+            }
+
             let applyTool = NotificationCenter.default.addObserver(
                 forName: .applyEditTool, object: nil, queue: .main
             ) { [weak self] notification in
@@ -2987,7 +3105,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 MainActor.assumeIsolated { [weak self] in
                     guard let self = self, let textView = self.textView else { return }
 
-                    let isBlockInsertion = [EditTool.table, .callout, .codeBlock, .tabs, .cards, .collapsibleSection].contains(tool)
+                    let isBlockInsertion = [EditTool.table, .callout, .codeBlock, .tabs, .cards].contains(tool)
 
                     // For inline formatting, skip if another NSTextView has focus
                     // (overlay text views handle their own formatting).
@@ -3019,8 +3137,6 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                             self.insertTabs()
                         } else if tool == .cards {
                             self.insertCardSection()
-                        } else if tool == .collapsibleSection {
-                            self.insertToggle()
                         }
                         self.isUpdating = false
                     } else {
@@ -3081,7 +3197,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     // Apply the selected tool
                     // Some command-menu tools already call syncText() internally after they
                     // finish their own atomic insert. Avoid a second sync from this wrapper.
-                    let toolPerformsOwnSync = [EditTool.todo, .table, .callout, .codeBlock, .tabs, .cards, .collapsibleSection].contains(tool)
+                    let toolPerformsOwnSync = [EditTool.todo, .table, .callout, .codeBlock, .tabs, .cards].contains(tool)
 
                     if toolPerformsOwnSync {
                         self.isUpdating = true
@@ -3097,8 +3213,6 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                             self.insertTabs()
                         } else if tool == .cards {
                             self.insertCardSection()
-                        } else if tool == .collapsibleSection {
-                            self.insertToggle()
                         }
                         self.isUpdating = false
                     } else {
@@ -3714,7 +3828,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
 
             observers = [
                 windowKey,
-                insertTodo, insertLink, convertToWebClip, insertFileLink, insertVoiceTranscript, insertImage, applyTool, applyCommandMenuTool,
+                insertTodo, insertLink, convertToWebClip, insertFileLink, insertVoiceTranscript, insertImage, insertMap, applyTool, applyCommandMenuTool,
                 applyNotePickerSelection, navigateNoteLink,
                 performSearch, highlightSearch, clearSearch, replaceMatch, replaceAll,
                 proofreadShow, proofreadClear, proofreadApply, captureSelection,
@@ -5539,6 +5653,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                 for range in checkRanges {
                     storage.enumerateAttribute(.attachment, in: range, options: []) { value, _, stop in
                         if value is NoteCalloutAttachment
+                            || value is NoteMapAttachment
                             || value is NoteCodeBlockAttachment
                             || value is NoteTableAttachment
                             || value is NoteTabsAttachment
@@ -6645,6 +6760,43 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             syncText()
         }
 
+        func insertMap(serializedMapData: String) {
+            guard let mapData = MapBlockData.deserialize(from: serializedMapData),
+                  let textView = textView,
+                  let textStorage = textView.textStorage else { return }
+
+            let baseAttrs = Self.baseTypingAttributes(for: currentColorScheme)
+            let composed = NSMutableAttributedString()
+
+            let insertAt = min(textView.selectedRange().location, textStorage.length)
+            let nsString = textStorage.string as NSString
+
+            if insertAt > 0 {
+                let prevChar = nsString.character(at: insertAt - 1)
+                if let scalar = Unicode.Scalar(prevChar),
+                   !CharacterSet.newlines.contains(scalar) {
+                    composed.append(NSAttributedString(string: "\n", attributes: baseAttrs))
+                }
+            }
+
+            composed.append(makeMapAttachment(mapData: mapData))
+            composed.append(NSAttributedString(string: "\n", attributes: baseAttrs))
+
+            let replaceRange = NSRange(location: insertAt, length: 0)
+            if textView.shouldChangeText(in: replaceRange, replacementString: composed.string) {
+                isUpdating = true
+                textStorage.beginEditing()
+                textStorage.replaceCharacters(in: replaceRange, with: composed)
+                textStorage.endEditing()
+                textView.setSelectedRange(NSRange(location: insertAt + composed.length, length: 0))
+                textView.didChangeText()
+                isUpdating = false
+            }
+
+            performSynchronizedOverlayLayoutPass(in: textView)
+            syncText()
+        }
+
         // MARK: - Table Attachment
 
         func makeTableAttachment(tableData: NoteTableData) -> NSMutableAttributedString {
@@ -6752,76 +6904,6 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             attributed.addAttribute(.paragraphStyle, value: blockStyle, range: range)
 
             return attributed
-        }
-
-        // MARK: - Toggle Insertion
-
-        func makeToggleAttachment(toggleData: ToggleData, initialWidth: CGFloat? = nil) -> NSMutableAttributedString {
-            var containerWidth = textView?.textContainer?.containerSize.width ?? ToggleOverlayView.minWidth
-            if containerWidth < 1 { containerWidth = ToggleOverlayView.minWidth }
-            let effectiveMin = min(ToggleOverlayView.minWidth, containerWidth)
-            let toggleWidth: CGFloat
-            if let pref = toggleData.preferredContentWidth {
-                toggleWidth = max(effectiveMin, min(containerWidth, pref))
-            } else {
-                toggleWidth = containerWidth
-            }
-
-            let toggleHeight = ToggleOverlayView.heightForData(toggleData, width: toggleWidth)
-
-            let attachment = NoteToggleAttachment(toggleData: toggleData)
-            let cellSize = CGSize(width: toggleWidth, height: toggleHeight)
-            attachment.attachmentCell = ToggleSizeAttachmentCell(size: cellSize)
-            attachment.bounds = CGRect(origin: .zero, size: cellSize)
-
-            let attributed = NSMutableAttributedString(attachment: attachment)
-            let range = NSRange(location: 0, length: attributed.length)
-
-            let blockStyle = NSMutableParagraphStyle()
-            blockStyle.alignment = .left
-            blockStyle.paragraphSpacing = 12
-            // Larger leading gap than Callout's 8pt — toggles are often inserted
-            // directly under a note title or H1, where 8pt reads as crowding.
-            blockStyle.paragraphSpacingBefore = 20
-            attributed.addAttribute(.paragraphStyle, value: blockStyle, range: range)
-
-            return attributed
-        }
-
-        private func insertToggle() {
-            let data = ToggleData.empty()
-            guard let textView = textView,
-                  let textStorage = textView.textStorage else { return }
-
-            let baseAttrs = Self.baseTypingAttributes(for: currentColorScheme)
-            let composed = NSMutableAttributedString()
-
-            let insertAt = min(textView.selectedRange().location, textStorage.length)
-            let nsString = textStorage.string as NSString
-
-            if insertAt > 0 {
-                let prevChar = nsString.character(at: insertAt - 1)
-                if let scalar = Unicode.Scalar(prevChar),
-                   !CharacterSet.newlines.contains(scalar) {
-                    composed.append(NSAttributedString(string: "\n", attributes: baseAttrs))
-                }
-            }
-
-            let toggleAttrib = makeToggleAttachment(toggleData: data)
-            composed.append(toggleAttrib)
-            composed.append(NSAttributedString(string: "\n", attributes: baseAttrs))
-
-            let targetRange = NSRange(location: insertAt, length: 0)
-            guard textView.shouldChangeText(in: targetRange, replacementString: composed.string) else { return }
-            textStorage.replaceCharacters(in: targetRange, with: composed)
-            textView.didChangeText()
-
-            textView.setSelectedRange(NSRange(location: insertAt + composed.length, length: 0))
-            textView.layoutManager?.invalidateLayout(
-                forCharacterRange: NSRange(location: insertAt, length: composed.length),
-                actualCharacterRange: nil
-            )
-            syncText()
         }
 
         func makeDividerAttachment() -> NSMutableAttributedString {
@@ -7256,6 +7338,47 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             syncText()
         }
 
+        func updateMapData(
+            _ newData: MapBlockData,
+            attachment: NoteMapAttachment,
+            in textStorage: NSTextStorage,
+            textView: NSTextView
+        ) {
+            let fullRange = NSRange(location: 0, length: textStorage.length)
+            var foundRange: NSRange?
+            textStorage.enumerateAttribute(.attachment, in: fullRange, options: []) { value, range, stop in
+                if value as AnyObject === attachment {
+                    foundRange = range
+                    stop.pointee = true
+                }
+            }
+            guard let charRange = foundRange else { return }
+
+            attachment.mapData = newData
+
+            let containerWidth = textView.textContainer?.containerSize.width ?? 400
+            let displayWidth = resolvedMapBlockWidth(
+                for: newData.widthRatio,
+                containerWidth: containerWidth
+            )
+            let displayHeight = displayWidth * MapBlockData.aspectHeightRatio
+            let cellSize = CGSize(width: displayWidth, height: displayHeight)
+
+            attachment.attachmentCell = MapSizeAttachmentCell(size: cellSize, mapData: newData)
+            attachment.bounds = CGRect(origin: .zero, size: cellSize)
+
+            textStorage.beginEditing()
+            textStorage.addAttribute(.mapSerializedData, value: newData.serialize(), range: charRange)
+            textStorage.endEditing()
+
+            textView.layoutManager?.invalidateLayout(
+                forCharacterRange: charRange,
+                actualCharacterRange: nil
+            )
+
+            syncText()
+        }
+
         // MARK: - NSLayoutManagerDelegate
 
         nonisolated func layoutManager(
@@ -7266,48 +7389,9 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             font: NSFont,
             forGlyphRange glyphRange: NSRange
         ) -> Int {
-            MainActor.assumeIsolated {
-                // `isRangeHiddenByCollapsedSection` is stubbed to always return false since the
-                // heading-fold scaffold was removed when the Toggle block pivoted to a Notion-style
-                // attachment. The short-circuit below keeps the function body correct without the
-                // removed `collapsedBodyRanges` backing store; the two call sites remain valid.
-                guard glyphRange.length > 0 else { return 0 }
-
-                var shouldOverrideGlyphs = false
-                for offset in 0..<glyphRange.length where isRangeHiddenByCollapsedSection(
-                    NSRange(location: charIndexes[offset], length: 0)
-                ) {
-                    shouldOverrideGlyphs = true
-                    break
-                }
-                guard shouldOverrideGlyphs else { return 0 }
-
-                var glyphBuffer = Array(
-                    UnsafeBufferPointer(start: glyphs, count: glyphRange.length)
-                )
-                var propertyBuffer = Array(
-                    UnsafeBufferPointer(start: props, count: glyphRange.length)
-                )
-                let characterIndexBuffer = Array(
-                    UnsafeBufferPointer(start: charIndexes, count: glyphRange.length)
-                )
-
-                for offset in 0..<glyphRange.length where isRangeHiddenByCollapsedSection(
-                    NSRange(location: characterIndexBuffer[offset], length: 0)
-                ) {
-                    propertyBuffer[offset].insert(.null)
-                    glyphBuffer[offset] = 0
-                }
-
-                layoutManager.setGlyphs(
-                    glyphBuffer,
-                    properties: propertyBuffer,
-                    characterIndexes: characterIndexBuffer,
-                    font: font,
-                    forGlyphRange: glyphRange
-                )
-                return glyphRange.length
-            }
+            // Collapsed-heading glyph hiding was removed with the old collapsible-section feature;
+            // keep the delegate hook so AppKit can call through without custom glyph substitution.
+            return 0
         }
 
         nonisolated func layoutManager(
@@ -8308,7 +8392,7 @@ final class InlineNSTextView: NSTextView, QLPreviewPanelDataSource, QLPreviewPan
         var hasBlockAttachment = false
         storage.enumerateAttribute(.attachment, in: sel, options: []) { value, _, stop in
             if value is NoteImageAttachment || value is NoteTableAttachment
-                || value is NoteCalloutAttachment || value is NoteCodeBlockAttachment
+                || value is NoteMapAttachment || value is NoteCalloutAttachment || value is NoteCodeBlockAttachment
                 || value is NoteTabsAttachment || value is NoteCardSectionAttachment
                 || value is NoteDividerAttachment || value is NoteLinkCardAttachment {
                 hasBlockAttachment = true
@@ -9093,6 +9177,7 @@ extension Notification.Name {
     static let insertFileLinkInEditor = Notification.Name("insertFileLinkInEditor")
     static let insertVoiceTranscriptInEditor = Notification.Name("insertVoiceTranscriptInEditor")
     static let insertImageInEditor = Notification.Name("insertImageInEditor")
+    static let insertMapInEditor = Notification.Name("insertMapInEditor")
     static let deleteWebClipAttachment = Notification.Name("deleteWebClipAttachment")
     static let convertSelectedTextToWebClip = Notification.Name("convertSelectedTextToWebClip")
     static let applyEditTool = Notification.Name("applyEditTool")

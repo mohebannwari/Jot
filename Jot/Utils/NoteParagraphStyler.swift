@@ -252,6 +252,7 @@ enum NoteParagraphStyler {
                     }
                     // Other block-level attachments (image, callout, code block, link card, file preview)
                     else if attachment is NoteImageAttachment
+                            || attachment is NoteMapAttachment
                             || attachment is NoteCalloutAttachment
                             || attachment is NoteCodeBlockAttachment
                             || attachment is NoteTabsAttachment

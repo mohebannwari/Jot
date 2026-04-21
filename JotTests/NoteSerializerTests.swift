@@ -8,6 +8,8 @@
 //
 
 import AppKit
+import CoreLocation
+import MapKit
 import XCTest
 
 @testable import Jot
@@ -97,6 +99,31 @@ final class NoteSerializerTests: XCTestCase {
         let attributed = NSMutableAttributedString(attachment: attachment)
         let storage = NSTextStorage(attributedString: attributed)
         XCTAssertEqual(NoteSerializer.serialize(storage), "[[arrow]]")
+    }
+
+    func testMapAttachment_EmitsExactMapToken() {
+        let mapData = MapBlockData(
+            title: "Park",
+            subtitle: "North Gate",
+            pinCoordinate: CLLocationCoordinate2D(latitude: 52.520008, longitude: 13.404954),
+            viewportCenter: CLLocationCoordinate2D(latitude: 52.520108, longitude: 13.405054),
+            viewportSpan: MKCoordinateSpan(latitudeDelta: 0.010000, longitudeDelta: 0.020000),
+            widthRatio: 0.3333
+        )
+        let attachment = NoteMapAttachment(mapData: mapData)
+        let attributed = NSMutableAttributedString(attachment: attachment)
+        attributed.addAttribute(.mapSerializedData, value: mapData.serialize(), range: NSRange(location: 0, length: attributed.length))
+        let storage = NSTextStorage(attributedString: attributed)
+
+        XCTAssertEqual(
+            NoteSerializer.serialize(storage),
+            "[[map|Park|North Gate|52.520008|13.404954|52.520108|13.405054|0.010000|0.020000|0.3333]]"
+        )
+    }
+
+    func testMalformedMapTokenFailsSafely() {
+        XCTAssertNil(MapBlockData.deserialize(from: "[[map|only|three]]"))
+        XCTAssertNil(MapBlockData.deserialize(from: "[[map|title|subtitle|bad|coord|0|0|0|0|0.33]]"))
     }
 
     // MARK: - Corrupted-block passthrough

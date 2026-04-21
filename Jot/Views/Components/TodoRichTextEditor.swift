@@ -101,7 +101,7 @@ struct TodoRichTextEditor: View {
     @State private var codePasteRange: NSRange = NSRange(location: 0, length: 0)
     @State private var codePasteLanguage: String = "plaintext"
 
-    static let commandMenuActions: [EditTool] = [.imageUpload, .fileLink, .voiceRecord, .link, .todo, .bulletList, .numberedList, .blockQuote, .collapsibleSection, .codeBlock, .callout, .tabs, .cards, .divider, .table, .sticker]
+    static let commandMenuActions: [EditTool] = [.imageUpload, .map, .fileLink, .voiceRecord, .link, .todo, .bulletList, .numberedList, .blockQuote, .codeBlock, .callout, .tabs, .cards, .divider, .table, .sticker]
     static let commandMenuOuterPadding: CGFloat = CommandMenuLayout.outerPadding
     static let commandMenuHorizontalPadding = commandMenuOuterPadding * 2
     static let commandMenuTotalWidth: CGFloat =

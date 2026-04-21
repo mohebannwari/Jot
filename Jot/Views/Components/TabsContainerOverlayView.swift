@@ -630,7 +630,7 @@ final class TabsContainerOverlayView: NSView {
         }
 
         let excludedTools: Set<EditTool> = [
-            .divider, .imageUpload, .voiceRecord, .table, .callout,
+            .divider, .imageUpload, .voiceRecord, .table, .map, .callout,
             .codeBlock, .fileLink, .sticker, .tabs, .cards, .lineBreak, .link, .searchOnPage
         ]
 

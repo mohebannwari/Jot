@@ -136,6 +136,10 @@ struct NotePreviewHTMLGenerator {
         if line.hasPrefix("[[image|") {
             return "<div class=\"attachment\">&#128247; Image</div>"
         }
+        if line.hasPrefix(MapBlockData.markupPrefix) {
+            let title = MapBlockData.deserialize(from: line)?.displayTitle ?? "Map"
+            return "<div class=\"attachment\">&#128506; \(escapeHTML(title))</div>"
+        }
         if line.hasPrefix("[[file|") {
             // Format: [[file|type|storedName|originalName|viewMode]]
             let inner = String(line.dropFirst(7).dropLast(2))
