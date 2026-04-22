@@ -137,7 +137,8 @@ final class MapBlockDataTests: XCTestCase {
     }
 
     func testSnapshotCacheIdentifierChangesWhenModeOrHeadingChanges() {
-        let appearance = NSAppearance(named: .aqua) ?? NSAppearance.current
+        // ``NSAppearance.current`` is optional on newer SDKs; fall back to the app appearance for a stable value.
+        let appearance = NSAppearance(named: .aqua) ?? NSAppearance.current ?? NSApp.effectiveAppearance
         let baseData = MapBlockData(
             title: "Museum",
             subtitle: "Downtown",

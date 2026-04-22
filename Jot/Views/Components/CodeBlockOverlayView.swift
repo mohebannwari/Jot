@@ -377,7 +377,7 @@ final class CodeBlockOverlayView: NSView {
         let blockH = max(bounds.height - pO, 50)
         let rect = CGRect(x: 0, y: pO, width: bounds.width, height: blockH)
         let path = NSBezierPath(roundedRect: rect, xRadius: blockRadius, yRadius: blockRadius).cgPath
-        let enabled = LiquidPaperShadowChrome.shouldShowPaperShadow(effectiveAppearance: effectiveAppearance)
+        let enabled = LiquidPaperShadowChrome.shouldShowPaperShadow(effectiveAppearance: hostAppearance)
         LiquidPaperShadowChrome.applyPaperShadow(to: layer, path: path, enabled: enabled)
     }
 
@@ -429,15 +429,24 @@ final class CodeBlockOverlayView: NSView {
 
     // MARK: - Appearance
 
+    /// Prefer the parent ``NSTextView`` appearance. The editor forces ``.darkAqua`` / ``.aqua`` from SwiftUI
+    /// ``ColorScheme`` (see ``TodoEditorRepresentable``). Named ``NSColor`` values flattened to ``CGColor`` on
+    /// layers must be read inside ``NSAppearance.performAsCurrentDrawingAppearance`` so catalog colors match that
+    /// appearance; otherwise ``DetailPaneColor`` can snapshot the light asset slot while syntax stays dark-themed.
+    private var hostAppearance: NSAppearance {
+        parentTextView?.effectiveAppearance ?? effectiveAppearance
+    }
+
     private var isDarkMode: Bool {
-        effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        hostAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
     }
 
     private func updateAppearance() {
-        let dark = isDarkMode
+        let appearance = hostAppearance
+        let dark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
 
-        // Block background — same semantic pair used by the shared "bg/blocks" surface.
-        blockView.layer?.backgroundColor = Self.blockBodySurfaceColor(isDark: dark).cgColor
+        // Block background — snapshot ``CGColor`` while ``appearance`` is current so named assets match the host editor.
+        blockView.layer?.backgroundColor = Self.blockBodySurfaceCGColor(isDark: dark, appearance: appearance)
 
         // Chip pill -- always uses the DARK variant of the tinted block
         // container so it reads as a deep, saturated pill in both light
@@ -461,9 +470,13 @@ final class CodeBlockOverlayView: NSView {
         textView.textColor = dark ? .white : .black
         textView.insertionPointColor = dark ? .white : .black
 
-        copyCodeButton.contentTintColor = NSColor(named: "IconSecondaryColor") ?? .secondaryLabelColor
+        var copyTint: NSColor = .secondaryLabelColor
+        appearance.performAsCurrentDrawingAppearance {
+            copyTint = (NSColor(named: "IconSecondaryColor") ?? .secondaryLabelColor)
+        }
+        copyCodeButton.contentTintColor = copyTint
 
-        copyBackdropView.updateAppearance(isDark: dark)
+        copyBackdropView.updateAppearance(isDark: dark, resolvingWith: appearance)
 
         updatePaperShadowIfNeeded()
         needsLayout = true
@@ -605,6 +618,15 @@ final class CodeBlockOverlayView: NSView {
 
     // MARK: - Appearance Change
 
+    override func viewDidMoveToSuperview() {
+        super.viewDidMoveToSuperview()
+        // After ``addSubview`` onto ``InlineNSTextView``, pick up the parent’s forced ``.darkAqua`` / ``.aqua``
+        // even when ``viewDidChangeEffectiveAppearance`` does not fire again.
+        updateAppearance()
+        applyHighlighting()
+        updatePaperShadowIfNeeded()
+    }
+
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         updateAppearance()
@@ -616,6 +638,18 @@ final class CodeBlockOverlayView: NSView {
 
     override func resetCursorRects() {
         addCursorRect(bounds, cursor: .arrow)
+    }
+
+    // MARK: - Unit test surface
+
+    /// Exposes the code body shell fill so tests can assert named colors resolve like the host ``NSTextView`` appearance.
+    internal var testability_blockBodyLayerBackgroundColor: CGColor? {
+        blockView.layer?.backgroundColor
+    }
+
+    /// Resolves the body surface token the same way ``updateAppearance`` does, for tests that pass an explicit ``NSAppearance``.
+    internal static func testability_blockBodySurfaceCGColor(isDark: Bool, appearance: NSAppearance) -> CGColor {
+        blockBodySurfaceCGColor(isDark: isDark, appearance: appearance)
     }
 
     // MARK: - Static Height Helper
@@ -641,6 +675,17 @@ fileprivate extension CodeBlockOverlayView {
                 ?? NSColor(srgbRed: 12 / 255, green: 10 / 255, blue: 9 / 255, alpha: 1)
         }
         return NSColor(named: "SurfaceDefaultColor") ?? .white
+    }
+
+    /// Flattens ``blockBodySurfaceColor`` to ``CGColor`` under ``appearance`` so layer fills match the host editor.
+    /// ``cgColor`` must be read **inside** ``performAsCurrentDrawingAppearance``; reading it afterward re-resolves
+    /// against the wrong current appearance and reproduces the light-``DetailPaneColor`` / dark-syntax mismatch.
+    static func blockBodySurfaceCGColor(isDark: Bool, appearance: NSAppearance) -> CGColor {
+        var cg: CGColor!
+        appearance.performAsCurrentDrawingAppearance {
+            cg = blockBodySurfaceColor(isDark: isDark).cgColor
+        }
+        return cg
     }
 
     /// On-screen glyph size (points) for copy + checkmark inside the fixed hit rect.
@@ -742,23 +787,23 @@ private final class _CodeCopyBackdropView: NSView {
         }
     }
 
-    func updateAppearance(isDark: Bool) {
-        let token = CodeBlockOverlayView.blockBodySurfaceColor(isDark: isDark)
+    func updateAppearance(isDark: Bool, resolvingWith appearance: NSAppearance) {
+        let tokenCG = CodeBlockOverlayView.blockBodySurfaceCGColor(isDark: isDark, appearance: appearance)
         let reduce = NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
 
         if reduce {
             layer?.shadowOpacity = 0
             layer?.shadowPath = nil
             effectView.isHidden = true
-            tintView.layer?.backgroundColor = token.cgColor
+            tintView.layer?.backgroundColor = tokenCG
         } else {
             // Opaque fill = the exact text-area token. Material still sits underneath to obscure any syntax-colored
             // characters that would otherwise bleed through at the rim. Halo uses the same token so the soft edge
             // reads as an extension of the code surface, not an outline drawn on top of it.
             layer?.shadowOpacity = isDark ? 0.28 : 0.18
             effectView.isHidden = false
-            tintView.layer?.backgroundColor = token.cgColor
-            layer?.shadowColor = token.cgColor
+            tintView.layer?.backgroundColor = tokenCG
+            layer?.shadowColor = tokenCG
         }
         needsLayout = true
     }
