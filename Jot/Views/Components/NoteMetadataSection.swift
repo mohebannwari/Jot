@@ -220,7 +220,7 @@ struct NoteMetadataSection: View {
                     // Created
                     propertyRow(label: "Created") {
                         Text(Self.absoluteFormatter.string(from: note.createdAt))
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.system(size: 12, weight: .regular))
                             .tracking(-0.3)
                             .foregroundColor(Color("PrimaryTextColor"))
                     }
@@ -240,7 +240,7 @@ struct NoteMetadataSection: View {
                                     .frame(width: 15, height: 15)
 
                                 Text(folder.name)
-                                    .font(FontManager.heading(size: 11, weight: .medium))
+                                    .font(FontManager.heading(size: 11, weight: .regular))
                                     .tracking(-0.2)
                                     .foregroundColor(pillFg)
                                     .lineLimit(1)
@@ -326,7 +326,7 @@ struct NoteMetadataSection: View {
         HStack(alignment: .firstTextBaseline, spacing: 0) {
             // Label column — 120pt wide, aligned with header
             Text(label)
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 12, weight: .regular))
                 .tracking(-0.3)
                 .foregroundColor(Color("SecondaryTextColor"))
                 .padding(.vertical, 8)
@@ -352,7 +352,7 @@ struct NoteMetadataSection: View {
                 } label: {
                     HStack(spacing: 4) {
                         Text(tag)
-                            .font(.system(size: 11, weight: .medium))
+                            .font(.system(size: 11, weight: .regular))
                             .tracking(-0.2)
                             .foregroundColor(Color("PrimaryTextColor"))
 
@@ -375,7 +375,7 @@ struct NoteMetadataSection: View {
             // Add tag: inline field or plus button
             if isAddingTag {
                 TextField("tag name", text: $newTagText)
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: 11, weight: .regular))
                     .textFieldStyle(.plain)
                     .frame(width: 80)
                     .padding(.horizontal, 8)
@@ -449,7 +449,7 @@ struct NoteMetadataSection: View {
                         .padding(.trailing, 4)
 
                     Text("\(completed)/\(total)")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: 11, weight: .regular))
                         .tracking(-0.2)
                         .foregroundColor(Color("PrimaryTextColor"))
 
@@ -485,7 +485,7 @@ struct NoteMetadataSection: View {
                             .frame(width: 16, height: 16)
 
                         Text(todo.text)
-                            .font(.system(size: 11, weight: .medium))
+                            .font(.system(size: 11, weight: .regular))
                             .foregroundColor(Color("PrimaryTextColor"))
                             .strikethrough(todo.isCompleted, color: Color("PrimaryTextColor").opacity(0.5))
                             .opacity(todo.isCompleted ? 0.5 : 1)
@@ -580,7 +580,7 @@ struct NoteMetadataSection: View {
                                 .frame(width: 14, height: 14)
 
                             Text(link.domain)
-                                .font(.system(size: 12, weight: .medium))
+                                .font(.system(size: 12, weight: .regular))
                                 .tracking(-0.3)
                                 .textCase(.lowercase)
                                 .lineLimit(1)
@@ -625,7 +625,7 @@ struct NoteMetadataSection: View {
                                 .frame(width: 14, height: 14)
 
                             Text(attachment.displayLabel)
-                                .font(.system(size: 11, weight: .medium))
+                                .font(.system(size: 11, weight: .regular))
                                 .tracking(-0.2)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
@@ -666,7 +666,7 @@ struct NoteMetadataSection: View {
                             .frame(width: 14, height: 14)
 
                         Text(backlink.title)
-                            .font(.system(size: 11, weight: .medium))
+                            .font(.system(size: 11, weight: .regular))
                             .tracking(-0.2)
                             .lineLimit(1)
                             .truncationMode(.tail)
@@ -688,9 +688,9 @@ struct NoteMetadataSection: View {
 
     private var noneText: some View {
         Text("None")
-            .font(.system(size: 12, weight: .medium))
+            .font(.system(size: 12, weight: .regular))
             .tracking(-0.3)
-            .foregroundColor(Color("TertiaryTextColor"))
+            .foregroundColor(Color("SecondaryTextColor"))
     }
 }
 

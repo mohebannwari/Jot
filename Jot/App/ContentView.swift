@@ -1868,7 +1868,6 @@ struct ContentView: View {
         )
     }
 
-    @ViewBuilder
     private func secondaryNotePane(
         note: Note,
         width: CGFloat,
@@ -1892,7 +1891,7 @@ struct ContentView: View {
             || (shouldShowSplitLayout
                 && chromeState.showsSplitParentShadowPlate(isPaneActive: activeSplitPane == .secondary))
 
-        HStack(spacing: 0) {
+        return HStack(spacing: 0) {
             ClippedEditorChromeContainer(
                 cornerRadius: cornerRadius,
                 showsBackingPlate: editorBackingPlateActive,

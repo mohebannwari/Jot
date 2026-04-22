@@ -3,6 +3,8 @@
 //  Jot
 //
 //  MVP editor for smart-folder predicates — functional layout; polish later.
+//  Smart Folder sheet: metadata labels use mono 11 all caps (`jotMetadataLabelTypography`);
+//  the first three field titles are slightly inset; text fields use capsule clips for parity.
 //
 
 import SwiftUI
@@ -117,11 +119,15 @@ struct SmartFolderEditorSheet: View {
         .onAppear { focusedField = .name }
     }
 
+    /// Leading inset for the first three field titles only (Name / Tags / Keyword), per layout spec.
+    private static let insetFieldTitleLeading: CGFloat = 10
+
     private var nameField: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Name")
-                .font(FontManager.metadata(size: 11, weight: .semibold))
+                .jotMetadataLabelTypography()
                 .foregroundColor(Color("SecondaryTextColor"))
+                .padding(.leading, Self.insetFieldTitleLeading)
             TextField("Smart folder name", text: $name)
                 .font(FontManager.heading(size: 15, weight: .medium))
                 .foregroundColor(Color("PrimaryTextColor"))
@@ -136,8 +142,9 @@ struct SmartFolderEditorSheet: View {
     private var tagsField: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Tags (comma-separated)")
-                .font(FontManager.metadata(size: 11, weight: .semibold))
+                .jotMetadataLabelTypography()
                 .foregroundColor(Color("SecondaryTextColor"))
+                .padding(.leading, Self.insetFieldTitleLeading)
             TextField("work, ideas", text: $tagsText)
                 .font(FontManager.heading(size: 14, weight: .medium))
                 .foregroundColor(Color("PrimaryTextColor"))
@@ -145,15 +152,16 @@ struct SmartFolderEditorSheet: View {
                 .focused($focusedField, equals: .tags)
                 .padding(12)
                 .background(themeManager.tintedDetailPane(for: colorScheme))
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .clipShape(Capsule())
         }
     }
 
     private var keywordField: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Keyword")
-                .font(FontManager.metadata(size: 11, weight: .semibold))
+                .jotMetadataLabelTypography()
                 .foregroundColor(Color("SecondaryTextColor"))
+                .padding(.leading, Self.insetFieldTitleLeading)
             TextField("Search in title and body", text: $keyword)
                 .font(FontManager.heading(size: 14, weight: .medium))
                 .foregroundColor(Color("PrimaryTextColor"))
@@ -161,7 +169,7 @@ struct SmartFolderEditorSheet: View {
                 .focused($focusedField, equals: .keyword)
                 .padding(12)
                 .background(themeManager.tintedDetailPane(for: colorScheme))
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .clipShape(Capsule())
         }
     }
 
@@ -198,7 +206,7 @@ struct SmartFolderEditorSheet: View {
     private var togglesSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Include only")
-                .font(FontManager.metadata(size: 11, weight: .semibold))
+                .jotMetadataLabelTypography()
                 .foregroundColor(Color("SecondaryTextColor"))
 
             Toggle("Pinned notes", isOn: $requirePinned)
@@ -214,7 +222,7 @@ struct SmartFolderEditorSheet: View {
 
     private var matchCountLabel: some View {
         Text("Matches \(matchCount) notes")
-            .font(FontManager.metadata(size: 12, weight: .medium))
+            .jotMetadataLabelTypography()
             .foregroundColor(Color("SecondaryTextColor"))
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, 4)
