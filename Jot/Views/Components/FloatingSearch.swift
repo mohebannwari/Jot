@@ -696,7 +696,7 @@ struct FloatingSearch: View {
                 Text(title)
                     .font(FontManager.heading(size: 13, weight: .regular))
                     .tracking(-0.4)
-                    .foregroundColor(Color("PrimaryTextColor"))
+                    .foregroundColor(Color("SecondaryTextColor"))
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -854,10 +854,11 @@ struct FloatingSearch: View {
                         .foregroundColor(Color("SecondaryTextColor"))
                         .frame(width: 15, height: 15)
 
+                    // Same token as the template icon (`SecondaryTextColor`) — matches sidebar quick actions.
                     Text(title)
                         .font(FontManager.heading(size: 13, weight: .regular))
                         .tracking(-0.4)
-                        .foregroundColor(Color("PrimaryTextColor"))
+                        .foregroundColor(Color("SecondaryTextColor"))
                         .lineLimit(1)
                 }
 
@@ -913,8 +914,7 @@ struct FloatingSearch: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
                 Text("LAST SEARCH")
-                    .font(FontManager.metadata(size: 9, weight: .medium))
-                    .textCase(.uppercase)
+                    .jotMetadataLabelTypography()
                     .foregroundColor(Color("SecondaryTextColor"))
                     .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -943,8 +943,7 @@ struct FloatingSearch: View {
             selectedResultIndex = 0
         } label: {
             Text("Clear All")
-                .font(FontManager.metadata(size: 9, weight: .medium))
-                .textCase(.uppercase)
+                .jotMetadataLabelTypography()
                 .foregroundColor(Color("SecondaryTextColor"))
                 .contentShape(Rectangle())
         }
@@ -969,7 +968,7 @@ struct FloatingSearch: View {
                 Text(query)
                     .font(FontManager.heading(size: 13, weight: .regular))
                     .tracking(-0.4)
-                    .foregroundColor(Color("PrimaryTextColor"))
+                    .foregroundColor(Color("SecondaryTextColor"))
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -1014,7 +1013,7 @@ struct FloatingSearch: View {
                 Text(target.title)
                     .font(FontManager.heading(size: 13, weight: .regular))
                     .tracking(-0.4)
-                    .foregroundColor(Color("PrimaryTextColor"))
+                    .foregroundColor(leadingIconColor)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -1208,7 +1207,7 @@ struct FloatingSearch: View {
                     Text(spec.title)
                         .font(FontManager.heading(size: 13, weight: .regular))
                         .tracking(-0.4)
-                        .foregroundColor(Color("PrimaryTextColor"))
+                        .foregroundColor(Color("SecondaryTextColor"))
                         .lineLimit(1)
                 }
 
@@ -1278,7 +1277,7 @@ struct FloatingSearch: View {
                     Text(result.title)
                         .font(FontManager.heading(size: 13, weight: .regular))
                         .tracking(-0.4)
-                        .foregroundColor(Color("PrimaryTextColor"))
+                        .foregroundColor(leadingResultIconColor)
                         .lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .layoutPriority(-1)

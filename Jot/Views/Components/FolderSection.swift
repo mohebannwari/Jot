@@ -185,7 +185,8 @@ struct FolderSection: View {
 
                         Text(peekFolder.name)
                             .font(FontManager.heading(size: 13, weight: .regular))
-                            .foregroundColor(Color("PrimaryTextColor"))
+                            // Folder name uses sidebar body text token, not the folder swatch (icon keeps the color).
+                            .foregroundColor(Color("SecondaryTextColor"))
                             .tracking(-0.1)
                             .lineLimit(1)
                             .truncationMode(.tail)
@@ -279,7 +280,7 @@ struct FolderSection: View {
             if isRenamingThisFolder {
                 TextField("Folder Name", text: $renamingName)
                     .font(FontManager.heading(size: 13, weight: .regular))
-                    .foregroundColor(Color("PrimaryTextColor"))
+                    .foregroundColor(Color("SecondaryTextColor"))
                     .textFieldStyle(.plain)
                     .focused($isRenaming)
                     .onSubmit {
@@ -291,7 +292,8 @@ struct FolderSection: View {
             } else {
                 Text(folder.name)
                     .font(FontManager.heading(size: 13, weight: .regular))
-                    .foregroundColor(Color("PrimaryTextColor"))
+                    // Same token as note titles and section chrome — icon alone carries folder color.
+                    .foregroundColor(Color("SecondaryTextColor"))
                     .tracking(-0.1)
                     .lineLimit(1)
                     .truncationMode(.tail)

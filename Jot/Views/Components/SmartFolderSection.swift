@@ -103,7 +103,7 @@ struct SmartFolderSection: View {
 
             Text(smartFolder.name)
                 .font(FontManager.heading(size: 13, weight: .regular))
-                .foregroundColor(Color("PrimaryTextColor"))
+                .foregroundColor(rowTint)
                 .tracking(-0.1)
                 .lineLimit(1)
                 .truncationMode(.tail)

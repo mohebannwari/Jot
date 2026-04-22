@@ -2745,11 +2745,12 @@ struct ContentView: View {
                 )
                 .scaleEffect(x: flipIcon ? -1 : 1, y: 1)
 
+                // Idle label uses the same token as the row icon (`SecondaryTextColor`) so text and glyph read as one unit.
                 Text(label)
                     .font(FontManager.heading(size: 13, weight: .regular))
                     .foregroundColor(isActive
                         ? (colorScheme == .light ? Color.white : Color.black)
-                        : Color("PrimaryTextColor"))
+                        : Color("SecondaryTextColor"))
                     .tracking(-0.1)
                     .lineLimit(1)
 
@@ -2913,7 +2914,8 @@ struct ContentView: View {
 
                                 Text(folder.name)
                                     .font(FontManager.heading(size: 13, weight: .regular))
-                                    .foregroundColor(Color("PrimaryTextColor"))
+                                    // Archive list: label matches sidebar text token; folder glyph keeps swatch.
+                                    .foregroundColor(Color("SecondaryTextColor"))
                                     .tracking(-0.1)
                                     .lineLimit(1)
                                     .truncationMode(.tail)
@@ -5583,12 +5585,13 @@ struct NoteListCard: View {
         forceLightText ? .white : Color("ButtonPrimaryBgColor")
     }
 
-    private var primaryTextColor: Color {
-        forceLightText ? .white : Color("PrimaryTextColor")
-    }
-
     private var secondaryTextColor: Color {
         forceLightText ? .white.opacity(0.7) : Color("SecondaryTextColor")
+    }
+
+    /// Sidebar note title: same token as idle leading chrome (split/lock) and ellipsis.
+    private var titleForegroundColor: Color {
+        isActiveNote ? activeTextColor : secondaryTextColor
     }
 
     private var leadingIconTint: Color {
@@ -5789,7 +5792,7 @@ struct NoteListCard: View {
             if isRenaming {
                 TextField("Note Title", text: $renamingTitle)
                     .font(FontManager.heading(size: 13, weight: .regular))
-                    .foregroundColor(Color("PrimaryTextColor"))
+                    .foregroundColor(titleForegroundColor)
                     .textFieldStyle(.plain)
                     .focused($isFieldFocused)
                     .onSubmit {
@@ -5801,9 +5804,7 @@ struct NoteListCard: View {
             } else {
                 Text(note.title)
                     .font(FontManager.heading(size: 13, weight: .regular))
-                    .foregroundColor(isActiveNote
-                        ? activeTextColor
-                        : primaryTextColor)
+                    .foregroundColor(titleForegroundColor)
                     .tracking(-0.1)
                     .lineLimit(1)
                     .truncationMode(.tail)
