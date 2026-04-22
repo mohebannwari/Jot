@@ -1087,7 +1087,9 @@ struct ContentView: View {
                 withAnimation(.jotSpring) { isFloatingSidebarVisible = false }
             }
         }
-        .onChange(of: anyPanelOverlayActive) { TodoRichTextEditor.isPanelOverlayActive = $1 }
+        .onChange(of: anyPanelOverlayActive) { _, newValue in
+            TodoRichTextEditor.isPanelOverlayActive = newValue
+        }
         .onChange(of: selectedNote) { _, _ in
             dismissPreviewInstantly()
         }
@@ -3206,8 +3208,10 @@ struct ContentView: View {
     private func appWindowTrashOverlay() -> some View {
         ZStack {
             if isTrashPresented {
+                // Match command-palette scrim: full-window tap target for dismiss.
                 Color.black
                     .opacity(0.001)
+                    .ignoresSafeArea()
                     .onTapGesture { isTrashPresented = false }
 
                 TrashSheet(isPresented: $isTrashPresented)
@@ -3217,6 +3221,9 @@ struct ContentView: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: windowCornerRadius, style: .continuous))
         .animation(.easeInOut(duration: 0.18), value: isTrashPresented)
+        // When dismissed, this ZStack wrapper can still sit above the editor at zIndex 5;
+        // disabling hit testing lets clicks and typing reach the note surface again.
+        .allowsHitTesting(isTrashPresented)
     }
 
     private var globalSearchShortcutActivator: some View {
