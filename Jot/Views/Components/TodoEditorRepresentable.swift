@@ -848,7 +848,13 @@ final class MapSizeAttachmentCell: NSTextAttachmentCell {
         drawSnapshot(in: cellFrame, controlView: controlView)
     }
 
+    static func shouldDrawSnapshot(for controlView: NSView?) -> Bool {
+        controlView?.window == nil
+    }
+
     private func drawSnapshot(in cellFrame: NSRect, controlView: NSView?) {
+        guard Self.shouldDrawSnapshot(for: controlView) else { return }
+
         let appearance = controlView?.effectiveAppearance ?? NSApp.effectiveAppearance
         let image: NSImage?
         if let cached = MapBlockSnapshotRenderer.cachedImage(
@@ -857,20 +863,12 @@ final class MapSizeAttachmentCell: NSTextAttachmentCell {
             appearance: appearance
         ) {
             image = cached
-        } else if controlView?.window == nil {
+        } else {
             image = MapBlockSnapshotRenderer.blockingSnapshot(
                 for: mapData,
                 size: displaySize,
                 appearance: appearance
             )
-        } else {
-            MapBlockSnapshotRenderer.requestSnapshot(
-                for: mapData,
-                size: displaySize,
-                appearance: appearance,
-                controlView: controlView
-            )
-            image = nil
         }
 
         NSGraphicsContext.saveGraphicsState()
@@ -2624,7 +2622,9 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             containerWidth: CGFloat
         ) -> CGFloat {
             let clampedContainerWidth = max(containerWidth, 1)
-            let minimumWidth = min(MapBlockData.minWidth, clampedContainerWidth)
+            let minimumWidth = MapBlockLayoutMetrics.minimumDisplayWidth(
+                for: clampedContainerWidth
+            )
             let proposedWidth = clampedContainerWidth * max(widthRatio, 0.0001)
             return min(clampedContainerWidth, max(minimumWidth, proposedWidth))
         }

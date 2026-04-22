@@ -66,7 +66,7 @@ struct MapInsertPrompt: View {
 
                                 if !result.subtitle.isEmpty {
                                     Text(result.subtitle)
-                                        .font(FontManager.metadata(size: 11, weight: .regular))
+                                        .font(FontManager.heading(size: 11, weight: .regular))
                                         .foregroundColor(Color("SecondaryTextColor"))
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                         .lineLimit(1)
@@ -82,8 +82,8 @@ struct MapInsertPrompt: View {
                     }
                 }
             } else if !service.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Text(service.errorMessage ?? "No places found")
-                    .font(FontManager.metadata(size: 11, weight: .regular))
+                Text((service.errorMessage ?? "No places found").uppercased())
+                    .font(FontManager.heading(size: 11, weight: .medium))
                     .foregroundColor(Color("SecondaryTextColor"))
             }
         }

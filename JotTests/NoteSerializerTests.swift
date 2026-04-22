@@ -108,7 +108,9 @@ final class NoteSerializerTests: XCTestCase {
             pinCoordinate: CLLocationCoordinate2D(latitude: 52.520008, longitude: 13.404954),
             viewportCenter: CLLocationCoordinate2D(latitude: 52.520108, longitude: 13.405054),
             viewportSpan: MKCoordinateSpan(latitudeDelta: 0.010000, longitudeDelta: 0.020000),
-            widthRatio: 0.3333
+            widthRatio: 0.3333,
+            displayMode: .explore,
+            headingDegrees: 0
         )
         let attachment = NoteMapAttachment(mapData: mapData)
         let attributed = NSMutableAttributedString(attachment: attachment)
@@ -117,7 +119,7 @@ final class NoteSerializerTests: XCTestCase {
 
         XCTAssertEqual(
             NoteSerializer.serialize(storage),
-            "[[map|Park|North Gate|52.520008|13.404954|52.520108|13.405054|0.010000|0.020000|0.3333]]"
+            "[[map|Park|North Gate|52.520008|13.404954|52.520108|13.405054|0.010000|0.020000|0.3333|explore|0.0000]]"
         )
     }
 
