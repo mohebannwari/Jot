@@ -1,10 +1,14 @@
 ---
-description: Metadata / monospaced label typography — size and casing
+description: Metadata / monospaced label typography — size, weight, and casing
 alwaysApply: true
 ---
 
-# Metadata font (`FontManager.metadata`)
+# Monospaced metadata (`FontManager.metadata` / SF Mono)
 
-- **Default size:** **11pt** unless a Figma spec or explicit product request says otherwise.
-- **Static labels:** Any `Text` that uses the metadata font for UI labels (dates, tags, shortcuts, section hints) must use **all caps**, e.g. `jotMetadataLabelTypography(size:weight:)` on `View` (see `FontManager.swift`), or `.font(FontManager.metadata(...))` plus `.textCase(.uppercase)`.
-- **User input:** Do **not** apply all caps to `TextField`, `TextEditor`, or other controls where the user types free text — keep metadata font for monospace only if needed, without `.textCase(.uppercase)` on the field.
+**Default for every static `Text` label** (anything that is not user-typed): **11pt, weight medium, all caps.** Apply these together so mono UI never drifts to sentence case or off-scale sizes.
+
+- **Preferred API:** `View.jotMetadataLabelTypography(size:weight:)` (defaults: **11**, **`.medium`**, plus **`.textCase(.uppercase)`**). Use this for section headers, palette labels, table hints, shortcuts, and any fixed copy rendered in the metadata face.
+- **Manual:** `.font(FontManager.metadata(size: 11, weight: .medium))` **and** `.textCase(.uppercase)` if you cannot use the modifier.
+- **Exceptions (document in code or PR when you diverge):** Figma or product explicitly requests another size/weight; **micro** labels (e.g. 9pt chips); emphasis via **semibold** on the same 11pt scale; **user input** in `TextField` / `TextEditor` — use monospaced font **without** all caps on the field.
+
+User rule summary: *always* ship mono labels as **11pt + medium + all caps** unless one of the exceptions above applies.

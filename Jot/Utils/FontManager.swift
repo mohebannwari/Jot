@@ -123,10 +123,10 @@ struct FontManager {
 
     /// Monospaced metadata (dates, shortcuts, technical labels).
     ///
-    /// **Design system:** For static `Text` labels, default to **11pt** and apply
-    /// `jotMetadataLabelTypography(size:weight:)` so copy is **all caps**.
-    /// Use a non-default `size` only when a screen or Figma spec explicitly requires it.
-    /// Do **not** force all caps on `TextField` / user-typed content.
+    /// **Design system (static labels):** **11pt**, **medium**, **all caps** — use
+    /// `jotMetadataLabelTypography(size:weight:)` so the trio stays linked. A non-default
+    /// `size`/`weight` is only for explicit Figma/product exceptions (e.g. 9pt micro chips)
+    /// or monospaced user input, where you must **not** apply all caps.
     static func metadata(size: CGFloat = 11, weight: Weight = .medium) -> Font {
         return Font.system(size: size, weight: weight.toSwiftUIWeight(), design: .monospaced)
     }

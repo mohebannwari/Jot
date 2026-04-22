@@ -28,7 +28,7 @@ struct ArchivedNoteRow: View {
     var body: some View {
         HStack(spacing: 8) {
             Text(note.title)
-                .font(FontManager.heading(size: 13, weight: .medium))
+                .font(FontManager.heading(size: 13, weight: .regular))
                 .foregroundColor(Color("PrimaryTextColor"))
                 .tracking(-0.1)
                 .lineLimit(1)

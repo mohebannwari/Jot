@@ -85,7 +85,7 @@ struct FolderSection: View {
             // Accordion header
             HStack(spacing: 8) {
                 Text("Folders")
-                    .font(FontManager.heading(size: 11, weight: .medium))
+                    .font(FontManager.heading(size: 11, weight: .regular))
                     .foregroundColor(Color("SecondaryTextColor"))
 
                 Circle()
@@ -184,7 +184,7 @@ struct FolderSection: View {
                             .frame(width: 15, height: 15)
 
                         Text(peekFolder.name)
-                            .font(FontManager.heading(size: 13, weight: .medium))
+                            .font(FontManager.heading(size: 13, weight: .regular))
                             .foregroundColor(Color("PrimaryTextColor"))
                             .tracking(-0.1)
                             .lineLimit(1)
@@ -278,7 +278,7 @@ struct FolderSection: View {
 
             if isRenamingThisFolder {
                 TextField("Folder Name", text: $renamingName)
-                    .font(FontManager.heading(size: 13, weight: .medium))
+                    .font(FontManager.heading(size: 13, weight: .regular))
                     .foregroundColor(Color("PrimaryTextColor"))
                     .textFieldStyle(.plain)
                     .focused($isRenaming)
@@ -290,7 +290,7 @@ struct FolderSection: View {
                     }
             } else {
                 Text(folder.name)
-                    .font(FontManager.heading(size: 13, weight: .medium))
+                    .font(FontManager.heading(size: 13, weight: .regular))
                     .foregroundColor(Color("PrimaryTextColor"))
                     .tracking(-0.1)
                     .lineLimit(1)
@@ -358,7 +358,7 @@ struct FolderSection: View {
                     }
                 } label: {
                     Image(systemName: "ellipsis")
-                        .font(FontManager.icon(size: 12, weight: .medium))
+                        .font(FontManager.icon(size: 12, weight: .regular))
                         .foregroundColor(Color("SecondaryTextColor"))
                         .frame(width: 12, height: 12)
                         .contentShape(Rectangle())
@@ -542,7 +542,7 @@ struct FolderSection: View {
                             }
                         } label: {
                             Text(showsAll ? "Show less" : "Show more")
-                                .font(FontManager.metadata(size: 11, weight: .semibold))
+                                .font(FontManager.metadata(size: 11, weight: .medium))
                                 .foregroundColor(Color("SecondaryTextColor"))
                                 .textCase(.uppercase)
                         }

@@ -76,12 +76,14 @@ All type uses **SF Pro**. Weights: Regular=400, Medium=500, SemiBold=600, Bold=7
 
 Three font families: **Charter** (serif body), **SF Pro** (headings/UI), **SF Mono** (metadata/code).
 
-| Method       | SwiftUI                          | Size | Weight  | Notes                           |
-| ------------ | -------------------------------- | ---- | ------- | ------------------------------- |
-| `body()`     | `Font.custom("Charter", size:)`  | 16   | Regular | Follows `bodyFontStyle` setting |
-| `heading()`  | `Font.system(size:, weight:)`    | 24   | Medium  | Respects `bodyFontStyle`        |
-| `metadata()` | `Font.system(monospaced, size:)` | 12   | Medium  | Timestamps, dates               |
-| `icon()`     | `Font.system(size:)`             | 20   | Regular | SF Symbols                      |
+| Method       | SwiftUI                          | Size             | Weight               | Notes                                   |
+| ------------ | -------------------------------- | ---------------- | -------------------- | --------------------------------------- |
+| `body()`     | `Font.custom("Charter", size:)`  | 16               | Regular              | Follows `bodyFontStyle` setting         |
+| `heading()`  | `Font.system(size:, weight:)`    | 24               | Medium               | Respects `bodyFontStyle`                |
+| `metadata()` | `Font.system(monospaced, size:)` | **11** (default) | **Medium** (default) | Technical labels, timestamps; see below |
+| `icon()`     | `Font.system(size:)`             | 20               | Regular              | SF Symbols                              |
+
+**Monospaced static labels (invariant):** For any non–user-input `Text` using the metadata/mono face, use **11pt, medium, all caps** — `jotMetadataLabelTypography()` in `FontManager.swift` (or `.textCase(.uppercase)` with `FontManager.metadata(size: 11, weight: .medium)`). Do not ship sentence-case mono labels except where Figma or product spec explicitly overrides. Never force all caps on `TextField` / `TextEditor` content.
 
 Body font style is user-configurable: `default` (Charter), `system` (SF Pro), `mono` (SF Mono).
 Line spacing presets: Compact (1.0x), Default (1.2x), Relaxed (1.5x) -- stored in `ThemeManager.lineSpacing`.

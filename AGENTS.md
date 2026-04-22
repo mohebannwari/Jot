@@ -16,7 +16,7 @@ iOS 26+ / macOS 26+ note-taking app in SwiftUI with Apple Liquid Glass design sy
 
 **This rule overrides convenience. It is the most important behavioral rule in this document.**
 
-Every request -- no matter how small, trivial, or narrowly scoped it sounds -- must be evaluated from a **broad, system-wide perspective** before a single line is touched. The user will **not** spoon-feed every affected file, component, or edge case. That is **your job**. A request is a *signal*, not a specification.
+Every request -- no matter how small, trivial, or narrowly scoped it sounds -- must be evaluated from a **broad, system-wide perspective** before a single line is touched. The user will **not** spoon-feed every affected file, component, or edge case. That is **your job**. A request is a _signal_, not a specification.
 
 ### The mandate
 
@@ -31,7 +31,7 @@ When a change is requested, you must proactively ask yourself:
 
 ### The behavior
 
-- **Default to scope expansion, not scope compression.** When in doubt, do *more* of the right thing, not less. A "fix this one button" request where you find five identical broken buttons should fix all five -- and then tell the user what you did and why.
+- **Default to scope expansion, not scope compression.** When in doubt, do _more_ of the right thing, not less. A "fix this one button" request where you find five identical broken buttons should fix all five -- and then tell the user what you did and why.
 - **Surface the implications before acting.** Before implementing, state: "This change also affects X, Y, and Z because [reason]. I'll update all of them unless you tell me otherwise." This is not asking permission -- it is informing.
 - **Never ship a half-done change that visibly breaks parity.** If you restyle one variant and leave its siblings inconsistent, that is a regression, not a feature.
 - **UI changes especially demand this.** Visual inconsistency is corrosive. A single mismatched radius, padding, or color ruins the whole surface. Treat UI work as a cascade, not an island.
@@ -44,7 +44,7 @@ When a change is requested, you must proactively ask yourself:
 
 ### The test
 
-Before responding to any request, you must be able to answer: *"What other parts of this codebase, this UI, this token graph, or this behavior are implicated by this change -- and have I addressed all of them?"* If the answer is "I didn't look," stop and look.
+Before responding to any request, you must be able to answer: _"What other parts of this codebase, this UI, this token graph, or this behavior are implicated by this change -- and have I addressed all of them?"_ If the answer is "I didn't look," stop and look.
 
 ---
 
@@ -129,7 +129,7 @@ Opus (escalation only -- not parallel, not fire-and-forget):
 -> Extract tokens for **both light and dark** themes. No exceptions.
 -> See the **Design Tokens** section below for the full token reference.
 -> **Always use the official Figma MCP plugin (`claude.ai Figma`) as the primary Figma tool.** Use `get_design_context`, `get_screenshot`, `get_metadata`, `get_variable_defs`, `search_design_system` for design tokens, component specs, and screenshots.
--> **Icons from a Figma link (`figma.com/design/...?node-id=...`):** Parse `fileKey` from the path and `nodeId` from the query (convert `2855-33` to `2855:33`). Call the Figma MCP tool `**get_design_context`** (Cursor: server **figma** / `plugin-figma-figma`). The response embeds asset URLs such as `https://www.figma.com/api/mcp/asset/<uuid>` — **download those files** (they are often SVG), normalize strokes to `currentColor` for template-rendering icons, add an explicit `18×18` transparent `<rect>` if Xcode’s asset catalog rejects the export (“zero width/height canvas”), and save into `[Jot/Assets.xcassets](Jot/Assets.xcassets)`. **Never substitute a hand-drawn placeholder** when the user supplied a node URL.
+-> **Icons from a Figma link (`figma.com/design/...?node-id=...`):** Parse `fileKey` from the path and `nodeId` from the query (convert `2855-33` to `2855:33`). Call the Figma MCP tool `**get_design_context`** (Cursor: server **figma** / `plugin-figma-figma`). The response embeds asset URLs such as `https://www.figma.com/api/mcp/asset/<uuid>` — **download those files** (they are often SVG), normalize strokes to `currentColor` for template-rendering icons, add an explicit `18×18` transparent `<rect>` if Xcode’s asset catalog rejects the export (“zero width/height canvas”), and save into `[Jot/Assets.xcassets](Jot/Assets.xcassets)`. **Never substitute a hand-drawn placeholder\*\* when the user supplied a node URL.
 
 ---
 
@@ -151,7 +151,6 @@ Before any feature implementation:
 
 ### Superpowers pipeline (strict order)
 
-
 | Step | Skill                                        | What to do                                                                                                                   |
 | ---- | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | 1    | `superpowers:brainstorming`                  | Refine the spec with clarifying questions until requirements are unambiguous.                                                |
@@ -162,7 +161,6 @@ Before any feature implementation:
 | 6    | `superpowers:requesting-code-review`         | **Two-stage review per task** before treating the task as done.                                                              |
 | 7    | `superpowers:finishing-a-development-branch` | Close the loop: **merge, open/land PR, or discard** -- never leave the branch in an ambiguous state.                         |
 
-
 **Context Engineering** (`INITIAL.md`, PRP generate/execute) remains the artifact path for this repo; run it **in service of** the Superpowers pipeline (planning inputs for step 1 and step 3), not as a substitute for any Superpowers step.
 
 ---
@@ -170,7 +168,6 @@ Before any feature implementation:
 ## Tool Calling & Skills
 
 **Always invoke the right skill before acting:**
-
 
 | Task                            | Skills                                                                                                                                                                                                                                                                           |
 | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -182,7 +179,6 @@ Before any feature implementation:
 | Icons (Web/RN)                  | Always download from Figma via `figma-design` -- never use placeholders unless explicitly told                                                                                                                                                                                   |
 | Completion                      | `superpowers:verification-before-completion` -> `superpowers:requesting-code-review`                                                                                                                                                                                             |
 | Multi-task                      | `superpowers:dispatching-parallel-agents`                                                                                                                                                                                                                                        |
-
 
 **MCP / Plugin priority:**
 
@@ -275,14 +271,12 @@ Without `preserves-vector-representation`, Xcode rasterizes SVGs as 1x bitmaps a
 
 Target stroke ratio: `1/12` of viewBox size. Calculate: `stroke-width = viewBox_size / 12`.
 
-
 | Figma grid | Correct stroke-width |
 | ---------- | -------------------- |
 | 10 x 10    | 0.833                |
 | 12 x 12    | 1.0                  |
 | 16 x 16    | 1.333                |
 | 24 x 24    | 2.0                  |
-
 
 Icons that deviate from this ratio will appear thinner or heavier than their siblings when scaled to the same SwiftUI frame. Fix the SVG source, not the frame size.
 
@@ -408,7 +402,7 @@ Nesting order: align > heading/bold/italic > underline > strikethrough > color
 ## Figma Source
 
 - Jot design file (always reference this):
-[https://www.figma.com/design/BhVLOWG63LckTVCuO3q0Tv/Jot?node-id=0-1&p=f&t=Exr6XkLRSkF2tndZ-0](https://www.figma.com/design/BhVLOWG63LckTVCuO3q0Tv/Jot?node-id=0-1&p=f&t=Exr6XkLRSkF2tndZ-0)
+  [https://www.figma.com/design/BhVLOWG63LckTVCuO3q0Tv/Jot?node-id=0-1&p=f&t=Exr6XkLRSkF2tndZ-0](https://www.figma.com/design/BhVLOWG63LckTVCuO3q0Tv/Jot?node-id=0-1&p=f&t=Exr6XkLRSkF2tndZ-0)
 
 Suggested uses:
 
@@ -425,7 +419,6 @@ Single source of truth for design tokens. Extracted from Figma and xcassets.
 ### Color Tokens
 
 All semantic colors live in `Jot/Ressources/Assets.xcassets/`. Reference by name in SwiftUI (`Color("TokenName")`). Always support both light and dark.
-
 
 | Token                          | Light                              | Dark                               |
 | ------------------------------ | ---------------------------------- | ---------------------------------- |
@@ -462,8 +455,7 @@ All semantic colors live in `Jot/Ressources/Assets.xcassets/`. Reference by name
 | `TagTextColor`                 | `#1A1A1A`                          | `#FFFFFF`                          |
 | `TertiaryTextColor`            | `#52525B`                          | `#A19FA9`                          |
 
-
-`**InlineCodeBgColor`:** Inline code pills in the editor use `ThemeManager.tintedInlineCodePillNS(isDark:)` — stone-300 / stone-700 bases with the same tint **targets** as `tintedBlockContainerNS` (slightly lighter dark base than block chrome’s stone-800). The asset holds the untinted pair for any `Color("InlineCodeBgColor")` usage.
+`**InlineCodeBgColor`:** Inline code pills in the editor use `ThemeManager.tintedInlineCodePillNS(isDark:)` — stone-300 / stone-700 bases with the same tint **targets\*\* as `tintedBlockContainerNS` (slightly lighter dark base than block chrome’s stone-800). The asset holds the untinted pair for any `Color("InlineCodeBgColor")` usage.
 
 #### Primitive Colors (Figma Variables)
 
@@ -479,7 +471,6 @@ All type uses **SF Pro**. Weights: Regular=400, Medium=500, SemiBold=600, Bold=7
 
 #### Figma Type Scale
 
-
 | Style      | Size | Line Height | Tracking | Weights Available |
 | ---------- | ---- | ----------- | -------- | ----------------- |
 | Heading/H4 | 20   | 24          | -0.20    | Medium            |
@@ -490,19 +481,18 @@ All type uses **SF Pro**. Weights: Regular=400, Medium=500, SemiBold=600, Bold=7
 | Tiny       | 10   | 12          | 0        | Medium, SemiBold  |
 | Micro      | 9    | 10          | 0        | SemiBold, Bold    |
 
-
 #### FontManager API (code-level)
 
 Three font families: **Charter** (serif body), **SF Pro** (headings/UI), **SF Mono** (metadata/code).
 
+| Method       | SwiftUI                          | Size             | Weight               | Notes                                   |
+| ------------ | -------------------------------- | ---------------- | -------------------- | --------------------------------------- |
+| `body()`     | `Font.custom("Charter", size:)`  | 16               | Regular              | Follows `bodyFontStyle` setting         |
+| `heading()`  | `Font.system(size:, weight:)`    | 24               | Medium               | Respects `bodyFontStyle`                |
+| `metadata()` | `Font.system(monospaced, size:)` | **11** (default) | **Medium** (default) | Technical labels, timestamps; see below |
+| `icon()`     | `Font.system(size:)`             | 20               | Regular              | SF Symbols                              |
 
-| Method       | SwiftUI                          | Size | Weight  | Notes                           |
-| ------------ | -------------------------------- | ---- | ------- | ------------------------------- |
-| `body()`     | `Font.custom("Charter", size:)`  | 16   | Regular | Follows `bodyFontStyle` setting |
-| `heading()`  | `Font.system(size:, weight:)`    | 24   | Medium  | Respects `bodyFontStyle`        |
-| `metadata()` | `Font.system(monospaced, size:)` | 12   | Medium  | Timestamps, dates               |
-| `icon()`     | `Font.system(size:)`             | 20   | Regular | SF Symbols                      |
-
+**Monospaced static labels (invariant):** For any non–user-input `Text` using the metadata/mono face, use **11pt, medium, all caps** — `jotMetadataLabelTypography()` in `FontManager.swift` (or `.textCase(.uppercase)` with `FontManager.metadata(size: 11, weight: .medium)`). See `.cursor/rules/metadata_label_typography.mdc`. Do not ship sentence-case mono labels except where Figma or product spec explicitly overrides. Never force all caps on `TextField` / `TextEditor` content.
 
 Body font style is user-configurable: `default` (Charter), `system` (SF Pro), `mono` (SF Mono).
 Line spacing presets: Compact (1.0x), Default (1.2x), Relaxed (1.5x) -- stored in `ThemeManager.lineSpacing`.
@@ -510,7 +500,6 @@ Line spacing presets: Compact (1.0x), Default (1.2x), Relaxed (1.5x) -- stored i
 ### Spacing Scale
 
 Figma token name -> pt value:
-
 
 | Token  | Value |
 | ------ | ----- |
@@ -524,11 +513,9 @@ Figma token name -> pt value:
 | `xl4`  | 48    |
 | `xl5`  | 60    |
 
-
 Canonical padding values in use: `4, 6, 8, 12, 16, 18, 24, 60`
 
 ### Corner Radius Scale
-
 
 | Token  | Value         |
 | ------ | ------------- |
@@ -540,21 +527,17 @@ Canonical padding values in use: `4, 6, 8, 12, 16, 18, 24, 60`
 | `3xl`  | 24            |
 | `full` | 999 (capsule) |
 
-
 Canonical radius values in use: `4, 20, 24, Capsule`
 
 ### Effects
-
 
 | Token          | Value                     |
 | -------------- | ------------------------- |
 | `bg-blur/tags` | Background blur, radius 4 |
 
-
 ### Animations & Timing
 
 All in `Extensions.swift`:
-
 
 | Animation         | Response | Damping | Duration | Usage                              |
 | ----------------- | -------- | ------- | -------- | ---------------------------------- |
@@ -563,7 +546,6 @@ All in `Extensions.swift`:
 | **jotSmoothFast** | -        | -       | 0.2s     | Fast linear transitions            |
 | **jotHover**      | 0.25s    | 0.75    | -        | Hover state animations (subtle)    |
 | **jotDragSnap**   | 0.18s    | 0.9     | -        | Drag-release snap-to-grid effect   |
-
 
 ### Liquid Glass Tokens (iOS 26+ / macOS 26+)
 
@@ -592,11 +574,8 @@ Glass behavior is governed by native `.glassEffect()`. Not a color token -- a mo
 
 ### Asset Catalog Locations
 
-
 | Content         | Path                              |
 | --------------- | --------------------------------- |
 | Semantic colors | `Jot/Ressources/Assets.xcassets/` |
 | Icons & images  | `Jot/Assets.xcassets/`            |
 | SVG icons       | `Jot/` (root-level .svg files)    |
-
-

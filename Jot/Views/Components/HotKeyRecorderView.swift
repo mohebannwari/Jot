@@ -30,7 +30,7 @@ struct HotKeyRecorderView: View {
         HStack(spacing: 8) {
             Button(action: toggleRecording) {
                 Text(buttonLabel)
-                    .font(FontManager.metadata(size: 11, weight: .semibold))
+                    .font(FontManager.metadata(size: 11, weight: .medium))
                     .foregroundColor(labelColor)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)

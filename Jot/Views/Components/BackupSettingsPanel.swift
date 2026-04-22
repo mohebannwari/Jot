@@ -70,7 +70,7 @@ struct BackupSettingsPanel: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Backup location")
-                            .font(FontManager.heading(size: 13, weight: .medium))
+                            .font(FontManager.heading(size: 13, weight: .regular))
                             .tracking(-0.5)
                             .foregroundColor(Color("PrimaryTextColor"))
 
@@ -95,7 +95,7 @@ struct BackupSettingsPanel: View {
                         backupManager.pickBackupFolder()
                     } label: {
                         Text(backupManager.backupFolderName != nil ? "Change" : "Select")
-                            .font(FontManager.heading(size: 12, weight: .medium))
+                            .font(FontManager.heading(size: 12, weight: .regular))
                             .tracking(-0.2)
                             .foregroundColor(Color("PrimaryTextColor"))
                             .padding(.horizontal, 12)
@@ -112,7 +112,7 @@ struct BackupSettingsPanel: View {
                 // Frequency picker
                 HStack {
                     Text("Auto backup")
-                        .font(FontManager.heading(size: 13, weight: .medium))
+                        .font(FontManager.heading(size: 13, weight: .regular))
                         .tracking(-0.5)
                         .foregroundColor(Color("PrimaryTextColor"))
 
@@ -134,12 +134,12 @@ struct BackupSettingsPanel: View {
                     } label: {
                         HStack(spacing: 4) {
                             Text(themeManager.backupFrequency.displayName)
-                                .font(FontManager.heading(size: 12, weight: .medium))
+                                .font(FontManager.heading(size: 12, weight: .regular))
                                 .tracking(-0.2)
                                 .foregroundColor(Color("SettingsPlaceholderTextColor"))
 
                             Image(systemName: "chevron.up.chevron.down")
-                                .font(.system(size: 9, weight: .medium))
+                                .font(.system(size: 9, weight: .regular, design: .default))
                                 .foregroundColor(Color("SettingsPlaceholderTextColor"))
                         }
                     }
@@ -150,7 +150,7 @@ struct BackupSettingsPanel: View {
                 // Max backups stepper
                 HStack {
                     Text("Keep last")
-                        .font(FontManager.heading(size: 13, weight: .medium))
+                        .font(FontManager.heading(size: 13, weight: .regular))
                         .tracking(-0.5)
                         .foregroundColor(Color("PrimaryTextColor"))
 
@@ -183,7 +183,7 @@ struct BackupSettingsPanel: View {
                         }
                     } label: {
                         Text("Restore")
-                            .font(FontManager.heading(size: 12, weight: .medium))
+                            .font(FontManager.heading(size: 12, weight: .regular))
                             .tracking(-0.2)
                             .foregroundColor(Color("PrimaryTextColor"))
                             .frame(maxWidth: .infinity)
@@ -213,7 +213,7 @@ struct BackupSettingsPanel: View {
                                 .controlSize(.small)
                         }
                         Text(backupStatusText)
-                            .font(FontManager.heading(size: 12, weight: .medium))
+                            .font(FontManager.heading(size: 12, weight: .regular))
                             .tracking(-0.2)
                     }
                     .foregroundColor(colorScheme == .light ? Color.white : Color.black)
@@ -268,7 +268,7 @@ struct BackupSettingsPanel: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Keep versions for")
-                            .font(FontManager.heading(size: 13, weight: .medium))
+                            .font(FontManager.heading(size: 13, weight: .regular))
                             .tracking(-0.5)
                             .foregroundColor(Color("PrimaryTextColor"))
 
@@ -295,12 +295,12 @@ struct BackupSettingsPanel: View {
                     } label: {
                         HStack(spacing: 4) {
                             Text(retentionLabel)
-                                .font(FontManager.heading(size: 12, weight: .medium))
+                                .font(FontManager.heading(size: 12, weight: .regular))
                                 .tracking(-0.2)
                                 .foregroundColor(Color("SettingsPlaceholderTextColor"))
 
                             Image(systemName: "chevron.up.chevron.down")
-                                .font(.system(size: 9, weight: .medium))
+                                .font(.system(size: 9, weight: .regular, design: .default))
                                 .foregroundColor(Color("SettingsPlaceholderTextColor"))
                         }
                     }
@@ -334,7 +334,7 @@ struct BackupSettingsPanel: View {
 
     private func sectionLabel(_ text: String) -> some View {
         Text(text)
-            .font(FontManager.heading(size: 11, weight: .medium))
+            .font(FontManager.heading(size: 11, weight: .regular))
             .tracking(0)
             .foregroundColor(Color("SettingsPlaceholderTextColor"))
     }

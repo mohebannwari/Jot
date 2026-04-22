@@ -105,7 +105,7 @@ struct UpdatePanelView: View {
     private var headerSection: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Update App — \(variantVersion)")
-                .font(FontManager.heading(size: 15, weight: .medium))
+                .font(FontManager.heading(size: 15, weight: .regular))
                 .tracking(-0.5)
                 .lineLimit(1)
                 .foregroundStyle(Color("PrimaryTextColor"))
@@ -115,13 +115,13 @@ struct UpdatePanelView: View {
                 HStack(spacing: 6) {
                     BrailleLoader(pattern: .orbit, size: 11)
                     Text("Downloading update…")
-                        .font(FontManager.heading(size: 12, weight: .medium))
+                        .font(FontManager.heading(size: 12, weight: .regular))
                         .tracking(-0.3)
                         .foregroundStyle(Color("SecondaryTextColor"))
                 }
             case .relaunch:
                 Text("Relaunch to finish installing")
-                    .font(FontManager.heading(size: 12, weight: .medium))
+                    .font(FontManager.heading(size: 12, weight: .regular))
                     .tracking(-0.3)
                     .foregroundStyle(Color("SecondaryTextColor"))
             }
@@ -151,7 +151,7 @@ struct UpdatePanelView: View {
 
                 Button(action: onRemindLater) {
                     Text("Remind me later")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: 11, weight: .regular))
                         .tracking(-0.2)
                         .foregroundStyle(Color("SecondaryTextColor"))
                         .frame(maxWidth: .infinity)
@@ -228,7 +228,7 @@ private struct ShimmerButton: View {
     var body: some View {
         Button(action: action) {
             Text(label)
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(size: 13, weight: .regular))
                 .tracking(-0.4)
                 .foregroundStyle(Color("ButtonPrimaryTextColor"))
                 .frame(maxWidth: .infinity)

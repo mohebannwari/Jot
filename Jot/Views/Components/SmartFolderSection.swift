@@ -40,7 +40,7 @@ struct SmartFolderSection: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
                 Text("Smart Folders")
-                    .font(FontManager.heading(size: 11, weight: .medium))
+                    .font(FontManager.heading(size: 11, weight: .regular))
                     .foregroundColor(Color("SecondaryTextColor"))
 
                 Circle()
@@ -102,7 +102,7 @@ struct SmartFolderSection: View {
                 .frame(width: 15, height: 15)
 
             Text(smartFolder.name)
-                .font(FontManager.heading(size: 13, weight: .medium))
+                .font(FontManager.heading(size: 13, weight: .regular))
                 .foregroundColor(Color("PrimaryTextColor"))
                 .tracking(-0.1)
                 .lineLimit(1)
@@ -144,7 +144,7 @@ struct SmartFolderSection: View {
                     }
                 } label: {
                     Image(systemName: "ellipsis")
-                        .font(FontManager.icon(size: 12, weight: .medium))
+                        .font(FontManager.icon(size: 12, weight: .regular))
                         .foregroundColor(Color("SecondaryTextColor"))
                         .frame(width: 12, height: 12)
                         .contentShape(Rectangle())
@@ -271,7 +271,7 @@ struct SmartFolderSection: View {
                             }
                         } label: {
                             Text(showsAll ? "Show less" : "Show more")
-                                .font(FontManager.metadata(size: 11, weight: .semibold))
+                                .font(FontManager.metadata(size: 11, weight: .medium))
                                 .foregroundColor(Color("SecondaryTextColor"))
                                 .textCase(.uppercase)
                         }

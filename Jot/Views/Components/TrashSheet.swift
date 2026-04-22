@@ -63,7 +63,7 @@ struct TrashSheet: View {
                 .frame(width: 15, height: 15)
 
             Text("Trash")
-                .font(FontManager.heading(size: 15, weight: .semibold))
+                .font(FontManager.heading(size: 15, weight: .regular))
                 .foregroundColor(Color("PrimaryTextColor"))
                 .tracking(-0.1)
 
@@ -114,7 +114,7 @@ struct TrashSheet: View {
                 .frame(width: 32, height: 32)
 
             Text("Trash is empty")
-                .font(FontManager.heading(size: 14, weight: .medium))
+                .font(FontManager.heading(size: 14, weight: .regular))
                 .foregroundColor(Color("SecondaryTextColor"))
                 .tracking(0)
         }
@@ -125,14 +125,14 @@ struct TrashSheet: View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(note.title.isEmpty ? "Untitled" : note.title)
-                    .font(FontManager.heading(size: 13, weight: .medium))
+                    .font(FontManager.heading(size: 13, weight: .regular))
                     .foregroundColor(Color("PrimaryTextColor"))
                     .tracking(0)
                     .lineLimit(1)
 
                 if let deletedDate = note.deletedDate {
                     Text(relativeDateString(deletedDate).uppercased())
-                        .font(FontManager.metadata(size: 11, weight: .regular))
+                        .font(FontManager.metadata(size: 11, weight: .medium))
                         .foregroundColor(Color("SecondaryTextColor"))
                 }
             }
@@ -201,7 +201,7 @@ struct TrashSheet: View {
                 isEmptyTrashConfirmationPresented = true
             } label: {
                 Text("Delete All")
-                    .font(FontManager.heading(size: 12, weight: .semibold))
+                    .font(FontManager.heading(size: 12, weight: .regular))
                     .tracking(0)
                     .foregroundColor(.red)
                     .padding(.horizontal, 16)

@@ -577,9 +577,9 @@ struct FloatingSearch: View {
         .frame(height: searchFieldLineHeight, alignment: .center)
         .frame(maxWidth: .infinity, alignment: .leading)
         #else
-        // Standard line leading (not FontManager.heading’s .tight) so the field centers like the 15×15 icon.
+        // iOS: same 11pt system regular as the macOS `NSTextField` below.
         TextField("Search anything…", text: $searchText)
-            .font(Font.system(size: 11, weight: .medium, design: .default).leading(.standard))
+            .font(Font.system(size: 11, weight: .regular, design: .default).leading(.standard))
             .tracking(-0.2)
             .foregroundColor(Color("PrimaryTextColor"))
             .focused($isSearchFocused)
@@ -657,7 +657,7 @@ struct FloatingSearch: View {
         }
     }
 
-    /// Shared meeting-picker header: same leading icon for “Start recording in:” and “Exit Zen Mode”.
+    /// Shared meeting-picker header: same leading icon; copy is **mono 11 medium + all caps** (see `jotMetadataLabelTypography()`).
     private func meetingPickNoteHeaderLabel(title: String) -> some View {
         HStack(spacing: 8) {
             Image("IconMeetingNotes")
@@ -668,7 +668,7 @@ struct FloatingSearch: View {
                 .frame(width: 15, height: 15)
 
             Text(title)
-                .font(FontManager.heading(size: 13, weight: .medium))
+                .jotMetadataLabelTypography()
                 .tracking(-0.4)
                 .foregroundColor(Color("SecondaryTextColor"))
                 .lineLimit(1)
@@ -694,13 +694,12 @@ struct FloatingSearch: View {
                     .frame(width: 15, height: 15)
 
                 Text(title)
-                    .font(FontManager.heading(size: 13, weight: .medium))
+                    .font(FontManager.heading(size: 13, weight: .regular))
                     .tracking(-0.4)
                     .foregroundColor(Color("PrimaryTextColor"))
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                // Current-note row: label on the trailing edge (metadata, all caps).
                 if isCurrentNoteOption {
                     Text("CURRENT NOTE")
                         .font(FontManager.metadata(size: 11, weight: .medium))
@@ -856,7 +855,7 @@ struct FloatingSearch: View {
                         .frame(width: 15, height: 15)
 
                     Text(title)
-                        .font(FontManager.heading(size: 13, weight: .medium))
+                        .font(FontManager.heading(size: 13, weight: .regular))
                         .tracking(-0.4)
                         .foregroundColor(Color("PrimaryTextColor"))
                         .lineLimit(1)
@@ -889,7 +888,7 @@ struct FloatingSearch: View {
         }
     }
 
-    /// Same shortcut styling as `sidebarMenuItem` in ContentView (metadata text, no Figma keycap assets).
+    /// Trailing shortcut glyphs — system regular (proportional), aligned with the rest of the palette.
     private var quickNoteShortcutDisplay: String {
         (themeManager.quickNoteHotKey ?? QuickNoteHotKey.default).displayString
     }
@@ -914,7 +913,7 @@ struct FloatingSearch: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
                 Text("LAST SEARCH")
-                    .font(FontManager.heading(size: 9, weight: .bold))
+                    .font(FontManager.metadata(size: 9, weight: .medium))
                     .textCase(.uppercase)
                     .foregroundColor(Color("SecondaryTextColor"))
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -944,7 +943,7 @@ struct FloatingSearch: View {
             selectedResultIndex = 0
         } label: {
             Text("Clear All")
-                .font(FontManager.heading(size: 9, weight: .bold))
+                .font(FontManager.metadata(size: 9, weight: .medium))
                 .textCase(.uppercase)
                 .foregroundColor(Color("SecondaryTextColor"))
                 .contentShape(Rectangle())
@@ -968,7 +967,7 @@ struct FloatingSearch: View {
                     .frame(width: 15, height: 15)
 
                 Text(query)
-                    .font(FontManager.heading(size: 13, weight: .medium))
+                    .font(FontManager.heading(size: 13, weight: .regular))
                     .tracking(-0.4)
                     .foregroundColor(Color("PrimaryTextColor"))
                     .lineLimit(1)
@@ -1013,7 +1012,7 @@ struct FloatingSearch: View {
                     .frame(width: 15, height: 15)
 
                 Text(target.title)
-                    .font(FontManager.heading(size: 13, weight: .medium))
+                    .font(FontManager.heading(size: 13, weight: .regular))
                     .tracking(-0.4)
                     .foregroundColor(Color("PrimaryTextColor"))
                     .lineLimit(1)
@@ -1052,7 +1051,7 @@ struct FloatingSearch: View {
                             footerChevronKeycap(imageName: "IconChevronDownSmall")
                         }
                         Text("Navigate")
-                            .font(FontManager.metadata(size: 11, weight: .semibold))
+                            .font(FontManager.metadata(size: 11, weight: .medium))
                             .textCase(.uppercase)
                             .foregroundColor(Color("SecondaryTextColor"))
                     }
@@ -1066,7 +1065,7 @@ struct FloatingSearch: View {
                         footerSelectKeycap
 
                         Text("Select")
-                            .font(FontManager.metadata(size: 11, weight: .semibold))
+                            .font(FontManager.metadata(size: 11, weight: .medium))
                             .textCase(.uppercase)
                             .foregroundColor(Color("SecondaryTextColor"))
                     }
@@ -1079,7 +1078,7 @@ struct FloatingSearch: View {
                         RoundedRectangle(cornerRadius: 4, style: .continuous)
                             .fill(floatingSearchFooterKeycapFill)
                         Text("esc")
-                            .font(FontManager.metadata(size: 9, weight: .semibold))
+                            .font(FontManager.metadata(size: 9, weight: .medium))
                             .foregroundColor(Color("SecondaryTextColor"))
                     }
                     .frame(width: 24, height: 15)
@@ -1087,7 +1086,7 @@ struct FloatingSearch: View {
                     .floatingSearchKeycapShadows()
 
                     Text(paletteMode == .meetingPickNote ? "Back" : "Close")
-                        .font(FontManager.metadata(size: 11, weight: .semibold))
+                        .font(FontManager.metadata(size: 11, weight: .medium))
                         .textCase(.uppercase)
                         .foregroundColor(Color("SecondaryTextColor"))
                 }
@@ -1123,7 +1122,7 @@ struct FloatingSearch: View {
             RoundedRectangle(cornerRadius: 4, style: .continuous)
                 .fill(floatingSearchFooterKeycapFill)
             Image(systemName: "return.left")
-                .font(.system(size: 7, weight: .semibold))
+                .font(.system(size: 7, weight: .regular, design: .default))
                 .foregroundStyle(Color("SecondaryTextColor"))
         }
         .frame(width: 15, height: 15)
@@ -1207,7 +1206,7 @@ struct FloatingSearch: View {
                         .frame(width: 15, height: 15)
 
                     Text(spec.title)
-                        .font(FontManager.heading(size: 13, weight: .medium))
+                        .font(FontManager.heading(size: 13, weight: .regular))
                         .tracking(-0.4)
                         .foregroundColor(Color("PrimaryTextColor"))
                         .lineLimit(1)
@@ -1277,7 +1276,7 @@ struct FloatingSearch: View {
                         .frame(width: 15, height: 15)
 
                     Text(result.title)
-                        .font(FontManager.heading(size: 13, weight: .medium))
+                        .font(FontManager.heading(size: 13, weight: .regular))
                         .tracking(-0.4)
                         .foregroundColor(Color("PrimaryTextColor"))
                         .lineLimit(1)
@@ -1294,7 +1293,7 @@ struct FloatingSearch: View {
                                 .frame(width: 14, height: 14)
 
                             Text(folder.name)
-                                .font(FontManager.heading(size: 13, weight: .medium))
+                                .font(FontManager.heading(size: 13, weight: .regular))
                                 .tracking(-0.2)
                                 .foregroundColor(tint)
                                 .lineLimit(1)
@@ -1362,7 +1361,7 @@ struct FloatingSearch: View {
             of: query,
             options: [.caseInsensitive, .diacriticInsensitive]
         ) {
-            attributed[range].font = FontManager.heading(size: 11, weight: .semibold)
+            attributed[range].font = FontManager.heading(size: 11, weight: .regular)
             attributed[range].foregroundColor = Color("PrimaryTextColor")
         }
 
@@ -1766,7 +1765,7 @@ private struct FloatingSearchNativeTextField: NSViewRepresentable {
     }
 
     private func configure(_ field: FloatingSearchAppKitTextField) {
-        let font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        let font = NSFont.systemFont(ofSize: 11, weight: .regular)
         let primaryText = NSColor(named: "PrimaryTextColor") ?? .labelColor
         field.verticalTextOffset = verticalOffset
         field.font = font
@@ -1946,7 +1945,7 @@ private struct FloatingSearchNativeTextField: NSViewRepresentable {
         func configure(editor: NSText) {
             guard let editor = editor as? NSTextView else { return }
             var typingAttributes = editor.typingAttributes
-            typingAttributes[.font] = NSFont.systemFont(ofSize: 11, weight: .medium)
+            typingAttributes[.font] = NSFont.systemFont(ofSize: 11, weight: .regular)
             typingAttributes[.kern] = -0.2
             typingAttributes[.foregroundColor] = NSColor(named: "PrimaryTextColor") ?? .labelColor
             editor.typingAttributes = typingAttributes

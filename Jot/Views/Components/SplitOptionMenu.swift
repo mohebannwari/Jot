@@ -36,7 +36,7 @@ struct SplitOptionMenu: View {
                     .foregroundColor(Color("SecondaryTextColor"))
                     .frame(width: 15, height: 15)
                 Text(label)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 13, weight: .regular, design: .default))
                     .foregroundColor(.primary)
                     .tracking(-0.1)
                 Spacer(minLength: 0)

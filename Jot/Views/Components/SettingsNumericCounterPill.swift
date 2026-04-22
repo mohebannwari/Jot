@@ -29,7 +29,7 @@ struct SettingsNumericCounterPill: View {
                 value = max(range.lowerBound, value - 1)
             } label: {
                 Image(systemName: "minus")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: 11, weight: .regular, design: .default))
                     .foregroundColor(Color("SettingsPlaceholderTextColor"))
                     .frame(width: 32, height: 28)
                     .contentShape(Rectangle())
@@ -39,7 +39,7 @@ struct SettingsNumericCounterPill: View {
             Group {
                 if isEditingValue {
                     TextField("", text: $editText)
-                        .font(FontManager.heading(size: 12, weight: .medium))
+                        .font(FontManager.metadata(size: 12, weight: .medium))
                         .tracking(-0.3)
                         .foregroundColor(Color("PrimaryTextColor"))
                         .multilineTextAlignment(.center)
@@ -51,7 +51,7 @@ struct SettingsNumericCounterPill: View {
                         .onSubmit { commitIfEditing() }
                 } else {
                     Text("\(value)")
-                        .font(FontManager.heading(size: 12, weight: .medium))
+                        .font(FontManager.metadata(size: 12, weight: .medium))
                         .tracking(-0.3)
                         .foregroundColor(Color("PrimaryTextColor"))
                         .frame(width: valueSlotWidth, height: 28, alignment: .center)
@@ -67,7 +67,7 @@ struct SettingsNumericCounterPill: View {
                 value = min(range.upperBound, value + 1)
             } label: {
                 Image(systemName: "plus")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: 11, weight: .regular, design: .default))
                     .foregroundColor(Color("SettingsPlaceholderTextColor"))
                     .frame(width: 32, height: 28)
                     .contentShape(Rectangle())
