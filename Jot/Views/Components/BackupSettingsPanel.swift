@@ -225,15 +225,10 @@ struct BackupSettingsPanel: View {
 
             // Last backup metadata
             if let lastDate = backupManager.lastBackupDate {
-                (Text("Last backup ")
+                // `Text` + `Text` requires operands to stay `Text`; apply chrome after concatenation.
+                (Text("Last backup ") + Text(lastDate, style: .relative) + Text(" ago"))
                     .jotUI(FontManager.uiLabel5(weight: .regular))
                     .foregroundColor(Color("SettingsPlaceholderTextColor"))
-                + Text(lastDate, style: .relative)
-                    .jotUI(FontManager.uiLabel5(weight: .regular))
-                    .foregroundColor(Color("SettingsPlaceholderTextColor"))
-                + Text(" ago")
-                    .jotUI(FontManager.uiLabel5(weight: .regular))
-                    .foregroundColor(Color("SettingsPlaceholderTextColor")))
             }
 
             // Restore confirmation alert (attached to section VStack)
