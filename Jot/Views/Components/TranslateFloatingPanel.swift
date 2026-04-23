@@ -54,7 +54,7 @@ struct TranslateFloatingPanel: View {
             if isLoading {
                 BrailleLoader(pattern: .pulse, size: 11)
                 Text("Translating...")
-                    .font(FontManager.metadata(size: 11, weight: .semibold))
+                    .jotMetadataLabelTypography()
                     .foregroundColor(Color("SecondaryTextColor"))
                     .shimmering(active: true)
             } else {
@@ -65,8 +65,8 @@ struct TranslateFloatingPanel: View {
                     .foregroundColor(Color("SecondaryTextColor"))
                     .frame(width: 15, height: 15)
 
-                Text(AITool.translate.aiDisplayName.uppercased())
-                    .font(FontManager.metadata(size: 11, weight: .semibold))
+                Text(AITool.translate.aiDisplayName)
+                    .jotMetadataLabelTypography()
                     .foregroundColor(Color("SecondaryTextColor"))
                     .kerning(0.5)
             }

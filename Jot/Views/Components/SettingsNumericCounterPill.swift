@@ -39,7 +39,7 @@ struct SettingsNumericCounterPill: View {
             Group {
                 if isEditingValue {
                     TextField("", text: $editText)
-                        .font(FontManager.metadata(size: 12, weight: .medium))
+                        .font(FontManager.metadata(size: 11, weight: .medium))
                         .tracking(-0.3)
                         .foregroundColor(Color("PrimaryTextColor"))
                         .multilineTextAlignment(.center)
@@ -51,7 +51,7 @@ struct SettingsNumericCounterPill: View {
                         .onSubmit { commitIfEditing() }
                 } else {
                     Text("\(value)")
-                        .font(FontManager.metadata(size: 12, weight: .medium))
+                        .jotMetadataLabelTypography()
                         .tracking(-0.3)
                         .foregroundColor(Color("PrimaryTextColor"))
                         .frame(width: valueSlotWidth, height: 28, alignment: .center)

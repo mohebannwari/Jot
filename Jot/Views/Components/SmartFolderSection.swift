@@ -48,7 +48,7 @@ struct SmartFolderSection: View {
                     .frame(width: 2, height: 2)
 
                 Text("\(smartFolders.count)")
-                    .font(FontManager.metadata(size: 11, weight: .medium))
+                    .jotMetadataLabelTypography()
                     .foregroundColor(Color("SecondaryTextColor"))
 
                 Spacer(minLength: 0)
@@ -113,7 +113,7 @@ struct SmartFolderSection: View {
                     .fill(Color("SecondaryTextColor"))
                     .frame(width: 2, height: 2)
                 Text("\(noteCount)")
-                    .font(FontManager.metadata(size: 11, weight: .medium))
+                    .jotMetadataLabelTypography()
                     .foregroundColor(Color("SecondaryTextColor"))
             }
 
@@ -271,9 +271,8 @@ struct SmartFolderSection: View {
                             }
                         } label: {
                             Text(showsAll ? "Show less" : "Show more")
-                                .font(FontManager.metadata(size: 11, weight: .medium))
+                                .jotMetadataLabelTypography()
                                 .foregroundColor(Color("SecondaryTextColor"))
-                                .textCase(.uppercase)
                         }
                         .buttonStyle(.plain)
                         .padding(.leading, 8)

@@ -124,9 +124,12 @@ struct FontManager {
     /// Monospaced metadata (dates, shortcuts, technical labels).
     ///
     /// **Design system (static labels):** **11pt**, **medium**, **all caps** — use
-    /// `jotMetadataLabelTypography(size:weight:)` so the trio stays linked. A non-default
-    /// `size`/`weight` is only for explicit Figma/product exceptions (e.g. 9pt micro chips)
-    /// or monospaced user input, where you must **not** apply all caps.
+    /// `jotMetadataLabelTypography(size:weight:)` so the trio stays linked. Use a non-default
+    /// `size`/`weight` only when product explicitly documents an exception (rare).
+    ///
+    /// **User input / dynamic prose:** `TextField`, `TextEditor`, assignee names, and similar
+    /// content use ``metadata(size:weight:)`` **without** `jotMetadataLabelTypography()` so casing
+    /// stays natural (still default to **11pt medium** for the monospace face).
     static func metadata(size: CGFloat = 11, weight: Weight = .medium) -> Font {
         return Font.system(size: size, weight: weight.toSwiftUIWeight(), design: .monospaced)
     }
@@ -229,10 +232,11 @@ struct FontManager {
 // MARK: - Metadata label styling (SwiftUI)
 
 extension View {
-    /// Monospaced metadata **labels**: 11pt (unless overridden) and **all caps** per design system.
+    /// Monospaced metadata **labels**: **11pt**, **medium**, and **all caps** per design system.
     ///
     /// Use for `Text` only. Do **not** apply to `TextField` / `TextEditor` where the user types
-    /// sentence-case content — use `.font(FontManager.metadata(...))` there without all caps.
+    /// sentence-case content — use `.font(FontManager.metadata(size: 11, weight: .medium))` there
+    /// without applying `.textCase(.uppercase)`.
     func jotMetadataLabelTypography(
         size: CGFloat = 11,
         weight: FontManager.Weight = .medium

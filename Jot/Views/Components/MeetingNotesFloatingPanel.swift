@@ -137,7 +137,7 @@ struct MeetingNotesFloatingPanel: View {
 
             // Same typography as `recordingControls` / `processingControls` timer (SF Mono + tabular digits).
             Text(formattedDuration)
-                .font(FontManager.metadata(size: 12, weight: .medium))
+                .jotMetadataLabelTypography()
                 .foregroundColor(Color("PrimaryTextColor"))
                 .monospacedDigit()
         }
@@ -299,7 +299,7 @@ struct MeetingNotesFloatingPanel: View {
                 Spacer()
 
                 Text(formattedDuration)
-                    .font(FontManager.metadata(size: 12, weight: .medium))
+                    .jotMetadataLabelTypography()
                     .foregroundColor(Color("PrimaryTextColor"))
                     .monospacedDigit()
             }
@@ -364,7 +364,7 @@ struct MeetingNotesFloatingPanel: View {
 
     private var processingControls: some View {
         HStack(spacing: 8) {
-            BrailleLoader(pattern: .checkerboard, size: 10)
+            BrailleLoader(pattern: .checkerboard, size: 11)
 
             Text(statusLabel)
                 .font(FontManager.heading(size: 12, weight: .semibold))
@@ -374,7 +374,7 @@ struct MeetingNotesFloatingPanel: View {
             Spacer()
 
             Text(formattedDuration)
-                .font(FontManager.metadata(size: 12, weight: .medium))
+                .jotMetadataLabelTypography()
                 .foregroundColor(Color("PrimaryTextColor"))
                 .monospacedDigit()
 
@@ -465,7 +465,7 @@ struct MeetingNotesFloatingPanel: View {
                                     .lineSpacing(2)
                                 if let score, score < 0.3 {
                                     Text("low confidence")
-                                        .font(FontManager.metadata(size: 9, weight: .medium))
+                                        .jotMetadataLabelTypography()
                                         .foregroundColor(Color.orange.opacity(0.8))
                                         .padding(.top, 2)
                                 }
@@ -493,11 +493,12 @@ struct MeetingNotesFloatingPanel: View {
                                             .foregroundColor(Color("PrimaryTextColor"))
                                         if let score, score < 0.3 {
                                             Text("low confidence")
-                                                .font(FontManager.metadata(size: 9, weight: .medium))
+                                                .jotMetadataLabelTypography()
                                                 .foregroundColor(Color.orange.opacity(0.8))
                                         }
                                     }
                                     if item.assignee != "Unassigned" {
+                                        // Assignee names stay natural case; mono 11 medium only.
                                         Text(item.assignee)
                                             .font(FontManager.metadata(size: 11, weight: .medium))
                                             .foregroundColor(Color("TertiaryTextColor"))
@@ -526,7 +527,7 @@ struct MeetingNotesFloatingPanel: View {
                                     .lineSpacing(2)
                                 if let score, score < 0.3 {
                                     Text("low confidence")
-                                        .font(FontManager.metadata(size: 9, weight: .medium))
+                                        .jotMetadataLabelTypography()
                                         .foregroundColor(Color.orange.opacity(0.8))
                                 }
                             }
@@ -672,10 +673,10 @@ private struct MeetingFloatingPanelTranscriptTabContent: View {
                     ForEach(transcriptionService.segments) { segment in
                         HStack(alignment: .top, spacing: 8) {
                             Text(Self.formatTimestamp(segment.timestamp))
-                                .font(FontManager.metadata(size: 10, weight: .medium))
+                                .jotMetadataLabelTypography()
                                 .foregroundColor(Color("TertiaryTextColor"))
                                 .monospacedDigit()
-                                .frame(width: 36, alignment: .trailing)
+                                .frame(width: 40, alignment: .trailing)
 
                             Text(segment.text)
                                 .font(FontManager.body(size: 13))

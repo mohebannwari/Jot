@@ -72,7 +72,7 @@ struct TrashSheet: View {
                 .frame(width: 2, height: 2)
 
             Text("\(notesManager.deletedNotes.count)")
-                .font(FontManager.metadata(size: 11, weight: .medium))
+                .jotMetadataLabelTypography()
                 .foregroundColor(Color("SecondaryTextColor"))
 
             Spacer()
@@ -131,8 +131,8 @@ struct TrashSheet: View {
                     .lineLimit(1)
 
                 if let deletedDate = note.deletedDate {
-                    Text(relativeDateString(deletedDate).uppercased())
-                        .font(FontManager.metadata(size: 11, weight: .medium))
+                    Text(relativeDateString(deletedDate))
+                        .jotMetadataLabelTypography()
                         .foregroundColor(Color("SecondaryTextColor"))
                 }
             }

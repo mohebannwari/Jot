@@ -72,8 +72,8 @@ struct MeetingNoteDetailPanel: View {
                 .foregroundColor(Color("SecondaryTextColor"))
                 .frame(width: 14, height: 14)
 
-            Text("MEETING NOTES")
-                .font(FontManager.metadata(size: 11, weight: .semibold))
+            Text("Meeting Notes")
+                .jotMetadataLabelTypography()
                 .foregroundColor(Color("SecondaryTextColor"))
                 .kerning(0.5)
 
@@ -81,7 +81,7 @@ struct MeetingNoteDetailPanel: View {
                 // Multi-session badge uses accent so it stays on-token in both appearances (no hardcoded RGB).
                 let pillColor = Color("AccentColor")
                 Text("\(sessions.count) sessions")
-                    .font(FontManager.metadata(size: 10, weight: .medium))
+                    .jotMetadataLabelTypography()
                     .foregroundColor(pillColor)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
@@ -177,7 +177,7 @@ private struct SessionAccordion: View {
     private var sessionHeader: some View {
         HStack(spacing: 8) {
             Text(formattedDate)
-                .font(FontManager.metadata(size: 11, weight: .medium))
+                .jotMetadataLabelTypography()
                 .foregroundColor(Color("SecondaryTextColor"))
 
             Circle()
@@ -185,13 +185,13 @@ private struct SessionAccordion: View {
                 .frame(width: 3, height: 3)
 
             Text(formattedDuration)
-                .font(FontManager.metadata(size: 11, weight: .medium))
+                .jotMetadataLabelTypography()
                 .foregroundColor(Color("TertiaryTextColor"))
                 .monospacedDigit()
 
             if !session.language.isEmpty {
-                Text(session.language.uppercased())
-                    .font(FontManager.metadata(size: 10, weight: .medium))
+                Text(session.language)
+                    .jotMetadataLabelTypography()
                     .foregroundColor(Color("TertiaryTextColor"))
                     .kerning(0.3)
             }
@@ -373,10 +373,10 @@ private struct SessionAccordion: View {
                 ForEach(cachedSegments) { segment in
                     HStack(alignment: .top, spacing: 8) {
                         Text(formatTimestamp(segment.timestamp))
-                            .font(FontManager.metadata(size: 10, weight: .medium))
+                            .jotMetadataLabelTypography()
                             .foregroundColor(Color("TertiaryTextColor"))
                             .monospacedDigit()
-                            .frame(width: 36, alignment: .trailing)
+                            .frame(width: 40, alignment: .trailing)
 
                         Text(segment.text)
                             .font(FontManager.body(size: 14))

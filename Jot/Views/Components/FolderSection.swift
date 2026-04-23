@@ -93,7 +93,7 @@ struct FolderSection: View {
                     .frame(width: 2, height: 2)
 
                 Text("\(folders.count)")
-                    .font(FontManager.metadata(size: 11, weight: .medium))
+                    .jotMetadataLabelTypography()
                     .foregroundColor(Color("SecondaryTextColor"))
 
                 Spacer(minLength: 0)
@@ -196,7 +196,7 @@ struct FolderSection: View {
                             .frame(width: 2, height: 2)
 
                         Text("\((notesByFolder[peekFolder.id] ?? []).count)")
-                            .font(FontManager.metadata(size: 11, weight: .medium))
+                            .jotMetadataLabelTypography()
                             .foregroundColor(Color("SecondaryTextColor"))
 
                         Spacer(minLength: 0)
@@ -313,7 +313,7 @@ struct FolderSection: View {
                     .fill(Color("SecondaryTextColor"))
                     .frame(width: 2, height: 2)
                 Text("\(noteCount)")
-                    .font(FontManager.metadata(size: 11, weight: .medium))
+                    .jotMetadataLabelTypography()
                     .foregroundColor(Color("SecondaryTextColor"))
             }
 
@@ -544,9 +544,8 @@ struct FolderSection: View {
                             }
                         } label: {
                             Text(showsAll ? "Show less" : "Show more")
-                                .font(FontManager.metadata(size: 11, weight: .medium))
+                                .jotMetadataLabelTypography()
                                 .foregroundColor(Color("SecondaryTextColor"))
-                                .textCase(.uppercase)
                         }
                         .buttonStyle(.plain)
                         .padding(.leading, 8)

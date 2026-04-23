@@ -339,7 +339,7 @@ struct QuickNotePanelView: View {
       saveButton
       Spacer()
       Text("esc cancel")
-        .font(FontManager.metadata(size: 11, weight: .medium))
+        .jotMetadataLabelTypography()
         .foregroundColor(Color("SecondaryTextColor"))
     }
     // Horizontal inset matches the body editor (20). Bottom inset matches
@@ -359,7 +359,7 @@ struct QuickNotePanelView: View {
         Text("Save")
           .font(FontManager.heading(size: 13, weight: .semibold))
         Text("\u{2318}\u{21A9}")
-          .font(FontManager.metadata(size: 11, weight: .semibold))
+          .jotMetadataLabelTypography()
           .opacity(0.6)
       }
       .foregroundColor(Color("ButtonPrimaryTextColor"))

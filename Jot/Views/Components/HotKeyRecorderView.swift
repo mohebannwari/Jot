@@ -30,7 +30,7 @@ struct HotKeyRecorderView: View {
         HStack(spacing: 8) {
             Button(action: toggleRecording) {
                 Text(buttonLabel)
-                    .font(FontManager.metadata(size: 11, weight: .medium))
+                    .jotMetadataLabelTypography()
                     .foregroundColor(labelColor)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
@@ -49,7 +49,7 @@ struct HotKeyRecorderView: View {
 
             if let errorMessage = errorMessage {
                 Text(errorMessage)
-                    .font(FontManager.metadata(size: 10, weight: .medium))
+                    .jotMetadataLabelTypography()
                     .foregroundColor(.red)
                     .lineLimit(2)
             }

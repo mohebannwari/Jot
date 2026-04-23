@@ -5631,75 +5631,113 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     return true
                 }
 
-                let loc = max(0, min(storage.length - 1, affectedCharRange.location))
-                let paraRange = (storage.string as NSString).paragraphRange(
-                    for: NSRange(location: loc, length: 0))
-
-                // Also check the preceding paragraph when the cursor sits on a bare
-                // newline right after a block attachment (the \n is a separate paragraph,
-                // so the primary paraRange misses the attachment).
-                let checkRanges: [NSRange]
-                if loc > 0, paraRange.length <= 1 {
-                    let prevLoc = max(0, loc - 1)
-                    let prevPara = (storage.string as NSString).paragraphRange(
-                        for: NSRange(location: prevLoc, length: 0))
-                    checkRanges = [paraRange, prevPara]
-                } else {
-                    checkRanges = [paraRange]
+                let nsString = storage.string as NSString
+                let insertionLocation = max(0, min(affectedCharRange.location, storage.length))
+                var checkRanges: [NSRange] = []
+                if insertionLocation < storage.length {
+                    checkRanges.append(
+                        nsString.paragraphRange(for: NSRange(location: insertionLocation, length: 0))
+                    )
+                }
+                if insertionLocation > 0 {
+                    let previousRange = nsString.paragraphRange(
+                        for: NSRange(location: insertionLocation - 1, length: 0)
+                    )
+                    if !checkRanges.contains(where: { NSEqualRanges($0, previousRange) }) {
+                        checkRanges.append(previousRange)
+                    }
                 }
 
-                var hasBlockAttachment = false
-                var blockParaRange = paraRange
+                func isBlockAttachment(_ value: Any?) -> Bool {
+                    value is NoteCalloutAttachment
+                        || value is NoteMapAttachment
+                        || value is NoteCodeBlockAttachment
+                        || value is NoteTableAttachment
+                        || value is NoteTabsAttachment
+                        || value is NoteCardSectionAttachment
+                        || value is NoteDividerAttachment
+                        || value is NoteLinkCardAttachment
+                        || ((value as? NoteFileAttachment).map { $0.viewMode != .tag } ?? false)
+                }
+
+                var blockParaRange: NSRange?
                 for range in checkRanges {
+                    var rangeHasBlockAttachment = false
                     storage.enumerateAttribute(.attachment, in: range, options: []) { value, _, stop in
-                        if value is NoteCalloutAttachment
-                            || value is NoteMapAttachment
-                            || value is NoteCodeBlockAttachment
-                            || value is NoteTableAttachment
-                            || value is NoteTabsAttachment
-                            || value is NoteCardSectionAttachment
-                            || value is NoteDividerAttachment
-                            || value is NoteLinkCardAttachment
-                            || ((value as? NoteFileAttachment).map { $0.viewMode != .tag } ?? false) {
-                            hasBlockAttachment = true
+                        if isBlockAttachment(value) {
+                            rangeHasBlockAttachment = true
                             stop.pointee = true
                         }
                     }
-                    if hasBlockAttachment {
+                    if rangeHasBlockAttachment {
                         blockParaRange = range
                         break
                     }
                 }
-                if hasBlockAttachment {
-                    // Insert a newline after the block paragraph, then insert the typed text there
-                    let afterBlock = NSMaxRange(blockParaRange)
-                    isUpdating = true
-                    storage.beginEditing()
-                    // Ensure there's a newline at the end of the block paragraph to land on
-                    let insertPoint: Int
-                    if afterBlock <= storage.length {
-                        let attrs = Self.baseTypingAttributes(for: currentColorScheme)
-                        storage.insert(NSAttributedString(string: "\n", attributes: attrs), at: afterBlock)
-                        insertPoint = afterBlock + 1
-                    } else {
-                        insertPoint = afterBlock
-                    }
-                    // Insert the replacement text on the new line
-                    let attrs = Self.baseTypingAttributes(for: currentColorScheme)
-                    storage.insert(NSAttributedString(string: replacement, attributes: attrs), at: insertPoint)
-                    storage.endEditing()
-                    textView.setSelectedRange(NSRange(location: insertPoint + replacement.utf16.count, length: 0))
-                    isUpdating = false
-                    syncText()
-                    return false
-                }
-            }
 
-            // Check for "@" to trigger note picker
-            if replacementString == "@" {
-                showNotePickerAtCursor(
-                    textView: textView, insertLocation: affectedCharRange.location)
-                return true  // Allow the "@" to be typed
+                if let blockParaRange {
+                    let landingLocation = NSMaxRange(blockParaRange)
+                    let alreadyOnLandingLine =
+                        insertionLocation == landingLocation
+                        && insertionLocation > 0
+                        && nsString.character(at: insertionLocation - 1) == 0x0A
+
+                    if alreadyOnLandingLine {
+                        // The caret is already on the writable line after the block
+                        // (or at EOF right after the block's trailing newline). Let
+                        // AppKit insert normally instead of manufacturing another blank line.
+                    } else {
+                        // Redirect typing to the first writable location after the block.
+                        // Reuse an existing landing line when the block already ends with
+                        // a newline; only synthesize one if the block paragraph reaches EOF
+                        // without leaving a writable landing position behind.
+                        let needsInsertedNewline =
+                            landingLocation == 0
+                            || landingLocation > storage.length
+                            || nsString.character(at: landingLocation - 1) != 0x0A
+
+                        let attrs = Self.baseTypingAttributes(for: currentColorScheme)
+                        var insertPoint = min(landingLocation, storage.length)
+
+                        isUpdating = true
+                        storage.beginEditing()
+                        if needsInsertedNewline {
+                            storage.insert(
+                                NSAttributedString(string: "\n", attributes: attrs),
+                                at: insertPoint
+                            )
+                            insertPoint += 1
+                        }
+                        storage.insert(
+                            NSAttributedString(string: replacement, attributes: attrs),
+                            at: insertPoint
+                        )
+                        storage.endEditing()
+                        textView.setSelectedRange(NSRange(
+                            location: insertPoint + replacement.utf16.count,
+                            length: 0
+                        ))
+                        isUpdating = false
+                        syncText()
+
+                        if replacement == "/" {
+                            let slashIndex = insertPoint
+                            let tv = textView
+                            DispatchQueue.main.async { [weak self] in
+                                guard let self else { return }
+                                self.showCommandMenuAtCursor(
+                                    textView: tv,
+                                    slashCharacterIndex: slashIndex
+                                )
+                            }
+                        } else if replacement == "@",
+                                  let inlineTextView = textView as? InlineNSTextView {
+                            inlineTextView.redirectedNotePickerLocation = insertPoint
+                        }
+
+                        return false
+                    }
+                }
             }
 
             // Check for "/" to trigger command menu
@@ -6248,69 +6286,6 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     // so the card stays anchored to "/" when placed above the line.
                     "showsAbove": shouldShowAbove,
                     "anchorCursorY": NSNumber(value: Double(cursorY))
-                ],
-                userInfo: editorInstanceID.map { ["editorInstanceID": $0] }
-            )
-        }
-
-        /// Shows the note picker at the current cursor position
-        private func showNotePickerAtCursor(textView: NSTextView, insertLocation: Int) {
-            guard let layoutManager = textView.layoutManager,
-                let textContainer = textView.textContainer
-            else { return }
-
-            let glyphIndex = layoutManager.glyphIndexForCharacter(at: insertLocation)
-            let glyphRect = layoutManager.boundingRect(
-                forGlyphRange: NSRange(location: glyphIndex, length: 1), in: textContainer)
-
-            let cursorX = glyphRect.origin.x + textView.textContainerOrigin.x
-            let cursorY = glyphRect.origin.y + textView.textContainerOrigin.y
-            let cursorHeight = glyphRect.height
-
-            let visibleRect = textView.visibleRect
-            let menuGap: CGFloat = 4
-            let safetyMargin: CGFloat = 20
-            let menuContentHeight = NotePickerLayout.idealHeight(for: 6)  // assume ~6 items
-            let menuHeight = menuContentHeight + NotePickerLayout.outerPadding * 2
-            let menuWidth = NotePickerLayout.width + NotePickerLayout.outerPadding * 2
-
-            let cursorBottomY = cursorY + cursorHeight
-            let spaceBelow = visibleRect.maxY - cursorBottomY
-            let shouldShowAbove = spaceBelow < (menuHeight + menuGap + safetyMargin)
-
-            var xPosition = cursorX
-            var yPosition: CGFloat
-            if shouldShowAbove {
-                yPosition = cursorY - menuHeight - menuGap
-            } else {
-                yPosition = cursorY + cursorHeight + menuGap
-            }
-
-            // Clamp X
-            let minX = visibleRect.minX + safetyMargin
-            let maxX = visibleRect.maxX - menuWidth - safetyMargin
-            if minX <= maxX {
-                xPosition = min(max(xPosition, minX), maxX)
-            } else {
-                xPosition = max(visibleRect.minX + menuGap, visibleRect.maxX - menuWidth - menuGap)
-            }
-
-            // Clamp Y
-            let minY = visibleRect.minY + safetyMargin
-            let maxY = visibleRect.maxY - menuHeight - safetyMargin
-            if minY <= maxY {
-                yPosition = min(max(yPosition, minY), maxY)
-            } else {
-                yPosition = max(visibleRect.minY + menuGap, visibleRect.maxY - menuHeight - menuGap)
-            }
-
-            let menuPosition = CGPoint(x: xPosition, y: yPosition)
-
-            NotificationCenter.default.post(
-                name: .showNotePicker,
-                object: [
-                    "position": menuPosition,
-                    "atLocation": insertLocation
                 ],
                 userInfo: editorInstanceID.map { ["editorInstanceID": $0] }
             )
@@ -7698,6 +7673,12 @@ final class InlineNSTextView: NSTextView, QLPreviewPanelDataSource, QLPreviewPan
         didSet { updateCommandMenuPlaceholder() }
     }
 
+    /// When a block-attachment redirect manually inserts "@", the text view's
+    /// pre-insert selection is stale for anchoring the picker. The coordinator
+    /// records the actual inserted character location here during `shouldChangeTextIn`
+    /// so `insertText` can anchor the first picker to the normalized landing line.
+    var redirectedNotePickerLocation: Int?
+
     /// Ghost placeholder NSTextField shown next to the "/" when the command
     /// menu opens. Subview of the text view itself, positioned in text-view-
     /// local coordinates via `updateCommandMenuPlaceholder()`.
@@ -8689,8 +8670,10 @@ final class InlineNSTextView: NSTextView, QLPreviewPanelDataSource, QLPreviewPan
                 NotificationCenter.default.post(name: .hideNotePicker, object: nil, userInfo: eidInfo)
             }
 
-            let location = selectedRange().location
+            let fallbackLocation = selectedRange().location
             super.insertText(string, replacementRange: replacementRange)
+            let location = redirectedNotePickerLocation ?? fallbackLocation
+            redirectedNotePickerLocation = nil
 
             // Show note picker at cursor position
             if let layoutManager = self.layoutManager,

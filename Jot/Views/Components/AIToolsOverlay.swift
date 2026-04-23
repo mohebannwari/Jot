@@ -177,7 +177,8 @@ struct AIToolsOverlay: View {
             }
 
             TextEditor(text: $textGenPromptText)
-                .font(FontManager.metadata(size: 12, weight: .regular))
+                // User-authored prompt: monospace 11 medium, no forced caps (see `FontManager.metadata` doc).
+                .font(FontManager.metadata(size: 11, weight: .medium))
                 .foregroundColor(Color("PrimaryTextColor"))
                 .scrollContentBackground(.hidden)
                 .scrollIndicators(.never)

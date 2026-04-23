@@ -54,7 +54,7 @@ struct EditContentFloatingPanel: View {
             if isLoading {
                 BrailleLoader(pattern: .scan, size: 11)
                 Text("Editing...")
-                    .font(FontManager.metadata(size: 11, weight: .semibold))
+                    .jotMetadataLabelTypography()
                     .foregroundColor(Color("SecondaryTextColor"))
                     .shimmering(active: true)
             } else {
@@ -65,8 +65,8 @@ struct EditContentFloatingPanel: View {
                     .foregroundColor(Color("SecondaryTextColor"))
                     .frame(width: 15, height: 15)
 
-                Text(AITool.editContent.aiDisplayName.uppercased())
-                    .font(FontManager.metadata(size: 11, weight: .semibold))
+                Text(AITool.editContent.aiDisplayName)
+                    .jotMetadataLabelTypography()
                     .foregroundColor(Color("SecondaryTextColor"))
                     .kerning(0.5)
             }

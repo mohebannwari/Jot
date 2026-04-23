@@ -55,7 +55,7 @@ struct AIResultPanel: View {
             if isLoading {
                 BrailleLoader(pattern: loadingPattern, size: 11)
                 Text(loadingLabel)
-                    .font(FontManager.metadata(size: 11, weight: .semibold))
+                    .jotMetadataLabelTypography()
                     .foregroundColor(Color("SecondaryTextColor"))
                     .shimmering(active: true)
             } else {
@@ -66,8 +66,8 @@ struct AIResultPanel: View {
                     .foregroundColor(Color("SecondaryTextColor"))
                     .frame(width: 14, height: 14)
 
-                Text(toolLabel.uppercased())
-                    .font(FontManager.metadata(size: 11, weight: .semibold))
+                Text(toolLabel)
+                    .jotMetadataLabelTypography()
                     .foregroundColor(Color("SecondaryTextColor"))
                     .kerning(0.5)
             }

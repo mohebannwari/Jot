@@ -707,8 +707,8 @@ struct SettingsPage: View {
                 Spacer()
 
                 HStack(spacing: 4) {
-                    Text(themeManager.noteSortOrder.displayName.uppercased())
-                        .font(FontManager.metadata(size: 11, weight: .medium))
+                    Text(themeManager.noteSortOrder.displayName)
+                        .jotMetadataLabelTypography()
                         .foregroundColor(Color("PrimaryTextColor"))
                     Image(systemName: "chevron.up.chevron.down")
                         .font(.system(size: 9, weight: .regular, design: .default))
@@ -976,7 +976,7 @@ struct SettingsPage: View {
             control()
             if let trailing {
                 Text(trailing)
-                    .font(FontManager.metadata(size: 11, weight: .medium))
+                    .jotMetadataLabelTypography()
                     .foregroundStyle(Color("SettingsPlaceholderTextColor"))
                     .frame(width: 32, alignment: .trailing)
             }
@@ -1232,8 +1232,8 @@ struct SettingsPage: View {
 
                 HStack(spacing: 2) {
                     if showCopiedConfirmation {
-                        Text("COPIED")
-                            .font(FontManager.metadata(size: 9, weight: .medium))
+                        Text("Copied")
+                            .jotMetadataLabelTypography()
                             .tracking(-0.2)
                             .foregroundColor(Color("SettingsPlaceholderTextColor"))
                             .padding(.horizontal, 10)

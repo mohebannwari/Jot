@@ -2758,7 +2758,7 @@ struct ContentView: View {
 
                 if let shortcut = shortcut {
                     Text(shortcut)
-                        .font(FontManager.metadata(size: 11, weight: .medium))
+                        .jotMetadataLabelTypography()
                         .foregroundColor(Color("SecondaryTextColor"))
                         .opacity(hoveredSidebarMenuLabel == label ? 1 : 0)
                         .animation(.easeInOut(duration: 0.15), value: hoveredSidebarMenuLabel == label)
@@ -2925,7 +2925,7 @@ struct ContentView: View {
                                         .fill(Color("SecondaryTextColor"))
                                         .frame(width: 2, height: 2)
                                     Text("\(notes.count)")
-                                        .font(FontManager.metadata(size: 11, weight: .medium))
+                                        .jotMetadataLabelTypography()
                                         .foregroundColor(Color("SecondaryTextColor"))
                                 }
 
@@ -5901,7 +5901,7 @@ struct NoteListCard: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                 Text(Self.compactDateString(from: note.date))
-                    .font(FontManager.metadata(size: 11, weight: .medium))
+                    .jotMetadataLabelTypography()
                     .foregroundColor(Color("ButtonPrimaryTextColor").opacity(0.7))
                     .fixedSize()
             }
@@ -6014,7 +6014,7 @@ struct PinnedNotesSection: View {
                     .frame(width: 2, height: 2)
 
                 Text("\(notes.count)")
-                    .font(FontManager.metadata(size: 11, weight: .medium))
+                    .jotMetadataLabelTypography()
                     .foregroundColor(Color("SecondaryTextColor"))
 
                 Spacer(minLength: 0)
@@ -6159,7 +6159,7 @@ struct LockedNotesSection: View {
                     .frame(width: 2, height: 2)
 
                 Text("\(notes.count)")
-                    .font(FontManager.metadata(size: 11, weight: .medium))
+                    .jotMetadataLabelTypography()
                     .foregroundColor(Color("SecondaryTextColor"))
 
                 Spacer(minLength: 0)

@@ -6,6 +6,31 @@ import CoreLocation
 @MainActor
 final class TodoEditorInsertRegressionTests: XCTestCase {
 
+    private final class NotificationRecorder: @unchecked Sendable {
+        private(set) var notifications: [Notification] = []
+        private var token: NSObjectProtocol?
+
+        init(name: Notification.Name, editorInstanceID: UUID) {
+            token = NotificationCenter.default.addObserver(
+                forName: name,
+                object: nil,
+                queue: .main
+            ) { [weak self] notification in
+                guard let nid = notification.userInfo?["editorInstanceID"] as? UUID,
+                      nid == editorInstanceID else {
+                    return
+                }
+                self?.notifications.append(notification)
+            }
+        }
+
+        deinit {
+            if let token {
+                NotificationCenter.default.removeObserver(token)
+            }
+        }
+    }
+
     private struct EditorHarness {
         let coordinator: TodoEditorRepresentable.Coordinator
         let editorInstanceID: UUID
@@ -90,6 +115,11 @@ final class TodoEditorInsertRegressionTests: XCTestCase {
     private func pumpMainLoop(_ harness: EditorHarness) {
         RunLoop.main.run(until: Date().addingTimeInterval(0.05))
         harness.coordinator.flushPendingSerialization()
+    }
+
+    private func moveCursorToDocumentEnd(_ harness: EditorHarness) {
+        let end = harness.textView.string.utf16.count
+        harness.textView.setSelectedRange(NSRange(location: end, length: 0))
     }
 
     func testCommandMenuTableInsertPerformsSingleBindingSync() {
@@ -241,6 +271,69 @@ final class TodoEditorInsertRegressionTests: XCTestCase {
             tabsOverlayViews.count,
             1,
             "Tabs rely on an overlay view; the first insert must create it immediately."
+        )
+    }
+
+    func testSlashAfterBlockWritableParagraphShowsMenuOnFirstTryWithoutBlankLine() {
+        let calloutMarkup = CalloutData.empty().serialize()
+        let harness = makeHarness(initialText: calloutMarkup + "\n")
+        let recorder = NotificationRecorder(
+            name: .showCommandMenu,
+            editorInstanceID: harness.editorInstanceID
+        )
+
+        moveCursorToDocumentEnd(harness)
+        harness.textView.insertText("/", replacementRange: NSRange(location: NSNotFound, length: 0))
+        pumpMainLoop(harness)
+
+        XCTAssertEqual(
+            harness.currentText(),
+            calloutMarkup + "\n/",
+            "Typing / on the writable line after a block should not inject an extra blank line."
+        )
+        XCTAssertEqual(
+            recorder.notifications.count,
+            1,
+            "The slash command menu should open on the first / after a block-adjacent landing line."
+        )
+    }
+
+    func testAtSignAfterBlockWritableParagraphShowsPickerOnFirstTryWithoutBlankLine() {
+        let calloutMarkup = CalloutData.empty().serialize()
+        let harness = makeHarness(initialText: calloutMarkup + "\n")
+        let recorder = NotificationRecorder(
+            name: .showNotePicker,
+            editorInstanceID: harness.editorInstanceID
+        )
+
+        moveCursorToDocumentEnd(harness)
+        harness.textView.insertText("@", replacementRange: NSRange(location: NSNotFound, length: 0))
+        pumpMainLoop(harness)
+
+        XCTAssertEqual(
+            harness.currentText(),
+            calloutMarkup + "\n@",
+            "Typing @ on the writable line after a block should not inject an extra blank line."
+        )
+        XCTAssertEqual(
+            recorder.notifications.count,
+            1,
+            "The note picker should open on the first @ after a block-adjacent landing line."
+        )
+    }
+
+    func testPlainTypingAfterBlockWritableParagraphDoesNotInsertBlankLine() {
+        let calloutMarkup = CalloutData.empty().serialize()
+        let harness = makeHarness(initialText: calloutMarkup + "\n")
+
+        moveCursorToDocumentEnd(harness)
+        harness.textView.insertText("a", replacementRange: NSRange(location: NSNotFound, length: 0))
+        pumpMainLoop(harness)
+
+        XCTAssertEqual(
+            harness.currentText(),
+            calloutMarkup + "\na",
+            "Typing on the writable line after a block should land on that line, not create another blank paragraph first."
         )
     }
 

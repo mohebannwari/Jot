@@ -53,7 +53,7 @@ struct TextGenFloatingPanel: View {
             if isLoading {
                 BrailleLoader(pattern: .waverows, size: 11)
                 Text("Generating...")
-                    .font(FontManager.metadata(size: 11, weight: .semibold))
+                    .jotMetadataLabelTypography()
                     .foregroundColor(Color("SecondaryTextColor"))
                     .shimmering(active: true)
             } else {
@@ -64,8 +64,8 @@ struct TextGenFloatingPanel: View {
                     .foregroundColor(Color("SecondaryTextColor"))
                     .frame(width: 15, height: 15)
 
-                Text(AITool.textGenerate.aiDisplayName.uppercased())
-                    .font(FontManager.metadata(size: 11, weight: .semibold))
+                Text(AITool.textGenerate.aiDisplayName)
+                    .jotMetadataLabelTypography()
                     .foregroundColor(Color("SecondaryTextColor"))
                     .kerning(0.5)
             }

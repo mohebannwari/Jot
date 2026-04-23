@@ -190,7 +190,7 @@ enum BrailleSpeed {
 struct BrailleLoader: View {
     let pattern: BraillePattern
     var speed: BrailleSpeed = .native
-    var size: CGFloat = 13
+    var size: CGFloat = 11
 
     @State private var frameIndex: Int = 0
     @State private var animationTask: Task<Void, Never>?
@@ -198,7 +198,8 @@ struct BrailleLoader: View {
 
     var body: some View {
         Text(reduceMotion ? "..." : pattern.frames[frameIndex])
-            .font(.system(size: size, weight: .medium, design: .monospaced))
+            // Braille animation frames: fixed-width 11 medium; no forced caps (glyphs are not words).
+            .font(FontManager.metadata(size: size, weight: .medium))
             .foregroundStyle(Color.accentColor)
             .onAppear { startAnimation() }
             .onDisappear { animationTask?.cancel() }

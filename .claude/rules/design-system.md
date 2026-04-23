@@ -9,40 +9,43 @@ Figma: https://www.figma.com/design/BhVLOWG63LckTVCuO3q0Tv/Jot
 
 All semantic colors live in `Jot/Ressources/Assets.xcassets/`. Reference by name in SwiftUI (`Color("TokenName")`). Always support both light and dark.
 
-| Token                          | Light                              | Dark                               |
-| ------------------------------ | ---------------------------------- | ---------------------------------- |
-| `AccentColor`                  | `#2563EB`                          | `#608DFA`                          |
-| `MainColor`                    | `#1A1A1A` (= ButtonPrimaryBgColor) | `#FFFFFF` (= ButtonPrimaryBgColor) |
-| `BackgroundColor`              | `#FFFFFF5C` (36% white)            | `#0C0A0908` (3% near-black)        |
-| `BlockContainerColor`          | `#D6D3D1` (stone-300)              | `#292524` (stone-800)              |
-| `BorderSubtleColor`            | `#1A1A1A17` (9% black)             | `#FFFFFF17` (9% white)             |
-| `ButtonPrimaryBgColor`         | `#1A1A1A`                          | `#FFFFFF`                          |
-| `ButtonPrimaryTextColor`       | `#FFFFFF`                          | `#1A1A1A`                          |
-| `ButtonSecondaryBgColor`       | `#D6D3D1` (stone-300)              | `#292524` (stone-800)              |
-| `CardBackgroundColor`          | `#FFFFFFB3` (70% white)            | `#1C1918B3` (70% dark)             |
-| `FolderBadgeBgColor`           | `#FFFFFF5C` (36% white)            | `#FFFFFF1F` (12% white)            |
-| `HoverBackgroundColor`         | `#D1D3D0`                          | `#444040`                          |
-| `IconSecondaryColor`           | `#1A1A1AB3` (70% black)            | `#A8A29E`                          |
-| `InlineCodeBgColor`            | `#D6D3D1` (stone-300)              | `#44403C` (stone-700)              |
-| `MenuButtonColor`              | `#1A1A1AB3` (70% black)            | `#FFFFFFB3` (70% white)            |
-| `PinnedBgColor`                | `#FEF08A` (amber)                  | `#854D0E` (amber-dark)             |
-| `PinnedIconColor`              | `#854D0E`                          | `#FEEF8A`                          |
-| `PrimaryTextColor`             | `#1A1A1A`                          | `#FFFFFF`                          |
-| `SearchInputBackgroundColor`   | `#FFFFFF`                          | `#1C1918`                          |
-| `SecondaryBackgroundColor`     | `#E7E6E4`                          | `#292524`                          |
-| `SecondaryTextColor`           | `#1A1A1AB3` (70% black)            | `#FFFFFFB3` (70% white)            |
-| `SettingsActiveTabColor`       | `#F5F4F4`                          | `#444040`                          |
-| `SettingsIconSecondaryColor`   | `#1A1A1AB3`                        | `#A8A29E`                          |
-| `SettingsOptionCardColor`      | `#E7E6E4`                          | `#0C0A09`                          |
-| `SettingsPanelPrimaryColor`    | `#FFFFFF5C` (36% white)            | `#1A1A1ACC` (80% black)            |
-| `SettingsPlaceholderTextColor` | `#1A1A1AB3`                        | `#FFFFFFB2`                        |
-| `SettingsPrimaryTextColor`     | `#1A1A1A`                          | `#FFFFFF`                          |
-| `SurfaceDefaultColor`          | `#FFFFFF`                          | `#1C1918`                          |
-| `SurfaceElevatedColor`         | `#F5F4F4`                          | `#292524`                          |
-| `SurfaceTranslucentColor`      | `#1A1A1A0F` (6% black)             | `#FFFFFF0F` (6% white)             |
-| `TagBackgroundColor`           | `#608DFA59` (35% accent)           | `#608DFA40` (25% accent)           |
-| `TagTextColor`                 | `#1A1A1A`                          | `#FFFFFF`                          |
-| `TertiaryTextColor`            | `#52525B`                          | `#A19FA9`                          |
+| Token                                  | Light                                                        | Dark                                           |
+| -------------------------------------- | ------------------------------------------------------------ | ---------------------------------------------- |
+| `AccentColor`                          | `#2563EB`                                                    | `#608DFA`                                      |
+| `MainColor`                            | `#1A1A1A` (= ButtonPrimaryBgColor)                           | `#FFFFFF` (= ButtonPrimaryBgColor)             |
+| `BackgroundColor`                      | `#FFFFFF5C` (36% white)                                      | `#0C0A0908` (3% near-black)                    |
+| `BlockContainerColor`                  | `#D6D3D1` (stone-300)                                        | `#292524` (stone-800)                          |
+| `BorderSubtleColor`                    | `#1A1A1A17` (9% black)                                       | `#FFFFFF17` (9% white)                         |
+| `ButtonPrimaryBgColor`                 | `#1A1A1A`                                                    | `#FFFFFF`                                      |
+| `ButtonPrimaryTextColor`               | `#FFFFFF`                                                    | `#1A1A1A`                                      |
+| `ButtonSecondaryBgColor`               | `#D6D3D1` (stone-300)                                        | `#292524` (stone-800)                          |
+| `CardBackgroundColor`                  | `#FFFFFFB3` (70% white)                                      | `#1C1918B3` (70% dark)                         |
+| `FolderBadgeBgColor`                   | `#FFFFFF5C` (36% white)                                      | `#FFFFFF1F` (12% white)                        |
+| `HoverBackgroundColor`                 | `#D1D3D0`                                                    | `#444040`                                      |
+| `IconSecondaryColor`                   | `#1A1A1AB3` (70% black)                                      | `#A8A29E`                                      |
+| `EditorCommandMenuItemForegroundColor` | `#1A1A1AB3` (70% black), same chroma as `IconSecondaryColor` | `#A8A29E`, same chroma as `IconSecondaryColor` |
+| `InlineCodeBgColor`                    | `#D6D3D1` (stone-300)                                        | `#44403C` (stone-700)                          |
+| `MenuButtonColor`                      | `#1A1A1AB3` (70% black)                                      | `#FFFFFFB3` (70% white)                        |
+| `PinnedBgColor`                        | `#FEF08A` (amber)                                            | `#854D0E` (amber-dark)                         |
+| `PinnedIconColor`                      | `#854D0E`                                                    | `#FEEF8A`                                      |
+| `PrimaryTextColor`                     | `#1A1A1A`                                                    | `#FFFFFF`                                      |
+| `SearchInputBackgroundColor`           | `#FFFFFF`                                                    | `#1C1918`                                      |
+| `SecondaryBackgroundColor`             | `#E7E6E4`                                                    | `#292524`                                      |
+| `SecondaryTextColor`                   | `#1A1A1AB3` (70% black)                                      | `#FFFFFFB3` (70% white)                        |
+| `SettingsActiveTabColor`               | `#F5F4F4`                                                    | `#444040`                                      |
+| `SettingsIconSecondaryColor`           | `#1A1A1AB3`                                                  | `#A8A29E`                                      |
+| `SettingsOptionCardColor`              | `#E7E6E4`                                                    | `#0C0A09`                                      |
+| `SettingsPanelPrimaryColor`            | `#FFFFFF5C` (36% white)                                      | `#1A1A1ACC` (80% black)                        |
+| `SettingsPlaceholderTextColor`         | `#1A1A1AB3`                                                  | `#FFFFFFB2`                                    |
+| `SettingsPrimaryTextColor`             | `#1A1A1A`                                                    | `#FFFFFF`                                      |
+| `SurfaceDefaultColor`                  | `#FFFFFF`                                                    | `#1C1918`                                      |
+| `SurfaceElevatedColor`                 | `#F5F4F4`                                                    | `#292524`                                      |
+| `SurfaceTranslucentColor`              | `#1A1A1A0F` (6% black)                                       | `#FFFFFF0F` (6% white)                         |
+| `TagBackgroundColor`                   | `#608DFA59` (35% accent)                                     | `#608DFA40` (25% accent)                       |
+| `TagTextColor`                         | `#1A1A1A`                                                    | `#FFFFFF`                                      |
+| `TertiaryTextColor`                    | `#52525B`                                                    | `#A19FA9`                                      |
+
+**`EditorCommandMenuItemForegroundColor`:** Slash/command menu idle state — use for **both** row template icons and row titles (`CommandMenuItem`). Hover/selection uses `PrimaryTextColor` for icon and title together. Chroma matches `IconSecondaryColor`; the name encodes shared editor-menu usage.
 
 **`InlineCodeBgColor`:** Inline code pills use `ThemeManager.tintedInlineCodePillNS(isDark:)` — stone-300 / stone-700 with the same tint blend **targets** as block chrome (lighter dark base than stone-800). The asset holds the untinted pair for any `Color("InlineCodeBgColor")` usage.
 

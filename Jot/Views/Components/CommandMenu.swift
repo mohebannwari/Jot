@@ -204,14 +204,14 @@ struct CommandMenuItem: View {
 
     private var isHighlighted: Bool { isSelected || isHovered }
 
-    private var highlightedForegroundColor: Color {
-        colorScheme == .dark ? .white : Color("PrimaryTextColor")
+    /// Idle row: one catalog token for **both** template icons and titles (`EditorCommandMenuItemForegroundColor` — chroma matches `IconSecondaryColor`; name signals shared slash-menu use).
+    private var idleRowForeground: Color {
+        Color("EditorCommandMenuItemForegroundColor")
     }
 
-    private var highlightedShortcutColor: Color {
-        colorScheme == .dark
-            ? Color.white.opacity(0.84)
-            : Color("PrimaryTextColor").opacity(0.72)
+    /// Hover / keyboard selection: primary label color for icon + title together.
+    private var highlightRowForeground: Color {
+        Color("PrimaryTextColor")
     }
 
     private var highlightedBackgroundColor: Color {
@@ -233,21 +233,25 @@ struct CommandMenuItem: View {
                         .symbolRenderingMode(.monochrome)
                 }
             }
-            .foregroundStyle(isHighlighted ? highlightedForegroundColor : Color("IconSecondaryColor"))
+            .foregroundStyle(isHighlighted ? highlightRowForeground : idleRowForeground)
             .frame(width: 15, height: 15)
 
-            // Tool name
+            // Tool name — same foreground token as the icon in each state.
             Text(tool.name)
                 .font(FontManager.heading(size: 13, weight: .regular))
-                .foregroundStyle(isHighlighted ? highlightedForegroundColor : .primary)
+                .foregroundStyle(isHighlighted ? highlightRowForeground : idleRowForeground)
 
             Spacer(minLength: 0)
 
             // Keyboard shortcut hint - using SF Mono for metadata
             if let shortcut = tool.keyboardShortcut {
-                Text("⌘\(shortcut.character.uppercased())")
-                    .font(FontManager.metadata(size: 11, weight: .regular))
-                    .foregroundStyle(isHighlighted ? highlightedShortcutColor : .secondary)
+                Text("⌘\(shortcut.character)")
+                    .jotMetadataLabelTypography()
+                    .foregroundStyle(
+                        isHighlighted
+                            ? highlightRowForeground.opacity(0.72)
+                            : idleRowForeground.opacity(0.72)
+                    )
             }
         }
         .padding(.horizontal, 10)

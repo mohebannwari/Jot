@@ -701,8 +701,8 @@ struct FloatingSearch: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
 
                 if isCurrentNoteOption {
-                    Text("CURRENT NOTE")
-                        .font(FontManager.metadata(size: 11, weight: .medium))
+                    Text("Current Note")
+                        .jotMetadataLabelTypography()
                         .foregroundColor(Color("SecondaryTextColor"))
                         .lineLimit(1)
                 }
@@ -902,7 +902,7 @@ struct FloatingSearch: View {
     @ViewBuilder
     private func sidebarStyleShortcutLabel(_ shortcut: String) -> some View {
         Text(shortcut)
-            .font(FontManager.metadata(size: 11, weight: .medium))
+            .jotMetadataLabelTypography()
             .foregroundColor(Color("SecondaryTextColor"))
             .lineLimit(1)
     }
@@ -1050,8 +1050,7 @@ struct FloatingSearch: View {
                             footerChevronKeycap(imageName: "IconChevronDownSmall")
                         }
                         Text("Navigate")
-                            .font(FontManager.metadata(size: 11, weight: .medium))
-                            .textCase(.uppercase)
+                            .jotMetadataLabelTypography()
                             .foregroundColor(Color("SecondaryTextColor"))
                     }
 
@@ -1064,8 +1063,7 @@ struct FloatingSearch: View {
                         footerSelectKeycap
 
                         Text("Select")
-                            .font(FontManager.metadata(size: 11, weight: .medium))
-                            .textCase(.uppercase)
+                            .jotMetadataLabelTypography()
                             .foregroundColor(Color("SecondaryTextColor"))
                     }
                 }
@@ -1077,16 +1075,15 @@ struct FloatingSearch: View {
                         RoundedRectangle(cornerRadius: 4, style: .continuous)
                             .fill(floatingSearchFooterKeycapFill)
                         Text("esc")
-                            .font(FontManager.metadata(size: 9, weight: .medium))
+                            .jotMetadataLabelTypography()
                             .foregroundColor(Color("SecondaryTextColor"))
                     }
-                    .frame(width: 24, height: 15)
+                    .frame(width: 28, height: 17)
                     .compositingGroup()
                     .floatingSearchKeycapShadows()
 
                     Text(paletteMode == .meetingPickNote ? "Back" : "Close")
-                        .font(FontManager.metadata(size: 11, weight: .medium))
-                        .textCase(.uppercase)
+                        .jotMetadataLabelTypography()
                         .foregroundColor(Color("SecondaryTextColor"))
                 }
             }

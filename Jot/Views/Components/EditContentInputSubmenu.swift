@@ -16,7 +16,7 @@ struct EditContentInputSubmenu: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             TextField("EDIT INSTRUCTION...", text: $instruction)
-                .font(FontManager.metadata(size: 11, weight: .regular))
+                .font(FontManager.metadata(size: 11, weight: .medium))
                 .foregroundColor(Color("PrimaryTextColor"))
                 .textFieldStyle(.plain)
                 .padding(10)
