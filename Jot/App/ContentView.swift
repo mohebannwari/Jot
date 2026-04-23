@@ -30,7 +30,6 @@ struct NotePreviewAnchorKey: PreferenceKey {
     }
 }
 
-enum SplitPosition: String, Codable { case left, right }
 enum SplitPickerPane { case primary, secondary }
 
 struct PropertiesPanelChromePolicy {
@@ -187,22 +186,6 @@ struct SplitZenInterPaneGapPolicy {
         guard isActiveSplitLayout, isZenModeWithoutSidebar else { return baseGap }
         return min(16, max(baseGap, paneCornerRadius * 2))
     }
-}
-
-struct SplitSession: Identifiable, Equatable, Codable {
-    let id: UUID
-    var primaryNoteID: UUID?
-    var secondaryNoteID: UUID?
-    var position: SplitPosition = .right
-    var ratio: CGFloat = 0.5
-
-    init(id: UUID = UUID(), primaryNoteID: UUID? = nil, secondaryNoteID: UUID? = nil) {
-        self.id = id
-        self.primaryNoteID = primaryNoteID
-        self.secondaryNoteID = secondaryNoteID
-    }
-
-    var isComplete: Bool { primaryNoteID != nil && secondaryNoteID != nil }
 }
 
 private struct ExportQuickLookContext {
@@ -502,37 +485,10 @@ private struct ClippedEditorChromeContainer<Content: View>: View {
     }
 }
 
-enum SidebarSectionFilter: String, CaseIterable, Identifiable {
-    case all
-    case pinned
-    case today
-    case thisMonth
-    case thisYear
-    case older
-    case folders
-
-    var id: String { rawValue }
-
-    var label: String {
-        switch self {
-        case .all: return "All"
-        case .pinned: return "Pinned"
-        case .today: return "Today"
-        case .thisMonth: return "This Month"
-        case .thisYear: return "This Year"
-        case .older: return "Older"
-        case .folders: return "Folders"
-        }
-    }
-}
-
-func sidebarSectionFilterAllows(_ active: SidebarSectionFilter, section: SidebarSectionFilter) -> Bool {
-    active == .all || active == section
-}
-
 struct ContentView: View {
     // Search is powered by SearchEngine
     @StateObject private var searchEngine = SearchEngine()
+    @StateObject private var splitWorkspace = SplitWorkspaceStore()
     @ObservedObject private var appleIntelligenceService = AppleIntelligenceService.shared
     @EnvironmentObject private var notesManager: SimpleSwiftDataManager
     @EnvironmentObject private var themeManager: ThemeManager
@@ -601,10 +557,6 @@ struct ContentView: View {
     @State private var floatingSidebarDismissWorkItem: DispatchWorkItem?
     @State private var isSplitMenuVisible = false
     @State private var isFolderCreationMenuVisible = false
-    @State private var splitSessions: [SplitSession] = []
-    @State private var activeSplitID: UUID? = nil
-    @State private var pendingSplitID: UUID? = nil
-    @State private var isSplitViewVisible = false
     @State private var splitPickerOverlayPane: SplitPickerPane? = nil
     @State private var splitDragDelta: CGFloat = 0
     @State private var isSplitHandleDragging = false
@@ -675,60 +627,11 @@ struct ContentView: View {
         blendDuration: 0.15
     )
 
-    // MARK: - Split Session Persistence
-
-    private static let splitSessionsKey = "SplitSessionsData"
-    private static let activeSplitIDKey = "ActiveSplitID"
-    private static let splitViewVisibleKey = "IsSplitViewVisible"
-
-    private func saveSplitSessions() {
-        if let data = try? JSONEncoder().encode(splitSessions) {
-            UserDefaults.standard.set(data, forKey: Self.splitSessionsKey)
-        }
-        if let id = activeSplitID {
-            UserDefaults.standard.set(id.uuidString, forKey: Self.activeSplitIDKey)
-        } else {
-            UserDefaults.standard.removeObject(forKey: Self.activeSplitIDKey)
-        }
-        UserDefaults.standard.set(isSplitViewVisible, forKey: Self.splitViewVisibleKey)
-    }
-
     private func restoreSplitSessions() {
-        // Don't restore (or destroy saved data) until notes are actually loaded
-        guard notesManager.hasLoadedInitialNotes else { return }
-
-        guard let data = UserDefaults.standard.data(forKey: Self.splitSessionsKey),
-              let sessions = try? JSONDecoder().decode([SplitSession].self, from: data)
-        else { return }
-
-        // Validate: only keep sessions whose notes still exist
-        let noteIDs = Set(notesManager.notes.map(\.id))
-        let valid = sessions.filter { session in
-            let primaryOK = session.primaryNoteID.map { noteIDs.contains($0) } ?? true
-            let secondaryOK = session.secondaryNoteID.map { noteIDs.contains($0) } ?? true
-            return primaryOK && secondaryOK && session.isComplete
-        }
-
-        guard !valid.isEmpty else {
-            UserDefaults.standard.removeObject(forKey: Self.splitSessionsKey)
-            return
-        }
-
-        splitSessions = valid
-        isSplitViewVisible = UserDefaults.standard.bool(forKey: Self.splitViewVisibleKey)
-
-        if let idString = UserDefaults.standard.string(forKey: Self.activeSplitIDKey),
-           let id = UUID(uuidString: idString),
-           valid.contains(where: { $0.id == id }) {
-            activeSplitID = id
-        } else {
-            activeSplitID = valid.last?.id
-        }
-
-        // Set selectedNote to the primary note of the active split so the split pane renders
-        if let activeSession = valid.first(where: { $0.id == activeSplitID }),
-           let primaryID = activeSession.primaryNoteID,
-           let note = notesManager.notes.first(where: { $0.id == primaryID }) {
+        if let note = splitWorkspace.restore(
+            availableNotes: notesManager.notes,
+            hasLoadedInitialNotes: notesManager.hasLoadedInitialNotes
+        ) {
             if let cur = selectedNote?.id, cur != note.id {
                 postEditorSerializationFlushAllVisibleEditors()
             }
@@ -740,9 +643,9 @@ struct ContentView: View {
         // stays nil until an editor's first-responder notification arrives, during which window
         // both panes render as "inactive" (dimmed, no shadow). Matches `performSplit` which
         // also sets `.primary` after creating a fresh split.
-        if isSplitViewVisible,
+        if splitWorkspace.isVisible,
            activeSplitPane == nil,
-           valid.first(where: { $0.id == activeSplitID })?.isComplete == true {
+           splitWorkspace.active?.isComplete == true {
             activeSplitPane = .primary
         }
     }
@@ -810,18 +713,14 @@ struct ContentView: View {
         case withNotes(Set<UUID>)
     }
 
-    private var isSplitActive: Bool { !splitSessions.isEmpty }
+    private var isSplitActive: Bool { splitWorkspace.isActive }
 
     /// Navigate to the split session containing this note
     private func activateSplitForNote(_ note: Note) {
-        guard let session = splitSessions.first(where: {
-            $0.primaryNoteID == note.id || $0.secondaryNoteID == note.id
-        }) else { return }
+        guard let session = splitWorkspace.activateSession(containing: note.id) else { return }
         if let cur = selectedNote?.id, cur != note.id {
             postEditorSerializationFlushAllVisibleEditors()
         }
-        activeSplitID = session.id
-        isSplitViewVisible = true
         let activation = SplitPresentationPolicy.resolveSplitSessionActivation(
             primaryNoteID: session.primaryNoteID ?? note.id,
             secondaryNoteID: session.secondaryNoteID ?? note.id,
@@ -834,17 +733,12 @@ struct ContentView: View {
 
     /// All note IDs currently participating in any split session
     private var splitNoteIDs: Set<UUID> {
-        var ids = Set<UUID>()
-        for session in splitSessions {
-            if let p = session.primaryNoteID { ids.insert(p) }
-            if let s = session.secondaryNoteID { ids.insert(s) }
-        }
-        return ids
+        splitWorkspace.noteIDs
     }
 
     /// Whether the split layout should render right now
     private var shouldShowSplitLayout: Bool {
-        activeSplitID != nil && isSplitViewVisible
+        splitWorkspace.shouldShowLayout
     }
 
     /// Active-note ID for sidebar cards.
@@ -862,13 +756,11 @@ struct ContentView: View {
     }
 
     private var activeSplit: SplitSession? {
-        guard let id = activeSplitID else { return nil }
-        return splitSessions.first(where: { $0.id == id })
+        splitWorkspace.active
     }
 
     private var activeSplitIndex: Int? {
-        guard let id = activeSplitID else { return nil }
-        return splitSessions.firstIndex(where: { $0.id == id })
+        splitWorkspace.activeIndex
     }
 
     private var activePrimaryNote: Note? {
@@ -882,7 +774,7 @@ struct ContentView: View {
     }
 
     private var isActiveSplitPending: Bool {
-        activeSplitID != nil && activeSplitID == pendingSplitID
+        splitWorkspace.isActivePending
     }
 
     /// Notes are already sorted by date DESC and filtered to non-archived/non-deleted
@@ -1732,23 +1624,14 @@ struct ContentView: View {
 
     private func createSplitFromDrop(primaryNote: Note, droppedNoteID: UUID, position: SplitPosition) {
         isDragSplitTargeted = false
-
-        if let activeIdx = splitSessions.firstIndex(where: { $0.id == activeSplitID }) {
-            // Replace secondary note in the active split and update position
-            splitSessions[activeIdx].secondaryNoteID = droppedNoteID
-            splitSessions[activeIdx].position = position
-        } else {
-            // Create a new split session
-            var session = SplitSession()
-            session.primaryNoteID = primaryNote.id
-            session.secondaryNoteID = droppedNoteID
-            session.position = position
-            splitSessions.append(session)
-            activeSplitID = session.id
-            isSplitViewVisible = true
+        let createdSession = splitWorkspace.createOrReplaceActiveSplitFromDrop(
+            primaryNoteID: primaryNote.id,
+            droppedNoteID: droppedNoteID,
+            position: position
+        )
+        if createdSession {
             activeSplitPane = .primary
         }
-        saveSplitSessions()
     }
 
     private func focusSplitPane(_ pane: SplitPickerPane, requestFocus: Bool = true) {
@@ -1987,17 +1870,15 @@ struct ContentView: View {
                     guard let idx = activeSplitIndex else { return }
                     if isPrimary {
                         postEditorSerializationFlushAllVisibleEditors()
-                        splitSessions[idx].primaryNoteID = note.id
+                        splitWorkspace.sessions[idx].primaryNoteID = note.id
                         selectedNote = note
                         selectedNoteIDs = [note.id]
                     } else {
                         postEditorSerializationFlush(editorInstanceID: splitEditorID)
-                        splitSessions[idx].secondaryNoteID = note.id
+                        splitWorkspace.sessions[idx].secondaryNoteID = note.id
                     }
-                    if splitSessions[idx].isComplete {
-                        pendingSplitID = nil
-                    }
-                    saveSplitSessions()
+                    splitWorkspace.completePendingSplitIfNeeded(at: idx)
+                    splitWorkspace.save()
                 }
             },
             onClose: { cancelPendingSplit() },
@@ -2163,8 +2044,8 @@ struct ContentView: View {
                             lastSplitHandleClickTime = nil
                             if let idx = activeSplitIndex {
                                 withAnimation(.jotSpring) {
-                                    splitSessions[idx].ratio = 0.5
-                                    saveSplitSessions()
+                                    splitWorkspace.sessions[idx].ratio = 0.5
+                                    splitWorkspace.save()
                                 }
                             }
                             splitDragDelta = 0
@@ -2185,8 +2066,8 @@ struct ContentView: View {
                     let maxW = totalWidth - splitMinPaneWidth - interPaneGap
                     let finalSecW = max(splitMinPaneWidth, min(maxW, baseSecW + delta))
                     if let idx = activeSplitIndex {
-                        splitSessions[idx].ratio = finalSecW / availableForSplit
-                        saveSplitSessions()
+                        splitWorkspace.sessions[idx].ratio = finalSecW / availableForSplit
+                        splitWorkspace.save()
                     }
                     splitDragDelta = 0
                     isSplitHandleDragging = false
@@ -3930,8 +3811,8 @@ struct ContentView: View {
 
     @ViewBuilder
     private var activeSplitSidebarSection: some View {
-        let completedSessions = splitSessions.filter { $0.isComplete }
-        if !splitSessions.isEmpty {
+        let completedSessions = splitWorkspace.sessions.filter { $0.isComplete }
+        if !splitWorkspace.sessions.isEmpty {
             VStack(spacing: 8) {
                 // Header: "Active Split" label + add/cancel button
                 HStack {
@@ -3940,14 +3821,14 @@ struct ContentView: View {
                         .foregroundColor(Color("SecondaryTextColor"))
                     Spacer()
                     Button {
-                        if pendingSplitID != nil {
+                        if splitWorkspace.pendingID != nil {
                             cancelPendingSplit()
                         } else {
                             withAnimation(.jotSpring) { addNewSplit() }
                         }
                     } label: {
                         Group {
-                            if pendingSplitID != nil {
+                            if splitWorkspace.pendingID != nil {
                                 Text("Cancel")
                                     .font(FontManager.heading(size: 11, weight: .regular))
                                     .foregroundColor(.red)
@@ -3974,7 +3855,7 @@ struct ContentView: View {
                     splitSessionContainer(session: session)
                 }
 
-                if pendingSplitID != nil {
+                if splitWorkspace.pendingID != nil {
                     pendingSplitContainer
                         .transition(.opacity.combined(with: .scale(scale: 0.95)))
                 }
@@ -3983,7 +3864,7 @@ struct ContentView: View {
     }
 
     private func splitSessionContainer(session: SplitSession) -> some View {
-        let isActive = session.id == activeSplitID
+        let isActive = session.id == splitWorkspace.activeID
         let pNote = notesManager.notes.first(where: { $0.id == session.primaryNoteID })
         let sNote = notesManager.notes.first(where: { $0.id == session.secondaryNoteID })
         let primaryTitle = pNote?.title.isEmpty == false ? pNote?.title ?? "Untitled" : "Untitled"
@@ -4001,8 +3882,8 @@ struct ContentView: View {
             if isSettingsPresented {
                 isSettingsPresented = false
             }
-            activeSplitID = session.id
-            isSplitViewVisible = true
+            splitWorkspace.activeID = session.id
+            splitWorkspace.isVisible = true
             if let primaryID = session.primaryNoteID,
                let secondaryID = session.secondaryNoteID,
                let pNote = notesManager.notes.first(where: { $0.id == primaryID }) {
@@ -4071,17 +3952,17 @@ struct ContentView: View {
         .contextMenu {
             Button("Separate all notes") {
                 withAnimation(.jotSpring) {
-                    splitSessions.removeAll(where: { $0.id == session.id })
-                    if session.id == activeSplitID {
-                        if let next = splitSessions.last(where: { $0.isComplete }) {
-                            activeSplitID = next.id
+                    splitWorkspace.sessions.removeAll(where: { $0.id == session.id })
+                    if session.id == splitWorkspace.activeID {
+                        if let next = splitWorkspace.sessions.last(where: { $0.isComplete }) {
+                            splitWorkspace.activeID = next.id
                         } else {
-                            activeSplitID = nil
-                            isSplitViewVisible = false
+                            splitWorkspace.activeID = nil
+                            splitWorkspace.isVisible = false
                         }
                     }
-                    if session.id == pendingSplitID { pendingSplitID = nil }
-                    saveSplitSessions()
+                    if session.id == splitWorkspace.pendingID { splitWorkspace.pendingID = nil }
+                    splitWorkspace.save()
                 }
             }
         }
@@ -4089,8 +3970,8 @@ struct ContentView: View {
 
     @ViewBuilder
     private var pendingSplitContainer: some View {
-        if let pendingID = pendingSplitID,
-           let session = splitSessions.first(where: { $0.id == pendingID }) {
+        if let pendingID = splitWorkspace.pendingID,
+           let session = splitWorkspace.sessions.first(where: { $0.id == pendingID }) {
             let pNote = session.primaryNoteID.flatMap { id in notesManager.notes.first(where: { $0.id == id }) }
             let sNote = session.secondaryNoteID.flatMap { id in notesManager.notes.first(where: { $0.id == id }) }
 
@@ -4335,12 +4216,12 @@ struct ContentView: View {
                             guard let idx = activeSplitIndex else { return }
                             if pane == .primary {
                                 postEditorSerializationFlushAllVisibleEditors()
-                                splitSessions[idx].primaryNoteID = note.id
+                                splitWorkspace.sessions[idx].primaryNoteID = note.id
                                 selectedNote = note
                                 selectedNoteIDs = [note.id]
                             } else {
                                 postEditorSerializationFlush(editorInstanceID: splitEditorID)
-                                splitSessions[idx].secondaryNoteID = note.id
+                                splitWorkspace.sessions[idx].secondaryNoteID = note.id
                             }
                             splitPickerOverlayPane = nil
                         }
@@ -4354,57 +4235,29 @@ struct ContentView: View {
     // MARK: - Split Actions
 
     private func openSplit(position: SplitPosition) {
-        var session = SplitSession()
-        session.primaryNoteID = selectedNote?.id
-        session.position = position
-        splitSessions.append(session)
-        activeSplitID = session.id
-        pendingSplitID = session.id
-        isSplitViewVisible = true
+        splitWorkspace.createPendingSplit(position: position, primaryNoteID: selectedNote?.id)
         withAnimation(.jotSpring) { isSplitMenuVisible = false }
-        saveSplitSessions()
     }
 
     private func addNewSplit() {
-        let session = SplitSession()
-        splitSessions.append(session)
-        activeSplitID = session.id
-        pendingSplitID = session.id
-        isSplitViewVisible = true
-        saveSplitSessions()
+        splitWorkspace.addPendingSplit()
     }
 
     private func cancelPendingSplit() {
-        guard let pendingID = pendingSplitID else { return }
+        guard splitWorkspace.pendingID != nil else { return }
         withAnimation(.jotSpring) {
-            splitSessions.removeAll(where: { $0.id == pendingID })
-            pendingSplitID = nil
-            if let lastCompleted = splitSessions.last(where: { $0.isComplete }) {
-                activeSplitID = lastCompleted.id
-            } else {
-                activeSplitID = nil
-                isSplitViewVisible = false
-            }
+            splitWorkspace.cancelPendingSplit()
         }
-        saveSplitSessions()
     }
 
     private func closeSplit() {
-        guard let activeID = activeSplitID else { return }
+        guard splitWorkspace.activeID != nil else { return }
         withAnimation(.jotSpring) {
-            splitSessions.removeAll(where: { $0.id == activeID })
-            if activeID == pendingSplitID { pendingSplitID = nil }
+            splitWorkspace.closeActiveSplit()
             splitPickerOverlayPane = nil
             isSplitMenuVisible = false
             activeSplitPane = nil
-            if let next = splitSessions.last(where: { $0.isComplete }) {
-                activeSplitID = next.id
-            } else {
-                activeSplitID = nil
-                isSplitViewVisible = false
-            }
         }
-        saveSplitSessions()
     }
 
     private func closeRightSplit() {
@@ -4438,19 +4291,14 @@ struct ContentView: View {
     }
 
     private func moveSplitToOtherSide() {
-        guard let idx = activeSplitIndex else { return }
+        guard activeSplitIndex != nil else { return }
         postEditorSerializationFlush(editorInstanceID: primaryEditorID)
         postEditorSerializationFlush(editorInstanceID: splitEditorID)
-        let oldPrimary = splitSessions[idx].primaryNoteID
-        let oldSecondary = splitSessions[idx].secondaryNoteID
-        splitSessions[idx].primaryNoteID = oldSecondary
-        splitSessions[idx].secondaryNoteID = oldPrimary
-        if let newPrimaryID = splitSessions[idx].primaryNoteID,
+        if let newPrimaryID = splitWorkspace.moveActiveToOtherSide(),
            let note = notesManager.notes.first(where: { $0.id == newPrimaryID }) {
             selectedNote = note
             selectedNoteIDs = [note.id]
         }
-        saveSplitSessions()
     }
 
     // MARK: - Actions
@@ -4471,8 +4319,7 @@ struct ContentView: View {
         switch interaction {
         case .plain:
             if isSplitActive {
-                isSplitViewVisible = false
-                activeSplitID = nil
+                splitWorkspace.clearVisibleSplit()
             }
             openNote(note)
         case .commandToggle, .shiftRange:
@@ -4534,7 +4381,7 @@ struct ContentView: View {
     /// Both split panes stay mounted while visible; flush each editor that may hold the outgoing note.
     private func postEditorSerializationFlushAllVisibleEditors() {
         postEditorSerializationFlush(editorInstanceID: primaryEditorID)
-        if isSplitViewVisible, activeSplit?.isComplete == true {
+        if splitWorkspace.isVisible, activeSplit?.isComplete == true {
             postEditorSerializationFlush(editorInstanceID: splitEditorID)
         }
     }
@@ -4622,8 +4469,7 @@ struct ContentView: View {
         )
         if result.closesSplit {
             activeSplitPane = nil
-            activeSplitID = nil
-            isSplitViewVisible = false
+            splitWorkspace.clearVisibleSplit()
         }
         openNote(note)
     }
@@ -4654,7 +4500,7 @@ struct ContentView: View {
             if previousPrimary?.id != note.id {
                 postEditorSerializationFlushAllVisibleEditors()
             }
-            splitSessions[splitIndex].primaryNoteID = note.id
+            splitWorkspace.sessions[splitIndex].primaryNoteID = note.id
             applyNoteSelectionState(note)
             focusSplitPane(.primary)
         case .secondary:
@@ -4663,11 +4509,11 @@ struct ContentView: View {
             if previousSecondary?.id != note.id {
                 postEditorSerializationFlush(editorInstanceID: splitEditorID)
             }
-            splitSessions[splitIndex].secondaryNoteID = note.id
+            splitWorkspace.sessions[splitIndex].secondaryNoteID = note.id
             applyNoteSelectionState(note)
             focusSplitPane(.secondary)
         }
-        saveSplitSessions()
+        splitWorkspace.save()
     }
 
     /// Command palette “Start meeting session” flow: open the note, then start recording on the shared manager.
@@ -4684,8 +4530,7 @@ struct ContentView: View {
 
         withAnimation(.jotSpring) {
             isShowingArchive = false
-            expandedFolderIDs.insert(folder.id)
-            showAllNotesFolderIDs.insert(folder.id)
+            markFolderExpanded(folder.id, showAllNotes: true)
             isSidebarVisible = true
             highlightedFolderID = folder.id
         }
@@ -4721,7 +4566,7 @@ struct ContentView: View {
         discardPreviousNoteIfEmpty(switching: note)
 
         if let folderID {
-            expandedFolderIDs.insert(folderID)
+            markFolderExpanded(folderID)
         }
 
         if let cur = selectedNote?.id, cur != note.id {
@@ -4753,7 +4598,7 @@ struct ContentView: View {
         guard moved else { return false }
 
         if let folderID {
-            expandedFolderIDs.insert(folderID)
+            markFolderExpanded(folderID)
         }
 
         if selectedNote?.id == noteID,
@@ -4786,7 +4631,7 @@ struct ContentView: View {
         } else {
             moved = notesManager.moveNotes(ids: noteIDs, toFolderID: folderID)
             if moved > 0, let folderID {
-                expandedFolderIDs.insert(folderID)
+                markFolderExpanded(folderID)
             }
             reconcileSelectionWithCurrentNotes()
         }
@@ -4932,7 +4777,7 @@ struct ContentView: View {
             destinationFolderID = existingFolder.id
         } else if let createdFolder = notesManager.createFolder(name: trimmedName) {
             destinationFolderID = createdFolder.id
-            expandedFolderIDs.insert(createdFolder.id)
+            markFolderExpanded(createdFolder.id)
         } else {
             destinationFolderID = nil
         }
@@ -4950,11 +4795,22 @@ struct ContentView: View {
     private func collapseAllExpandedFolders() {
         HapticManager.shared.buttonTap()
         withAnimation(.jotSmoothFast) {
-            expandedFolderIDs.removeAll()
-            showAllNotesFolderIDs.removeAll()
-            expandedSmartFolderIDs.removeAll()
-            showAllNotesSmartFolderIDs.removeAll()
+            SidebarExpansionReducer.collapseAll(
+                expandedFolderIDs: &expandedFolderIDs,
+                showAllNotesFolderIDs: &showAllNotesFolderIDs,
+                expandedSmartFolderIDs: &expandedSmartFolderIDs,
+                showAllNotesSmartFolderIDs: &showAllNotesSmartFolderIDs
+            )
         }
+    }
+
+    private func markFolderExpanded(_ folderID: UUID, showAllNotes: Bool = false) {
+        SidebarExpansionReducer.markFolderExpanded(
+            folderID,
+            expandedFolderIDs: &expandedFolderIDs,
+            showAllNotesFolderIDs: &showAllNotesFolderIDs,
+            showAllNotes: showAllNotes
+        )
     }
 
     private func promptCreateFolder(withNoteIDs noteIDs: Set<UUID>? = nil) {
@@ -4977,7 +4833,7 @@ struct ContentView: View {
         switch pendingFolderCreationIntent {
         case .standalone:
             if let folder = notesManager.createFolder(name: trimmedName, colorHex: colorHex) {
-                expandedFolderIDs.insert(folder.id)
+                markFolderExpanded(folder.id)
             }
         case let .withNotes(noteIDs):
             guard let folder = notesManager.createFolder(name: trimmedName, colorHex: colorHex) else {
@@ -4985,7 +4841,7 @@ struct ContentView: View {
                 return
             }
 
-            expandedFolderIDs.insert(folder.id)
+            markFolderExpanded(folder.id)
             _ = notesManager.moveNotes(ids: noteIDs, toFolderID: folder.id)
 
             if noteIDs.count == 1,
