@@ -42,7 +42,7 @@ final class MapBlockOverlayViewTests: XCTestCase {
 
         let bottomEdgePointInSuperview = NSPoint(
             x: overlay.frame.minX + 20,
-            y: overlay.frame.maxY - 2
+            y: overlay.frame.minY + 2
         )
 
         XCTAssertTrue(
