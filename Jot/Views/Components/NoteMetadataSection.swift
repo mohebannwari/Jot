@@ -3,7 +3,7 @@
 //  Jot
 //
 //  Side-panel properties view showing note metadata (created date, tags,
-//  todos, links, attachments, backlinks). Rendered as its own split-sibling pane
+//  todos, links, attachments, mentioned notes, backlinks). Rendered as its own split-sibling pane
 //  in ContentView: it inherits its glass chrome and corner radius from
 //  `propertiesPanelSlot` (which uses `DetailPaneChromeBackgroundView`), so this
 //  view paints no background of its own — that would create glass-on-glass.
@@ -21,6 +21,8 @@ struct NoteMetadataSection: View {
     let note: Note
     var folder: Folder?
     var backlinks: [BacklinkItem] = []
+    /// When set, replaces serialized `[[notelink|…|title]]` titles with the current note title from the library (or falls back to the serialized title if the note is missing).
+    var resolveMentionTitle: ((UUID, String) -> String)? = nil
     var onUpdateTags: (([String]) -> Void)?
     var onToggleTodo: ((Int) -> Void)?
     var onNavigateToNote: ((UUID) -> Void)?
@@ -44,6 +46,8 @@ struct NoteMetadataSection: View {
     @State private var cachedTodos: [ParsedTodo] = []
     @State private var cachedLinks: [ParsedLink] = []
     @State private var cachedAttachments: [ParsedAttachment] = []
+    /// Outgoing `[[notelink|targetUUID|title]]` targets (deduped), refreshed from `note.content`.
+    @State private var cachedMentions: [(UUID, String)] = []
 
     private static func parseTodos(from content: String) -> [ParsedTodo] {
         var results: [ParsedTodo] = []
@@ -143,6 +147,10 @@ struct NoteMetadataSection: View {
         cachedTodos = Self.parseTodos(from: note.content)
         cachedLinks = Self.parseLinks(from: note.content, cleanDomain: cleanDomain)
         cachedAttachments = Self.parseAttachments(from: note.content)
+        cachedMentions = OutgoingNotelinkScanner.outgoingNotelinks(
+            in: note.content,
+            excludingNoteID: note.id
+        )
     }
 
     // MARK: - Helpers
@@ -279,11 +287,14 @@ struct NoteMetadataSection: View {
                         attachmentsValue
                     }
 
-                    // Referenced By (backlinks)
-                    if !backlinks.isEmpty {
-                        propertyRow(label: "Referenced By") {
-                            referencedByValue
-                        }
+                    // Mentioned notes (outgoing notelinks in this note’s body)
+                    propertyRow(label: "Mentioned Notes") {
+                        mentionedNotesValue
+                    }
+
+                    // Referenced By (backlinks; always shown — None when empty)
+                    propertyRow(label: "Referenced By") {
+                        referencedByValue
                     }
                 }
                 .padding(.bottom, 180)
@@ -296,6 +307,7 @@ struct NoteMetadataSection: View {
         // No self-applied glass or tint: the panel inherits its surface from
         // `DetailPaneChromeBackgroundView` in `propertiesPanelSlot`, exactly like the detail pane.
         .onAppear { reparseContent() }
+        .onChange(of: note.id) { reparseContent() }
         .onChange(of: note.content) { reparseContent() }
     }
 
@@ -323,8 +335,9 @@ struct NoteMetadataSection: View {
         label: String,
         @ViewBuilder value: () -> Value
     ) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 0) {
-            // Label column — 120pt wide, aligned with header
+        // Gutter between label and value columns (canonical spacing scale).
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            // Label column — fixed width, aligned with header
             Text(label)
                 .font(.system(size: 12, weight: .regular))
                 .tracking(-0.3)
@@ -649,37 +662,87 @@ struct NoteMetadataSection: View {
         }
     }
 
+    // MARK: - Mentioned Notes (outgoing notelinks)
+
+    private func displayTitleForMention(noteID: UUID, serializedTitle: String) -> String {
+        let resolved = resolveMentionTitle?(noteID, serializedTitle) ?? serializedTitle
+        let trimmed = resolved.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "Untitled" : trimmed
+    }
+
+    @ViewBuilder
+    private var mentionedNotesValue: some View {
+        let mentions = cachedMentions
+        if mentions.isEmpty {
+            noneText
+        } else {
+            FlowLayout(spacing: 4) {
+                ForEach(mentions, id: \.0) { noteID, serializedTitle in
+                    Button {
+                        onNavigateToNote?(noteID)
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(displayTitleForMention(noteID: noteID, serializedTitle: serializedTitle))
+                                .font(.system(size: 11, weight: .regular))
+                                .tracking(-0.2)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                                .frame(maxWidth: 180)
+
+                            Image("IconArrowRightUpCircle")
+                                .renderingMode(.template)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 14, height: 14)
+                        }
+                        .foregroundColor(.black)
+                        .padding(.leading, 8)
+                        .padding(.trailing, 4)
+                        .padding(.vertical, 4)
+                        .background(Color("NotelinkPillBgColor"), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .propertiesPanelPointingHandCursor()
+                }
+            }
+        }
+    }
+
     // MARK: - Referenced By (Backlinks)
 
     @ViewBuilder
     private var referencedByValue: some View {
-        FlowLayout(spacing: 4) {
-            ForEach(backlinks) { backlink in
-                Button {
-                    onNavigateToNote?(backlink.id)
-                } label: {
-                    HStack(spacing: 4) {
-                        Image("IconArrowLeftUpCircle")
-                            .renderingMode(.template)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 14, height: 14)
+        if backlinks.isEmpty {
+            noneText
+        } else {
+            FlowLayout(spacing: 4) {
+                ForEach(backlinks) { backlink in
+                    Button {
+                        onNavigateToNote?(backlink.id)
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image("IconArrowLeftUpCircle")
+                                .renderingMode(.template)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 14, height: 14)
 
-                        Text(backlink.title)
-                            .font(.system(size: 11, weight: .regular))
-                            .tracking(-0.2)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-                            .frame(maxWidth: 180)
+                            Text(backlink.title)
+                                .font(.system(size: 11, weight: .regular))
+                                .tracking(-0.2)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                                .frame(maxWidth: 180)
+                        }
+                        .foregroundColor(.black)
+                        .padding(.leading, 4)
+                        .padding(.trailing, 8)
+                        .padding(.vertical, 4)
+                        .background(Color("NotelinkPillBgColor"), in: Capsule())
                     }
-                    .foregroundColor(.black)
-                    .padding(.leading, 4)
-                    .padding(.trailing, 8)
-                    .padding(.vertical, 4)
-                    .background(Color("NotelinkPillBgColor"), in: Capsule())
+                    .buttonStyle(.plain)
+                    .propertiesPanelPointingHandCursor()
                 }
-                .buttonStyle(.plain)
-                .propertiesPanelPointingHandCursor()
             }
         }
     }

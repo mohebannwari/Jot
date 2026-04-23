@@ -4139,6 +4139,13 @@ struct ContentView: View {
             note: note,
             folder: note.folderID.flatMap { fid in notesManager.folders.first(where: { $0.id == fid }) },
             backlinks: backlinks(for: note.id),
+            resolveMentionTitle: { mentionID, serializedFallback in
+                guard let target = notesManager.notes.first(where: { $0.id == mentionID }) else {
+                    return serializedFallback
+                }
+                let t = target.title.trimmingCharacters(in: .whitespacesAndNewlines)
+                return t.isEmpty ? "Untitled" : t
+            },
             onUpdateTags: { newTags in
                 notesManager.updateTags(id: note.id, tags: newTags)
             },
