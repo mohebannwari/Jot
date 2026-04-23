@@ -277,7 +277,7 @@ struct SettingsPage: View {
             HStack {
                 Spacer()
                 Text("Settings")
-                    .font(FontManager.heading(size: FontManager.noteDetailOverlayHeadingSize, weight: .regular))
+                    .jotUI(FontManager.uiHeadingH4(weight: .medium))
                     .foregroundColor(Color("PrimaryTextColor").opacity(0.5))
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -340,8 +340,7 @@ struct SettingsPage: View {
             activeTab = tab
         } label: {
             Text(tab.title)
-                .font(FontManager.heading(size: 13, weight: .regular))
-                .tracking(-0.2)
+                .jotUI(FontManager.uiLabel3(weight: .medium))
                 .foregroundColor(tabForeground(isSelected: isSelected, isHovered: isHovered))
                 .animation(.jotHover, value: isHovered)
                 .animation(.jotHover, value: isSelected)
@@ -441,14 +440,13 @@ struct SettingsPage: View {
                         HStack(alignment: .center, spacing: 12) {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Floating Note")
-                                    .font(FontManager.heading(size: 13, weight: .regular))
-                                    .tracking(-0.2)
+                                    .jotUI(FontManager.uiLabel3(weight: .regular))
                                     .foregroundColor(Color("SettingsPrimaryTextColor"))
 
                                 Text(
                                     "Open a floating note panel from any app using a global keyboard shortcut."
                                 )
-                                .font(FontManager.heading(size: 11, weight: .regular))
+                                .jotUI(FontManager.uiLabel5(weight: .regular))
                                 .foregroundColor(Color("SettingsPlaceholderTextColor"))
                                 .fixedSize(horizontal: false, vertical: true)
                             }
@@ -475,14 +473,13 @@ struct SettingsPage: View {
                             HStack(alignment: .center, spacing: 12) {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text("Start Meeting Session")
-                                        .font(FontManager.heading(size: 13, weight: .regular))
-                                        .tracking(-0.2)
+                                        .jotUI(FontManager.uiLabel3(weight: .regular))
                                         .foregroundColor(Color("SettingsPrimaryTextColor"))
 
                                     Text(
                                         "Open Jot's command palette in pick-a-note-for-meeting mode from any app."
                                     )
-                                    .font(FontManager.heading(size: 11, weight: .regular))
+                                    .jotUI(FontManager.uiLabel5(weight: .regular))
                                     .foregroundColor(Color("SettingsPlaceholderTextColor"))
                                     .fixedSize(horizontal: false, vertical: true)
                                 }
@@ -539,8 +536,7 @@ struct SettingsPage: View {
                         } label: {
                             settingsCapsuleRow {
                                 Text(themeManager.lockPasswordType.displayName)
-                                    .font(FontManager.heading(size: 13, weight: .regular))
-                                    .tracking(-0.5)
+                                    .jotUI(FontManager.uiLabel3(weight: .regular))
                                     .foregroundColor(Color("PrimaryTextColor"))
 
                                 Spacer()
@@ -559,8 +555,7 @@ struct SettingsPage: View {
                                 if isEditingPassword {
                                     SecureField("Password", text: $customPasswordInput)
                                         .textFieldStyle(.plain)
-                                        .font(FontManager.heading(size: 13, weight: .regular))
-                                        .tracking(-0.5)
+                                        .jotUI(FontManager.uiLabel3(weight: .regular))
                                         .foregroundColor(Color("PrimaryTextColor"))
                                         .onSubmit {
                                             if !customPasswordInput.isEmpty {
@@ -571,8 +566,7 @@ struct SettingsPage: View {
                                         }
                                 } else {
                                     Text("\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}\u{2022}")
-                                        .font(FontManager.heading(size: 13, weight: .regular))
-                                        .tracking(-0.5)
+                                        .jotUI(FontManager.uiLabel3(weight: .regular))
                                         .foregroundColor(Color("PrimaryTextColor"))
                                 }
 
@@ -636,8 +630,7 @@ struct SettingsPage: View {
                                     isEditingPassword = true
                                 } label: {
                                     Text("Change password")
-                                        .font(FontManager.heading(size: 13, weight: .regular))
-                                        .tracking(-0.5)
+                                        .jotUI(FontManager.uiLabel3(weight: .regular))
                                         // Was literally AccentColor light (#2563EB) hardcoded inline;
                                         // use the token so dark-mode + tint-hue adjustments carry.
                                         .foregroundColor(Color("AccentColor"))
@@ -707,15 +700,14 @@ struct SettingsPage: View {
         } label: {
             settingsCapsuleRow {
                 Text("Sort notes by:")
-                    .font(FontManager.heading(size: 13, weight: .regular))
-                    .tracking(-0.5)
+                    .jotUI(FontManager.uiLabel5(weight: .regular))
                     .foregroundColor(Color("SettingsPlaceholderTextColor"))
 
                 Spacer()
 
                 HStack(spacing: 4) {
                     Text(themeManager.noteSortOrder.displayName)
-                        .jotMetadataLabelTypography()
+                        .jotUI(FontManager.uiLabel3(weight: .regular))
                         .foregroundColor(Color("PrimaryTextColor"))
                     Image(systemName: "chevron.up.chevron.down")
                         .font(FontManager.uiPro(size: 9, weight: .regular).font)
@@ -780,13 +772,12 @@ struct SettingsPage: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                        .font(FontManager.heading(size: 13, weight: .regular))
-                        .tracking(-0.2)
+                        .jotUI(FontManager.uiLabel3(weight: .regular))
                         .foregroundColor(Color("SettingsPrimaryTextColor"))
 
                     if let subtitle {
                         Text(subtitle)
-                            .font(FontManager.heading(size: 11, weight: .regular))
+                            .jotUI(FontManager.uiLabel5(weight: .regular))
                             .foregroundColor(Color("SettingsPlaceholderTextColor"))
                     }
                 }
@@ -920,7 +911,7 @@ struct SettingsPage: View {
                 }
 
                 Text("Glass uses the same tint as Colors below, so hue and tint strength stay aligned with light and dark mode.")
-                    .font(FontManager.heading(size: 11, weight: .regular))
+                    .jotUI(FontManager.uiLabel5(weight: .regular))
                     .foregroundColor(Color("SettingsPlaceholderTextColor"))
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 14)
@@ -956,7 +947,7 @@ struct SettingsPage: View {
                 }
 
                 Text("Apply a subtle color wash to the app window and detail pane. The tint adapts to light and dark mode automatically — softer in light, deeper in dark.")
-                    .font(FontManager.heading(size: 11, weight: .regular))
+                    .jotUI(FontManager.uiLabel5(weight: .regular))
                     .foregroundColor(Color("SettingsPlaceholderTextColor"))
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 14)
@@ -973,10 +964,10 @@ struct SettingsPage: View {
         HStack(alignment: .center, spacing: 16) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(FontManager.heading(size: 13, weight: .regular))
+                    .jotUI(FontManager.uiLabel3(weight: .regular))
                     .foregroundStyle(Color("SettingsPrimaryTextColor"))
                 Text(caption)
-                    .font(FontManager.heading(size: 11, weight: .regular))
+                    .jotUI(FontManager.uiLabel5(weight: .regular))
                     .foregroundStyle(Color("SettingsPlaceholderTextColor"))
             }
             Spacer(minLength: 16)
@@ -1129,10 +1120,10 @@ struct SettingsPage: View {
                 HStack(alignment: .center, spacing: 16) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Body font size")
-                            .font(FontManager.heading(size: 13, weight: .regular))
+                            .jotUI(FontManager.uiLabel3(weight: .regular))
                             .foregroundStyle(Color("SettingsPrimaryTextColor"))
                         Text("Font size for the Body text")
-                            .font(FontManager.heading(size: 11, weight: .regular))
+                            .jotUI(FontManager.uiLabel5(weight: .regular))
                             .foregroundStyle(Color("SettingsPlaceholderTextColor"))
                     }
                     Spacer(minLength: 16)
@@ -1167,8 +1158,7 @@ struct SettingsPage: View {
 
                     VStack(alignment: .center, spacing: 6) {
                         Text("Jot")
-                            .font(FontManager.heading(size: 28, weight: .regular))
-                            .tracking(-0.4)
+                            .jotUI(FontManager.uiPro(size: 28, weight: .medium))
                             .foregroundColor(Color("SettingsPrimaryTextColor"))
                             .multilineTextAlignment(.center)
 
@@ -1231,8 +1221,7 @@ struct SettingsPage: View {
 
             HStack {
                 Text(developerEmail)
-                    .font(FontManager.heading(size: 13, weight: .regular))
-                    .tracking(-0.2)
+                    .jotUI(FontManager.uiLabel3(weight: .regular))
                     .foregroundColor(Color("SettingsPrimaryTextColor"))
 
                 Spacer()
@@ -1241,7 +1230,6 @@ struct SettingsPage: View {
                     if showCopiedConfirmation {
                         Text("Copied")
                             .jotMetadataLabelTypography()
-                            .tracking(-0.2)
                             .foregroundColor(Color("SettingsPlaceholderTextColor"))
                             .padding(.horizontal, 10)
                             .padding(.vertical, 4)
@@ -1338,8 +1326,7 @@ struct SettingsPage: View {
                     .frame(width: 15, height: 15)
 
                 Text(type.rawValue)
-                    .font(FontManager.heading(size: 13, weight: .regular))
-                    .tracking(-0.2)
+                    .jotUI(FontManager.uiLabel3(weight: .regular))
                     .foregroundColor(isSelected ? type.selectedText(for: colorScheme) : Color("SettingsPrimaryTextColor"))
             }
             .padding(.horizontal, 12)
@@ -1370,7 +1357,7 @@ struct SettingsPage: View {
         VStack(alignment: .trailing, spacing: 0) {
             FeedbackTextView(
                 text: $feedbackText,
-                font: .systemFont(ofSize: 14, weight: .regular),
+                font: FontManager.uiProNS(size: 14, weight: .regular),
                 textColor: NSColor(named: "SettingsPrimaryTextColor") ?? .labelColor
             )
             .frame(maxWidth: .infinity, minHeight: 150, maxHeight: 150)
@@ -1405,8 +1392,7 @@ struct SettingsPage: View {
                 }
             } label: {
                 Text("Could not send — tap to try again")
-                    .font(FontManager.heading(size: 13, weight: .regular))
-                    .tracking(-0.2)
+                    .jotUI(FontManager.uiLabel3(weight: .regular))
                     .foregroundColor(Color("ButtonPrimaryTextColor"))
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
@@ -1429,8 +1415,7 @@ struct SettingsPage: View {
                     .rotationEffect(.degrees(celebrateRotation))
 
                 Text("Feedback received")
-                    .font(FontManager.heading(size: 13, weight: .regular))
-                    .tracking(-0.2)
+                    .jotUI(FontManager.uiLabel3(weight: .regular))
                     .foregroundColor(.white)
                     .transition(.asymmetric(
                         insertion: .opacity.combined(with: .offset(y: 6)),
@@ -1451,8 +1436,7 @@ struct SettingsPage: View {
                 sendFeedback()
             } label: {
                 Text("Send")
-                    .font(FontManager.heading(size: 13, weight: .regular))
-                    .tracking(-0.2)
+                    .jotUI(FontManager.uiLabel3(weight: .regular))
                     .foregroundColor(Color("ButtonPrimaryTextColor"))
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
@@ -1530,15 +1514,13 @@ struct SettingsPage: View {
 
     private func sectionLabel(_ text: String) -> some View {
         Text(text)
-            .font(FontManager.heading(size: 11, weight: .regular))
-            .tracking(0)
+            .jotMetadataLabelTypography()
             .foregroundColor(Color("SettingsPlaceholderTextColor"))
     }
 
     private func settingsSelectionLabel(_ text: String, isSelected: Bool) -> some View {
         Text(text)
-            .font(FontManager.heading(size: 12, weight: .regular))
-            .tracking(-0.1)
+            .jotUI(FontManager.uiLabel4(weight: .regular))
             .foregroundColor(isSelected ? Color("ButtonPrimaryTextColor") : Color("SettingsPrimaryTextColor"))
             .padding(.horizontal, 10)
             .padding(.vertical, 3)

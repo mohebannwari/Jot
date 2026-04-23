@@ -70,21 +70,20 @@ struct BackupSettingsPanel: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Backup location")
-                            .font(FontManager.heading(size: 13, weight: .regular))
-                            .tracking(-0.5)
+                            .jotUI(FontManager.uiLabel3(weight: .regular))
                             .foregroundColor(Color("PrimaryTextColor"))
 
                         if backupManager.isBookmarkStale {
                             Text("Location unavailable -- please re-select")
-                                .font(FontManager.heading(size: 11, weight: .regular))
+                                .jotUI(FontManager.uiLabel5(weight: .regular))
                                 .foregroundColor(.red)
                         } else if let name = backupManager.backupFolderName {
                             Text(name)
-                                .font(FontManager.heading(size: 11, weight: .regular))
+                                .jotUI(FontManager.uiLabel5(weight: .regular))
                                 .foregroundColor(Color("SettingsPlaceholderTextColor"))
                         } else {
                             Text("No folder selected")
-                                .font(FontManager.heading(size: 11, weight: .regular))
+                                .jotUI(FontManager.uiLabel5(weight: .regular))
                                 .foregroundColor(Color("SettingsPlaceholderTextColor"))
                         }
                     }
@@ -95,8 +94,7 @@ struct BackupSettingsPanel: View {
                         backupManager.pickBackupFolder()
                     } label: {
                         Text(backupManager.backupFolderName != nil ? "Change" : "Select")
-                            .font(FontManager.heading(size: 12, weight: .regular))
-                            .tracking(-0.2)
+                            .jotUI(FontManager.uiLabel4(weight: .regular))
                             .foregroundColor(Color("PrimaryTextColor"))
                             .padding(.horizontal, 12)
                             .padding(.vertical, 6)
@@ -112,8 +110,7 @@ struct BackupSettingsPanel: View {
                 // Frequency picker
                 HStack {
                     Text("Auto backup")
-                        .font(FontManager.heading(size: 13, weight: .regular))
-                        .tracking(-0.5)
+                        .jotUI(FontManager.uiLabel3(weight: .regular))
                         .foregroundColor(Color("PrimaryTextColor"))
 
                     Spacer()
@@ -134,8 +131,7 @@ struct BackupSettingsPanel: View {
                     } label: {
                         HStack(spacing: 4) {
                             Text(themeManager.backupFrequency.displayName)
-                                .font(FontManager.heading(size: 12, weight: .regular))
-                                .tracking(-0.2)
+                                .jotUI(FontManager.uiLabel4(weight: .regular))
                                 .foregroundColor(Color("SettingsPlaceholderTextColor"))
 
                             Image(systemName: "chevron.up.chevron.down")
@@ -150,8 +146,7 @@ struct BackupSettingsPanel: View {
                 // Max backups stepper
                 HStack {
                     Text("Keep last")
-                        .font(FontManager.heading(size: 13, weight: .regular))
-                        .tracking(-0.5)
+                        .jotUI(FontManager.uiLabel3(weight: .regular))
                         .foregroundColor(Color("PrimaryTextColor"))
 
                     Spacer()
@@ -183,8 +178,7 @@ struct BackupSettingsPanel: View {
                         }
                     } label: {
                         Text("Restore")
-                            .font(FontManager.heading(size: 12, weight: .regular))
-                            .tracking(-0.2)
+                            .jotUI(FontManager.uiLabel4(weight: .regular))
                             .foregroundColor(Color("PrimaryTextColor"))
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 11)
@@ -213,8 +207,7 @@ struct BackupSettingsPanel: View {
                                 .controlSize(.small)
                         }
                         Text(backupStatusText)
-                            .font(FontManager.heading(size: 12, weight: .regular))
-                            .tracking(-0.2)
+                            .jotUI(FontManager.uiLabel4(weight: .regular))
                     }
                     .foregroundColor(colorScheme == .light ? Color.white : Color.black)
                     .frame(maxWidth: .infinity)
@@ -233,13 +226,13 @@ struct BackupSettingsPanel: View {
             // Last backup metadata
             if let lastDate = backupManager.lastBackupDate {
                 (Text("Last backup ")
-                    .font(FontManager.heading(size: 11, weight: .regular))
+                    .jotUI(FontManager.uiLabel5(weight: .regular))
                     .foregroundColor(Color("SettingsPlaceholderTextColor"))
                 + Text(lastDate, style: .relative)
-                    .font(FontManager.heading(size: 11, weight: .regular))
+                    .jotUI(FontManager.uiLabel5(weight: .regular))
                     .foregroundColor(Color("SettingsPlaceholderTextColor"))
                 + Text(" ago")
-                    .font(FontManager.heading(size: 11, weight: .regular))
+                    .jotUI(FontManager.uiLabel5(weight: .regular))
                     .foregroundColor(Color("SettingsPlaceholderTextColor")))
             }
 
@@ -268,12 +261,11 @@ struct BackupSettingsPanel: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Keep versions for")
-                            .font(FontManager.heading(size: 13, weight: .regular))
-                            .tracking(-0.5)
+                            .jotUI(FontManager.uiLabel3(weight: .regular))
                             .foregroundColor(Color("PrimaryTextColor"))
 
                         Text("Snapshots are created 30 seconds after you stop editing")
-                            .font(FontManager.heading(size: 11, weight: .regular))
+                            .jotUI(FontManager.uiLabel5(weight: .regular))
                             .foregroundColor(Color("SettingsPlaceholderTextColor"))
                     }
 
@@ -295,8 +287,7 @@ struct BackupSettingsPanel: View {
                     } label: {
                         HStack(spacing: 4) {
                             Text(retentionLabel)
-                                .font(FontManager.heading(size: 12, weight: .regular))
-                                .tracking(-0.2)
+                                .jotUI(FontManager.uiLabel4(weight: .regular))
                                 .foregroundColor(Color("SettingsPlaceholderTextColor"))
 
                             Image(systemName: "chevron.up.chevron.down")
@@ -334,8 +325,7 @@ struct BackupSettingsPanel: View {
 
     private func sectionLabel(_ text: String) -> some View {
         Text(text)
-            .font(FontManager.heading(size: 11, weight: .regular))
-            .tracking(0)
+            .jotMetadataLabelTypography()
             .foregroundColor(Color("SettingsPlaceholderTextColor"))
     }
 
