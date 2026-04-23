@@ -93,10 +93,10 @@ final class MapBlockDataTests: XCTestCase {
         XCTAssertEqual(data.headingDegrees, 270, accuracy: 0.0001)
     }
 
-    func testOpenInMapsURLPreservesModeHeadingAndViewport() {
+    func testOpenInMapsURLOpensPinnedPlaceUsingStoredAddressAndCoordinate() {
         let data = MapBlockData(
-            title: "Museum",
-            subtitle: "Downtown",
+            title: "Museum Insel Hombroich",
+            subtitle: "Minkel 2, 41472 Neuss, Germany",
             pinCoordinate: CLLocationCoordinate2D(latitude: 52.520008, longitude: 13.404954),
             viewportCenter: CLLocationCoordinate2D(latitude: 52.520108, longitude: 13.405054),
             viewportSpan: MKCoordinateSpan(latitudeDelta: 0.010000, longitudeDelta: 0.020000),
@@ -111,12 +111,38 @@ final class MapBlockDataTests: XCTestCase {
         }
 
         XCTAssertEqual(url.host, "maps.apple.com")
-        XCTAssertEqual(url.path, "/frame")
+        XCTAssertEqual(url.path, "/place")
         let query = Dictionary(uniqueKeysWithValues: (components.queryItems ?? []).map { ($0.name, $0.value ?? "") })
-        XCTAssertEqual(query["map"], "transit")
-        XCTAssertEqual(query["center"], "52.520108,13.405054")
-        XCTAssertEqual(query["span"], "0.020000,0.010000")
-        XCTAssertEqual(query["heading"], "123.4567")
+        XCTAssertEqual(query["coordinate"], "52.520008,13.404954")
+        XCTAssertEqual(query["address"], "Minkel 2, 41472 Neuss, Germany")
+        XCTAssertEqual(query["name"], "Museum Insel Hombroich")
+        XCTAssertNil(query["center"])
+        XCTAssertNil(query["span"])
+        XCTAssertNil(query["heading"])
+    }
+
+    func testOpenInMapsURLFallsBackToPinnedCoordinateWhenAddressIsUnavailable() {
+        let data = MapBlockData(
+            title: "",
+            subtitle: "",
+            pinCoordinate: CLLocationCoordinate2D(latitude: 37.33182, longitude: -122.03118),
+            viewportCenter: CLLocationCoordinate2D(latitude: 37.33191, longitude: -122.03127),
+            viewportSpan: MKCoordinateSpan(latitudeDelta: 0.004321, longitudeDelta: 0.005432),
+            widthRatio: 0.3333,
+            displayMode: .explore,
+            headingDegrees: 0
+        )
+
+        guard let url = MapBlockOpenInMapsURLBuilder.url(for: data),
+              let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            return XCTFail("failed to build url")
+        }
+
+        XCTAssertEqual(url.path, "/place")
+        let query = Dictionary(uniqueKeysWithValues: (components.queryItems ?? []).map { ($0.name, $0.value ?? "") })
+        XCTAssertEqual(query["coordinate"], "37.331820,-122.031180")
+        XCTAssertNil(query["address"])
+        XCTAssertNil(query["name"])
     }
 
     func testMapDisplayModeConfigurationMappingMatchesExpectedPublicModes() throws {

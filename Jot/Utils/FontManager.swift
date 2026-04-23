@@ -131,7 +131,9 @@ struct FontManager {
     /// content use ``metadata(size:weight:)`` **without** `jotMetadataLabelTypography()` so casing
     /// stays natural (still default to **11pt medium** for the monospace face).
     static func metadata(size: CGFloat = 11, weight: Weight = .medium) -> Font {
-        return Font.system(size: size, weight: weight.toSwiftUIWeight(), design: .monospaced)
+        // Use the same face as ``metadataNS``. SwiftUI's `Font.system(..., design: .monospaced)`
+        // can render lighter than the requested weight on macOS; bridging NSFont fixes that.
+        Font(NSFont.monospacedSystemFont(ofSize: size, weight: weight.toNSWeight()))
     }
 
     // MARK: - Icon Fonts
@@ -167,7 +169,7 @@ struct FontManager {
 
     /// SwiftUI font for the note title ``TextField``. Omits ``.leading(.tight)`` from ``heading(...)``
     /// so wrapped lines and tall capitals are not clipped by overly tight line metrics.
-    static func noteDetailTitleFont(weight: Weight = .medium) -> Font {
+    static func noteDetailTitleFont(weight: Weight = .semibold) -> Font {
         Font.system(size: noteDetailTitlePointSize, weight: weight.toSwiftUIWeight(), design: .default)
     }
 
@@ -177,7 +179,7 @@ struct FontManager {
     /// so title ascender slop is folded into the formula instead of reading ``safeAreaInsets``.
     nonisolated static func noteDetailEditorScrollTopInset() -> CGFloat {
         let meta = NSFont.monospacedSystemFont(ofSize: 11, weight: .medium)
-        let titleFont = NSFont.systemFont(ofSize: noteDetailTitlePointSize, weight: .medium)
+        let titleFont = NSFont.systemFont(ofSize: noteDetailTitlePointSize, weight: .semibold)
         let metadataLine = defaultLineHeight(for: meta)
         let titleLine = defaultLineHeight(for: titleFont)
         let titleAscenderSlop = max(0, titleLine - titleFont.capHeight - 4)

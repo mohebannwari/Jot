@@ -248,28 +248,34 @@ enum MapBlockOpenInMapsURLBuilder {
         var components = URLComponents()
         components.scheme = "https"
         components.host = "maps.apple.com"
-        components.path = "/frame"
-        components.queryItems = [
+        components.path = "/place"
+
+        var queryItems = [
             URLQueryItem(
-                name: "map",
-                value: data.displayMode.mapsFrameValue
-            ),
-            URLQueryItem(
-                name: "center",
-                value: "\(MapBlockData.formatDecimal(data.viewportCenter.latitude, digits: 6)),\(MapBlockData.formatDecimal(data.viewportCenter.longitude, digits: 6))"
-            ),
-            URLQueryItem(
-                name: "span",
-                value: "\(MapBlockData.formatDecimal(data.viewportSpan.longitudeDelta, digits: 6)),\(MapBlockData.formatDecimal(data.viewportSpan.latitudeDelta, digits: 6))"
-            ),
-            URLQueryItem(
-                name: "heading",
-                value: MapBlockData.formatDecimal(
-                    MapBlockData.normalizedHeading(data.headingDegrees),
-                    digits: 4
-                )
-            ),
+                name: "coordinate",
+                value: "\(MapBlockData.formatDecimal(data.pinCoordinate.latitude, digits: 6)),\(MapBlockData.formatDecimal(data.pinCoordinate.longitude, digits: 6))"
+            )
         ]
+
+        if !data.subtitle.isEmpty {
+            queryItems.append(
+                URLQueryItem(
+                    name: "address",
+                    value: data.subtitle
+                )
+            )
+        }
+
+        if !data.title.isEmpty {
+            queryItems.append(
+                URLQueryItem(
+                    name: "name",
+                    value: data.title
+                )
+            )
+        }
+
+        components.queryItems = queryItems
         return components.url
     }
 }

@@ -317,7 +317,7 @@ final class NoteExportService {
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>\(title)</title>
+            <title>\(NoteMarkupHTMLRenderer.escapeHTML(title))</title>
             <style>
                 body {
                     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
@@ -349,57 +349,14 @@ final class NoteExportService {
                     margin-right: 8px;
                 }
                 .content {
-                    white-space: pre-wrap;
                     margin-bottom: 30px;
-                }
-                img {
-                    max-width: 100%;
-                    height: auto;
-                    border-radius: 8px;
-                    margin: 20px 0;
                 }
                 hr {
                     border: none;
                     border-top: 1px solid #ddd;
                     margin: 40px 0;
                 }
-                pre {
-                    background: #f4f4f5;
-                    border-radius: 8px;
-                    padding: 16px;
-                    overflow-x: auto;
-                    border-left: 3px solid #d4d4d8;
-                }
-                pre code {
-                    font-family: 'SF Mono', Menlo, Monaco, monospace;
-                    font-size: 13px;
-                    background: none;
-                    padding: 0;
-                }
-                code {
-                    font-family: 'SF Mono', Menlo, Monaco, monospace;
-                    font-size: 0.9em;
-                    background: #f0f0f0;
-                    padding: 2px 6px;
-                    border-radius: 4px;
-                }
-                blockquote {
-                    border-left: 3px solid #a1a1aa;
-                    margin: 12px 0;
-                    padding: 8px 16px;
-                    color: #52525b;
-                }
-                mark {
-                    padding: 1px 3px;
-                    border-radius: 2px;
-                }
-                .file-attachment {
-                    display: inline-block;
-                    background: #f0f0f0;
-                    padding: 4px 10px;
-                    border-radius: 6px;
-                    font-size: 13px;
-                }
+                \(NoteMarkupHTMLRenderer.sharedStyles(for: .export))
             </style>
         </head>
         <body>
@@ -410,7 +367,7 @@ final class NoteExportService {
                 html += "<hr>\n"
             }
 
-            html += "<h1>\(escapeHTML(note.title))</h1>\n"
+            html += "<h1>\(NoteMarkupHTMLRenderer.escapeHTML(note.title))</h1>\n"
 
             let dateFormatter = DateFormatter()
             dateFormatter.dateStyle = .long
@@ -420,12 +377,12 @@ final class NoteExportService {
             if !note.tags.isEmpty {
                 html += "<div class=\"tags\">\n"
                 for tag in note.tags {
-                    html += "<span class=\"tag\">#\(escapeHTML(tag))</span>\n"
+                    html += "<span class=\"tag\">#\(NoteMarkupHTMLRenderer.escapeHTML(tag))</span>\n"
                 }
                 html += "</div>\n"
             }
 
-            html += "<div class=\"content\">\(convertMarkupToHTML(note.content))</div>\n"
+            html += "<div class=\"content note-markup\">\(convertMarkupToHTML(note.content))</div>\n"
         }
 
         html += """
@@ -615,147 +572,7 @@ final class NoteExportService {
 
     /// Convert serialized [[...]] markup to HTML
     func convertMarkupToHTML(_ content: String) -> String {
-        // Strip AI metadata block — it's internal persistence, not user content
-        let cleanContent = NoteDetailView.stripAIBlock(content).content
-        var text = escapeHTML(cleanContent)
-        // Headings
-        text = text.replacingOccurrences(of: "[[h1]]", with: "<h1>")
-        text = text.replacingOccurrences(of: "[[/h1]]", with: "</h1>")
-        text = text.replacingOccurrences(of: "[[h2]]", with: "<h2>")
-        text = text.replacingOccurrences(of: "[[/h2]]", with: "</h2>")
-        text = text.replacingOccurrences(of: "[[h3]]", with: "<h3>")
-        text = text.replacingOccurrences(of: "[[/h3]]", with: "</h3>")
-        // Bold / italic / underline / strikethrough
-        text = text.replacingOccurrences(of: "[[b]]", with: "<strong>")
-        text = text.replacingOccurrences(of: "[[/b]]", with: "</strong>")
-        text = text.replacingOccurrences(of: "[[i]]", with: "<em>")
-        text = text.replacingOccurrences(of: "[[/i]]", with: "</em>")
-        text = text.replacingOccurrences(of: "[[u]]", with: "<u>")
-        text = text.replacingOccurrences(of: "[[/u]]", with: "</u>")
-        text = text.replacingOccurrences(of: "[[s]]", with: "<s>")
-        text = text.replacingOccurrences(of: "[[/s]]", with: "</s>")
-        // Inline code before block [[code]].
-        text = text.replacingOccurrences(of: "[[ic]]", with: "<code>")
-        text = text.replacingOccurrences(of: "[[/ic]]", with: "</code>")
-        // Code blocks
-        text = text.replacingOccurrences(of: "[[code]]", with: "<pre><code>")
-        text = text.replacingOccurrences(of: "[[/code]]", with: "</code></pre>")
-        // Block quotes
-        text = text.replacingOccurrences(of: "[[quote]]", with: "<blockquote>")
-        text = text.replacingOccurrences(of: "[[/quote]]", with: "</blockquote>")
-        text = text.replacingOccurrences(of: "[[arrow]]", with: "&rarr;")
-        // Ordered list prefix
-        if let regex = try? NSRegularExpression(pattern: #"\[\[ol\|(\d+)\]\]"#) {
-            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "<li>")
-        }
-        // Color
-        if let regex = try? NSRegularExpression(pattern: #"\[\[color\|([0-9a-fA-F]{6})\]\]"#) {
-            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "<span style=\"color:#$1\">")
-        }
-        text = text.replacingOccurrences(of: "[[/color]]", with: "</span>")
-        // Highlight
-        if let regex = try? NSRegularExpression(pattern: #"\[\[hl\|([0-9a-fA-F]{6})\]\]"#) {
-            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "<mark style=\"background-color:#$1\">")
-        }
-        text = text.replacingOccurrences(of: "[[/hl]]", with: "</mark>")
-        // Alignment
-        if let regex = try? NSRegularExpression(pattern: #"\[\[align:(center|right|justify)\]\]"#) {
-            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "<div style=\"text-align:$1\">")
-        }
-        text = text.replacingOccurrences(of: "[[/align]]", with: "</div>")
-        // Checkboxes
-        text = text.replacingOccurrences(of: "[x] ", with: "<input type=\"checkbox\" checked disabled> ")
-        text = text.replacingOccurrences(of: "[ ] ", with: "<input type=\"checkbox\" disabled> ")
-        // Dividers
-        text = text.replacingOccurrences(of: "[[divider]]", with: "<hr>")
-        if let regex = try? NSRegularExpression(pattern: #"\[\[map\|([^|]*)\|[^\]]+\]\]"#) {
-            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "<div class=\"attachment\">&#128506; Map: $1</div>")
-        }
-        // Links — labeled first, then bare URL-only tags.
-        if let regex = try? NSRegularExpression(pattern: #"\[\[link\|([^|\]]+)\|([^\]]+)\]\]"#) {
-            let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
-            for match in matches.reversed() {
-                if let urlRange = Range(match.range(at: 1), in: text),
-                   let labelRange = Range(match.range(at: 2), in: text),
-                   let fullRange = Range(match.range, in: text) {
-                    let url = String(text[urlRange])
-                    let label = String(text[labelRange])
-                    let sanitizedURL = sanitizeURL(url)
-                    text = text.replacingCharacters(in: fullRange, with: "<a href=\"\(sanitizedURL)\">\(label)</a>")
-                }
-            }
-        }
-
-        if let regex = try? NSRegularExpression(pattern: #"\[\[link\|([^\]]+)\]\]"#) {
-            let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
-            for match in matches.reversed() {
-                if let urlRange = Range(match.range(at: 1), in: text),
-                   let fullRange = Range(match.range, in: text) {
-                    let url = String(text[urlRange])
-                    let sanitizedURL = sanitizeURL(url)
-
-                    text = text.replacingCharacters(in: fullRange, with: "<a href=\"\(sanitizedURL)\">\(url)</a>")
-                }
-            }
-        }
-        // Images (embed as base64 if available, otherwise reference)
-        if let regex = try? NSRegularExpression(pattern: #"\[\[image\|\|\|([^\]|]+)(?:\|\|\|[0-9]*\.?[0-9]+)?\]\]"#) {
-            let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
-            for match in matches.reversed() {
-                if let filenameRange = Range(match.range(at: 1), in: text),
-                   let fullRange = Range(match.range, in: text) {
-                    let filename = String(text[filenameRange])
-                    if let imageURL = ImageStorageManager.shared.getImageURL(for: filename),
-                       let imageData = try? Data(contentsOf: imageURL) {
-                        let base64 = imageData.base64EncodedString()
-                        text = text.replacingCharacters(in: fullRange,
-                            with: "<img src=\"data:image/jpeg;base64,\(base64)\" alt=\"Image\" style=\"max-width:100%\">")
-                    } else {
-                        text = text.replacingCharacters(in: fullRange, with: "<img src=\"\(filename)\" alt=\"Image\">")
-                    }
-                }
-            }
-        }
-        // File attachments
-        if let regex = try? NSRegularExpression(pattern: #"\[\[file\|[^|]+\|([^|]+)\|[^\]]*\]\]"#) {
-            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "<span class=\"file-attachment\">$1</span>")
-        }
-        // Web clips
-        if let regex = try? NSRegularExpression(pattern: #"\[\[webclip\|([^|]*)\|([^|]*)\|([^|]*)\|([^\]]*)\]\]"#) {
-            let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
-            for match in matches.reversed() {
-                if let urlRange = Range(match.range(at: 1), in: text),
-                   let labelRange = Range(match.range(at: 2), in: text),
-                   let fullRange = Range(match.range, in: text) {
-                    let url = String(text[urlRange])
-                    let label = String(text[labelRange])
-                    let sanitizedURL = sanitizeURL(url)
-                    text = text.replacingCharacters(in: fullRange, with: "<a href=\"\(sanitizedURL)\" class=\"webclip\">\(label)</a>")
-                }
-            }
-        }
-        // Link cards
-        if let regex = try? NSRegularExpression(pattern: #"\[\[linkcard\|([^|]*)\|([^|]*)\|([^\]]*)\]\]"#) {
-            let matches = regex.matches(in: text, range: NSRange(text.startIndex..., in: text))
-            for match in matches.reversed() {
-                if let titleRange = Range(match.range(at: 1), in: text),
-                   let urlRange = Range(match.range(at: 3), in: text),
-                   let fullRange = Range(match.range, in: text) {
-                    let title = String(text[titleRange])
-                    let url = String(text[urlRange])
-                    let sanitizedURL = sanitizeURL(url)
-                    text = text.replacingCharacters(in: fullRange, with: "<a href=\"\(sanitizedURL)\" class=\"linkcard\">\(title)</a>")
-                }
-            }
-        }
-        // Table markup
-        if let regex = try? NSRegularExpression(pattern: #"\[\[table\|[^\]]*\]\]"#) {
-            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "<p>[Table]</p>")
-        }
-        // Convert remaining newlines to <br> (except inside pre blocks)
-        // Simple approach: just add <br> for non-block newlines
-        text = text.replacingOccurrences(of: "\n", with: "<br>\n")
-        return text
+        NoteMarkupHTMLRenderer.renderFragment(content, context: .export)
     }
 
     // MARK: - Helper Methods
@@ -824,35 +641,5 @@ final class NoteExportService {
     private func sanitizeFilename(_ filename: String) -> String {
         let invalidCharacters = CharacterSet(charactersIn: ":/\\?%*|\"<>")
         return filename.components(separatedBy: invalidCharacters).joined(separator: "-")
-    }
-
-    /// Escape HTML special characters
-    private func escapeHTML(_ string: String) -> String {
-        return string
-            .replacingOccurrences(of: "&", with: "&amp;")
-            .replacingOccurrences(of: "<", with: "&lt;")
-            .replacingOccurrences(of: ">", with: "&gt;")
-            .replacingOccurrences(of: "\"", with: "&quot;")
-            .replacingOccurrences(of: "'", with: "&#39;")
-    }
-
-    /// Sanitize a URL to only allow safe schemes (http, https, mailto, tel).
-    /// Returns "#" for disallowed schemes like javascript: or data:.
-    private func sanitizeURL(_ url: String) -> String {
-        let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
-        // Allow scheme-relative URLs and relative paths
-        if trimmed.hasPrefix("//") || trimmed.hasPrefix("/") || trimmed.hasPrefix("#") {
-            return url
-        }
-        // Use URL parser for robust scheme extraction (handles Unicode, encoding, etc.)
-        let allowedSchemes: Set<String> = ["http", "https", "mailto", "tel"]
-        if let parsed = URL(string: trimmed), let scheme = parsed.scheme?.lowercased() {
-            return allowedSchemes.contains(scheme) ? url : "#"
-        }
-        // No parseable scheme — allow (relative URL)
-        if !trimmed.contains(":") {
-            return url
-        }
-        return "#"
     }
 }
