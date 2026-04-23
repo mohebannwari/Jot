@@ -40,6 +40,30 @@ final class ThemeManagerTests: XCTestCase {
         XCTAssertEqual(manager.currentBodyFontStyle, .system)
     }
 
+    /// No `AppBodyFontStyle` key: first launch defaults to SF Pro (`.system`), not Charter.
+    func testBodyFontStyle_defaultsToSystem_onFirstLaunch() {
+        let (defaults, suiteName) = isolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        XCTAssertNil(defaults.string(forKey: ThemeManager.bodyFontStyleDefaultsKey))
+
+        let manager = ThemeManager(userDefaults: defaults)
+
+        XCTAssertEqual(manager.currentBodyFontStyle, .system)
+    }
+
+    /// Persisted `"default"` must still resolve to Charter for existing users.
+    func testBodyFontStyle_explicitDefaultPersistsAsCharter() {
+        let (defaults, suiteName) = isolatedDefaults()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        defaults.set(BodyFontStyle.default.rawValue, forKey: ThemeManager.bodyFontStyleDefaultsKey)
+
+        let manager = ThemeManager(userDefaults: defaults)
+
+        XCTAssertEqual(manager.currentBodyFontStyle, .default)
+    }
+
     // MARK: - Tint
 
     func testTintDefaults_onFirstLaunch() {

@@ -1235,12 +1235,10 @@ struct NotelinkPillView: View {
     var body: some View {
         HStack(spacing: 4) {
             Text("@")
-                .font(.system(size: 12, weight: .semibold))
-                .tracking(-0.2)
+                .jotUI(FontManager.uiPro(size: 12, weight: .semibold))
 
             Text(title.isEmpty ? "Untitled" : title)
-                .font(.system(size: 11, weight: .medium))
-                .tracking(-0.2)
+                .jotUI(FontManager.uiLabel5(weight: .medium))
                 .lineLimit(1)
 
             Image("IconArrowRightUpCircle")
@@ -1272,8 +1270,7 @@ struct FileLinkPillView: View {
                 .frame(width: 14, height: 14)
 
             Text(displayName.isEmpty ? "Untitled" : displayName)
-                .font(.system(size: 11, weight: .medium))
-                .tracking(-0.2)
+                .jotUI(FontManager.uiLabel5(weight: .medium))
                 .lineLimit(1)
 
             Image("IconArrowRightUpCircle")
@@ -1616,7 +1613,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         textView.allowsUndo = !readOnly
         textView.backgroundColor = .clear
         textView.drawsBackground = false
-        // Use Charter for body text as per design requirements
+        // Body font follows ThemeManager (SF Pro by default; Charter or mono when chosen).
         textView.font = FontManager.bodyNS(size: ThemeManager.currentBodyFontSize(), weight: .regular)
         // Slightly taller vertical inset so rasterized pill attachments (notelinks, file links)
         // that extend above the body cap height stay inside the text view instead of clipping
@@ -2136,7 +2133,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         private var lastKnownSelectionText: String = ""
         private var lastKnownSelectionWindowRect: CGRect = .zero
 
-        // Use Charter for body text as per design requirements
+        /// Base paragraph font for layout math — same face/size as the visible editor body.
         private static var textFont: NSFont {
             FontManager.bodyNS(size: ThemeManager.currentBodyFontSize(), weight: .regular)
         }
@@ -8947,7 +8944,7 @@ final class TodoCheckboxAttachmentCell: NSTextAttachmentCell {
     override var cellSize: NSSize { size }
 
     override nonisolated func cellBaselineOffset() -> NSPoint {
-        let font = NSFont(name: "Charter", size: 16) ?? NSFont.systemFont(ofSize: 16)
+        let font = FontManager.bodyNS(size: 16, weight: .regular)
         let offset = (font.capHeight - size.height) / 2
         return NSPoint(x: 0, y: offset)
     }

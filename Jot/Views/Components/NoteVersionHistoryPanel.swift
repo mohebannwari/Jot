@@ -60,7 +60,7 @@ struct NoteVersionHistoryPanel: View {
                 }
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 9, weight: .bold))
+                    .font(FontManager.uiMicro(weight: .bold).font)
                     .foregroundColor(Color("SecondaryTextColor"))
                     .frame(width: 22, height: 22)
                     .background(Color("SurfaceTranslucentColor"), in: Circle())
@@ -219,7 +219,7 @@ private struct VersionRowButton: View {
                 Spacer()
 
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 9, weight: .medium))
+                    .font(FontManager.uiPro(size: 9, weight: .medium).font)
                     .foregroundColor(Color("SettingsPlaceholderTextColor"))
             }
             .padding(.horizontal, 10)

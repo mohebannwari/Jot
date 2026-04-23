@@ -5,10 +5,10 @@
 //  Created by Moheb Anwari on 10.10.25.
 //
 //  Centralized font management for consistent typography across the app.
-//  This manager provides three font families as per design requirements:
-//  1. Charter - for body text and content
-//  2. SF Pro Compact - for headings and note names
-//  3. SF Mono - for metadata like dates and timestamps
+//  Families:
+//  1. SF Pro — UI chrome, headings, and default note body (see ``BodyFontStyle`` / ThemeManager)
+//  2. Charter — optional serif body (`BodyFontStyle.default`)
+//  3. SF Mono — metadata and technical labels
 
 import AppKit
 import Foundation
@@ -41,20 +41,20 @@ struct FontManager {
         userDefaults: UserDefaults = .standard
     ) -> BodyFontStyle {
         let rawValue =
-            userDefaults.string(forKey: bodyFontStyleKey) ?? BodyFontStyle.default.rawValue
-        return BodyFontStyle(rawValue: rawValue) ?? .default
+            userDefaults.string(forKey: bodyFontStyleKey) ?? BodyFontStyle.system.rawValue
+        return BodyFontStyle(rawValue: rawValue) ?? .system
     }
 
     /// Horizontal / vertical padding for ImageRenderer capsule pills inlined in the rich text editor
-    /// (notelinks, file links, file-attachment tags). Fractional vertical values trim bitmap slack vs. Charter line metrics.
+    /// (notelinks, file links, file-attachment tags). Fractional vertical values trim bitmap slack vs. body line metrics.
     enum InlineEditorPillRasterPadding {
         public static let horizontal: CGFloat = 4
         public static let vertical: CGFloat = 3.4375
     }
 
-    // MARK: - Body Text Fonts (Charter)
+    // MARK: - Body text (user preference: SF Pro, Charter, or mono)
 
-    /// Primary body text font using Charter
+    /// Note body / editor paragraph font. Default install uses SF Pro (``BodyFontStyle.system``).
     /// Use for: Note content, editor text, paragraph text
     static func body(size: CGFloat = 16, weight: Weight = .regular) -> Font {
         switch currentBodyFontStyle() {
@@ -148,6 +148,143 @@ struct FontManager {
         return NSFont.monospacedSystemFont(ofSize: size, weight: weight.toNSWeight())
     }
 
+    // MARK: - UI type ramp (SF Pro, Figma-aligned)
+
+    /// Proportional SF UI chrome: font + SwiftUI letter spacing (`.tracking`, in **points**).
+    /// Apply with ``View/jotUI(_:)`` so tracking stays tied to the size ramp.
+    struct UIChromeFont: Sendable, Hashable {
+        let font: Font
+        let tracking: CGFloat
+    }
+
+    /// Point sizes from `.claude/rules/design-system.md` (Figma type scale). Prefer named
+    /// ``uiLabel2()`` … ``uiMicro()`` for hierarchy; use ``uiPro(size:weight:)`` for one-off
+    /// control sizes until they are promoted into the ramp. Future: map each rung to
+    /// `Font.TextStyle` / Dynamic Type without touching every call site.
+    enum UITextRamp {
+        nonisolated static let headingH4: CGFloat = 20
+        nonisolated static let label2: CGFloat = 15
+        nonisolated static let label3: CGFloat = 13
+        nonisolated static let label4: CGFloat = 12
+        nonisolated static let label5: CGFloat = 11
+        nonisolated static let tiny: CGFloat = 10
+        nonisolated static let micro: CGFloat = 9
+    }
+
+    /// Letter spacing for fixed-size **proportional** SF chrome (SwiftUI `.tracking` points).
+    ///
+    /// Apple’s SF fonts ship with optical size tables; `Font.system(size:)` does not apply the
+    /// same tracking as `TextStyle`-based text. This curve follows HIG/WWDC “UI typography”
+    /// guidance: keep **small** label sizes slightly **open** (small positive tracking) for
+    /// readability, and use **mild** negative tracking only at **larger** display sizes so
+    /// headlines do not feel loose. Values are intentionally gentler than aggressive print
+    /// tightening so the UI does not read “cramped”.
+    nonisolated static func proportionalUITracking(pointSize: CGFloat) -> CGFloat {
+        let s = pointSize
+        switch s {
+        case ..<9: return 0.22
+        case 9..<10: return 0.18
+        case 10..<11: return 0.16
+        case 11..<12: return 0.14
+        case 12..<13: return 0.08
+        case 13..<14: return 0.04
+        case 14..<17: return 0
+        case 17..<22: return -0.04
+        case 22..<28: return -0.08
+        default: return -0.12
+        }
+    }
+
+    /// SF Pro for chrome and controls (not note body — use ``body``).
+    static func uiPro(size: CGFloat, weight: Weight = .regular) -> UIChromeFont {
+        UIChromeFont(
+            font: Font.system(size: size, weight: weight.toSwiftUIWeight(), design: .default),
+            tracking: proportionalUITracking(pointSize: size)
+        )
+    }
+
+    /// Figma Heading/H4 — 20pt.
+    static func uiHeadingH4(weight: Weight = .medium) -> UIChromeFont {
+        uiPro(size: UITextRamp.headingH4, weight: weight)
+    }
+
+    /// Figma Label-2 — 15pt.
+    static func uiLabel2(weight: Weight = .medium) -> UIChromeFont {
+        uiPro(size: UITextRamp.label2, weight: weight)
+    }
+
+    /// Figma Label-3 — 13pt.
+    static func uiLabel3(weight: Weight = .medium) -> UIChromeFont {
+        uiPro(size: UITextRamp.label3, weight: weight)
+    }
+
+    /// Figma Label-4 — 12pt.
+    static func uiLabel4(weight: Weight = .regular) -> UIChromeFont {
+        uiPro(size: UITextRamp.label4, weight: weight)
+    }
+
+    /// Figma Label-5 — 11pt (proportional SF Pro; for mono static labels use ``metadata`` + ``jotMetadataLabelTypography()``).
+    /// Pass `textLeading` when matching `NSTextField`/`TextField` line metrics (e.g. search field).
+    static func uiLabel5(weight: Weight = .medium, textLeading: Font.Leading? = nil) -> UIChromeFont {
+        var base = Font.system(size: UITextRamp.label5, weight: weight.toSwiftUIWeight(), design: .default)
+        if let textLeading {
+            base = base.leading(textLeading)
+        }
+        return UIChromeFont(
+            font: base,
+            tracking: proportionalUITracking(pointSize: UITextRamp.label5)
+        )
+    }
+
+    /// Figma Tiny — 10pt.
+    static func uiTiny(weight: Weight = .semibold) -> UIChromeFont {
+        uiPro(size: UITextRamp.tiny, weight: weight)
+    }
+
+    /// Figma Micro — 9pt.
+    static func uiMicro(weight: Weight = .semibold) -> UIChromeFont {
+        uiPro(size: UITextRamp.micro, weight: weight)
+    }
+
+    /// NSFont SF Pro for AppKit overlays matching the UI ramp.
+    nonisolated static func uiProNS(size: CGFloat, weight: Weight = .regular) -> NSFont {
+        let key = "uiPro-\(size)-\(weight)"
+        fontManagerNSFontCacheLock.lock()
+        defer { fontManagerNSFontCacheLock.unlock() }
+        if let cached = fontManagerNSFontCache[key] { return cached }
+        let font = NSFont.systemFont(ofSize: size, weight: weight.toNSWeight())
+        fontManagerNSFontCache[key] = font
+        return font
+    }
+
+    nonisolated static func uiHeadingH4NS(weight: Weight = .medium) -> NSFont {
+        uiProNS(size: UITextRamp.headingH4, weight: weight)
+    }
+
+    nonisolated static func uiLabel2NS(weight: Weight = .medium) -> NSFont {
+        uiProNS(size: UITextRamp.label2, weight: weight)
+    }
+
+    nonisolated static func uiLabel3NS(weight: Weight = .medium) -> NSFont {
+        uiProNS(size: UITextRamp.label3, weight: weight)
+    }
+
+    nonisolated static func uiLabel4NS(weight: Weight = .regular) -> NSFont {
+        uiProNS(size: UITextRamp.label4, weight: weight)
+    }
+
+    nonisolated static func uiLabel5NS(weight: Weight = .medium) -> NSFont {
+        uiProNS(size: UITextRamp.label5, weight: weight)
+    }
+
+    nonisolated static func uiTinyNS(weight: Weight = .semibold) -> NSFont {
+        uiProNS(size: UITextRamp.tiny, weight: weight)
+    }
+
+    nonisolated static func uiMicroNS(weight: Weight = .semibold) -> NSFont {
+        uiProNS(size: UITextRamp.micro, weight: weight)
+    }
+
     // MARK: - Layout metrics (AppKit text measurement)
 
     /// Single source for line height when matching SwiftUI spacing to AppKit layout.
@@ -190,22 +327,25 @@ struct FontManager {
     
     /// Font weight enumeration for consistent weight handling across platforms
     enum Weight {
+        case light
         case regular
         case medium
         case semibold
         case bold
-        
+
         nonisolated func toSwiftUIWeight() -> Font.Weight {
             switch self {
+            case .light: return .light
             case .regular: return .regular
             case .medium: return .medium
             case .semibold: return .semibold
             case .bold: return .bold
             }
         }
-        
+
         nonisolated func toNSWeight() -> NSFont.Weight {
             switch self {
+            case .light: return .light
             case .regular: return .regular
             case .medium: return .medium
             case .semibold: return .semibold
@@ -219,10 +359,10 @@ struct FontManager {
             default: return []
             }
         }
-        
+
         nonisolated func toCharterName() -> String {
             switch self {
-            case .regular: return "Roman"
+            case .light, .regular: return "Roman"
             case .medium: return "Roman"  // Charter doesn't have medium, use Roman
             case .semibold: return "Bold"
             case .bold: return "Bold"
@@ -234,6 +374,11 @@ struct FontManager {
 // MARK: - Metadata label styling (SwiftUI)
 
 extension View {
+    /// Applies proportional SF UI chrome from ``FontManager/UIChromeFont`` (font + tracking).
+    func jotUI(_ chrome: FontManager.UIChromeFont) -> some View {
+        font(chrome.font).tracking(chrome.tracking)
+    }
+
     /// Monospaced metadata **labels**: **11pt**, **medium**, and **all caps** per design system.
     ///
     /// Use for `Text` only. Do **not** apply to `TextField` / `TextEditor` where the user types

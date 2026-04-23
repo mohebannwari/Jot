@@ -8,6 +8,26 @@
 import os
 import SwiftUI
 
+@MainActor
+private enum MeetingNotesHotKeyRegistrar {
+    static func syncRegistration() {
+        AppleIntelligenceService.shared.refreshAvailability()
+        GlobalHotKeyManager.shared.setHandler({
+            NotificationCenter.default.post(name: .openMeetingSessionCommandPalette, object: nil)
+        }, for: .startMeetingSession)
+
+        guard AppleIntelligenceService.shared.meetingNotesCapability.registersGlobalHotKey else {
+            GlobalHotKeyManager.shared.unregister(slot: .startMeetingSession)
+            return
+        }
+
+        let meetingChord =
+            QuickNoteHotKey.loadStartMeetingSessionFromStandardDefaults()
+            ?? .defaultStartMeetingSession
+        _ = GlobalHotKeyManager.shared.register(meetingChord, slot: .startMeetingSession)
+    }
+}
+
 @main
 struct JotApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
@@ -74,13 +94,7 @@ struct JotApp: App {
         }, for: .quickNote)
         _ = GlobalHotKeyManager.shared.register(quickNoteChord, slot: .quickNote)
 
-        let meetingChord =
-            QuickNoteHotKey.loadStartMeetingSessionFromStandardDefaults()
-            ?? .defaultStartMeetingSession
-        GlobalHotKeyManager.shared.setHandler({
-            NotificationCenter.default.post(name: .openMeetingSessionCommandPalette, object: nil)
-        }, for: .startMeetingSession)
-        _ = GlobalHotKeyManager.shared.register(meetingChord, slot: .startMeetingSession)
+        MeetingNotesHotKeyRegistrar.syncRegistration()
     }
 
     /// Clean up temporary files that may have accumulated from previous sessions
@@ -137,6 +151,9 @@ struct JotApp: App {
                 #endif
                 .preferredColorScheme(themeManager.resolvedColorScheme)
                 .containerShape(.rect(cornerRadius: 16))
+                .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                    MeetingNotesHotKeyRegistrar.syncRegistration()
+                }
         }
         #if os(macOS)
         .windowStyle(.hiddenTitleBar)

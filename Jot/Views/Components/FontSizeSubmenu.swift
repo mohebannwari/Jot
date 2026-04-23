@@ -45,8 +45,7 @@ struct FontSizeSubmenu: View {
             // Custom size input
             HStack(spacing: 6) {
                 TextField("Custom", text: $customSizeText)
-                    .font(.system(size: 13, weight: .medium))
-                    .tracking(-0.4)
+                    .jotUI(FontManager.uiLabel3(weight: .medium))
                     .textFieldStyle(.plain)
                     .frame(width: 52)
                     .focused($isCustomFieldFocused)
@@ -57,7 +56,7 @@ struct FontSizeSubmenu: View {
                         }
                     }
                 Text("pt")
-                    .font(.system(size: 11, weight: .regular))
+                    .jotUI(FontManager.uiLabel5(weight: .regular))
                     .foregroundColor(Color("SecondaryTextColor"))
             }
             .padding(.horizontal, 12)

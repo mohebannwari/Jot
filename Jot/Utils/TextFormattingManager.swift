@@ -184,7 +184,7 @@ class TextFormattingManager: ObservableObject {
 
             textStorage.beginEditing()
 
-            // Reset font: body size, regular weight, respects font style pref (Charter/System/Mono)
+            // Reset font: body size, regular weight, respects body-font preference (SF Pro / Charter / mono)
             let bodyFont = FontManager.bodyNS(size: HeadingLevel.none.fontSize, weight: .regular)
             textStorage.addAttribute(.font, value: bodyFont, range: paragraphRange)
 

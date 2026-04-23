@@ -125,7 +125,7 @@ struct CreateFolderSheet: View {
 
                 if isSelected {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 20, weight: .bold))
+                        .font(FontManager.uiHeadingH4(weight: .bold).font)
                         .foregroundColor(.white)
                         .transition(.scale.combined(with: .opacity))
                 }
@@ -152,7 +152,7 @@ struct CreateFolderSheet: View {
 
                 if isSelected {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 20, weight: .bold))
+                        .font(FontManager.uiHeadingH4(weight: .bold).font)
                         .foregroundColor(.white)
                         .transition(.scale.combined(with: .opacity))
                 }
@@ -172,7 +172,7 @@ struct CreateFolderSheet: View {
                     .frame(width: circleSize, height: circleSize)
                     .overlay(
                         Image(systemName: "checkmark")
-                            .font(.system(size: 20, weight: .bold))
+                            .font(FontManager.uiHeadingH4(weight: .bold).font)
                             .foregroundColor(.white)
                     )
             } else {
@@ -188,7 +188,7 @@ struct CreateFolderSheet: View {
                     )
                     .overlay(
                         Image(systemName: "plus")
-                            .font(.system(size: 15, weight: .medium))
+                            .font(FontManager.uiLabel2(weight: .medium).font)
                             .foregroundColor(Color("IconSecondaryColor"))
                     )
             }

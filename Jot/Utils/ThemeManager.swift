@@ -29,10 +29,11 @@ enum BodyFontStyle: String, CaseIterable {
     case system = "system"
     case mono = "mono"
 
+    /// `.default` persists as `"default"` (Charter) for existing users; new installs omit the key and get `.system` (SF Pro).
     var displayName: String {
         switch self {
-        case .default: return "Default"
-        case .system: return "System"
+        case .default: return "Charter"
+        case .system: return "SF Pro"
         case .mono: return "Mono"
         }
     }
@@ -351,9 +352,10 @@ final class ThemeManager: ObservableObject {
             userDefaults.string(forKey: Self.themeDefaultsKey) ?? AppTheme.system.rawValue
         self.currentTheme = AppTheme(rawValue: savedTheme) ?? .system
 
+        // First launch: no key → SF Pro (`.system`). Persisted `"default"` remains Charter for upgrades.
         let savedBodyFontStyle =
-            userDefaults.string(forKey: Self.bodyFontStyleDefaultsKey) ?? BodyFontStyle.default.rawValue
-        self.currentBodyFontStyle = BodyFontStyle(rawValue: savedBodyFontStyle) ?? .default
+            userDefaults.string(forKey: Self.bodyFontStyleDefaultsKey) ?? BodyFontStyle.system.rawValue
+        self.currentBodyFontStyle = BodyFontStyle(rawValue: savedBodyFontStyle) ?? .system
 
         // Editor text-input niceties default ON to match every other macOS text editor.
         // Must register BEFORE the .bool(forKey:) reads below — .bool returns the registered

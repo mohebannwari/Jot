@@ -36,9 +36,8 @@ struct FolderCreationOptionMenu: View {
                     .foregroundColor(Color("SecondaryTextColor"))
                     .frame(width: 15, height: 15)
                 Text(label)
-                    .font(.system(size: 13, weight: .regular, design: .default))
+                    .jotUI(FontManager.uiLabel3(weight: .regular))
                     .foregroundColor(.primary)
-                    .tracking(-0.1)
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 4)

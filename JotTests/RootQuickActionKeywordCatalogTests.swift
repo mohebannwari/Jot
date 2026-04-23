@@ -34,6 +34,19 @@ final class RootQuickActionKeywordCatalogTests: XCTestCase {
         XCTAssertTrue(catalog.matches(index: 2, query: "session"))
     }
 
+    func testMeetingKeywordsDisappearWhenMeetingNotesUnavailable() {
+        let catalog = RootQuickActionKeywordCatalog(
+            selectedNoteIsPinned: false,
+            isZenMode: false,
+            archiveOrRestoreTitle: "Archive",
+            meetingNotesEnabled: false
+        )
+
+        XCTAssertEqual(catalog.keywords(for: 2), [])
+        XCTAssertFalse(catalog.matches(index: 2, query: "meeting"))
+        XCTAssertFalse(catalog.matches(index: 2, query: "recording"))
+    }
+
     /// Case- and diacritic-insensitive matching — standard Foundation semantics.
     func testMatches_IsCaseInsensitive() {
         let catalog = defaultCatalog()
@@ -67,14 +80,18 @@ final class RootQuickActionKeywordCatalogTests: XCTestCase {
         let pinned = RootQuickActionKeywordCatalog(
             selectedNoteIsPinned: true,
             isZenMode: false,
-            archiveOrRestoreTitle: "Archive")
+            archiveOrRestoreTitle: "Archive",
+            meetingNotesEnabled: true
+        )
         XCTAssertTrue(pinned.keywords(for: 5).contains("Unpin Note"))
         XCTAssertFalse(pinned.keywords(for: 5).contains("Pin Note"))
 
         let unpinned = RootQuickActionKeywordCatalog(
             selectedNoteIsPinned: false,
             isZenMode: false,
-            archiveOrRestoreTitle: "Archive")
+            archiveOrRestoreTitle: "Archive",
+            meetingNotesEnabled: true
+        )
         XCTAssertTrue(unpinned.keywords(for: 5).contains("Pin Note"))
         XCTAssertFalse(unpinned.keywords(for: 5).contains("Unpin Note"))
 
@@ -88,13 +105,17 @@ final class RootQuickActionKeywordCatalogTests: XCTestCase {
         let zen = RootQuickActionKeywordCatalog(
             selectedNoteIsPinned: false,
             isZenMode: true,
-            archiveOrRestoreTitle: "Archive")
+            archiveOrRestoreTitle: "Archive",
+            meetingNotesEnabled: true
+        )
         XCTAssertTrue(zen.keywords(for: 6).contains("Exit Zen Mode"))
 
         let notZen = RootQuickActionKeywordCatalog(
             selectedNoteIsPinned: false,
             isZenMode: false,
-            archiveOrRestoreTitle: "Archive")
+            archiveOrRestoreTitle: "Archive",
+            meetingNotesEnabled: true
+        )
         XCTAssertTrue(notZen.keywords(for: 6).contains("Zen Mode"))
         XCTAssertTrue(notZen.matches(index: 6, query: "focus"),
             "'focus' alias matches zen-mode index regardless of state")
@@ -106,7 +127,9 @@ final class RootQuickActionKeywordCatalogTests: XCTestCase {
         let archive = RootQuickActionKeywordCatalog(
             selectedNoteIsPinned: false,
             isZenMode: false,
-            archiveOrRestoreTitle: "Archive Note")
+            archiveOrRestoreTitle: "Archive Note",
+            meetingNotesEnabled: true
+        )
         XCTAssertTrue(archive.keywords(for: 7).contains("Archive Note"))
         XCTAssertTrue(archive.matches(index: 7, query: "restore"),
             "'restore' alias matches even when current dynamic title is 'Archive Note'")
@@ -114,7 +137,9 @@ final class RootQuickActionKeywordCatalogTests: XCTestCase {
         let restore = RootQuickActionKeywordCatalog(
             selectedNoteIsPinned: false,
             isZenMode: false,
-            archiveOrRestoreTitle: "Restore Note")
+            archiveOrRestoreTitle: "Restore Note",
+            meetingNotesEnabled: true
+        )
         XCTAssertTrue(restore.keywords(for: 7).contains("Restore Note"))
         XCTAssertTrue(restore.matches(index: 7, query: "archive"))
     }
@@ -125,6 +150,8 @@ final class RootQuickActionKeywordCatalogTests: XCTestCase {
         RootQuickActionKeywordCatalog(
             selectedNoteIsPinned: false,
             isZenMode: false,
-            archiveOrRestoreTitle: "Archive")
+            archiveOrRestoreTitle: "Archive",
+            meetingNotesEnabled: true
+        )
     }
 }

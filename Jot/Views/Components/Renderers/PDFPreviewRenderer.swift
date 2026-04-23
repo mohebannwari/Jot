@@ -78,8 +78,7 @@ struct PDFPreviewRenderer: View {
             .frame(height: 400)
             .overlay {
                 Text(message)
-                    .font(.system(size: 11, weight: .medium))
-                    .tracking(-0.2)
+                    .jotUI(FontManager.uiLabel5(weight: .medium))
                     .foregroundStyle(Color("SecondaryTextColor"))
             }
     }

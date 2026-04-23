@@ -61,6 +61,110 @@ struct PropertiesPanelChromePolicy {
     }
 }
 
+enum MainChromeSurfaceRole: CaseIterable {
+    case sidebar
+    case editor
+    case properties
+    case settings
+}
+
+enum MainChromeSurfaceStyle: Equatable {
+    case opaqueFill
+    case modernTranslucentGlass
+    case legacyTranslucentBlur
+}
+
+enum MainWindowBackdropStyle: Equatable {
+    case opaqueTintedWindow
+    case modernUnifiedTranslucent
+    case legacyUnifiedBlurTint
+}
+
+struct MainWindowChromePolicy {
+    static let modernGlassTintPeakOpacity: Double = 0.85
+    static let legacyColorWashPeakOpacity: Double = 0.45
+
+    struct State: Equatable {
+        let backdropStyle: MainWindowBackdropStyle
+        private let sidebarSurfaceStyle: MainChromeSurfaceStyle
+        private let detailSurfaceStyle: MainChromeSurfaceStyle
+        let translucency: Double
+
+        init(
+            backdropStyle: MainWindowBackdropStyle,
+            sidebarSurfaceStyle: MainChromeSurfaceStyle,
+            detailSurfaceStyle: MainChromeSurfaceStyle,
+            translucency: Double
+        ) {
+            self.backdropStyle = backdropStyle
+            self.sidebarSurfaceStyle = sidebarSurfaceStyle
+            self.detailSurfaceStyle = detailSurfaceStyle
+            self.translucency = translucency
+        }
+
+        func surfaceStyle(for role: MainChromeSurfaceRole) -> MainChromeSurfaceStyle {
+            switch role {
+            case .sidebar:
+                sidebarSurfaceStyle
+            case .editor, .properties, .settings:
+                detailSurfaceStyle
+            }
+        }
+
+        var usesUnifiedTranslucentBackdrop: Bool {
+            backdropStyle != .opaqueTintedWindow
+        }
+
+        var usesModernTranslucentGlass: Bool {
+            detailSurfaceStyle == .modernTranslucentGlass
+        }
+
+        var usesTransparentDetailChrome: Bool {
+            detailSurfaceStyle != .opaqueFill
+        }
+    }
+
+    static func clampedTranslucency(_ value: Double) -> Double {
+        min(1, max(0, value))
+    }
+
+    static func legacyTintOpacity(detailPaneTranslucency: Double) -> Double {
+        legacyColorWashPeakOpacity * (1.0 - clampedTranslucency(detailPaneTranslucency))
+    }
+
+    static func modernGlassTintOpacity(detailPaneTranslucency: Double) -> Double {
+        modernGlassTintPeakOpacity * (1.0 - clampedTranslucency(detailPaneTranslucency))
+    }
+
+    static func state(
+        detailPaneTranslucency: Double,
+        reduceTransparency: Bool,
+        supportsLiquidGlass: Bool
+    ) -> State {
+        let translucency = clampedTranslucency(detailPaneTranslucency)
+        if reduceTransparency {
+            return State(
+                backdropStyle: .opaqueTintedWindow,
+                sidebarSurfaceStyle: .opaqueFill,
+                detailSurfaceStyle: .opaqueFill,
+                translucency: translucency
+            )
+        }
+
+        let detailSurfaceStyle: MainChromeSurfaceStyle =
+            translucency < 0.001
+            ? .opaqueFill
+            : (supportsLiquidGlass ? .modernTranslucentGlass : .legacyTranslucentBlur)
+
+        return State(
+            backdropStyle: supportsLiquidGlass ? .modernUnifiedTranslucent : .legacyUnifiedBlurTint,
+            sidebarSurfaceStyle: supportsLiquidGlass ? .modernTranslucentGlass : .legacyTranslucentBlur,
+            detailSurfaceStyle: detailSurfaceStyle,
+            translucency: translucency
+        )
+    }
+}
+
 struct SplitPaneCornerRadiusPolicy {
     static func radius(
         isSidebarVisible: Bool,
@@ -205,37 +309,70 @@ struct WindowTransparencyView: NSViewRepresentable {
     func updateNSView(_ nsView: NSView, context: Context) {}
 }
 
-/// Floating sidebar background: Liquid Glass on macOS 26+, backdrop blur + tinted surface on older.
+/// Floating sidebar background follows the same main-window chrome policy as the editor/properties panes
+/// so opaque mode is truly opaque and translucent mode is truly window-wide.
 private struct FloatingSidebarBackgroundModifier: ViewModifier {
     let cornerRadius: CGFloat
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @EnvironmentObject private var themeManager: ThemeManager
-    private let shape = RoundedRectangle(cornerRadius: 24, style: .continuous)
+
+    private var shape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+    }
+
+    private var detailSurface: Color {
+        themeManager.tintedPaneSurface(for: colorScheme)
+    }
+
+    private var chromeState: MainWindowChromePolicy.State {
+        MainWindowChromePolicy.state(
+            detailPaneTranslucency: themeManager.detailPaneTranslucency,
+            reduceTransparency: reduceTransparency,
+            supportsLiquidGlass: {
+                if #available(macOS 26.0, iOS 26.0, *) {
+                    return true
+                }
+                return false
+            }()
+        )
+    }
 
     func body(content: Content) -> some View {
-        if #available(macOS 26.0, iOS 26.0, *) {
+        switch chromeState.surfaceStyle(for: .sidebar) {
+        case .opaqueFill:
             content
-                .glassEffect(
-                    // Floating sidebar should stay as untinted Liquid Glass on macOS 26+.
-                    .regular.interactive(true),
-                    in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                )
+                .background(shape.fill(detailSurface))
+                .overlay(shape.stroke(Color("BorderSubtleColor"), lineWidth: 1))
                 .shadow(color: .black.opacity(0.04), radius: 9.5, x: 0, y: 9)
                 .shadow(color: .black.opacity(0.02), radius: 17.5, x: 0, y: 35)
                 .shadow(color: .black.opacity(0.01), radius: 23.5, x: 0, y: 78)
-        } else {
+        case .modernTranslucentGlass:
+            if #available(macOS 26.0, *) {
+                content
+                    .glassEffect(.regular.interactive(true), in: shape)
+                    .shadow(color: .black.opacity(0.04), radius: 9.5, x: 0, y: 9)
+                    .shadow(color: .black.opacity(0.02), radius: 17.5, x: 0, y: 35)
+                    .shadow(color: .black.opacity(0.01), radius: 23.5, x: 0, y: 78)
+            } else {
+                content
+                    .background(shape.fill(detailSurface))
+                    .overlay(shape.stroke(Color("BorderSubtleColor"), lineWidth: 1))
+                    .shadow(color: .black.opacity(0.04), radius: 9.5, x: 0, y: 9)
+                    .shadow(color: .black.opacity(0.02), radius: 17.5, x: 0, y: 35)
+                    .shadow(color: .black.opacity(0.01), radius: 23.5, x: 0, y: 78)
+            }
+        case .legacyTranslucentBlur:
             content
                 .background {
                     ZStack {
                         BackdropBlurView(material: .popover, blendingMode: .withinWindow)
-                        themeManager.tintedPaneSurface(for: colorScheme)
-                            .opacity(0.60)
+                        detailSurface.opacity(0.60)
                     }
-                    .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                    .clipShape(shape)
                 }
                 .overlay(
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .stroke(Color("BorderSubtleColor"), lineWidth: 1)
+                    shape.stroke(Color("BorderSubtleColor"), lineWidth: 1)
                 )
                 .shadow(color: .black.opacity(0.08), radius: 12, x: 0, y: 6)
                 .shadow(color: .black.opacity(0.03), radius: 24, x: 0, y: 20)
@@ -247,6 +384,7 @@ private struct FloatingSidebarBackgroundModifier: ViewModifier {
 /// whose `.tint()` uses the same surface color so hue + tint intensity sliders stay in sync.
 private struct DetailPaneChromeBackgroundView: View {
     let cornerRadius: CGFloat
+    let surfaceRole: MainChromeSurfaceRole
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -258,60 +396,63 @@ private struct DetailPaneChromeBackgroundView: View {
 
     /// Slider 0…1 — higher values show more through the pane; color wash from Colors scales **down** (see plan).
     private var translucency: Double {
-        min(1, max(0, themeManager.detailPaneTranslucency))
+        MainWindowChromePolicy.clampedTranslucency(themeManager.detailPaneTranslucency)
     }
-
-    /// 1 at opaque / low translucency → full `tintedPaneSurface` contribution; 0 at full translucency → neutral glass.
-    private var colorWashStrength: Double {
-        1.0 - translucency
-    }
-
-    /// Peak `.tint()` alpha when translucency is just above zero (still on glass path); multiplied by `colorWashStrength`.
-    private static let glassTintPeakOpacity: Double = 0.85
 
     /// macOS 26+ Liquid Glass: hue/tint from Colors, weakened as translucency rises; zero wash at 100%.
     private var glassTintOpacity: Double {
-        Self.glassTintPeakOpacity * colorWashStrength
+        MainWindowChromePolicy.modernGlassTintOpacity(detailPaneTranslucency: translucency)
     }
-
-    /// Pre–26: color wash over `BackdropBlurView`, same `(1 - t)` rule so at 100% translucency only blur remains.
-    private static let legacyColorWashPeakOpacity: Double = 0.45
 
     private var legacyTintOpacity: Double {
-        Self.legacyColorWashPeakOpacity * colorWashStrength
+        MainWindowChromePolicy.legacyTintOpacity(detailPaneTranslucency: translucency)
     }
 
-    private var useOpaqueFill: Bool {
-        reduceTransparency || translucency < 0.001
+    private var chromeState: MainWindowChromePolicy.State {
+        MainWindowChromePolicy.state(
+            detailPaneTranslucency: themeManager.detailPaneTranslucency,
+            reduceTransparency: reduceTransparency,
+            supportsLiquidGlass: {
+                if #available(macOS 26.0, iOS 26.0, *) {
+                    return true
+                }
+                return false
+            }()
+        )
     }
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-        if useOpaqueFill {
+        switch chromeState.surfaceStyle(for: surfaceRole) {
+        case .opaqueFill:
             shape.fill(detailSurface)
-        } else if #available(macOS 26.0, iOS 26.0, *) {
-            // `.clear` for transmission; `.tint` scales with `colorWashStrength` so at 100% translucency
+        case .modernTranslucentGlass:
+            // `.clear` for transmission; `.tint` scales down as translucency rises so at 100%
             // there is no chroma wash (Colors still define the hue whenever strength > 0).
             // Clip after glass so Liquid Glass cannot halo past the pane radius (parent clip alone was not enough when translucency is on).
-            Group {
-                if glassTintOpacity > 0.001 {
-                    shape
-                        .fill(Color.clear)
-                        .glassEffect(
-                            .clear
-                                .interactive(false)
-                                .tint(detailSurface.opacity(glassTintOpacity)),
-                            in: shape
-                        )
-                } else {
-                    shape
-                        .fill(Color.clear)
-                        .glassEffect(.clear.interactive(false), in: shape)
+            if #available(macOS 26.0, *) {
+                Group {
+                    if glassTintOpacity > 0.001 {
+                        shape
+                            .fill(Color.clear)
+                            .glassEffect(
+                                .clear
+                                    .interactive(false)
+                                    .tint(detailSurface.opacity(glassTintOpacity)),
+                                in: shape
+                            )
+                    } else {
+                        shape
+                            .fill(Color.clear)
+                            .glassEffect(.clear.interactive(false), in: shape)
+                    }
                 }
+                .clipShape(shape)
+                .contentShape(shape)
+            } else {
+                shape.fill(detailSurface)
             }
-            .clipShape(shape)
-            .contentShape(shape)
-        } else {
+        case .legacyTranslucentBlur:
             ZStack {
                 // Match main window: blur content behind the window so wallpaper shows through.
                 BackdropBlurView(material: .hudWindow, blendingMode: .behindWindow)
@@ -326,6 +467,7 @@ private struct DetailPaneChromeBackgroundView: View {
 /// glass, tint, hairline, and split shadow plate stay concentric in zen split (no outer plate outside the mask).
 private struct ClippedEditorChromeContainer<Content: View>: View {
     let cornerRadius: CGFloat
+    let surfaceRole: MainChromeSurfaceRole
     let showsBackingPlate: Bool
     let backingPlateColor: Color
     let colorScheme: ColorScheme
@@ -347,7 +489,7 @@ private struct ClippedEditorChromeContainer<Content: View>: View {
             if showsBackingPlate {
                 shape.fill(backingPlateColor)
             }
-            DetailPaneChromeBackgroundView(cornerRadius: cornerRadius)
+            DetailPaneChromeBackgroundView(cornerRadius: cornerRadius, surfaceRole: surfaceRole)
             content()
             if showHairline {
                 // `stroke` is centered on the path; half the line sits outside the fill and can show as square
@@ -391,6 +533,7 @@ func sidebarSectionFilterAllows(_ active: SidebarSectionFilter, section: Sidebar
 struct ContentView: View {
     // Search is powered by SearchEngine
     @StateObject private var searchEngine = SearchEngine()
+    @ObservedObject private var appleIntelligenceService = AppleIntelligenceService.shared
     @EnvironmentObject private var notesManager: SimpleSwiftDataManager
     @EnvironmentObject private var themeManager: ThemeManager
     @EnvironmentObject private var authManager: NoteAuthenticationManager
@@ -495,22 +638,23 @@ struct ContentView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceTransparency) private var accessibilityReduceTransparency
 
+    private var mainWindowChromeState: MainWindowChromePolicy.State {
+        MainWindowChromePolicy.state(
+            detailPaneTranslucency: themeManager.detailPaneTranslucency,
+            reduceTransparency: accessibilityReduceTransparency,
+            supportsLiquidGlass: {
+                if #available(macOS 26.0, iOS 26.0, *) {
+                    return true
+                }
+                return false
+            }()
+        )
+    }
+
     /// When macOS 26+ shows Liquid Glass on detail chrome (note pane or Settings), skip the dark-mode hairline.
     /// Opaque detail surfaces keep the stroke for separation from the window.
     private var suppressesNotePaneDarkModeBorderForGlass: Bool {
-        if #available(macOS 26.0, iOS 26.0, *) {
-            return themeManager.detailPaneTranslucency > 0.001 && !accessibilityReduceTransparency
-        }
-        return false
-    }
-
-    /// True when the note detail uses the transparent glass stack (macOS 26+, slider on, Reduce Transparency off).
-    /// Drives neutral window backdrops, split shadow plates, and sibling chrome so the pane is not stacked on global tint.
-    private var noteDetailUsesTransparentStack: Bool {
-        if #available(macOS 26.0, iOS 26.0, *) {
-            return themeManager.detailPaneTranslucency > 0.001 && !accessibilityReduceTransparency
-        }
-        return false
+        mainWindowChromeState.usesModernTranslucentGlass
     }
 
     // Window corner radius from JotApp containerShape
@@ -873,6 +1017,7 @@ struct ContentView: View {
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .openMeetingSessionCommandPalette)) { _ in
+                guard appleIntelligenceService.refreshMeetingNotesCapability().showsEntryPoints else { return }
                 // Global shortcut may fire while another app is frontmost; bring Jot forward
                 // so the command palette is visible and receives keyboard focus.
                 NSApp.activate(ignoringOtherApps: true)
@@ -972,9 +1117,11 @@ struct ContentView: View {
             mainLayout(geometry: geometry)
         }
         .background {
-            // Transparent note panes and the Settings route sit on a neutral blur stack so sidebar chrome
-            // stays untinted and Liquid Glass is not stacked on full-window tinted glass.
-            if #available(macOS 26.0, iOS 26.0, *) {
+            switch mainWindowChromeState.backdropStyle {
+            case .opaqueTintedWindow:
+                detailBg
+                    .ignoresSafeArea()
+            case .modernUnifiedTranslucent:
                 if usesNeutralWindowBackdropBehindMainChrome {
                     Color.clear
                         .padding(-40)
@@ -995,7 +1142,7 @@ struct ContentView: View {
                             tintOpacity: 0.80
                         )
                 }
-            } else {
+            case .legacyUnifiedBlurTint:
                 if usesNeutralWindowBackdropBehindMainChrome {
                     ZStack {
                         BackdropBlurView(material: .hudWindow, blendingMode: .behindWindow)
@@ -1464,7 +1611,7 @@ struct ContentView: View {
                 .frame(width: totalDetailWidth)
                 .frame(maxHeight: .infinity)
                 .background {
-                    DetailPaneChromeBackgroundView(cornerRadius: cornerRadius)
+                    DetailPaneChromeBackgroundView(cornerRadius: cornerRadius, surfaceRole: .settings)
                 }
                 .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
                 .splitPaneChromePlate(
@@ -1510,7 +1657,7 @@ struct ContentView: View {
                             .strokeBorder(style: StrokeStyle(lineWidth: 1, lineCap: .round, dash: [4, 3]))
                             .foregroundColor(Color.accentColor.opacity(colorScheme == .dark ? 0.55 : 0.4))
                         Image(systemName: "plus")
-                            .font(.system(size: 24, weight: .light))
+                            .font(FontManager.uiPro(size: 24, weight: .light).font)
                             .foregroundColor(Color.accentColor.opacity(colorScheme == .dark ? 0.85 : 0.7))
                     }
                         .frame(width: secW)
@@ -1559,18 +1706,18 @@ struct ContentView: View {
         themeManager.tintedPaneSurface(for: colorScheme)
     }
 
-    /// When the note stack is transparent, skip full-window `tintedLiquidGlass` so the detail region is not washed
-    /// by a second tinted plate under `DetailPaneChromeBackgroundView`. Apply the same neutral window backdrop
-    /// while Settings is visible so the pinned / floating sidebars keep the untinted glass look there too.
+    /// When the detail stack itself participates in transparent glass, skip full-window tint behind it so the
+    /// note pane is not double-washed. The same neutral backdrop applies while Settings is visible.
     private var usesNeutralWindowBackdropBehindMainChrome: Bool {
-        noteDetailUsesTransparentStack && (isSettingsPresented || selectedNote != nil || shouldShowSplitLayout)
+        mainWindowChromeState.usesTransparentDetailChrome
+            && (isSettingsPresented || selectedNote != nil || shouldShowSplitLayout)
     }
 
     /// `splitPaneChromePlate` draws a filled rounded rect behind the pane (no NSTextView rasterization on content).
     /// Using `detailBg` there
     /// reintroduces an opaque paper layer under Liquid Glass; use a nearly invisible fill instead when transparent.
     private var notePaneShadowPlateColor: Color {
-        noteDetailUsesTransparentStack ? Color.white.opacity(0.015) : detailBg
+        mainWindowChromeState.usesTransparentDetailChrome ? Color.white.opacity(0.015) : detailBg
     }
 
     /// Inter-pane width between split editors; widens in zen so inner rounded corners match outer pane polish.
@@ -1635,6 +1782,7 @@ struct ContentView: View {
         return HStack(spacing: 0) {
             ClippedEditorChromeContainer(
                 cornerRadius: effectiveRadius,
+                surfaceRole: .editor,
                 showsBackingPlate: editorBackingPlateActive,
                 backingPlateColor: notePaneShadowPlateColor,
                 colorScheme: colorScheme,
@@ -1673,7 +1821,7 @@ struct ContentView: View {
         .onPreferenceChange(BottomInputOverlayActivePreferenceKey.self) { primaryBottomInputOverlayActive = $0 }
         .onPreferenceChange(ToolbarExpandedPreferenceKey.self) { primaryToolbarExpanded = $0 }
         .overlay(alignment: .bottomTrailing) {
-            if AppleIntelligenceService.shared.isAvailable && !isVersionHistoryVisible {
+            if appleIntelligenceService.isAvailable && !isVersionHistoryVisible {
                 AIToolsOverlay(state: $aiToolsState, editorInstanceID: primaryEditorID).padding(.trailing, 14).padding(.bottom, 14)
             }
         }
@@ -1894,6 +2042,7 @@ struct ContentView: View {
         return HStack(spacing: 0) {
             ClippedEditorChromeContainer(
                 cornerRadius: cornerRadius,
+                surfaceRole: .editor,
                 showsBackingPlate: editorBackingPlateActive,
                 backingPlateColor: notePaneShadowPlateColor,
                 colorScheme: colorScheme,
@@ -1951,7 +2100,7 @@ struct ContentView: View {
         .onPreferenceChange(BottomInputOverlayActivePreferenceKey.self) { splitBottomInputOverlayActive = $0 }
         .onPreferenceChange(ToolbarExpandedPreferenceKey.self) { splitToolbarExpanded = $0 }
         .overlay(alignment: .bottomTrailing) {
-            if AppleIntelligenceService.shared.isAvailable && !(isVersionHistoryVisible && versionHistoryPane == .secondary) {
+            if appleIntelligenceService.isAvailable && !(isVersionHistoryVisible && versionHistoryPane == .secondary) {
                 AIToolsOverlay(state: $splitAiToolsState, editorInstanceID: splitEditorID).padding(.trailing, 14).padding(.bottom, 14)
             }
         }
@@ -3880,8 +4029,7 @@ struct ContentView: View {
                     .animation(.smooth(duration: 0.3), value: isActive)
 
                 Text(primaryTitle)
-                    .font(.system(size: 13, weight: .regular))
-                    .tracking(-0.2)
+                    .jotUI(FontManager.uiLabel3(weight: .regular))
                     .foregroundColor(textColor)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -3899,8 +4047,7 @@ struct ContentView: View {
                     .shadow(color: .black.opacity(0.03), radius: 1, x: 0, y: 0)
 
                 Text(secondaryTitle)
-                    .font(.system(size: 13, weight: .regular))
-                    .tracking(-0.2)
+                    .jotUI(FontManager.uiLabel3(weight: .regular))
                     .foregroundColor(textColor)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -3970,8 +4117,7 @@ struct ContentView: View {
         if let note {
             let title = note.title.isEmpty ? "Untitled" : note.title
             Text(title)
-                .font(.system(size: 15, weight: .regular))
-                .tracking(-0.2)
+                .jotUI(FontManager.uiLabel2(weight: .regular))
                 .foregroundColor(colorScheme == .dark ? .black : .white)
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -4116,6 +4262,7 @@ struct ContentView: View {
 
             ClippedEditorChromeContainer(
                 cornerRadius: paneCornerRadius,
+                surfaceRole: .properties,
                 showsBackingPlate: showsPerPaneShadowPlate,
                 backingPlateColor: notePaneShadowPlateColor,
                 colorScheme: colorScheme,
@@ -4525,6 +4672,7 @@ struct ContentView: View {
 
     /// Command palette “Start meeting session” flow: open the note, then start recording on the shared manager.
     private func openNoteAndStartMeeting(_ note: Note) {
+        guard appleIntelligenceService.refreshMeetingNotesCapability().canStartNewSession else { return }
         openNoteWithinVisibleSplitForMeeting(note)
         meetingRecorderManager.startRecording(for: note.id)
     }
@@ -5464,9 +5612,8 @@ private struct SplitPickerOverlayCard: View {
         VStack(alignment: .leading, spacing: 0) {
             // Title — Label/Label-5/Medium
             Text("Switch note")
-                .font(.system(size: 11, weight: .medium))
+                .jotUI(FontManager.uiLabel5(weight: .medium))
                 .foregroundColor(Color("SecondaryTextColor"))
-                .tracking(-0.2)
                 .padding(8)
 
             // Search field — Label/Label-4/Medium
@@ -5478,8 +5625,7 @@ private struct SplitPickerOverlayCard: View {
                     .foregroundColor(Color("SecondaryTextColor"))
                     .frame(width: 15, height: 15)
                 TextField("Search", text: $searchQuery)
-                    .font(.system(size: 11, weight: .medium))
-                    .tracking(-0.2)
+                    .jotUI(FontManager.uiLabel5(weight: .medium))
                     .textFieldStyle(.plain)
             }
             .padding(8)
@@ -5515,9 +5661,8 @@ private struct SplitPickerOverlayRow: View {
                     .foregroundColor(Color("SecondaryTextColor"))
                     .frame(width: 15, height: 15)
                 Text(note.title.isEmpty ? "Untitled" : note.title)
-                    .font(.system(size: 15, weight: .medium))
+                    .jotUI(FontManager.uiLabel2(weight: .medium))
                     .foregroundColor(.primary)
-                    .tracking(-0.2)
                     .lineLimit(1)
                 Spacer(minLength: 0)
             }

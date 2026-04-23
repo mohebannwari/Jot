@@ -38,6 +38,7 @@ struct NoteDetailView: View {
   // MARK: - Environment
   @Environment(\.colorScheme) private var colorScheme
   @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+  @ObservedObject private var appleIntelligenceService = AppleIntelligenceService.shared
   @EnvironmentObject private var themeManager: ThemeManager
   @EnvironmentObject var notesManager: SimpleSwiftDataManager
   @EnvironmentObject var meetingRecorderManager: MeetingRecorderManager
@@ -774,6 +775,7 @@ struct NoteDetailView: View {
         if let nid = notification.userInfo?["editorInstanceID"] as? UUID, nid != editorInstanceID {
           return
         }
+        guard appleIntelligenceService.refreshMeetingNotesCapability().canStartNewSession else { return }
         startMeetingRecording()
       }
       .onReceive(NotificationCenter.default.publisher(for: .aiProofreadApplySuggestion)) {
@@ -1107,7 +1109,7 @@ struct NoteDetailView: View {
             currentFontSize: toolbarFontSize,
             currentFontFamily: toolbarFontFamily,
             currentTextColorHex: toolbarTextColorHex,
-            isAIAvailable: AppleIntelligenceService.shared.isAvailable,
+            isAIAvailable: appleIntelligenceService.isAvailable,
             activeSubmenu: $activeToolbarSubmenu,
             onToolAction: handleEditToolAction,
             onFontSizeSelected: { [editorInstanceID] size in
@@ -1877,7 +1879,7 @@ struct NoteDetailView: View {
     HStack(spacing: 6) {
       Image(systemName: "checkmark.circle.fill")
         .foregroundColor(.green)
-        .font(.system(size: 14))
+        .font(FontManager.uiPro(size: 14, weight: .regular).font)
       Text("Looks good")
         .font(FontManager.heading(size: FontManager.noteDetailOverlayHeadingSize, weight: .medium))
         .foregroundColor(Color("PrimaryTextColor"))

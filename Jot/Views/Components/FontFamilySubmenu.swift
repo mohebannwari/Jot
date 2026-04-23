@@ -2,7 +2,7 @@
 //  FontFamilySubmenu.swift
 //  Jot
 //
-//  Dropdown for per-selection font family: Charter, System, Mono.
+//  Dropdown for per-selection font family: SF Pro (system), Mono, Charter (serif).
 //
 
 import SwiftUI
@@ -15,9 +15,9 @@ struct FontFamilySubmenu: View {
     @State private var isRevealed = false
 
     private let families: [(style: BodyFontStyle, label: String)] = [
-        (.default, "Charter"),
-        (.system, "System"),
+        (.system, "SF Pro"),
         (.mono, "Mono"),
+        (.default, "Charter"),
     ]
 
     var body: some View {
@@ -85,7 +85,7 @@ private struct FontFamilyRow: View {
                 Spacer()
                 if isSelected {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(FontManager.uiTiny(weight: .bold).font)
                         .foregroundColor(Color("AccentColor"))
                 }
             }

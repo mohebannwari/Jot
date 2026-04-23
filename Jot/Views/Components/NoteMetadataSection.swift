@@ -201,7 +201,7 @@ struct NoteMetadataSection: View {
             HStack {
                 Button { onDismiss?() } label: {
                     Image(systemName: "xmark")
-                        .font(.system(size: 9, weight: .bold))
+                        .font(FontManager.uiMicro(weight: .bold).font)
                         .foregroundColor(Color("SecondaryTextColor"))
                         .frame(width: 22, height: 22)
                         .background(Color("SurfaceTranslucentColor"), in: Circle())
@@ -217,8 +217,7 @@ struct NoteMetadataSection: View {
 
             // Title
             Text("Properties")
-                .font(FontManager.heading(size: 14, weight: .semibold))
-                .tracking(-0.3)
+                .jotUI(FontManager.uiPro(size: 14, weight: .semibold))
                 .foregroundColor(Color("PrimaryTextColor"))
                 .padding(.horizontal, 16)
                 .padding(.bottom, 12)
@@ -228,8 +227,7 @@ struct NoteMetadataSection: View {
                     // Created
                     propertyRow(label: "Created") {
                         Text(Self.absoluteFormatter.string(from: note.createdAt))
-                            .font(.system(size: 12, weight: .regular))
-                            .tracking(-0.3)
+                            .jotUI(FontManager.uiLabel4())
                             .foregroundColor(Color("PrimaryTextColor"))
                     }
 
@@ -248,8 +246,7 @@ struct NoteMetadataSection: View {
                                     .frame(width: 15, height: 15)
 
                                 Text(folder.name)
-                                    .font(FontManager.heading(size: 11, weight: .regular))
-                                    .tracking(-0.2)
+                                    .jotUI(FontManager.uiLabel5(weight: .regular))
                                     .foregroundColor(pillFg)
                                     .lineLimit(1)
                             }
@@ -339,8 +336,7 @@ struct NoteMetadataSection: View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             // Label column — fixed width, aligned with header
             Text(label)
-                .font(.system(size: 12, weight: .regular))
-                .tracking(-0.3)
+                .jotUI(FontManager.uiLabel4())
                 .foregroundColor(Color("SecondaryTextColor"))
                 .padding(.vertical, 8)
                 .frame(width: 100, alignment: .leading)
@@ -365,8 +361,7 @@ struct NoteMetadataSection: View {
                 } label: {
                     HStack(spacing: 4) {
                         Text(tag)
-                            .font(.system(size: 11, weight: .regular))
-                            .tracking(-0.2)
+                            .jotUI(FontManager.uiLabel5(weight: .regular))
                             .foregroundColor(Color("PrimaryTextColor"))
 
                         Image("IconCrossMedium")
@@ -388,7 +383,7 @@ struct NoteMetadataSection: View {
             // Add tag: inline field or plus button
             if isAddingTag {
                 TextField("tag name", text: $newTagText)
-                    .font(.system(size: 11, weight: .regular))
+                    .jotUI(FontManager.uiLabel5(weight: .regular))
                     .textFieldStyle(.plain)
                     .frame(width: 80)
                     .padding(.horizontal, 8)
@@ -462,8 +457,7 @@ struct NoteMetadataSection: View {
                         .padding(.trailing, 4)
 
                     Text("\(completed)/\(total)")
-                        .font(.system(size: 11, weight: .regular))
-                        .tracking(-0.2)
+                        .jotUI(FontManager.uiLabel5(weight: .regular))
                         .foregroundColor(Color("PrimaryTextColor"))
 
                     Image("IconChevronRightMedium")
@@ -498,7 +492,7 @@ struct NoteMetadataSection: View {
                             .frame(width: 16, height: 16)
 
                         Text(todo.text)
-                            .font(.system(size: 11, weight: .regular))
+                            .jotUI(FontManager.uiLabel5(weight: .regular))
                             .foregroundColor(Color("PrimaryTextColor"))
                             .strikethrough(todo.isCompleted, color: Color("PrimaryTextColor").opacity(0.5))
                             .opacity(todo.isCompleted ? 0.5 : 1)
@@ -593,8 +587,7 @@ struct NoteMetadataSection: View {
                                 .frame(width: 14, height: 14)
 
                             Text(link.domain)
-                                .font(.system(size: 12, weight: .regular))
-                                .tracking(-0.3)
+                                .jotUI(FontManager.uiLabel4())
                                 .textCase(.lowercase)
                                 .lineLimit(1)
                                 .truncationMode(.tail)
@@ -638,8 +631,7 @@ struct NoteMetadataSection: View {
                                 .frame(width: 14, height: 14)
 
                             Text(attachment.displayLabel)
-                                .font(.system(size: 11, weight: .regular))
-                                .tracking(-0.2)
+                                .jotUI(FontManager.uiLabel5(weight: .regular))
                                 .lineLimit(1)
                                 .truncationMode(.middle)
                                 .frame(maxWidth: 160)
@@ -683,8 +675,7 @@ struct NoteMetadataSection: View {
                     } label: {
                         HStack(spacing: 4) {
                             Text(displayTitleForMention(noteID: noteID, serializedTitle: serializedTitle))
-                                .font(.system(size: 11, weight: .regular))
-                                .tracking(-0.2)
+                                .jotUI(FontManager.uiLabel5(weight: .regular))
                                 .lineLimit(1)
                                 .truncationMode(.tail)
                                 .frame(maxWidth: 180)
@@ -728,8 +719,7 @@ struct NoteMetadataSection: View {
                                 .frame(width: 14, height: 14)
 
                             Text(backlink.title)
-                                .font(.system(size: 11, weight: .regular))
-                                .tracking(-0.2)
+                                .jotUI(FontManager.uiLabel5(weight: .regular))
                                 .lineLimit(1)
                                 .truncationMode(.tail)
                                 .frame(maxWidth: 180)
@@ -751,8 +741,7 @@ struct NoteMetadataSection: View {
 
     private var noneText: some View {
         Text("None")
-            .font(.system(size: 12, weight: .regular))
-            .tracking(-0.3)
+            .jotUI(FontManager.uiLabel4())
             .foregroundColor(Color("SecondaryTextColor"))
     }
 }

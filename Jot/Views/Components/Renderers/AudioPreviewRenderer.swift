@@ -65,7 +65,7 @@ struct AudioPreviewRenderer: View {
             togglePlayback()
         } label: {
             Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                .font(.system(size: 20, weight: .medium))
+                .font(FontManager.uiHeadingH4(weight: .medium).font)
                 .foregroundStyle(Color("PrimaryTextColor"))
                 .frame(width: 40, height: 40)
                 .contentShape(Rectangle())
@@ -91,14 +91,12 @@ struct AudioPreviewRenderer: View {
     private var timeLabels: some View {
         HStack {
             Text(formatTime(currentTime))
-                .font(.system(size: 11, weight: .medium))
-                .tracking(-0.2)
+                .jotUI(FontManager.uiLabel5(weight: .medium))
                 .foregroundStyle(Color("SecondaryTextColor"))
                 .monospacedDigit()
             Spacer()
             Text(formatTime(duration))
-                .font(.system(size: 11, weight: .medium))
-                .tracking(-0.2)
+                .jotUI(FontManager.uiLabel5(weight: .medium))
                 .foregroundStyle(Color("SecondaryTextColor"))
                 .monospacedDigit()
         }
@@ -112,11 +110,10 @@ struct AudioPreviewRenderer: View {
             .overlay {
                 HStack(spacing: 8) {
                     Image(systemName: "waveform")
-                        .font(.system(size: 15, weight: .medium))
+                        .font(FontManager.uiLabel2(weight: .medium).font)
                         .foregroundStyle(Color("SecondaryTextColor"))
                     Text(message)
-                        .font(.system(size: 11, weight: .medium))
-                        .tracking(-0.2)
+                        .jotUI(FontManager.uiLabel5(weight: .medium))
                         .foregroundStyle(Color("SecondaryTextColor"))
                 }
             }

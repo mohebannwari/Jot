@@ -248,8 +248,7 @@ struct FloatingEditToolbar: View {
         } label: {
             HStack(spacing: 0) {
                 Text("\(Int(currentFontSize))")
-                    .font(.system(size: 13, weight: .medium))
-                    .tracking(-0.4)
+                    .jotUI(FontManager.uiLabel3(weight: .medium))
                     .lineLimit(1)
                     .foregroundColor(pillTextColor)
                     .monospacedDigit()

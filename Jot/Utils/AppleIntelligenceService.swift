@@ -6,6 +6,7 @@
 //  Requires macOS 26+ with Apple Intelligence enabled.
 //
 
+import Combine
 import SwiftUI
 #if canImport(FoundationModels)
 import FoundationModels
@@ -148,11 +149,33 @@ struct TextGenerationResult {
 
 // MARK: - Service
 
+struct AppleIntelligenceAvailabilitySnapshot: Equatable {
+    let isAvailable: Bool
+    let unavailabilityReason: String
+}
+
+struct MeetingNotesCapability: Equatable {
+    let availability: AppleIntelligenceAvailabilitySnapshot
+
+    var canStartNewSession: Bool { availability.isAvailable }
+    var showsEntryPoints: Bool { canStartNewSession }
+    var registersGlobalHotKey: Bool { canStartNewSession }
+    var unavailabilityReason: String { availability.unavailabilityReason }
+}
+
 @MainActor
-final class AppleIntelligenceService {
+final class AppleIntelligenceService: ObservableObject {
     static let shared = AppleIntelligenceService()
 
-    private init() {}
+    @Published private(set) var availabilitySnapshot: AppleIntelligenceAvailabilitySnapshot
+
+    #if DEBUG
+    private var testingAvailabilityOverride: AppleIntelligenceAvailabilitySnapshot?
+    #endif
+
+    private init() {
+        self.availabilitySnapshot = Self.detectAvailabilitySnapshot()
+    }
 
     // NOTE: Task cancellation is managed by the calling view (NoteDetailView),
     // not by this singleton service. The view stores the Task handle and cancels
@@ -160,41 +183,148 @@ final class AppleIntelligenceService {
     // Task.checkCancellation() before expensive operations.
 
     var isAvailable: Bool {
-        #if canImport(FoundationModels)
-        guard #available(macOS 26.0, *) else { return false }
-        if case .available = SystemLanguageModel.default.availability { return true }
-        return false
-        #else
-        return false
-        #endif
+        availabilitySnapshot.isAvailable
     }
 
     var unavailabilityReason: String {
+        availabilitySnapshot.unavailabilityReason
+    }
+
+    var meetingNotesCapability: MeetingNotesCapability {
+        MeetingNotesCapability(availability: availabilitySnapshot)
+    }
+
+    @discardableResult
+    func refreshAvailability() -> AppleIntelligenceAvailabilitySnapshot {
+        #if DEBUG
+        let next = Self.detectAvailabilitySnapshot(override: testingAvailabilityOverride)
+        #else
+        let next = Self.detectAvailabilitySnapshot()
+        #endif
+        if next != availabilitySnapshot {
+            availabilitySnapshot = next
+        }
+        return availabilitySnapshot
+    }
+
+    @discardableResult
+    func refreshMeetingNotesCapability() -> MeetingNotesCapability {
+        refreshAvailability()
+        return meetingNotesCapability
+    }
+
+    #if DEBUG
+    private static func detectAvailabilitySnapshot(
+        override: AppleIntelligenceAvailabilitySnapshot? = nil
+    ) -> AppleIntelligenceAvailabilitySnapshot {
+        #if DEBUG
+        if let override {
+            return override
+        }
+        #endif
+
         #if canImport(FoundationModels)
         guard #available(macOS 26.0, *) else {
-            return "Apple Intelligence requires macOS 26 or later."
+            return AppleIntelligenceAvailabilitySnapshot(
+                isAvailable: false,
+                unavailabilityReason: "Apple Intelligence requires macOS 26 or later."
+            )
         }
         switch SystemLanguageModel.default.availability {
         case .available:
-            return ""
+            return AppleIntelligenceAvailabilitySnapshot(isAvailable: true, unavailabilityReason: "")
         case .unavailable(let reason):
             switch reason {
             case .deviceNotEligible:
-                return "Apple Intelligence requires Apple Silicon."
+                return AppleIntelligenceAvailabilitySnapshot(
+                    isAvailable: false,
+                    unavailabilityReason: "Apple Intelligence requires Apple Silicon."
+                )
             case .appleIntelligenceNotEnabled:
-                return "Enable Apple Intelligence in System Settings > Apple Intelligence & Siri."
+                return AppleIntelligenceAvailabilitySnapshot(
+                    isAvailable: false,
+                    unavailabilityReason: "Enable Apple Intelligence in System Settings > Apple Intelligence & Siri."
+                )
             case .modelNotReady:
-                return "Apple Intelligence model is downloading. Try again shortly."
+                return AppleIntelligenceAvailabilitySnapshot(
+                    isAvailable: false,
+                    unavailabilityReason: "Apple Intelligence model is downloading. Try again shortly."
+                )
             @unknown default:
-                return "Apple Intelligence is not available on this device."
+                return AppleIntelligenceAvailabilitySnapshot(
+                    isAvailable: false,
+                    unavailabilityReason: "Apple Intelligence is not available on this device."
+                )
             }
         @unknown default:
-            return "Apple Intelligence availability is unknown."
+            return AppleIntelligenceAvailabilitySnapshot(
+                isAvailable: false,
+                unavailabilityReason: "Apple Intelligence availability is unknown."
+            )
         }
         #else
-        return "Apple Intelligence requires macOS 26 or later."
+        return AppleIntelligenceAvailabilitySnapshot(
+            isAvailable: false,
+            unavailabilityReason: "Apple Intelligence requires macOS 26 or later."
+        )
         #endif
     }
+    #else
+    private static func detectAvailabilitySnapshot() -> AppleIntelligenceAvailabilitySnapshot {
+        #if canImport(FoundationModels)
+        guard #available(macOS 26.0, *) else {
+            return AppleIntelligenceAvailabilitySnapshot(
+                isAvailable: false,
+                unavailabilityReason: "Apple Intelligence requires macOS 26 or later."
+            )
+        }
+        switch SystemLanguageModel.default.availability {
+        case .available:
+            return AppleIntelligenceAvailabilitySnapshot(isAvailable: true, unavailabilityReason: "")
+        case .unavailable(let reason):
+            switch reason {
+            case .deviceNotEligible:
+                return AppleIntelligenceAvailabilitySnapshot(
+                    isAvailable: false,
+                    unavailabilityReason: "Apple Intelligence requires Apple Silicon."
+                )
+            case .appleIntelligenceNotEnabled:
+                return AppleIntelligenceAvailabilitySnapshot(
+                    isAvailable: false,
+                    unavailabilityReason: "Enable Apple Intelligence in System Settings > Apple Intelligence & Siri."
+                )
+            case .modelNotReady:
+                return AppleIntelligenceAvailabilitySnapshot(
+                    isAvailable: false,
+                    unavailabilityReason: "Apple Intelligence model is downloading. Try again shortly."
+                )
+            @unknown default:
+                return AppleIntelligenceAvailabilitySnapshot(
+                    isAvailable: false,
+                    unavailabilityReason: "Apple Intelligence is not available on this device."
+                )
+            }
+        @unknown default:
+            return AppleIntelligenceAvailabilitySnapshot(
+                isAvailable: false,
+                unavailabilityReason: "Apple Intelligence availability is unknown."
+            )
+        }
+        #else
+        return AppleIntelligenceAvailabilitySnapshot(
+            isAvailable: false,
+            unavailabilityReason: "Apple Intelligence requires macOS 26 or later."
+        )
+        #endif
+    }
+    #endif
+
+    #if DEBUG
+    func setTestingAvailabilityOverride(_ snapshot: AppleIntelligenceAvailabilitySnapshot?) {
+        testingAvailabilityOverride = snapshot
+        refreshAvailability()
+    }
+    #endif
 
     // MARK: - Markup Stripping
 

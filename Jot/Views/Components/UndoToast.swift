@@ -9,7 +9,7 @@ struct UndoToast: View {
         if let toast = undoToastManager.currentToast {
             HStack(spacing: 12) {
                 Text(toast.message)
-                    .font(.system(size: 13, weight: .medium))
+                    .jotUI(FontManager.uiLabel3(weight: .medium))
                     .foregroundStyle(.primary)
                     .lineLimit(1)
 
@@ -17,7 +17,7 @@ struct UndoToast: View {
                     undoToastManager.performUndo()
                 } label: {
                     Text("Undo")
-                        .font(.system(size: 13, weight: .semibold))
+                        .jotUI(FontManager.uiLabel3(weight: .semibold))
                         .foregroundStyle(Color.accentColor)
                 }
                 .buttonStyle(.plain)

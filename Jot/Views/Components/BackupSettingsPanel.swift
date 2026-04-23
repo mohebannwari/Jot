@@ -139,7 +139,7 @@ struct BackupSettingsPanel: View {
                                 .foregroundColor(Color("SettingsPlaceholderTextColor"))
 
                             Image(systemName: "chevron.up.chevron.down")
-                                .font(.system(size: 9, weight: .regular, design: .default))
+                                .font(FontManager.uiPro(size: 9, weight: .regular).font)
                                 .foregroundColor(Color("SettingsPlaceholderTextColor"))
                         }
                     }
@@ -300,7 +300,7 @@ struct BackupSettingsPanel: View {
                                 .foregroundColor(Color("SettingsPlaceholderTextColor"))
 
                             Image(systemName: "chevron.up.chevron.down")
-                                .font(.system(size: 9, weight: .regular, design: .default))
+                                .font(FontManager.uiPro(size: 9, weight: .regular).font)
                                 .foregroundColor(Color("SettingsPlaceholderTextColor"))
                         }
                     }

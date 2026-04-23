@@ -129,7 +129,7 @@ Opus (escalation only -- not parallel, not fire-and-forget):
 -> Extract tokens for **both light and dark** themes. No exceptions.
 -> See the **Design Tokens** section below for the full token reference.
 -> **Always use the official Figma MCP plugin (`claude.ai Figma`) as the primary Figma tool.** Use `get_design_context`, `get_screenshot`, `get_metadata`, `get_variable_defs`, `search_design_system` for design tokens, component specs, and screenshots.
--> **Icons from a Figma link (`figma.com/design/...?node-id=...`):** Parse `fileKey` from the path and `nodeId` from the query (convert `2855-33` to `2855:33`). Call the Figma MCP tool `**get_design_context`** (Cursor: server **figma** / `plugin-figma-figma`). The response embeds asset URLs such as `https://www.figma.com/api/mcp/asset/<uuid>` — **download those files** (they are often SVG), normalize strokes to `currentColor` for template-rendering icons, add an explicit `18×18` transparent `<rect>` if Xcode’s asset catalog rejects the export (“zero width/height canvas”), and save into `[Jot/Assets.xcassets](Jot/Assets.xcassets)`. **Never substitute a hand-drawn placeholder\*\* when the user supplied a node URL.
+-> **Icons from a Figma link (`figma.com/design/...?node-id=...`):** Parse `fileKey` from the path and `nodeId` from the query (convert `2855-33` to `2855:33`). Call the Figma MCP tool `**get_design_context`** (Cursor: server **figma** / `plugin-figma-figma`). The response embeds asset URLs such as `https://www.figma.com/api/mcp/asset/<uuid>` — **download those files** (they are often SVG), normalize strokes to `currentColor` for template-rendering icons, add an explicit `18×18` transparent `<rect>` if Xcode’s asset catalog rejects the export (“zero width/height canvas”), and save into `[Jot/Assets.xcassets](Jot/Assets.xcassets)`. **Never substitute a hand-drawn placeholder when the user supplied a node URL.
 
 ---
 
@@ -165,7 +165,22 @@ Before any feature implementation:
 
 ---
 
+## Skills and MCP discovery (before defaults)
+
+**Do not treat the "Tool Calling & Skills" table as the only catalog.** Before acting, inventory what this session actually exposes and map it to the task.
+
+- **When:** At the start of substantive work, or when task type or tooling is unclear -- before you commit to a workflow.
+- **What to scan:** The full set of skills, plugins, and MCP tools the **current** host makes available (Cursor, Claude Code, Codex, and similar surfaces differ: injected skill lists, plugin bundles, MCP tool schemas). Prefer those live catalogs over memory or only the names repeated in this document.
+- **What to do:** Match capabilities to the request (debugging, design, CI, verification, workspace APIs, document generation, etc.) and pick the best fit. Supplement the curated table in **Tool Calling & Skills**; do not reflexively limit yourself to only the skills named there or elsewhere in this file.
+- **Repo-local skills:** Jot-specific workflows live under `.agents/skills/` (Speckit, PRP generate/execute, `git_push`, plan-feature, and related SKILL.md files) when you need procedures not spelled out in the table.
+- **Superpowers stays mandatory for new features:** For **new feature** work, the ordered pipeline in **Features -- New Feature Development** is still **required** end to end. Discovery is for choosing **additional** skills and MCP tools around that spine (reviews, CI helpers, extra Figma or doc skills, etc.) and for **non-feature** work where the table is thin.
+- **Lead context:** Keep discovery a **brief** scan of the host-provided catalog. If you need an exhaustive walk of a very large skill tree, delegate that inventory to a subagent instead of dumping it into the lead context.
+
+---
+
 ## Tool Calling & Skills
+
+The table below is **Jot-specific routing and minimums** (including mandatory Superpowers order for new features and default MCP precedence), not an exhaustive list of every skill or plugin you may invoke.
 
 **Always invoke the right skill before acting:**
 
@@ -352,6 +367,21 @@ cd /Users/mohebanwari/development/Jot && xcodebuild -project Jot.xcodeproj -sche
 
 Cursor mirrors this opt-in rule in `.cursor/rules/feedback_rebuild_for_update_panel.mdc` (`alwaysApply: false`).
 
+### Legacy-macOS test builds (when the user asks for a zipped build for an older macOS)
+
+When the user says something like "zip up a build for my macOS 14 Mac", "recompile a runtime for macOS `<N>` so I can test it", or "give me a test build for the old Mac" — **follow `[docs/MACOS_COMPAT_BUILD.md](docs/MACOS_COMPAT_BUILD.md)` exactly.** Do not improvise.
+
+Summary of the non-obvious parts (full reasoning and commands live in the doc):
+
+1. Build with `-target Jot` (not `-scheme Jot`) — scheme aggregation trips on targets with newer deployment targets; the Jot target's floor is `14.0`.
+2. Re-sign ad-hoc and deep: `codesign --force --deep --sign - Jot.app`. Ad-hoc avoids provisioning-profile mismatches on the second Mac; `--deep` is required because `ShareExtension.appex` is embedded.
+3. Package with `ditto -c -k --sequesterRsrc --keepParent`, **never** plain `zip`. `zip` strips resource forks and breaks the code signature.
+4. Tell the user to run `xattr -cr Jot.app` on the target Mac before first launch, then right-click → Open.
+5. If the request is for a macOS version **below 14.0**, stop and escalate — the project's deployment target would have to be lowered first, which is not a pure package-and-ship operation.
+6. `ShareExtension.appex` inside the bundle has `MACOSX_DEPLOYMENT_TARGET = 26.2`. It is expected and harmless on older macOS — do not delete it or change its target to "fix" anything.
+
+Output naming convention: `~/Desktop/Jot-macOS<N>-Debug.zip`.
+
 ---
 
 ## Git Conventions
@@ -456,9 +486,9 @@ All semantic colors live in `Jot/Ressources/Assets.xcassets/`. Reference by name
 | `TagTextColor`                         | `#1A1A1A`                                                    | `#FFFFFF`                                      |
 | `TertiaryTextColor`                    | `#52525B`                                                    | `#A19FA9`                                      |
 
-**`EditorCommandMenuItemForegroundColor`:** Slash/command menu (`CommandMenu`) idle rows — apply this **one** token to **both** the template icon and the row title so they always match. Keyboard-selection and hover use `PrimaryTextColor` for icon + title together. Values track `IconSecondaryColor`; the dedicated name documents shared editor-menu usage.
+`**EditorCommandMenuItemForegroundColor`:** Slash/command menu (`CommandMenu`) idle rows — apply this **one** token to **both\*\* the template icon and the row title so they always match. Keyboard-selection and hover use `PrimaryTextColor` for icon + title together. Values track `IconSecondaryColor`; the dedicated name documents shared editor-menu usage.
 
-**`InlineCodeBgColor`:** Inline code pills in the editor use `ThemeManager.tintedInlineCodePillNS(isDark:)` — stone-300 / stone-700 bases with the same tint **targets** as `tintedBlockContainerNS` (slightly lighter dark base than block chrome’s stone-800). The asset holds the untinted pair for any `Color("InlineCodeBgColor")` usage.
+`**InlineCodeBgColor`:** Inline code pills in the editor use `ThemeManager.tintedInlineCodePillNS(isDark:)` — stone-300 / stone-700 bases with the same tint **targets\*\* as `tintedBlockContainerNS` (slightly lighter dark base than block chrome’s stone-800). The asset holds the untinted pair for any `Color("InlineCodeBgColor")` usage.
 
 #### Primitive Colors (Figma Variables)
 
@@ -474,31 +504,33 @@ All type uses **SF Pro**. Weights: Regular=400, Medium=500, SemiBold=600, Bold=7
 
 #### Figma Type Scale
 
-| Style      | Size | Line Height | Tracking | Weights Available |
-| ---------- | ---- | ----------- | -------- | ----------------- |
-| Heading/H4 | 20   | 24          | -0.20    | Medium            |
-| Label-2    | 15   | 18          | -0.50    | Medium            |
-| Label-3    | 13   | 16          | -0.40    | Medium            |
-| Label-4    | 12   | 14          | -0.30    | Medium, SemiBold  |
-| Label-5    | 11   | 14          | -0.20    | Medium            |
-| Tiny       | 10   | 12          | 0        | Medium, SemiBold  |
-| Micro      | 9    | 10          | 0        | SemiBold, Bold    |
+| Style      | Size | Line Height | Tracking (Figma) | Weights Available |
+| ---------- | ---- | ----------- | ---------------- | ----------------- |
+| Heading/H4 | 20   | 24          | -0.20            | Medium            |
+| Label-2    | 15   | 18          | -0.50            | Medium            |
+| Label-3    | 13   | 16          | -0.40            | Medium            |
+| Label-4    | 12   | 14          | -0.30            | Medium, SemiBold  |
+| Label-5    | 11   | 14          | -0.20            | Medium            |
+| Tiny       | 10   | 12          | 0                | Medium, SemiBold  |
+| Micro      | 9    | 10          | 0                | SemiBold, Bold    |
+
+**Letter spacing:** The **Tracking (Figma)** column is **reference only** — **do not** implement those values in SwiftUI for SF Pro chrome. **Apple-first:** apply **`jotUI(_:)`** with **`FontManager.uiHeadingH4`**, **`uiLabel2`**–**`uiMicro`**, or **`uiPro(size:weight:)`** so bundled **`proportionalUITracking`** applies; never stack extra **`.tracking(-0.…)`** on top unless product documents an exception. **SF Symbols:** **`.font(chrome.font)`** only, not **`jotUI`**. **Mono all caps:** **`jotMetadataLabelTypography()`** — no **negative** tracking; optional small **positive** tracking only in **documented** dense overlays (see `.claude/rules/design-system.md` Typography). Full detail: **`.claude/rules/design-system.md` → Typography**.
 
 #### FontManager API (code-level)
 
-Three font families: **Charter** (serif body), **SF Pro** (headings/UI), **SF Mono** (metadata/code).
+**Note body:** **SF Pro** is the first-launch default (`BodyFontStyle.system` when `AppBodyFontStyle` is unset). **Charter** (`BodyFontStyle.default`, raw `"default"`) and **mono** remain options. **SF Mono** is for metadata/code.
 
-| Method       | SwiftUI                          | Size             | Weight               | Notes                                   |
-| ------------ | -------------------------------- | ---------------- | -------------------- | --------------------------------------- |
-| `body()`     | `Font.custom("Charter", size:)`  | 16               | Regular              | Follows `bodyFontStyle` setting         |
-| `heading()`  | `Font.system(size:, weight:)`    | 24               | Medium               | Respects `bodyFontStyle`                |
-| `metadata()` | `Font.system(monospaced, size:)` | **11** (default) | **Medium** (default) | Technical labels, timestamps; see below |
-| `icon()`     | `Font.system(size:)`             | 20               | Regular              | SF Symbols                              |
+| Method                                       | SwiftUI                                             | Size                                     | Weight             | Notes                                                                               |
+| -------------------------------------------- | --------------------------------------------------- | ---------------------------------------- | ------------------ | ----------------------------------------------------------------------------------- |
+| `body()`                                     | Per `BodyFontStyle`: Charter, SF Pro, or monospaced | `ThemeManager.bodyFontSize` (default 16) | As set             | Editor / note body                                                                  |
+| `heading()`                                  | SF Pro                                              | 24 default                               | Medium default     | UI headings; not tied to body font preference                                       |
+| `metadata()`                                 | Monospaced                                          | **11** default                           | **Medium** default | Use `jotMetadataLabelTypography()` for static mono labels                           |
+| `icon()`                                     | SF Pro                                              | 20 default                               | Regular            | SF Symbols                                                                          |
+| `uiPro`, `uiHeadingH4`, `uiLabel2`–`uiMicro` | SF Pro                                              | Figma scale                              | Per method         | App chrome: **`jotUI(…)`** + **`proportionalUITracking`**; `FontManager.UITextRamp` |
 
 **Monospaced static labels (invariant):** For any non–user-input `Text` using the metadata/mono face, use **11pt, medium, all caps** — `jotMetadataLabelTypography()` in `FontManager.swift` (or `.textCase(.uppercase)` with `FontManager.metadata(size: 11, weight: .medium)`). See `.cursor/rules/metadata_label_typography.mdc`. Do not ship sentence-case mono labels except where Figma or product spec explicitly overrides. Never force all caps on `TextField` / `TextEditor` content.
 
-Body font style is user-configurable: `default` (Charter), `system` (SF Pro), `mono` (SF Mono).
-Line spacing presets: Compact (1.0x), Default (1.2x), Relaxed (1.5x) -- stored in `ThemeManager.lineSpacing`.
+Body font: `system` (default on first launch), `default` (Charter), `mono`. Line spacing: Compact (1.0x), Default (1.2x), Relaxed (1.5x) — `ThemeManager.lineSpacing`.
 
 ### Spacing Scale
 

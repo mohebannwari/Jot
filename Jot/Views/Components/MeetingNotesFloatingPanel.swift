@@ -93,15 +93,11 @@ struct MeetingNotesFloatingPanel: View {
     }
 
     var body: some View {
-        Group {
-            // Glow reads as an artifact on macOS 26+ where the shell already uses Liquid Glass (`MeetingPanelBackgroundModifier`).
-            if #available(macOS 26.0, iOS 26.0, *) {
-                meetingChromeRoot
-            } else {
-                meetingChromeRoot
-                    .appleIntelligenceGlow(cornerRadius: panelRadius, mode: intelligenceGlowMode)
-            }
-        }
+        // Rotating halo sits in `.background` behind `meetingChromeRoot` (including Liquid Glass on
+        // macOS 26+ via `MeetingPanelBackgroundModifier`) so the panel still gets the intro Apple
+        // Intelligence treatment without painting over the frosted surface.
+        meetingChromeRoot
+            .appleIntelligenceGlow(cornerRadius: panelRadius, mode: intelligenceGlowMode)
         .alert("Stop Recording?", isPresented: $showStopConfirmation) {
             Button("Stop", role: .destructive, action: onStop)
             Button("Cancel", role: .cancel) {}
@@ -380,7 +376,7 @@ struct MeetingNotesFloatingPanel: View {
 
             Button(action: { showDismissConfirmation = true }) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(FontManager.uiTiny().font)
                     .foregroundColor(Color("SecondaryTextColor"))
                     .frame(width: 22, height: 22)
                     .contentShape(Circle())
@@ -483,7 +479,7 @@ struct MeetingNotesFloatingPanel: View {
                             let score = result.grounding?.actionItemScores[safe: index]
                             HStack(alignment: .top, spacing: 6) {
                                 Image(systemName: "square")
-                                    .font(.system(size: 11))
+                                    .font(FontManager.uiLabel5(weight: .regular).font)
                                     .foregroundColor(Color("SecondaryTextColor"))
                                     .padding(.top, 2)
                                 VStack(alignment: .leading, spacing: 1) {

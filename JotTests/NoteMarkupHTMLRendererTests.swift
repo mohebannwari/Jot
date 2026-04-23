@@ -67,6 +67,46 @@ final class NoteMarkupHTMLRendererTests: XCTestCase {
         XCTAssertFalse(html.contains("[[callout|"), "Quick Look leaked callout token: \(html)")
     }
 
+    func testQuickLookRendersCardsTabsTrailingQuotesAndBareTodos() {
+        let cards = CardSectionData(
+            columns: [
+                [
+                    CardData(content: "[[b]]Alpha[[/b]]", color: .emerald, width: 450, height: 350)
+                ],
+                [
+                    CardData(content: "[[quote]]Quoted[[/quote]]", color: .pink, width: 450, height: 350)
+                ],
+            ]
+        ).serialize()
+        let tabs = TabsContainerData(
+            panes: [
+                TabPane(name: "Tab 1", content: "[[quote]]Lead[[/quote]]Tail\n[ ]\n[x] Done", colorHex: "#22C55E"),
+                TabPane(name: "Tab 2", content: "Hidden body", colorHex: "#F59E0B"),
+            ],
+            activeIndex: 0,
+            containerHeight: 222,
+            preferredContentWidth: nil
+        ).serialize()
+        let note = Note(
+            title: "Structured",
+            content: [cards, tabs].joined(separator: "\n")
+        )
+
+        let html = NotePreviewHTMLGenerator.generate(note: note)
+
+        XCTAssertTrue(html.contains("cards-section"), "Expected cards section HTML: \(html)")
+        XCTAssertTrue(html.contains("tabs-section"), "Expected tabs section HTML: \(html)")
+        XCTAssertTrue(html.contains("Alpha"), "Expected card body content to render: \(html)")
+        XCTAssertTrue(html.contains("Tab 1"), "Expected active tab label: \(html)")
+        XCTAssertFalse(html.contains("Hidden body"), "Inactive tab content should not render: \(html)")
+        XCTAssertTrue(html.contains("<blockquote>"), "Expected quote markup to render semantically: \(html)")
+        XCTAssertTrue(html.contains(">Tail<"), "Trailing text after a quote should remain visible: \(html)")
+        XCTAssertTrue(html.contains("todo-list"), "Bare todo tokens should render as todo items: \(html)")
+        XCTAssertFalse(html.contains("[[cards|"), "Quick Look leaked cards token: \(html)")
+        XCTAssertFalse(html.contains("[[tabs|"), "Quick Look leaked tabs token: \(html)")
+        XCTAssertFalse(html.contains("[[quote]]Lead[[/quote]]Tail"), "Quick Look leaked inline quote token: \(html)")
+    }
+
     func testQuickLookStripsAIBlockMetadata() {
         let note = Note(
             title: "AI",
@@ -109,5 +149,34 @@ final class NoteMarkupHTMLRendererTests: XCTestCase {
         XCTAssertTrue(exported.contains("<code"), "HTML export should render inline code semantically: \(exported)")
         XCTAssertFalse(quickLook.contains("[[ol|"), "Quick Look leaked ordered-list token: \(quickLook)")
         XCTAssertFalse(exported.contains("[[ol|"), "HTML export leaked ordered-list token: \(exported)")
+    }
+
+    func testHTMLExportMatchesQuickLookForCardsAndTabs() {
+        let cards = CardSectionData(
+            columns: [[CardData(content: "Visible card", color: .blue, width: 450, height: 350)]]
+        ).serialize()
+        let tabs = TabsContainerData(
+            panes: [
+                TabPane(name: "Summary", content: "[x] Done", colorHex: "#3B82F6"),
+                TabPane(name: "Hidden", content: "Should stay hidden", colorHex: nil),
+            ],
+            activeIndex: 0,
+            containerHeight: 222,
+            preferredContentWidth: nil
+        ).serialize()
+        let note = Note(
+            title: "Parity",
+            content: [cards, tabs].joined(separator: "\n")
+        )
+
+        let quickLook = NotePreviewHTMLGenerator.generate(note: note)
+        let exported = NoteExportService.shared.buildHTMLString(notes: [note], title: "Parity")
+
+        XCTAssertTrue(quickLook.contains("cards-section"), "Quick Look should render cards semantically: \(quickLook)")
+        XCTAssertTrue(exported.contains("cards-section"), "HTML export should render cards semantically: \(exported)")
+        XCTAssertTrue(quickLook.contains("tabs-section"), "Quick Look should render tabs semantically: \(quickLook)")
+        XCTAssertTrue(exported.contains("tabs-section"), "HTML export should render tabs semantically: \(exported)")
+        XCTAssertFalse(quickLook.contains("[[cards|"), "Quick Look leaked cards token: \(quickLook)")
+        XCTAssertFalse(exported.contains("[[tabs|"), "HTML export leaked tabs token: \(exported)")
     }
 }

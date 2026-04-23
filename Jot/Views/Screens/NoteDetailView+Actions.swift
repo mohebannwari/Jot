@@ -633,6 +633,9 @@ extension NoteDetailView {
 
     @MainActor
     func startMeetingRecording() {
+        guard AppleIntelligenceService.shared.refreshMeetingNotesCapability().canStartNewSession else {
+            return
+        }
         // Delegate to shared manager so the session persists when switching notes.
         meetingRecorderManager.startRecording(for: note.id)
         applyMeetingPanelVisibilityForActiveSession()

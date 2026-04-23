@@ -235,6 +235,82 @@ struct NoteMarkupHTMLRenderer {
           border-radius: 14px;
           background: var(--note-markup-surface);
         }
+        .note-markup .cards-section {
+          margin: 12px 0 16px;
+          overflow-x: auto;
+          padding-bottom: 4px;
+        }
+        .note-markup .cards-grid {
+          display: flex;
+          align-items: flex-start;
+          gap: 12px;
+          min-width: max-content;
+        }
+        .note-markup .cards-column {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        }
+        .note-markup .cards-card {
+          flex: 0 0 auto;
+          padding: 16px;
+          border-radius: 22px;
+          border: 2px solid var(--card-border-light);
+          background: var(--card-fill-light);
+          color: var(--note-markup-fg);
+          overflow: hidden;
+        }
+        @media (prefers-color-scheme: dark) {
+          .note-markup .cards-card {
+            border-color: var(--card-border-dark);
+            background: var(--card-fill-dark);
+          }
+        }
+        .note-markup .cards-card > :first-child,
+        .note-markup .tabs-pane-content > :first-child {
+          margin-top: 0;
+        }
+        .note-markup .cards-card > :last-child,
+        .note-markup .tabs-pane-content > :last-child {
+          margin-bottom: 0;
+        }
+        .note-markup .tabs-section {
+          margin: 12px 0 16px;
+          border-radius: 22px;
+          border: 1px solid var(--note-markup-border);
+          background: var(--note-markup-surface);
+          overflow: hidden;
+        }
+        .note-markup .tabs-bar {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 8px;
+          border-bottom: 1px solid var(--note-markup-border);
+          overflow-x: auto;
+        }
+        .note-markup .tabs-chip {
+          flex: 0 0 auto;
+          display: inline-flex;
+          align-items: center;
+          min-height: 32px;
+          padding: 8px 12px;
+          border-radius: 12px;
+          border: 1px solid var(--note-markup-border);
+          background: transparent;
+          color: var(--note-markup-muted);
+          font-size: 12px;
+          font-weight: 600;
+          letter-spacing: -0.02em;
+        }
+        .note-markup .tabs-chip.is-active {
+          border-color: var(--tab-accent-border, var(--note-markup-border));
+          background: var(--tab-accent-fill, var(--note-markup-surface-strong));
+          color: var(--tab-accent-fg, var(--note-markup-fg));
+        }
+        .note-markup .tabs-pane-content {
+          padding: 16px;
+        }
         .note-markup table {
           width: 100%;
           border-collapse: collapse;
@@ -340,6 +416,14 @@ struct NoteMarkupHTMLRenderer {
                 blocks.append(calloutHTML)
                 continue
             }
+            if let cardsHTML = renderCardsBlock(from: lines, start: &index, options: options) {
+                blocks.append(cardsHTML)
+                continue
+            }
+            if let tabsHTML = renderTabsBlock(from: lines, start: &index, options: options) {
+                blocks.append(tabsHTML)
+                continue
+            }
             if let quoteHTML = renderQuoteBlock(from: lines, start: &index, options: options) {
                 blocks.append(quoteHTML)
                 continue
@@ -354,6 +438,8 @@ struct NoteMarkupHTMLRenderer {
 
             if trimmed == "[[divider]]" {
                 blocks.append("<hr class=\"note-divider\">")
+            } else if let quoteLineBlocks = renderLeadingQuoteLine(rawLine, options: options) {
+                blocks.append(contentsOf: quoteLineBlocks)
             } else if trimmed.isEmpty {
                 blocks.append("<p class=\"empty-paragraph\"></p>")
             } else {
@@ -435,6 +521,16 @@ struct NoteMarkupHTMLRenderer {
                 contentHTML: renderInline(String(stripped.dropFirst(4)), options: options)
             )
         }
+        if stripped == "[x]" {
+            return ListItem(
+                containerKind: .todo,
+                indent: indent,
+                alignment: alignment,
+                value: nil,
+                isChecked: true,
+                contentHTML: ""
+            )
+        }
         if stripped.hasPrefix("[ ] ") {
             return ListItem(
                 containerKind: .todo,
@@ -443,6 +539,16 @@ struct NoteMarkupHTMLRenderer {
                 value: nil,
                 isChecked: false,
                 contentHTML: renderInline(String(stripped.dropFirst(4)), options: options)
+            )
+        }
+        if stripped == "[ ]" {
+            return ListItem(
+                containerKind: .todo,
+                indent: indent,
+                alignment: alignment,
+                value: nil,
+                isChecked: false,
+                contentHTML: ""
             )
         }
         if stripped.hasPrefix("• ") || stripped.hasPrefix("- ") || stripped.hasPrefix("* ") || stripped.hasPrefix("+ ") {
@@ -657,6 +763,68 @@ struct NoteMarkupHTMLRenderer {
         <section class="callout callout-\(callout.type.rawValue)">
           <div class="callout-label">\(label)</div>
           <div class="callout-content">\(body)</div>
+        </section>
+        """
+    }
+
+    private static func renderCardsBlock(from lines: [String], start: inout Int, options: Options) -> String? {
+        guard let block = gatherDelimitedBlock(
+            from: lines,
+            start: start,
+            openPrefix: "[[cards|",
+            closeMarker: "[[/cards]]"
+        ) else { return nil }
+
+        start = block.nextIndex
+
+        guard let cards = CardSectionData.deserialize(from: block.blockText) else {
+            return attachmentChip(icon: "Cards", label: "Unsupported cards block")
+        }
+
+        let columnsHTML = cards.columns.map { column in
+            let cardsHTML = column.map { card in
+                let body = renderBlocks(card.content, options: options)
+                return """
+                <section class="cards-card" \(cardStyleAttributes(card))>
+                  \(body)
+                </section>
+                """
+            }.joined(separator: "\n")
+            return "<div class=\"cards-column\">\(cardsHTML)</div>"
+        }.joined(separator: "\n")
+
+        return """
+        <section class="cards-section">
+          <div class="cards-grid">\(columnsHTML)</div>
+        </section>
+        """
+    }
+
+    private static func renderTabsBlock(from lines: [String], start: inout Int, options: Options) -> String? {
+        guard let block = gatherDelimitedBlock(
+            from: lines,
+            start: start,
+            openPrefix: "[[tabs|",
+            closeMarker: "[[/tabs]]"
+        ) else { return nil }
+
+        start = block.nextIndex
+
+        guard let tabs = TabsContainerData.deserialize(from: block.blockText),
+              tabs.panes.indices.contains(tabs.activeIndex) else {
+            return attachmentChip(icon: "Tabs", label: "Unsupported tabs block")
+        }
+
+        let tabsBarHTML = tabs.panes.enumerated().map { index, pane in
+            let classes = index == tabs.activeIndex ? "tabs-chip is-active" : "tabs-chip"
+            return "<span class=\"\(classes)\"\(tabStyleAttributes(colorHex: pane.colorHex))>\(escapeHTML(pane.name))</span>"
+        }.joined(separator: "\n")
+        let activePaneBody = renderBlocks(tabs.panes[tabs.activeIndex].content, options: options)
+
+        return """
+        <section class="tabs-section">
+          <div class="tabs-bar">\(tabsBarHTML)</div>
+          <div class="tabs-pane-content">\(activePaneBody)</div>
         </section>
         """
     }
@@ -897,6 +1065,22 @@ struct NoteMarkupHTMLRenderer {
         return attachmentChip(icon: "Map", label: title)
     }
 
+    private static func renderLeadingQuoteLine(_ rawLine: String, options: Options) -> [String]? {
+        let (line, alignment) = unwrapAlignment(from: rawLine)
+        guard line.hasPrefix("[[quote]]"),
+              let closeRange = line.range(of: "[[/quote]]") else { return nil }
+
+        let quoteStart = line.index(line.startIndex, offsetBy: 9)
+        let quoted = String(line[quoteStart..<closeRange.lowerBound])
+        let trailing = String(line[closeRange.upperBound...]).trimmingCharacters(in: .whitespaces)
+        guard !trailing.isEmpty else { return nil }
+
+        return [
+            "<blockquote><p\(alignmentStyle(alignment))>\(renderInline(quoted, options: options))</p></blockquote>",
+            "<p\(alignmentStyle(alignment))>\(renderInline(trailing, options: options))</p>",
+        ]
+    }
+
     private static func attachmentChip(icon: String, label: String) -> String {
         "<span class=\"attachment-chip\"><span class=\"attachment-chip-icon\">\(escapeHTML(icon))</span><span class=\"attachment-chip-label\">\(escapeHTML(label))</span></span>"
     }
@@ -929,6 +1113,29 @@ struct NoteMarkupHTMLRenderer {
         let raw = trimmed.hasPrefix("#") ? String(trimmed.dropFirst()) : trimmed
         guard raw.count == 6 || raw.count == 8, raw.allSatisfy(\.isHexDigit) else { return nil }
         return raw
+    }
+
+    private static func cssColor(_ hex: String) -> String {
+        "#\(hex)"
+    }
+
+    private static func cssColor(_ hex: String, alpha: UInt8) -> String {
+        let normalized = hex.count == 8 ? String(hex.prefix(6)) : hex
+        return "#\(normalized)\(String(format: "%02X", alpha))"
+    }
+
+    private static func cardStyleAttributes(_ card: CardData) -> String {
+        """
+        style="--card-fill-light:\(card.color.lightFillHex);--card-border-light:\(card.color.lightBorderHex);--card-fill-dark:\(card.color.darkFillHex);--card-border-dark:\(card.color.darkBorderHex);width:\(Int(card.width))px;min-height:\(Int(card.height))px"
+        """
+    }
+
+    private static func tabStyleAttributes(colorHex: String?) -> String {
+        guard let raw = colorHex, let sanitized = sanitizeColorHex(raw) else { return "" }
+        let fill = cssColor(sanitized, alpha: 0x1A)
+        let border = cssColor(sanitized, alpha: 0x33)
+        let fg = cssColor(sanitized)
+        return " style=\"--tab-accent-fill:\(fill);--tab-accent-border:\(border);--tab-accent-fg:\(fg)\""
     }
 
     private static func imageMimeType(for url: URL) -> String {

@@ -151,8 +151,7 @@ struct UpdatePanelView: View {
 
                 Button(action: onRemindLater) {
                     Text("Remind me later")
-                        .font(.system(size: 11, weight: .regular))
-                        .tracking(-0.2)
+                        .jotUI(FontManager.uiLabel5(weight: .regular))
                         .foregroundStyle(Color("SecondaryTextColor"))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 8)
@@ -228,8 +227,7 @@ private struct ShimmerButton: View {
     var body: some View {
         Button(action: action) {
             Text(label)
-                .font(.system(size: 13, weight: .regular))
-                .tracking(-0.4)
+                .jotUI(FontManager.uiLabel3(weight: .regular))
                 .foregroundStyle(Color("ButtonPrimaryTextColor"))
                 .frame(maxWidth: .infinity)
                 .frame(height: 42)

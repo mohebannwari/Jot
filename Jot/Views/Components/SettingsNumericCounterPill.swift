@@ -29,7 +29,7 @@ struct SettingsNumericCounterPill: View {
                 value = max(range.lowerBound, value - 1)
             } label: {
                 Image(systemName: "minus")
-                    .font(.system(size: 11, weight: .regular, design: .default))
+                    .font(FontManager.uiLabel5(weight: .regular).font)
                     .foregroundColor(Color("SettingsPlaceholderTextColor"))
                     .frame(width: 32, height: 28)
                     .contentShape(Rectangle())
@@ -40,7 +40,6 @@ struct SettingsNumericCounterPill: View {
                 if isEditingValue {
                     TextField("", text: $editText)
                         .font(FontManager.metadata(size: 11, weight: .medium))
-                        .tracking(-0.3)
                         .foregroundColor(Color("PrimaryTextColor"))
                         .multilineTextAlignment(.center)
                         .textFieldStyle(.plain)
@@ -52,7 +51,6 @@ struct SettingsNumericCounterPill: View {
                 } else {
                     Text("\(value)")
                         .jotMetadataLabelTypography()
-                        .tracking(-0.3)
                         .foregroundColor(Color("PrimaryTextColor"))
                         .frame(width: valueSlotWidth, height: 28, alignment: .center)
                         .contentShape(Rectangle())
@@ -67,7 +65,7 @@ struct SettingsNumericCounterPill: View {
                 value = min(range.upperBound, value + 1)
             } label: {
                 Image(systemName: "plus")
-                    .font(.system(size: 11, weight: .regular, design: .default))
+                    .font(FontManager.uiLabel5(weight: .regular).font)
                     .foregroundColor(Color("SettingsPlaceholderTextColor"))
                     .frame(width: 32, height: 28)
                     .contentShape(Rectangle())

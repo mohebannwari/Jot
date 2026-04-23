@@ -16,6 +16,11 @@ enum FloatingSearchOpenIntent: Equatable {
     case startMeetingSessionPickNote
 }
 
+/// Extra SwiftUI `.tracking` (points) for **all-caps** monospaced labels in this palette (section
+/// headers, footer hints). Mono caps in a compact glass panel read tight without a slight open
+/// track; this stays local to global search so sidebar metadata invariants are unchanged.
+private let floatingSearchMetadataCapsTracking: CGFloat = 0.55
+
 /// One selectable row in meeting pick mode (current note + recents).
 private struct MeetingPickChoice: Identifiable {
     let id: UUID
@@ -50,6 +55,8 @@ struct RootQuickActionKeywordCatalog {
     /// Current dynamic title for the archive/restore action (depends on selected-note archive
     /// state). Aliases "Archive" and "Restore" are always included so either verb matches.
     let archiveOrRestoreTitle: String
+    /// Meeting-session entry points are fully removed when Apple Intelligence is unavailable.
+    let meetingNotesEnabled: Bool
 
     /// Keyword list for the given activation index — title plus common synonyms. Out-of-range
     /// indices return an empty array.
@@ -60,6 +67,7 @@ struct RootQuickActionKeywordCatalog {
         case 1:
             return ["Floating Note", "Quick Note", "Quick Capture", "Floating Panel"]
         case 2:
+            guard meetingNotesEnabled else { return [] }
             return ["Start Meeting Session in a Note", "Meeting", "Recording", "Session"]
         case 3:
             return ["New Folder", "Folder"]
@@ -128,6 +136,7 @@ struct FloatingSearch: View {
     var isZenMode: Bool = false
 
     @EnvironmentObject private var themeManager: ThemeManager
+    @ObservedObject private var appleIntelligenceService = AppleIntelligenceService.shared
     @State private var searchText = ""
     /// Bumped whenever the palette should (re)capture the native search field’s first responder; drives `FloatingSearchNativeTextField` without spamming retries on every keystroke.
     @State private var commandPaletteNativeFocusGeneration: UInt64 = 0
@@ -143,8 +152,8 @@ struct FloatingSearch: View {
     private let surfaceWidth: CGFloat = 668
     private let surfaceCornerRadius: CGFloat = 22
     private let resultItemCornerRadius: CGFloat = 12
-    /// Fixed quick actions in root mode (excluding optional deferred-update lead row).
-    private let rootStandardQuickActionCount = 9
+    /// Visible root quick actions in palette order (excluding optional deferred-update row).
+    private var rootStandardQuickActionCount: Int { visibleRootQuickActionActivationIndices.count }
     /// Shared vertical slot so the magnifier, placeholder/caret, and clear control align (plain TextField has extra cell insets).
     /// On macOS the focused field is edited by AppKit’s field editor, so leave headroom and apply the 1.5pt optical shift inside the native editor rect.
     private let searchFieldLineHeight: CGFloat = 22
@@ -245,11 +254,6 @@ struct FloatingSearch: View {
             RootQuickActionFilterSpec(
                 activationIndex: 1, iconName: "IconFloatingNote", title: "Floating Note", isEnabled: true),
             RootQuickActionFilterSpec(
-                activationIndex: 2,
-                iconName: "IconMicrophoneSparkle",
-                title: "Start Meeting Session in a Note",
-                isEnabled: true),
-            RootQuickActionFilterSpec(
                 activationIndex: 3, iconName: "IconFolderAddRight", title: "New Folder", isEnabled: true),
             RootQuickActionFilterSpec(
                 activationIndex: 4, iconName: "IconSplit", title: "New Split View", isEnabled: true),
@@ -271,10 +275,21 @@ struct FloatingSearch: View {
             RootQuickActionFilterSpec(
                 activationIndex: 8, iconName: "IconSettingsGear1", title: "Settings", isEnabled: true),
         ]
+        if meetingNotesCapability.showsEntryPoints {
+            rows.insert(
+                RootQuickActionFilterSpec(
+                    activationIndex: 2,
+                    iconName: "IconMicrophoneSparkle",
+                    title: "Start Meeting Session in a Note",
+                    isEnabled: true
+                ),
+                at: 2
+            )
+        }
         if hasDeferredUpdateRow {
             rows.append(
                 RootQuickActionFilterSpec(
-                    activationIndex: deferredUpdateRowSelectableIndex,
+                    activationIndex: deferredUpdateActionActivationIndex,
                     iconName: "IconUpdateDownload",
                     title: "Update App",
                     isEnabled: true))
@@ -289,7 +304,9 @@ struct FloatingSearch: View {
         RootQuickActionKeywordCatalog(
             selectedNoteIsPinned: selectedNote?.isPinned == true,
             isZenMode: isZenMode,
-            archiveOrRestoreTitle: archiveOrRestoreQuickActionTitle)
+            archiveOrRestoreTitle: archiveOrRestoreQuickActionTitle,
+            meetingNotesEnabled: meetingNotesCapability.showsEntryPoints
+        )
     }
 
     /// Quick actions whose title or keyword aliases match the trimmed query (enabled rows only).
@@ -332,6 +349,16 @@ struct FloatingSearch: View {
         deferredUpdateRowVersion != nil
     }
 
+    private var meetingNotesCapability: MeetingNotesCapability {
+        appleIntelligenceService.meetingNotesCapability
+    }
+
+    private var visibleRootQuickActionActivationIndices: [Int] {
+        (0..<9).filter { activationIndex in
+            meetingNotesCapability.showsEntryPoints || activationIndex != 2
+        }
+    }
+
     /// LAST SEARCH rows only when that section is visible (root + empty query + history).
     private var paletteHistoryRowCount: Int {
         guard paletteMode == .root, isEmptyQuery, !engine.paletteHistory.isEmpty else { return 0 }
@@ -351,6 +378,9 @@ struct FloatingSearch: View {
     private var deferredUpdateRowSelectableIndex: Int {
         rootStandardQuickActionCount
     }
+
+    /// Stable activation index for the synthetic deferred-update command row.
+    private let deferredUpdateActionActivationIndex = 9
 
     /// Sidebar selection with fresh `isArchived` / `isPinned` from `notes` when available.
     private var commandPaletteSelectedNote: Note? {
@@ -431,6 +461,15 @@ struct FloatingSearch: View {
         .onChange(of: engine.results) { _, _ in
             selectedResultIndex = 0
         }
+        .onChange(of: appleIntelligenceService.meetingNotesCapability.showsEntryPoints) { _, isEnabled in
+            guard !isEnabled, paletteMode == .meetingPickNote else { return }
+            withPaletteSwapAnimation {
+                paletteMode = .root
+                selectedResultIndex = 0
+                searchText = ""
+                engine.query = ""
+            }
+        }
         .onChange(of: showResultsPanel) { _, isShowing in
             if isShowing {
                 hoveredResultID = nil
@@ -450,6 +489,13 @@ struct FloatingSearch: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .floatingSearchSwitchToMeetingPickNote)) { _ in
             guard isPresented else { return }
+            guard appleIntelligenceService.refreshMeetingNotesCapability().showsEntryPoints else {
+                withPaletteSwapAnimation {
+                    paletteMode = .root
+                    selectedResultIndex = 0
+                }
+                return
+            }
             withPaletteSwapAnimation {
                 paletteMode = .meetingPickNote
                 selectedResultIndex = 0
@@ -579,8 +625,7 @@ struct FloatingSearch: View {
         #else
         // iOS: same 11pt system regular as the macOS `NSTextField` below.
         TextField("Search anything…", text: $searchText)
-            .font(Font.system(size: 11, weight: .regular, design: .default).leading(.standard))
-            .tracking(-0.2)
+            .jotUI(FontManager.uiLabel5(weight: .regular, textLeading: .standard))
             .foregroundColor(Color("PrimaryTextColor"))
             .focused($isSearchFocused)
             .textFieldStyle(.plain)
@@ -669,7 +714,7 @@ struct FloatingSearch: View {
 
             Text(title)
                 .jotMetadataLabelTypography()
-                .tracking(-0.4)
+                .tracking(floatingSearchMetadataCapsTracking)
                 .foregroundColor(Color("SecondaryTextColor"))
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -694,8 +739,7 @@ struct FloatingSearch: View {
                     .frame(width: 15, height: 15)
 
                 Text(title)
-                    .font(FontManager.heading(size: 13, weight: .regular))
-                    .tracking(-0.4)
+                    .jotUI(FontManager.uiLabel3(weight: .regular))
                     .foregroundColor(Color("SecondaryTextColor"))
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -703,6 +747,7 @@ struct FloatingSearch: View {
                 if isCurrentNoteOption {
                     Text("Current Note")
                         .jotMetadataLabelTypography()
+                        .tracking(floatingSearchMetadataCapsTracking)
                         .foregroundColor(Color("SecondaryTextColor"))
                         .lineLimit(1)
                 }
@@ -747,62 +792,70 @@ struct FloatingSearch: View {
 
     private func deferredUpdateQuickRow(index: Int) -> some View {
         quickActionRow(
-            index: index,
+            selectionIndex: index,
+            activationIndex: deferredUpdateActionActivationIndex,
             iconName: "IconUpdateDownload",
             title: "Update App",
             isEnabled: true,
             trailing: { EmptyView() })
     }
 
-    /// Single root quick action by palette index (0…8). Deferred “Update App” uses `deferredUpdateQuickRow` separately.
+    /// Single root quick action by activation index. Deferred “Update App” uses `deferredUpdateQuickRow` separately.
     @ViewBuilder
-    private func rootPaletteQuickActionRow(paletteIndex: Int) -> some View {
-        switch paletteIndex {
+    private func rootPaletteQuickActionRow(activationIndex: Int, selectionIndex: Int) -> some View {
+        switch activationIndex {
         case 0:
             quickActionRow(
-                index: 0,
+                selectionIndex: selectionIndex,
+                activationIndex: activationIndex,
                 iconName: "IconEditSmall2",
                 title: "New Note",
                 isEnabled: true,
                 trailing: { sidebarStyleShortcutLabel("\u{2318}N") })
         case 1:
             quickActionRow(
-                index: 1,
+                selectionIndex: selectionIndex,
+                activationIndex: activationIndex,
                 iconName: "IconFloatingNote",
                 title: "Floating Note",
                 isEnabled: true,
                 trailing: { sidebarStyleShortcutLabel(quickNoteShortcutDisplay) })
         case 2:
             quickActionRow(
-                index: 2,
+                selectionIndex: selectionIndex,
+                activationIndex: activationIndex,
                 iconName: "IconMicrophoneSparkle",
                 title: "Start Meeting Session in a Note",
                 isEnabled: true,
                 trailing: { sidebarStyleShortcutLabel(startMeetingSessionShortcutDisplay) })
         case 3:
             quickActionRow(
-                index: 3,
+                selectionIndex: selectionIndex,
+                activationIndex: activationIndex,
                 iconName: "IconFolderAddRight",
                 title: "New Folder",
                 isEnabled: true,
                 trailing: { EmptyView() })
         case 4:
             quickActionRow(
-                index: 4,
+                selectionIndex: selectionIndex,
+                activationIndex: activationIndex,
                 iconName: "IconSplit",
                 title: "New Split View",
                 isEnabled: true,
                 trailing: { EmptyView() })
         case 5:
             quickActionRow(
-                index: 5,
+                selectionIndex: selectionIndex,
+                activationIndex: activationIndex,
                 iconName: selectedNote?.isPinned == true ? "IconUnpin" : "IconThumbtack",
                 title: selectedNote?.isPinned == true ? "Unpin Note" : "Pin Note",
                 isEnabled: selectedNote != nil,
                 trailing: { EmptyView() })
         case 6:
             quickActionRow(
-                index: 6,
+                selectionIndex: selectionIndex,
+                activationIndex: activationIndex,
                 iconName: "IconZenMode",
                 // Same wording as meeting-picker header when the sidebar is hidden (⌘. toggles either way).
                 title: isZenMode ? "Exit Zen Mode" : "Zen Mode",
@@ -810,14 +863,16 @@ struct FloatingSearch: View {
                 trailing: { sidebarStyleShortcutLabel("\u{2318}.") })
         case 7:
             quickActionRow(
-                index: 7,
+                selectionIndex: selectionIndex,
+                activationIndex: activationIndex,
                 iconName: archiveOrRestoreQuickActionIcon,
                 title: archiveOrRestoreQuickActionTitle,
                 isEnabled: isArchiveOrRestoreQuickActionEnabled,
                 trailing: { EmptyView() })
         case 8:
             quickActionRow(
-                index: 8,
+                selectionIndex: selectionIndex,
+                activationIndex: activationIndex,
                 iconName: "IconSettingsGear1",
                 title: "Settings",
                 isEnabled: true,
@@ -829,21 +884,25 @@ struct FloatingSearch: View {
 
     @ViewBuilder
     private var rootStandardQuickActionRows: some View {
-        ForEach(0..<rootStandardQuickActionCount, id: \.self) { paletteIndex in
-            rootPaletteQuickActionRow(paletteIndex: paletteIndex)
+        ForEach(Array(visibleRootQuickActionActivationIndices.enumerated()), id: \.element) { pair in
+            rootPaletteQuickActionRow(
+                activationIndex: pair.element,
+                selectionIndex: pair.offset
+            )
         }
     }
 
     private func quickActionRow<Trailing: View>(
-        index: Int,
+        selectionIndex: Int,
+        activationIndex: Int,
         iconName: String,
         title: String,
         isEnabled: Bool,
         @ViewBuilder trailing: () -> Trailing
     ) -> some View {
-        let isSelected = isEmptyQuery && !showResultsPanel && selectedResultIndex == index
+        let isSelected = isEmptyQuery && !showResultsPanel && selectedResultIndex == selectionIndex
         return Button {
-            activateQuickAction(at: index)
+            activateQuickAction(at: activationIndex)
         } label: {
             HStack(spacing: 0) {
                 HStack(spacing: 8) {
@@ -856,8 +915,7 @@ struct FloatingSearch: View {
 
                     // Same token as the template icon (`SecondaryTextColor`) — matches sidebar quick actions.
                     Text(title)
-                        .font(FontManager.heading(size: 13, weight: .regular))
-                        .tracking(-0.4)
+                        .jotUI(FontManager.uiLabel3(weight: .regular))
                         .foregroundColor(Color("SecondaryTextColor"))
                         .lineLimit(1)
                 }
@@ -884,7 +942,7 @@ struct FloatingSearch: View {
         .onHover { hovering in
             guard hovering, isEnabled else { return }
             if isEmptyQuery, !showResultsPanel {
-                selectedResultIndex = index
+                selectedResultIndex = selectionIndex
             }
         }
     }
@@ -915,6 +973,7 @@ struct FloatingSearch: View {
             HStack(spacing: 8) {
                 Text("LAST SEARCH")
                     .jotMetadataLabelTypography()
+                    .tracking(floatingSearchMetadataCapsTracking)
                     .foregroundColor(Color("SecondaryTextColor"))
                     .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -944,6 +1003,7 @@ struct FloatingSearch: View {
         } label: {
             Text("Clear All")
                 .jotMetadataLabelTypography()
+                .tracking(floatingSearchMetadataCapsTracking)
                 .foregroundColor(Color("SecondaryTextColor"))
                 .contentShape(Rectangle())
         }
@@ -966,8 +1026,7 @@ struct FloatingSearch: View {
                     .frame(width: 15, height: 15)
 
                 Text(query)
-                    .font(FontManager.heading(size: 13, weight: .regular))
-                    .tracking(-0.4)
+                    .jotUI(FontManager.uiLabel3(weight: .regular))
                     .foregroundColor(Color("SecondaryTextColor"))
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -1011,8 +1070,7 @@ struct FloatingSearch: View {
                     .frame(width: 15, height: 15)
 
                 Text(target.title)
-                    .font(FontManager.heading(size: 13, weight: .regular))
-                    .tracking(-0.4)
+                    .jotUI(FontManager.uiLabel3(weight: .regular))
                     .foregroundColor(leadingIconColor)
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -1051,6 +1109,7 @@ struct FloatingSearch: View {
                         }
                         Text("Navigate")
                             .jotMetadataLabelTypography()
+                            .tracking(floatingSearchMetadataCapsTracking)
                             .foregroundColor(Color("SecondaryTextColor"))
                     }
 
@@ -1064,6 +1123,7 @@ struct FloatingSearch: View {
 
                         Text("Select")
                             .jotMetadataLabelTypography()
+                            .tracking(floatingSearchMetadataCapsTracking)
                             .foregroundColor(Color("SecondaryTextColor"))
                     }
                 }
@@ -1076,6 +1136,7 @@ struct FloatingSearch: View {
                             .fill(floatingSearchFooterKeycapFill)
                         Text("esc")
                             .jotMetadataLabelTypography()
+                            .tracking(floatingSearchMetadataCapsTracking)
                             .foregroundColor(Color("SecondaryTextColor"))
                     }
                     .frame(width: 28, height: 17)
@@ -1084,6 +1145,7 @@ struct FloatingSearch: View {
 
                     Text(paletteMode == .meetingPickNote ? "Back" : "Close")
                         .jotMetadataLabelTypography()
+                        .tracking(floatingSearchMetadataCapsTracking)
                         .foregroundColor(Color("SecondaryTextColor"))
                 }
             }
@@ -1118,7 +1180,7 @@ struct FloatingSearch: View {
             RoundedRectangle(cornerRadius: 4, style: .continuous)
                 .fill(floatingSearchFooterKeycapFill)
             Image(systemName: "return.left")
-                .font(.system(size: 7, weight: .regular, design: .default))
+                .font(FontManager.uiPro(size: 7, weight: .regular).font)
                 .foregroundStyle(Color("SecondaryTextColor"))
         }
         .frame(width: 15, height: 15)
@@ -1202,8 +1264,7 @@ struct FloatingSearch: View {
                         .frame(width: 15, height: 15)
 
                     Text(spec.title)
-                        .font(FontManager.heading(size: 13, weight: .regular))
-                        .tracking(-0.4)
+                        .jotUI(FontManager.uiLabel3(weight: .regular))
                         .foregroundColor(Color("SecondaryTextColor"))
                         .lineLimit(1)
                 }
@@ -1272,8 +1333,7 @@ struct FloatingSearch: View {
                         .frame(width: 15, height: 15)
 
                     Text(result.title)
-                        .font(FontManager.heading(size: 13, weight: .regular))
-                        .tracking(-0.4)
+                        .jotUI(FontManager.uiLabel3(weight: .regular))
                         .foregroundColor(leadingResultIconColor)
                         .lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1289,8 +1349,7 @@ struct FloatingSearch: View {
                                 .frame(width: 14, height: 14)
 
                             Text(folder.name)
-                                .font(FontManager.heading(size: 13, weight: .regular))
-                                .tracking(-0.2)
+                                .jotUI(FontManager.uiLabel3(weight: .regular))
                                 .foregroundColor(tint)
                                 .lineLimit(1)
                         }
@@ -1303,8 +1362,7 @@ struct FloatingSearch: View {
 
                 if hasPreview {
                     Text(highlightedPreview(for: result))
-                        .font(FontManager.heading(size: 11, weight: .regular))
-                        .tracking(-0.1)
+                        .tracking(FontManager.proportionalUITracking(pointSize: FontManager.UITextRamp.label5))
                         .foregroundColor(Color("SecondaryTextColor"))
                         .lineLimit(2)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1347,7 +1405,7 @@ struct FloatingSearch: View {
     private func highlightedPreview(for result: SearchHit) -> AttributedString {
         let previewText = result.preview
         var attributed = AttributedString(previewText)
-        attributed.font = FontManager.heading(size: 11, weight: .regular)
+        attributed.font = FontManager.uiLabel5(weight: .regular).font
         attributed.foregroundColor = Color("SecondaryTextColor")
 
         let query = result.query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1357,7 +1415,7 @@ struct FloatingSearch: View {
             of: query,
             options: [.caseInsensitive, .diacriticInsensitive]
         ) {
-            attributed[range].font = FontManager.heading(size: 11, weight: .regular)
+            attributed[range].font = FontManager.uiLabel5(weight: .semibold).font
             attributed[range].foregroundColor = Color("PrimaryTextColor")
         }
 
@@ -1400,7 +1458,8 @@ struct FloatingSearch: View {
 
     private func prepareForPresentation() {
         selectedResultIndex = 0
-        if openIntent == .startMeetingSessionPickNote {
+        if openIntent == .startMeetingSessionPickNote,
+           appleIntelligenceService.refreshMeetingNotesCapability().showsEntryPoints {
             // Must clear query before showing meeting pick: `quickActionsAndRecentsBlock` only renders
             // when `isEmptyQuery`; restoring `engine.query` would leave the field non-empty and hide
             // “Start recording in:” behind an empty results strip or footer-only UI.
@@ -1486,12 +1545,19 @@ struct FloatingSearch: View {
     }
 
     private func openNoteStartingMeeting(_ note: Note) {
+        guard appleIntelligenceService.refreshMeetingNotesCapability().canStartNewSession else {
+            withPaletteSwapAnimation {
+                paletteMode = .root
+                selectedResultIndex = 0
+            }
+            return
+        }
         onNoteSelectedStartMeeting(note)
         dismissSearch()
     }
 
     private func activateQuickAction(at index: Int) {
-        if hasDeferredUpdateRow, index == deferredUpdateRowSelectableIndex {
+        if hasDeferredUpdateRow, index == deferredUpdateActionActivationIndex {
             if deferredUpdateUsesSparkleHandler {
                 onResumeSparkleDeferredUpdate()
             } else {
@@ -1501,7 +1567,7 @@ struct FloatingSearch: View {
             return
         }
 
-        guard index >= 0, index < rootStandardQuickActionCount else { return }
+        guard index >= 0, index <= 8 else { return }
 
         switch index {
         case 0:
@@ -1513,6 +1579,7 @@ struct FloatingSearch: View {
             #endif
             dismissSearch()
         case 2:
+            guard meetingNotesCapability.showsEntryPoints else { return }
             // Meeting pick UI only mounts when the query is empty; clear typed filter text before swapping.
             searchText = ""
             engine.query = ""
@@ -1580,7 +1647,8 @@ struct FloatingSearch: View {
         }
 
         if index < rootStandardQuickActionCount {
-            activateQuickAction(at: index)
+            let activationIndex = visibleRootQuickActionActivationIndices[index]
+            activateQuickAction(at: activationIndex)
         }
     }
 

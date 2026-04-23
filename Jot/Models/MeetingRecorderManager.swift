@@ -65,6 +65,9 @@ final class MeetingRecorderManager: ObservableObject {
     }
 
     func startRecording(for noteID: UUID) {
+        guard AppleIntelligenceService.shared.refreshMeetingNotesCapability().canStartNewSession else {
+            return
+        }
         guard recordingState == .idle else { return }
 
         recordingNoteID = noteID

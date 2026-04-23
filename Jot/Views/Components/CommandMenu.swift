@@ -155,7 +155,7 @@ struct CommandMenu: View {
     private var scrollDownIndicator: some View {
         let strokeOpacity: Double = colorScheme == .dark ? 0.22 : 0.08
         let chevron = Image(systemName: "chevron.down")
-            .font(.system(size: 10, weight: .bold))
+            .font(FontManager.uiTiny(weight: .bold).font)
             .foregroundStyle(.secondary)
             .frame(width: CommandMenuLayout.scrollIndicatorSize, height: CommandMenuLayout.scrollIndicatorSize)
 

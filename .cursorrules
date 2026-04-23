@@ -89,8 +89,8 @@ Key tokens: `AccentColor`, `MainColor`, `PrimaryTextColor`, `SecondaryTextColor`
 Use `NSColor.labelColor` everywhere -- no hardcoded dark/light RGB tuples.
 
 ### Typography
-FontManager API: `body()` (Charter 16), `heading()` (SF Pro 24 Medium), `metadata()` (SF Mono 12), `icon()` (SF Symbols 20).
-Body font is user-configurable: default (Charter), system (SF Pro), mono (SF Mono).
+FontManager API: `body()` (SF Pro / Charter / mono per preference), `heading()` (SF Pro 24 Medium), `metadata()` (SF Mono 11 Medium), `uiPro`/`uiLabel*` ramp for chrome, `icon()` (SF Symbols 20).
+Body font: first launch SF Pro (`system`); `default` (Charter) and `mono` are user options.
 
 ### Spacing
 Canonical values: `4, 6, 8, 12, 16, 18, 24, 60`

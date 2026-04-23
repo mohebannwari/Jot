@@ -141,7 +141,7 @@ private extension MicCaptureControl {
                 }
             } label: {
                 Image(systemName: "stop.circle.fill")
-                    .font(.system(size: 20, weight: .medium))
+                    .font(FontManager.uiHeadingH4(weight: .medium).font)
                     .foregroundStyle(.white, Color.red)
                     .frame(width: MicGeometry.iconSize, height: MicGeometry.iconSize)
                     .padding(MicGeometry.buttonInset)

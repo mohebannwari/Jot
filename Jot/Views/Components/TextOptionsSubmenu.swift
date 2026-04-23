@@ -104,14 +104,13 @@ struct SubmenuRowButton: View {
                         .foregroundColor(isActive ? Color("AccentColor") : Color("IconSecondaryColor"))
                 }
                 Text(label)
-                    .font(.system(size: 13, weight: .medium))
-                    .tracking(-0.4)
+                    .jotUI(FontManager.uiLabel3(weight: .medium))
                     .foregroundColor(isActive ? Color("AccentColor") : Color("PrimaryTextColor"))
                     .lineLimit(1)
                 Spacer()
                 if isActive {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(FontManager.uiTiny(weight: .bold).font)
                         .foregroundColor(Color("AccentColor"))
                 }
             }

@@ -45,7 +45,7 @@ struct MapInsertPrompt: View {
 
                 Button(action: onCancel) {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(FontManager.uiPro(size: 14, weight: .semibold).font)
                         .foregroundColor(Color("SecondaryTextColor"))
                 }
                 .buttonStyle(.plain)

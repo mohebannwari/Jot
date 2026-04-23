@@ -38,6 +38,7 @@ struct SettingsPage: View {
     let titleTopPadding: CGFloat
 
     @EnvironmentObject private var themeManager: ThemeManager
+    @ObservedObject private var appleIntelligenceService = AppleIntelligenceService.shared
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
@@ -470,36 +471,42 @@ struct SettingsPage: View {
                             )
                         }
 
-                        HStack(alignment: .center, spacing: 12) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Start Meeting Session")
-                                    .font(FontManager.heading(size: 13, weight: .regular))
-                                    .tracking(-0.2)
-                                    .foregroundColor(Color("SettingsPrimaryTextColor"))
+                        if appleIntelligenceService.meetingNotesCapability.showsEntryPoints {
+                            HStack(alignment: .center, spacing: 12) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Start Meeting Session")
+                                        .font(FontManager.heading(size: 13, weight: .regular))
+                                        .tracking(-0.2)
+                                        .foregroundColor(Color("SettingsPrimaryTextColor"))
 
-                                Text(
-                                    "Open Jot's command palette in pick-a-note-for-meeting mode from any app."
-                                )
-                                .font(FontManager.heading(size: 11, weight: .regular))
-                                .foregroundColor(Color("SettingsPlaceholderTextColor"))
-                                .fixedSize(horizontal: false, vertical: true)
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-
-                            HotKeyRecorderView(
-                                hotKey: $themeManager.startMeetingSessionHotKey,
-                                onChange: { newHotKey in
-                                    if let hk = newHotKey {
-                                        let other = themeManager.quickNoteHotKey ?? QuickNoteHotKey.default
-                                        if hk == other { return false }
-                                        return GlobalHotKeyManager.shared.register(
-                                            hk, slot: .startMeetingSession)
-                                    } else {
-                                        GlobalHotKeyManager.shared.unregister(slot: .startMeetingSession)
-                                        return true
-                                    }
+                                    Text(
+                                        "Open Jot's command palette in pick-a-note-for-meeting mode from any app."
+                                    )
+                                    .font(FontManager.heading(size: 11, weight: .regular))
+                                    .foregroundColor(Color("SettingsPlaceholderTextColor"))
+                                    .fixedSize(horizontal: false, vertical: true)
                                 }
-                            )
+                                .frame(maxWidth: .infinity, alignment: .leading)
+
+                                HotKeyRecorderView(
+                                    hotKey: $themeManager.startMeetingSessionHotKey,
+                                    onChange: { newHotKey in
+                                        guard appleIntelligenceService.refreshMeetingNotesCapability().registersGlobalHotKey else {
+                                            GlobalHotKeyManager.shared.unregister(slot: .startMeetingSession)
+                                            return false
+                                        }
+                                        if let hk = newHotKey {
+                                            let other = themeManager.quickNoteHotKey ?? QuickNoteHotKey.default
+                                            if hk == other { return false }
+                                            return GlobalHotKeyManager.shared.register(
+                                                hk, slot: .startMeetingSession)
+                                        } else {
+                                            GlobalHotKeyManager.shared.unregister(slot: .startMeetingSession)
+                                            return true
+                                        }
+                                    }
+                                )
+                            }
                         }
                     }
                 }
@@ -539,7 +546,7 @@ struct SettingsPage: View {
                                 Spacer()
 
                                 Image(systemName: "chevron.up.chevron.down")
-                                    .font(.system(size: 9, weight: .regular, design: .default))
+                                    .font(FontManager.uiPro(size: 9, weight: .regular).font)
                                     .foregroundColor(Color("SettingsPlaceholderTextColor"))
                             }
                         }
@@ -661,7 +668,7 @@ struct SettingsPage: View {
                                     .fill(themeManager.tintedSettingsInnerPill(for: colorScheme))
                                     .frame(width: 15, height: 15)
                                 Text("?")
-                                    .font(.system(size: 11, weight: .regular, design: .default))
+                                    .jotUI(FontManager.uiLabel5(weight: .regular))
                                     .foregroundColor(Color("SettingsPlaceholderTextColor"))
                             }
                         }
@@ -711,7 +718,7 @@ struct SettingsPage: View {
                         .jotMetadataLabelTypography()
                         .foregroundColor(Color("PrimaryTextColor"))
                     Image(systemName: "chevron.up.chevron.down")
-                        .font(.system(size: 9, weight: .regular, design: .default))
+                        .font(FontManager.uiPro(size: 9, weight: .regular).font)
                         .foregroundColor(Color("SettingsPlaceholderTextColor"))
                 }
             }
@@ -766,7 +773,7 @@ struct SettingsPage: View {
 
                     if isOn.wrappedValue {
                         Image(systemName: "checkmark")
-                            .font(.system(size: 9, weight: .regular, design: .default))
+                            .font(FontManager.uiPro(size: 9, weight: .regular).font)
                             .foregroundColor(Color("ButtonPrimaryTextColor"))
                     }
                 }
@@ -991,21 +998,21 @@ struct SettingsPage: View {
 
             HStack(spacing: 12) {
                 bodyFontCard(
-                    title: "Default",
-                    style: .default,
-                    previewFont: Font.custom("Charter", size: 20)
-                )
-
-                bodyFontCard(
-                    title: "System",
+                    title: "SF Pro",
                     style: .system,
-                    previewFont: Font.system(size: 20, weight: .regular, design: .default)
+                    previewFont: FontManager.uiHeadingH4(weight: .regular).font
                 )
 
                 bodyFontCard(
                     title: "Mono",
                     style: .mono,
                     previewFont: Font.system(size: 20, weight: .regular, design: .monospaced)
+                )
+
+                bodyFontCard(
+                    title: "Charter",
+                    style: .default,
+                    previewFont: Font.custom("Charter", size: 20)
                 )
             }
         }

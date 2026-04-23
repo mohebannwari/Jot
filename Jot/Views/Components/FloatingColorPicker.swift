@@ -98,7 +98,7 @@ struct FloatingColorPicker: View {
                         .frame(width: 15, height: 15)
                         .overlay(
                             Image(systemName: "plus")
-                                .font(.system(size: 9, weight: .bold))
+                                .font(FontManager.uiMicro(weight: .bold).font)
                                 .foregroundColor(colorScheme == .dark ? .black : .white)
                         )
                 }

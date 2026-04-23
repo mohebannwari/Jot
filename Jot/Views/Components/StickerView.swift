@@ -145,8 +145,7 @@ struct StickerView: View {
         } else {
             ScrollView(.vertical, showsIndicators: false) {
                 Text(sticker.text.isEmpty ? "Type here..." : sticker.text)
-                    .font(.system(size: sticker.fontSize, weight: .medium))
-                    .tracking(-0.3)
+                    .jotUI(FontManager.uiPro(size: sticker.fontSize, weight: .medium))
                     .lineSpacing(max(0, (sticker.fontSize * 14/12) - sticker.fontSize))
                     .foregroundColor(sticker.text.isEmpty ? textColor.opacity(0.4) : textColor)
                     .frame(maxWidth: .infinity, alignment: .topLeading)

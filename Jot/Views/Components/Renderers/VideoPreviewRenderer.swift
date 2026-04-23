@@ -54,7 +54,7 @@ struct VideoPreviewRenderer: View {
                     stopPlayback()
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 20, weight: .medium))
+                        .font(FontManager.uiHeadingH4(weight: .medium).font)
                         .foregroundStyle(.white.opacity(0.9))
                         .shadow(color: .black.opacity(0.3), radius: 2, y: 1)
                 }
@@ -80,7 +80,7 @@ struct VideoPreviewRenderer: View {
                     startPlayback()
                 } label: {
                     Image(systemName: "play.fill")
-                        .font(.system(size: 32, weight: .medium))
+                        .font(FontManager.uiPro(size: 32, weight: .medium).font)
                         .foregroundStyle(.white)
                         .frame(width: 64, height: 64)
                         .background(.ultraThinMaterial, in: Circle())
@@ -99,11 +99,10 @@ struct VideoPreviewRenderer: View {
             .overlay {
                 HStack(spacing: 8) {
                     Image(systemName: "play.rectangle")
-                        .font(.system(size: 15, weight: .medium))
+                        .font(FontManager.uiLabel2(weight: .medium).font)
                         .foregroundStyle(Color("SecondaryTextColor"))
                     Text(message)
-                        .font(.system(size: 11, weight: .medium))
-                        .tracking(-0.2)
+                        .jotUI(FontManager.uiLabel5(weight: .medium))
                         .foregroundStyle(Color("SecondaryTextColor"))
                 }
             }

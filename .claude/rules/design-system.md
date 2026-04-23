@@ -65,31 +65,45 @@ All type uses **SF Pro**. Weights: Regular=400, Medium=500, SemiBold=600, Bold=7
 
 ### Figma Type Scale
 
-| Style      | Size | Line Height | Tracking | Weights Available |
-| ---------- | ---- | ----------- | -------- | ----------------- |
-| Heading/H4 | 20   | 24          | -0.20    | Medium            |
-| Label-2    | 15   | 18          | -0.50    | Medium            |
-| Label-3    | 13   | 16          | -0.40    | Medium            |
-| Label-4    | 12   | 14          | -0.30    | Medium, SemiBold  |
-| Label-5    | 11   | 14          | -0.20    | Medium            |
-| Tiny       | 10   | 12          | 0        | Medium, SemiBold  |
-| Micro      | 9    | 10          | 0        | SemiBold, Bold    |
+| Style      | Size | Line Height | Tracking (Figma) | Weights Available |
+| ---------- | ---- | ----------- | ---------------- | ----------------- |
+| Heading/H4 | 20   | 24          | -0.20            | Medium            |
+| Label-2    | 15   | 18          | -0.50            | Medium            |
+| Label-3    | 13   | 16          | -0.40            | Medium            |
+| Label-4    | 12   | 14          | -0.30            | Medium, SemiBold  |
+| Label-5    | 11   | 14          | -0.20            | Medium            |
+| Tiny       | 10   | 12          | 0                | Medium, SemiBold  |
+| Micro      | 9    | 10          | 0                | SemiBold, Bold    |
+
+**Figma tracking is _not_ implemented in code.** The **Tracking (Figma)** column is what the design file exports for static mockups. **Apple’s SF / Human Interface guidance wins for letter spacing on shipped UI:** small UI sizes should read **slightly open**; aggressive **negative** tracking from Figma makes macOS chrome look **cramped** when pasted onto `Font.system(size:)`. Use the code ramp below — do **not** transcribe Figma letter-spacing into `.tracking(-0.3)` (etc.) for SF Pro chrome.
+
+### Letter spacing & SF Pro chrome (Apple-first)
+
+1. **Proportional UI chrome** — For fixed-size **SF Pro** labels, menus, palette rows, and controls, use **`FontManager.UIChromeFont`** + **`View.jotUI(_:)`** (`FontManager.swift`). That bundles **`Font.system(size:weight:)`** with **`FontManager.proportionalUITracking(pointSize:)`**, which follows Apple-style UI curves: **mild positive** tracking for small sizes (~9–13pt), **neutral** around 14–16pt, **mild negative** only for **larger** display sizes so headlines are not loose.
+
+2. **No stacked Figma tightening** — **Do not** chain `.jotUI(FontManager.uiLabel3(…))` with extra **`.tracking(-0.2)` … `.tracking(-0.5)`** unless product documents a one-off exception. That overrides `proportionalUITracking` and reintroduces the Figma-dense look the ramp is meant to avoid.
+
+3. **What to take from Figma** — Use Figma for **point size, weight, line height intent, and hierarchy** (`FontManager.UITextRamp` maps Label-2 … Micro). Use **code** for **letter spacing** on SF Pro chrome.
+
+4. **SF Symbols & template icons** — Use **`.font(chrome.font)`** only on **`Image(systemName:)`** and template **`Image("…")`** marks. **Do not** use **`jotUI`** on symbols — letter spacing is for text, not glyphs.
+
+5. **Monospace / all caps** — Static metadata: **`jotMetadataLabelTypography()`** (see `.cursor/rules/metadata_label_typography.mdc`). **Do not** apply **negative** tracking to mono all-caps chrome. Apple recommends **opening** uppercase slightly at small sizes; if an overlay is **exceptionally dense** (e.g. global search footer), a **small extra positive** `.tracking` may be added **in that component** with an inline comment pointing to this section — not by copying Figma’s negative values.
 
 ### FontManager API (code-level)
 
-Three font families: **Charter** (serif body), **SF Pro** (headings/UI), **SF Mono** (metadata/code).
+**Note body:** **SF Pro** (`.system`) is the first-launch default. **Charter** (persisted key `default`) and **monospaced** body remain user-selectable. **SF Mono** is for metadata and code.
 
-| Method       | SwiftUI                          | Size             | Weight               | Notes                                   |
-| ------------ | -------------------------------- | ---------------- | -------------------- | --------------------------------------- |
-| `body()`     | `Font.custom("Charter", size:)`  | 16               | Regular              | Follows `bodyFontStyle` setting         |
-| `heading()`  | `Font.system(size:, weight:)`    | 24               | Medium               | Respects `bodyFontStyle`                |
-| `metadata()` | `Font.system(monospaced, size:)` | **11** (default) | **Medium** (default) | Technical labels, timestamps; see below |
-| `icon()`     | `Font.system(size:)`             | 20               | Regular              | SF Symbols                              |
+| Method                                         | SwiftUI                                                   | Size                             | Weight             | Notes                                                                                                                                                           |
+| ---------------------------------------------- | --------------------------------------------------------- | -------------------------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `body()`                                       | Charter, `Font.system`, or monospaced per `BodyFontStyle` | User `bodyFontSize` (default 16) | As set             | Editor / note paragraph text                                                                                                                                    |
+| `heading()`                                    | `Font.system` (SF Pro)                                    | 24 default                       | Medium default     | UI headings; independent of body font preference                                                                                                                |
+| `metadata()`                                   | Monospaced system                                         | **11** default                   | **Medium** default | Technical labels; static labels use `jotMetadataLabelTypography()`                                                                                              |
+| `icon()`                                       | SF Pro                                                    | 20 default                       | Regular            | SF Symbols                                                                                                                                                      |
+| `uiPro` / `uiHeadingH4` / `uiLabel2`–`uiMicro` | SF Pro                                                    | Figma scale (20…9)               | Per style          | App chrome: apply with **`jotUI(…)`**; tracking from **`proportionalUITracking`**; see `FontManager.UITextRamp`; future: map to `Font.TextStyle` / Dynamic Type |
 
 **Monospaced static labels (invariant):** For any non–user-input `Text` using the metadata/mono face, use **11pt, medium, all caps** — `jotMetadataLabelTypography()` in `FontManager.swift` (or `.textCase(.uppercase)` with `FontManager.metadata(size: 11, weight: .medium)`). Do not ship sentence-case mono labels except where Figma or product spec explicitly overrides. Never force all caps on `TextField` / `TextEditor` content.
 
-Body font style is user-configurable: `default` (Charter), `system` (SF Pro), `mono` (SF Mono).
-Line spacing presets: Compact (1.0x), Default (1.2x), Relaxed (1.5x) -- stored in `ThemeManager.lineSpacing`.
+Body font style: `system` (SF Pro, default when `AppBodyFontStyle` is unset), `default` (Charter, for users who chose or migrated with that key), `mono`. Line spacing: Compact (1.0x), Default (1.2x), Relaxed (1.5x) — `ThemeManager.lineSpacing`.
 
 ---
 

@@ -106,7 +106,7 @@ enum NoteParagraphStyler {
             // Check font: correct only when the FAMILY is wrong or size is wrong.
             // Checking family (not name) preserves intentional bold/italic variants
             // in the correct family, while still catching Writing Tools injecting
-            // a completely different typeface (e.g. Helvetica into a Charter doc).
+            // a completely different typeface (e.g. Helvetica into body text).
             if let currentFont = attributes[.font] as? NSFont {
                 let isHeading = headingLevel(for: currentFont) != nil
                 let hasCustomFontFamily = attributes[TextFormattingManager.customFontFamilyKey] as? Bool == true

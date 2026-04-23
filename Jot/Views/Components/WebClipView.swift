@@ -40,8 +40,7 @@ struct WebClipView: View {
                     .frame(width: 14, height: 14)
 
                 Text(cleanedDomain)
-                    .font(.system(size: 12, weight: .medium))
-                    .tracking(-0.3)
+                    .jotUI(FontManager.uiLabel4(weight: .medium))
                     .lineLimit(1)
                     .textCase(.lowercase)
                     .padding(.horizontal, 4)
@@ -116,8 +115,7 @@ struct LinkCardView: View {
 
             // Title -- Label-2/Medium
             Text(title)
-                .font(.system(size: 15, weight: .medium))
-                .tracking(-0.5)
+                .jotUI(FontManager.uiLabel2(weight: .medium))
                 .lineSpacing(3)
                 .foregroundStyle(Color("PrimaryTextColor"))
                 .lineLimit(1)
@@ -125,8 +123,7 @@ struct LinkCardView: View {
             // Description -- Label-4/Medium
             if !description.isEmpty {
                 Text(description)
-                    .font(.system(size: 12, weight: .medium))
-                    .tracking(-0.3)
+                    .jotUI(FontManager.uiLabel4(weight: .medium))
                     .lineSpacing(2)
                     .foregroundStyle(Color("SecondaryTextColor"))
                     .lineLimit(1)
@@ -140,7 +137,7 @@ struct LinkCardView: View {
                     .scaledToFit()
                     .frame(width: 10, height: 10)
                 Text(cleanedDomain)
-                    .font(.system(size: 9, weight: .medium))
+                    .jotUI(FontManager.uiPro(size: 9, weight: .medium))
                     .lineLimit(1)
             }
             .foregroundStyle(Color("AccentColor"))
