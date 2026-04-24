@@ -1512,9 +1512,11 @@ struct SettingsPage: View {
 
     // MARK: - Helpers
 
+    /// Settings section chrome (e.g. “Sort options”) uses **SF Pro**, not the mono metadata face,
+    /// in **sentence case** — not all caps — so grouped headers read as product UI.
     private func sectionLabel(_ text: String) -> some View {
         Text(text)
-            .jotMetadataLabelTypography()
+            .jotUI(FontManager.uiLabel5(weight: .medium))
             .foregroundColor(Color("SettingsPlaceholderTextColor"))
     }
 

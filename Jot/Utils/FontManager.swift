@@ -379,7 +379,9 @@ extension View {
         font(chrome.font).tracking(chrome.tracking)
     }
 
-    /// Monospaced metadata **labels**: **11pt**, **medium**, and **all caps** per design system.
+    /// Monospaced metadata **labels** (SF Mono): **11pt**, **medium**, and **all caps** per design system.
+    /// **All caps is reserved for this mono API** — SF Pro chrome uses ``jotUI(_:)`` / `uiLabel*` with
+    /// sentence case; see `.claude/rules/design-system.md` (Typography, casing).
     ///
     /// Use for `Text` only. Do **not** apply to `TextField` / `TextEditor` where the user types
     /// sentence-case content — use `.font(FontManager.metadata(size: 11, weight: .medium))` there

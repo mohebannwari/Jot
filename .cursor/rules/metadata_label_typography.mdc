@@ -5,10 +5,12 @@ alwaysApply: true
 
 # Monospaced metadata (`FontManager.metadata` / SF Mono)
 
-**Default for every static `Text` label** (anything that is not user-typed): **11pt, weight medium, all caps.** Apply these together so mono UI never drifts to sentence case or off-scale sizes.
+**All caps applies only here** — to **`Text`** rendered in the **monospaced** metadata face (`FontManager.metadata` / SF Mono). **Do not** treat **`.textCase(.uppercase)`** as the default for every static label: **SF Pro** UI chrome (`FontManager.uiLabel*` + **`View.jotUI(_:)`**) uses **sentence case** (see `.claude/rules/design-system.md` → Typography, **Casing: all caps is mono-only**).
 
-- **Preferred API:** `View.jotMetadataLabelTypography(size:weight:)` (defaults: **11**, **`.medium`**, plus **`.textCase(.uppercase)`**). Use this for section headers, palette labels, table hints, shortcuts, and any fixed copy rendered in the metadata face.
+For labels that **should** be mono (shortcuts, timestamps, technical keys, dense footer hints, table column hints, etc.): **11pt, weight medium, all caps** — apply together so mono technical UI stays consistent.
+
+- **Preferred API:** `View.jotMetadataLabelTypography(size:weight:)` (defaults: **11**, **`.medium`**, plus **`.textCase(.uppercase)`**).
 - **Manual:** `.font(FontManager.metadata(size: 11, weight: .medium))` **and** `.textCase(.uppercase)` if you cannot use the modifier.
-- **Exceptions (document in code or PR when you diverge):** Figma or product explicitly requests another size/weight; **micro** labels (e.g. 9pt chips); emphasis via **semibold** on the same 11pt scale; **user input** in `TextField` / `TextEditor` — use monospaced font **without** all caps on the field.
+- **Exceptions (document in code or PR when you diverge):** Product explicitly requests another size/weight; **micro** labels (e.g. 9pt chips); emphasis via **semibold** on the same 11pt scale; **user input** in `TextField` / `TextEditor` — use monospaced font **without** all caps on the field.
 
-User rule summary: *always* ship mono labels as **11pt + medium + all caps** unless one of the exceptions above applies.
+User rule summary: ship **mono** metadata labels as **11pt + medium + all caps** unless an exception above applies. **Never** imply that **SF Pro** `uiLabel` rows should be all caps by default.

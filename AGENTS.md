@@ -514,7 +514,7 @@ All type uses **SF Pro**. Weights: Regular=400, Medium=500, SemiBold=600, Bold=7
 | Tiny       | 10   | 12          | 0                | Medium, SemiBold  |
 | Micro      | 9    | 10          | 0                | SemiBold, Bold    |
 
-**Letter spacing:** The **Tracking (Figma)** column is **reference only** — **do not** implement those values in SwiftUI for SF Pro chrome. **Apple-first:** apply **`jotUI(_:)`** with **`FontManager.uiHeadingH4`**, **`uiLabel2`**–**`uiMicro`**, or **`uiPro(size:weight:)`** so bundled **`proportionalUITracking`** applies; never stack extra **`.tracking(-0.…)`** on top unless product documents an exception. **SF Symbols:** **`.font(chrome.font)`** only, not **`jotUI`**. **Mono all caps:** **`jotMetadataLabelTypography()`** — no **negative** tracking; optional small **positive** tracking only in **documented** dense overlays (see `.claude/rules/design-system.md` Typography). Full detail: **`.claude/rules/design-system.md` → Typography**.
+**Letter spacing:** The **Tracking (Figma)** column is **reference only** — **do not** implement those values in SwiftUI for SF Pro chrome. **Apple-first:** apply **`jotUI(_:)`** with **`FontManager.uiHeadingH4`**, **`uiLabel2`**–**`uiMicro`**, or **`uiPro(size:weight:)`** so bundled **`proportionalUITracking`** applies; never stack extra **`.tracking(-0.…)`** on top unless product documents an exception. **SF Symbols:** **`.font(chrome.font)`** only, not **`jotUI`**. **Casing:** **all caps only** for **SF Mono** metadata via **`jotMetadataLabelTypography()`**; **SF Pro** `jotUI` / `uiLabel*` uses **sentence case** (no default **`.textCase(.uppercase)`**). **Mono:** no **negative** tracking; optional small **positive** tracking only in **documented** dense overlays (see `.claude/rules/design-system.md` Typography). Full detail: **`.claude/rules/design-system.md` → Typography**.
 
 #### FontManager API (code-level)
 
@@ -528,7 +528,9 @@ All type uses **SF Pro**. Weights: Regular=400, Medium=500, SemiBold=600, Bold=7
 | `icon()`                                     | SF Pro                                              | 20 default                               | Regular            | SF Symbols                                                                          |
 | `uiPro`, `uiHeadingH4`, `uiLabel2`–`uiMicro` | SF Pro                                              | Figma scale                              | Per method         | App chrome: **`jotUI(…)`** + **`proportionalUITracking`**; `FontManager.UITextRamp` |
 
-**Monospaced static labels (invariant):** For any non–user-input `Text` using the metadata/mono face, use **11pt, medium, all caps** — `jotMetadataLabelTypography()` in `FontManager.swift` (or `.textCase(.uppercase)` with `FontManager.metadata(size: 11, weight: .medium)`). See `.cursor/rules/metadata_label_typography.mdc`. Do not ship sentence-case mono labels except where Figma or product spec explicitly overrides. Never force all caps on `TextField` / `TextEditor` content.
+**SF Pro UI labels:** `jotUI` + `uiLabel*` — **sentence case** (natural casing); do **not** force all caps to match Figma.
+
+**Monospaced static labels (invariant, mono only):** For **`Text`** in **`FontManager.metadata`** / SF Mono only — **11pt, medium, all caps** — `jotMetadataLabelTypography()` (or `.textCase(.uppercase)` with `FontManager.metadata(size: 11, weight: .medium)`). See `.cursor/rules/metadata_label_typography.mdc`. Do not ship sentence-case **mono** labels except where product explicitly overrides. Never force all caps on `TextField` / `TextEditor` content.
 
 Body font: `system` (default on first launch), `default` (Charter), `mono`. Line spacing: Compact (1.0x), Default (1.2x), Relaxed (1.5x) — `ThemeManager.lineSpacing`.
 

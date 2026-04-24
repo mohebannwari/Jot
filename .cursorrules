@@ -89,8 +89,10 @@ Key tokens: `AccentColor`, `MainColor`, `PrimaryTextColor`, `SecondaryTextColor`
 Use `NSColor.labelColor` everywhere -- no hardcoded dark/light RGB tuples.
 
 ### Typography
-FontManager API: `body()` (SF Pro / Charter / mono per preference), `heading()` (SF Pro 24 Medium), `metadata()` (SF Mono 11 Medium), `uiPro`/`uiLabel*` ramp for chrome, `icon()` (SF Symbols 20).
+FontManager API: `body()` (SF Pro / Charter / mono per preference), `heading()` (SF Pro 24 Medium), `metadata()` (SF Mono 11 Medium), `uiPro`/`uiLabel*` ramp for chrome (`jotUI`), `icon()` (SF Symbols 20).
 Body font: first launch SF Pro (`system`); `default` (Charter) and `mono` are user options.
+**All caps:** only for **SF Mono** metadata (`jotMetadataLabelTypography`). **SF Pro** `jotUI` / `uiLabel*`: **sentence case**, not default uppercase.
+**Letter spacing:** do not copy Figma tracking into Swift; see `.claude/rules/design-system.md` Typography.
 
 ### Spacing
 Canonical values: `4, 6, 8, 12, 16, 18, 24, 60`

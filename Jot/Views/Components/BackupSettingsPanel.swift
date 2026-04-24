@@ -318,9 +318,10 @@ struct BackupSettingsPanel: View {
             && min(1, max(0, themeManager.detailPaneTranslucency)) > 0.001
     }
 
+    /// Matches ``FloatingSettings/sectionLabel(_:)``: SF Pro for grouped settings headers (sentence case).
     private func sectionLabel(_ text: String) -> some View {
         Text(text)
-            .jotMetadataLabelTypography()
+            .jotUI(FontManager.uiLabel5(weight: .medium))
             .foregroundColor(Color("SettingsPlaceholderTextColor"))
     }
 
