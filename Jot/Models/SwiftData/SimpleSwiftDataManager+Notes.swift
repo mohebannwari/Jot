@@ -92,6 +92,7 @@ extension SimpleSwiftDataManager {
             }
             // Tags are managed by updateTags() -- preserve existing entity tags
             // to prevent autosave from clobbering tags with a stale snapshot.
+            // `aiGeneratedTags` is updated only via `updateAIGeneratedTags` — same preservation rule.
 
             try modelContext.save()
 
@@ -103,6 +104,7 @@ extension SimpleSwiftDataManager {
                 localNote.isLocked = existing.isLocked
                 localNote.folderID = existing.folderID
                 localNote.tags = existing.tags
+                localNote.aiGeneratedTags = existing.aiGeneratedTags
                 // If sticker encoding failed, keep entity-consistent stickers in memory
                 if stickerEncodingFailed {
                     localNote.stickers = existing.stickers
@@ -164,6 +166,37 @@ extension SimpleSwiftDataManager {
         }
     }
 
+    /// Persists on-device–suggested tags only. Does not modify user `tags`.
+    func updateAIGeneratedTags(id: UUID, tags: [String]) {
+        do {
+            let predicate = #Predicate<NoteEntity> { $0.id == id }
+            let descriptor = FetchDescriptor(predicate: predicate)
+            let entities = try modelContext.fetch(descriptor)
+
+            guard let noteEntity = entities.first else {
+                logger.warning("Note with ID \(id) not found for AI tag update")
+                return
+            }
+
+            noteEntity.aiGeneratedTags = tags
+            try modelContext.save()
+
+            if let index = notes.firstIndex(where: { $0.id == id }) {
+                var updated = notes[index]
+                updated.aiGeneratedTags = tags
+                suppressDerivedRecompute = true
+                notes[index] = updated
+                suppressDerivedRecompute = false
+                updateNoteInDerivedCollections(updated)
+                SpotlightIndexer.shared.indexNote(updated)
+            }
+
+            logger.info("Updated AI tags for note: \(id)")
+        } catch {
+            logger.error("Failed to update AI tags: \(error)")
+        }
+    }
+
     /// Silently remove a note without moving it to trash (e.g. discarding an empty untitled note).
     func discardNote(id: UUID) {
         do {
@@ -171,6 +204,7 @@ extension SimpleSwiftDataManager {
             let predicate = #Predicate<NoteEntity> { $0.id == targetID }
             let descriptor = FetchDescriptor<NoteEntity>(predicate: predicate)
             if let entity = try modelContext.fetch(descriptor).first {
+                stripOutgoingNotelinksForRemovedNoteIDs([targetID])
                 modelContext.delete(entity)
                 try modelContext.save()
             }

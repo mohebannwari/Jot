@@ -18,17 +18,18 @@ extension SimpleSwiftDataManager {
             (hasDistinctTagQuery && note.title.localizedCaseInsensitiveContains(sanitizedTagQuery))
         let contentMatches = note.content.localizedCaseInsensitiveContains(normalizedQuery) ||
             (hasDistinctTagQuery && note.content.localizedCaseInsensitiveContains(sanitizedTagQuery))
-        let tagMatchesPrimary = note.tags.contains { $0.localizedCaseInsensitiveContains(normalizedQuery) }
+        let allSearchableTags = note.tags + note.aiGeneratedTags
+        let tagMatchesPrimary = allSearchableTags.contains { $0.localizedCaseInsensitiveContains(normalizedQuery) }
         let tagMatchesFallback =
             hasDistinctTagQuery
-            && note.tags.contains { $0.localizedCaseInsensitiveContains(sanitizedTagQuery) }
+            && allSearchableTags.contains { $0.localizedCaseInsensitiveContains(sanitizedTagQuery) }
 
         guard titleMatches || contentMatches || tagMatchesPrimary || tagMatchesFallback else {
             return false
         }
 
         if allTerms.count > 1 {
-            let tagBlob = note.tags.joined(separator: " ").lowercased()
+            let tagBlob = (note.tags + note.aiGeneratedTags).joined(separator: " ").lowercased()
             let haystack = (note.title + " " + note.content + " " + tagBlob).lowercased()
             return allTerms.allSatisfy { haystack.contains($0) }
         }
@@ -64,7 +65,7 @@ extension SimpleSwiftDataManager {
             // additional terms so that multi-word queries return correct results.
             if allTerms.count > 1 {
                 results = results.filter { note in
-                    let tagBlob = note.tags.joined(separator: " ").lowercased()
+                    let tagBlob = (note.tags + note.aiGeneratedTags).joined(separator: " ").lowercased()
                     let haystack = (note.title + " " + note.content + " " + tagBlob).lowercased()
                     return allTerms.allSatisfy { haystack.contains($0) }
                 }

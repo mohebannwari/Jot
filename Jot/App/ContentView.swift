@@ -4188,6 +4188,9 @@ struct ContentView: View {
             onUpdateTags: { newTags in
                 notesManager.updateTags(id: note.id, tags: newTags)
             },
+            onUpdateAIGeneratedTags: { newAITags in
+                notesManager.updateAIGeneratedTags(id: note.id, tags: newAITags)
+            },
             onToggleTodo: { lineIndex in
                 NotificationCenter.default.post(
                     .propertiesPanelToggleTodo(

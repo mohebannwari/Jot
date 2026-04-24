@@ -104,25 +104,27 @@ struct UpdatePanelView: View {
 
     private var headerSection: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Update App — \(variantVersion)")
-                .font(FontManager.heading(size: 15, weight: .regular))
-                .tracking(-0.5)
-                .lineLimit(1)
-                .foregroundStyle(Color("PrimaryTextColor"))
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text("Update app")
+                    .jotUI(FontManager.uiLabel2(weight: .regular))
+                Text(variantVersion)
+                    .jotUI(FontManager.uiLabel2(weight: .regular))
+                    .foregroundStyle(Color("SecondaryTextColor"))
+            }
+            .lineLimit(1)
+            .foregroundStyle(Color("PrimaryTextColor"))
 
             switch variant {
             case .downloading:
                 HStack(spacing: 6) {
                     BrailleLoader(pattern: .orbit, size: 11)
                     Text("Downloading update…")
-                        .font(FontManager.heading(size: 12, weight: .regular))
-                        .tracking(-0.3)
+                        .jotUI(FontManager.uiLabel4(weight: .regular))
                         .foregroundStyle(Color("SecondaryTextColor"))
                 }
             case .relaunch:
                 Text("Relaunch to finish installing")
-                    .font(FontManager.heading(size: 12, weight: .regular))
-                    .tracking(-0.3)
+                    .jotUI(FontManager.uiLabel4(weight: .regular))
                     .foregroundStyle(Color("SecondaryTextColor"))
             }
         }
@@ -151,7 +153,7 @@ struct UpdatePanelView: View {
 
                 Button(action: onRemindLater) {
                     Text("Remind me later")
-                        .jotUI(FontManager.uiLabel5(weight: .regular))
+                        .jotUI(FontManager.uiLabel4(weight: .regular))
                         .foregroundStyle(Color("SecondaryTextColor"))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 8)

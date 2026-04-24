@@ -15,6 +15,21 @@ final class SpotlightIndexer {
 
     private init() {}
 
+    /// Merges user and AI-suggested tags for indexing (case-insensitive unique, preserves first spelling).
+    private static func mergedSpotlightKeywords(for note: Note) -> [String] {
+        var seen = Set<String>()
+        var out: [String] = []
+        for raw in note.tags + note.aiGeneratedTags {
+            let t = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !t.isEmpty else { continue }
+            let low = t.lowercased()
+            if seen.contains(low) { continue }
+            seen.insert(low)
+            out.append(t)
+        }
+        return out
+    }
+
     /// Builds a searchable item from a note. Extracted for testability and DRY.
     func buildSearchableItem(for note: Note) -> CSSearchableItem {
         let attrs = CSSearchableItemAttributeSet(contentType: UTType.text)
@@ -26,7 +41,7 @@ final class SpotlightIndexer {
             attrs.contentDescription = String(plainText.prefix(contentPreviewLimit))
         }
 
-        attrs.keywords = note.tags
+        attrs.keywords = Self.mergedSpotlightKeywords(for: note)
         attrs.lastUsedDate = note.date
         attrs.contentCreationDate = note.createdAt
 

@@ -106,6 +106,8 @@ struct SmartFolderEditorSheet: View {
                     matchCountLabel
                 }
                 .padding(.horizontal, 4)
+                // Extra space below the sheet chrome so the first label does not sit tight under the top edge.
+                .padding(.top, 8)
             }
             .frame(maxHeight: 420)
 
@@ -146,7 +148,7 @@ struct SmartFolderEditorSheet: View {
                 .foregroundColor(Color("SecondaryTextColor"))
                 .padding(.leading, Self.insetFieldTitleLeading)
             TextField("work, ideas", text: $tagsText)
-                .font(FontManager.heading(size: 14, weight: .medium))
+                .jotUI(FontManager.uiLabel4(weight: .regular))
                 .foregroundColor(Color("PrimaryTextColor"))
                 .textFieldStyle(.plain)
                 .focused($focusedField, equals: .tags)
@@ -163,7 +165,7 @@ struct SmartFolderEditorSheet: View {
                 .foregroundColor(Color("SecondaryTextColor"))
                 .padding(.leading, Self.insetFieldTitleLeading)
             TextField("Search in title and body", text: $keyword)
-                .font(FontManager.heading(size: 14, weight: .medium))
+                .jotUI(FontManager.uiLabel4(weight: .regular))
                 .foregroundColor(Color("PrimaryTextColor"))
                 .textFieldStyle(.plain)
                 .focused($focusedField, equals: .keyword)

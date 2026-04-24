@@ -197,8 +197,9 @@ final class SearchEngine: ObservableObject {
                 titleRange = r
             }
 
-            let tagMatchesPrimary = note.tags.contains { $0.lowercased().contains(lower) }
-            let tagMatchesFallback = hasDistinctTagQuery && note.tags.contains { $0.lowercased().contains(tagQuery) }
+            let allSearchableTags = note.tags + note.aiGeneratedTags
+            let tagMatchesPrimary = allSearchableTags.contains { $0.lowercased().contains(lower) }
+            let tagMatchesFallback = hasDistinctTagQuery && allSearchableTags.contains { $0.lowercased().contains(tagQuery) }
             if tagMatchesPrimary || tagMatchesFallback {
                 score += 50
                 if matchType == .content { matchType = .tag }

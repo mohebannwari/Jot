@@ -52,4 +52,49 @@ final class OutgoingNotelinkScannerTests: XCTestCase {
         let out = OutgoingNotelinkScanner.outgoingNotelinks(in: content)
         XCTAssertTrue(out.isEmpty)
     }
+
+    // MARK: - removingNotelinks
+
+    func testRemovingNotelinksStripsMatchingTarget() {
+        let content = "Hello [[notelink|\(sampleID.uuidString)|My Note]] tail"
+        let out = OutgoingNotelinkScanner.removingNotelinks(targeting: [sampleID], from: content)
+        XCTAssertEqual(out, "Hello  tail")
+    }
+
+    func testRemovingNotelinksTitleMayContainPipe() {
+        let content = "X [[notelink|\(sampleID.uuidString)|A|B|C]] Y"
+        let out = OutgoingNotelinkScanner.removingNotelinks(targeting: [sampleID], from: content)
+        XCTAssertEqual(out, "X  Y")
+    }
+
+    func testRemovingNotelinksMultipleTokensAndTargets() {
+        let content =
+            "[[notelink|\(sampleID.uuidString)|First]]\n[[notelink|\(otherID.uuidString)|Other]]\nend"
+        let out = OutgoingNotelinkScanner.removingNotelinks(targeting: [sampleID, otherID], from: content)
+        XCTAssertEqual(out, "\n\nend")
+    }
+
+    func testRemovingNotelinksLeavesOtherTarget() {
+        let content = "[[notelink|\(sampleID.uuidString)|A]] [[notelink|\(otherID.uuidString)|B]]"
+        let out = OutgoingNotelinkScanner.removingNotelinks(targeting: [sampleID], from: content)
+        XCTAssertEqual(out, " [[notelink|\(otherID.uuidString)|B]]")
+    }
+
+    func testRemovingNotelinksEmptyRemovedSetReturnsOriginal() {
+        let content = "[[notelink|\(sampleID.uuidString)|X]]"
+        let out = OutgoingNotelinkScanner.removingNotelinks(targeting: [], from: content)
+        XCTAssertEqual(out, content)
+    }
+
+    func testRemovingNotelinksLeavesInvalidUUIDToken() {
+        let content = "[[notelink|not-a-uuid|Title]]"
+        let out = OutgoingNotelinkScanner.removingNotelinks(targeting: [sampleID], from: content)
+        XCTAssertEqual(out, content)
+    }
+
+    func testRemovingNotelinksUnclosedPreservesTail() {
+        let content = "pre [[notelink|\(sampleID.uuidString)|No close"
+        let out = OutgoingNotelinkScanner.removingNotelinks(targeting: [sampleID], from: content)
+        XCTAssertEqual(out, content)
+    }
 }

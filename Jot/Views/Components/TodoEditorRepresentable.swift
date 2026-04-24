@@ -131,6 +131,9 @@ extension Notification.Name {
     /// no `editorInstanceID` filter — every editor flushes.
     static let jotFlushEditorSerializationBeforeTerminate = Notification.Name(
         "jotFlushEditorSerializationBeforeTerminate")
+    /// Posted after `[[notelink|…]]` tokens targeting deleted notes are stripped from persisted content.
+    /// `userInfo`: `removedTargetIDs` — `[String]` UUIDs; `affectedSourceNoteIDs` — `[String]` notes whose body changed.
+    static let jotOutgoingNotelinksRemoved = Notification.Name("jotOutgoingNotelinksRemoved")
 }
 
 // MARK: - Typing Animation Layout Manager

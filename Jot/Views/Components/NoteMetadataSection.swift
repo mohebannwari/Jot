@@ -24,6 +24,8 @@ struct NoteMetadataSection: View {
     /// When set, replaces serialized `[[notelink|…|title]]` titles with the current note title from the library (or falls back to the serialized title if the note is missing).
     var resolveMentionTitle: ((UUID, String) -> String)? = nil
     var onUpdateTags: (([String]) -> Void)?
+    /// When set, user can remove individual AI tag chips; empty list hides the row.
+    var onUpdateAIGeneratedTags: (([String]) -> Void)?
     var onToggleTodo: ((Int) -> Void)?
     var onNavigateToNote: ((UUID) -> Void)?
     var onDismiss: (() -> Void)?
@@ -176,13 +178,14 @@ struct NoteMetadataSection: View {
         #endif
     }
 
-    /// Secondary pill/panel surface inside the Properties panel. Routes through
-    /// `themeManager.tintedBlockContainer` so tag pills, the tag input, the todo
-    /// counter, and the expanded todo list container all absorb the app-wide
-    /// hue tint — matching the tabs container, code block language chip, and
-    /// table header cells that already run through the same pipeline.
+    /// Secondary pill/panel surface for todos and lists — keeps tab/code-table tint alignment.
     private var todoContainerColor: Color {
         themeManager.tintedBlockContainer(for: colorScheme)
+    }
+
+    /// User tag pills and AI tag pills both use this so translucency matches the glass properties pane.
+    private var tagPillContainerColor: Color {
+        Color("SurfaceTranslucentColor")
     }
 
     // MARK: - Date Formatting
@@ -261,6 +264,10 @@ struct NoteMetadataSection: View {
                     // Tags
                     propertyRow(label: "Tags") {
                         tagsValue
+                    }
+
+                    if !note.aiGeneratedTags.isEmpty {
+                        aiGeneratedTagsPropertyRow
                     }
 
                     // Todos
@@ -351,6 +358,7 @@ struct NoteMetadataSection: View {
 
     // MARK: - Tags (Interactive)
 
+    /// Same translucent capsule treatment as AI-generated tag chips (see `tagPillContainerColor`).
     @ViewBuilder
     private var tagsValue: some View {
         FlowLayout(spacing: 6) {
@@ -362,18 +370,18 @@ struct NoteMetadataSection: View {
                     HStack(spacing: 4) {
                         Text(tag)
                             .jotUI(FontManager.uiLabel5(weight: .regular))
-                            .foregroundColor(Color("PrimaryTextColor"))
+                            .foregroundColor(Color("SecondaryTextColor"))
 
                         Image("IconCrossMedium")
                             .renderingMode(.template)
                             .resizable()
                             .scaledToFit()
                             .frame(width: 12, height: 12)
-                            .foregroundColor(Color("PrimaryTextColor").opacity(0.5))
+                            .foregroundColor(Color("SecondaryTextColor").opacity(0.5))
                     }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(todoContainerColor, in: Capsule())
+                    .background(tagPillContainerColor, in: Capsule())
                     .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
@@ -388,7 +396,8 @@ struct NoteMetadataSection: View {
                     .frame(width: 80)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(todoContainerColor, in: Capsule())
+                    .background(tagPillContainerColor, in: Capsule())
+                    .foregroundColor(Color("PrimaryTextColor"))
                     .focused($tagFieldFocused)
                     .onSubmit { commitTag() }
                     .onKeyPress(.escape) {
@@ -437,7 +446,60 @@ struct NoteMetadataSection: View {
         isAddingTag = false
     }
 
-    // MARK: - Todos
+    /// "AI generated" on one line, "tags" on the next — same column width as other property labels.
+    private var aiGeneratedTagsPropertyRow: some View {
+        HStack(alignment: .top, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("AI generated")
+                    .jotUI(FontManager.uiLabel4())
+                    .foregroundColor(Color("SecondaryTextColor"))
+                Text("tags")
+                    .jotUI(FontManager.uiLabel4())
+                    .foregroundColor(Color("SecondaryTextColor"))
+            }
+            .padding(.vertical, 8)
+            .frame(width: 100, alignment: .leading)
+
+            aiGeneratedTagsChips
+                .padding(.vertical, 8)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 2)
+    }
+
+    /// Dismissable chips: same surface as manual tags (`tagPillContainerColor`).
+    @ViewBuilder
+    private var aiGeneratedTagsChips: some View {
+        FlowLayout(spacing: 6) {
+            ForEach(note.aiGeneratedTags, id: \.self) { tag in
+                Button {
+                    let next = note.aiGeneratedTags.filter { $0 != tag }
+                    onUpdateAIGeneratedTags?(next)
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(tag)
+                            .jotUI(FontManager.uiLabel5(weight: .regular))
+                            .foregroundColor(Color("SecondaryTextColor"))
+
+                        Image("IconCrossMedium")
+                            .renderingMode(.template)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 12, height: 12)
+                            .foregroundColor(Color("SecondaryTextColor").opacity(0.5))
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(tagPillContainerColor, in: Capsule())
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .propertiesPanelPointingHandCursor()
+            }
+        }
+    }
+
+  // MARK: - Todos
 
     @ViewBuilder
     private var todosCounterPill: some View {

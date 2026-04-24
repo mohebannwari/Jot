@@ -341,7 +341,7 @@ struct SettingsPage: View {
             activeTab = tab
         } label: {
             Text(tab.title)
-                .jotUI(FontManager.uiLabel3(weight: .medium))
+                .jotUI(FontManager.uiLabel3(weight: .regular))
                 .foregroundColor(tabForeground(isSelected: isSelected, isHovered: isHovered))
                 .animation(.jotHover, value: isHovered)
                 .animation(.jotHover, value: isSelected)

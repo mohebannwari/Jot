@@ -106,6 +106,8 @@ extension SimpleSwiftDataManager {
                 return 0
             }
 
+            stripOutgoingNotelinksForRemovedNoteIDs(Set(toTrash.map(\.id)))
+
             let now = Date()
             for entity in toTrash {
                 entity.isDeleted = true
@@ -177,6 +179,8 @@ extension SimpleSwiftDataManager {
                 return 0
             }
 
+            stripOutgoingNotelinksForRemovedNoteIDs(Set(toDelete.map(\.id)))
+
             for entity in toDelete {
                 modelContext.delete(entity)
             }
@@ -201,6 +205,8 @@ extension SimpleSwiftDataManager {
             let predicate = #Predicate<NoteEntity> { $0.isDeleted == true }
             let descriptor = FetchDescriptor<NoteEntity>(predicate: predicate)
             let entities = try modelContext.fetch(descriptor)
+
+            stripOutgoingNotelinksForRemovedNoteIDs(Set(entities.map(\.id)))
 
             for entity in entities {
                 modelContext.delete(entity)

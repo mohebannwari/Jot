@@ -50,6 +50,8 @@ final class NoteEntity {
 
     // MARK: - Tags
     var tags: [String] = []
+    /// Suggested by on-device model; not mixed into `tags`.
+    var aiGeneratedTags: [String] = []
 
     // MARK: - Web Clip Support
     var webClipURL: String?
@@ -147,6 +149,7 @@ final class NoteEntity {
             self.meetingManualNotes = note.meetingManualNotes
         }
         self.tags = note.tags
+        self.aiGeneratedTags = note.aiGeneratedTags
         // Extract web clip data from content if present
         self.extractWebClipData()
     }
@@ -227,6 +230,7 @@ final class NoteEntity {
                 manualNotes: meetingManualNotes
             )]
         }
+        note.aiGeneratedTags = aiGeneratedTags
         return note
     }
 }

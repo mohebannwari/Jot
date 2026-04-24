@@ -145,6 +145,16 @@ struct TextGenerationResult {
     @Guide(description: "An expanded, well-written paragraph that elaborates on the user's idea. Must contain substantially more detail and new content beyond the input.")
     var generatedText: String
 }
+
+@available(macOS 26.0, *)
+@Generable
+struct NoteTagGenerationResult {
+    @Guide(
+        description:
+            "0 to 3 short topical tags (1-3 words each) for the note. All must be distinct. Do not copy or overlap with the user's existing tags (case-insensitive). Prefer concrete themes over generic words."
+    )
+    var tags: [String]
+}
 #endif
 
 // MARK: - Service
@@ -619,6 +629,48 @@ final class AppleIntelligenceService: ObservableObject {
         }
         return false
     }
+
+    /// Suggests up to three tags from title + body (plain text). Sanitizes against `userTags`.
+    func suggestNoteTags(title: String, bodyPlainText: String, userTags: [String]) async throws
+        -> [String]
+    {
+        guard #available(macOS 26.0, *) else {
+            throw AIServiceError.unavailable(unavailabilityReason)
+        }
+        let bodyForModel = Self.truncateForModel(bodyPlainText)
+        let userList =
+            userTags.isEmpty
+            ? "(none — user has not added any tags yet.)"
+            : userTags.map { "• \($0)" }.joined(separator: "\n")
+        let systemPrompt = """
+        You label notes with short topical tags. Rules:
+        - Return at most 3 tags, each 1-3 words, no hashtags, no punctuation-only tags.
+        - Tags must be mutually distinct in meaning (no duplicates or near-duplicates).
+        - Do not suggest any tag that matches the user's existing tags in meaning or \
+        exact spelling; the user’s tags are listed below and are authoritative.
+        - Base tags only on the provided title and body; do not invent topics not present in the text.
+        """
+        let userPrompt = """
+        Title: \(title)
+
+        User’s existing tags (do not repeat or paraphrase these as new tags):
+        \(userList)
+
+        Note body:
+        \(bodyForModel)
+        """
+        let session = LanguageModelSession(instructions: systemPrompt)
+        try Task.checkCancellation()
+        let response = try await session.respond(
+            to: userPrompt,
+            generating: NoteTagGenerationResult.self
+        )
+        try Task.checkCancellation()
+        return AIGeneratedTagSanitization.sanitize(
+            suggested: response.content.tags,
+            userTags: userTags
+        )
+    }
     #else
     func summarize(text: String) async throws -> String {
         throw AIServiceError.unavailable(unavailabilityReason)
@@ -641,6 +693,12 @@ final class AppleIntelligenceService: ObservableObject {
     }
 
     func generateText(description: String) async throws -> String {
+        throw AIServiceError.unavailable(unavailabilityReason)
+    }
+
+    func suggestNoteTags(title: String, bodyPlainText: String, userTags: [String]) async throws
+        -> [String]
+    {
         throw AIServiceError.unavailable(unavailabilityReason)
     }
     #endif

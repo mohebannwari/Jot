@@ -57,4 +57,44 @@ enum OutgoingNotelinkScanner {
 
         return results
     }
+
+    /// Removes every `[[notelink|<uuid>|<title>]]` whose target UUID is in `removedTargetIDs`.
+    /// Parsing mirrors `outgoingNotelinks` (including `maxSplits: 1` for titles containing `|`).
+    /// Malformed tokens or unknown UUIDs are left unchanged.
+    static func removingNotelinks(targeting removedTargetIDs: Set<UUID>, from content: String) -> String {
+        guard !removedTargetIDs.isEmpty, content.contains(openToken) else { return content }
+
+        var result = ""
+        result.reserveCapacity(content.count)
+        var scanStart = content.startIndex
+
+        while let openRange = content.range(of: openToken, range: scanStart..<content.endIndex) {
+            result.append(contentsOf: content[scanStart..<openRange.lowerBound])
+            let afterOpen = openRange.upperBound
+            guard let closeRange = content[afterOpen...].range(of: "]]") else {
+                // Unclosed token: keep the rest of the string verbatim (do not drop tail).
+                result.append(contentsOf: content[openRange.lowerBound...])
+                return result
+            }
+
+            let body = String(content[afterOpen..<closeRange.lowerBound])
+            let parts = body.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false)
+            let shouldStrip: Bool
+            if parts.count == 2,
+                let noteID = UUID(uuidString: String(parts[0]).trimmingCharacters(in: .whitespacesAndNewlines))
+            {
+                shouldStrip = removedTargetIDs.contains(noteID)
+            } else {
+                shouldStrip = false
+            }
+
+            if !shouldStrip {
+                result.append(contentsOf: content[openRange.lowerBound..<closeRange.upperBound])
+            }
+            scanStart = closeRange.upperBound
+        }
+
+        result.append(contentsOf: content[scanStart...])
+        return result
+    }
 }

@@ -95,6 +95,11 @@ struct NoteDetailView: View {
   @State private var aiStateCache: [UUID: AIPanelState] = [:]
   @State var currentProofreadIndex: Int = 0
 
+  // Auto-generated tags (on-device, debounced; separate from user `tags` on the model)
+  @State private var aiTagAutogenDebounceWorkItem: DispatchWorkItem?
+  @State private var aiTagAutogenTask: Task<Void, Never>?
+  @State private var lastSuccessfulAITagFingerprint: Int?
+
   // Selection capture for Edit Content
   @State var capturedSelectionRange: NSRange = NSRange(location: NSNotFound, length: 0)
   @State var capturedSelectionText: String = ""
@@ -161,6 +166,15 @@ struct NoteDetailView: View {
   @State private var measuredSubmenuHeight: CGFloat = 0
 
   // MARK: - Constants
+
+  /// Gated on stripped body length and debounced so the model is not called on every keystroke.
+  private enum AITagAutogen {
+    static let minStrippedBodyCharacters = 500
+    static let debounceInterval: TimeInterval = 3.0
+    static func fingerprint(strippedBody: String, userTagSortedKey: String) -> Int {
+      (strippedBody + "\u{1E}" + userTagSortedKey).hashValue
+    }
+  }
 
   private static let dateFormatter: DateFormatter = {
     let f = DateFormatter()
@@ -403,6 +417,10 @@ struct NoteDetailView: View {
         onUndoManagerAvailable: { stickerUndoController.noteEditorUndoManager = $0 }
       )
       .id(editorIdentity)
+      // Store stripped `[[notelink|…]]` on delete; sync binding because `editedContent` only resets on `note.id` change.
+      .onReceive(NotificationCenter.default.publisher(for: .jotOutgoingNotelinksRemoved)) {
+        applyOutgoingNotelinksRemovedFromStore($0)
+      }
       .frame(maxWidth: .infinity, alignment: .leading)
       .padding(.horizontal, -28)  // Extend editor into VStack padding for table row handle gutter
 
@@ -581,6 +599,9 @@ struct NoteDetailView: View {
       }
       .onDisappear {
         autosaveWorkItem?.cancel()
+        aiTagAutogenDebounceWorkItem?.cancel()
+        aiTagAutogenTask?.cancel()
+        aiTagAutogenTask = nil
         persistIfNeeded()
         glassElementsVisible = false
       }
@@ -592,12 +613,18 @@ struct NoteDetailView: View {
           return
         }
         scheduleAutosave()
+        scheduleAITagAutogeneration()
       }
       .onChange(of: editedContent) { _, _ in
         scheduleAutosave()
+        scheduleAITagAutogeneration()
       }
       .onChange(of: note.id) { oldNoteID, newNoteID in
         autosaveWorkItem?.cancel()
+        aiTagAutogenDebounceWorkItem?.cancel()
+        aiTagAutogenTask?.cancel()
+        aiTagAutogenTask = nil
+        lastSuccessfulAITagFingerprint = nil
         // Serialization flush before reading `editedContent` for the outgoing save is posted from
         // `ContentView` *before* `selectedNote` changes so the live coordinator still exists (see
         // `postEditorSerializationFlush` and `.jotFlushEditorSerializationBeforeNoteSwitch`).
@@ -2078,6 +2105,26 @@ struct NoteDetailView: View {
 
   // MARK: - Helpers
 
+  /// Syncs `editedContent` after `SimpleSwiftDataManager` stripped orphaned `[[notelink|…]]` tokens.
+  private func applyOutgoingNotelinksRemovedFromStore(_ notification: Notification) {
+    guard let affectedStrings = notification.userInfo?["affectedSourceNoteIDs"] as? [String],
+      let removedStrings = notification.userInfo?["removedTargetIDs"] as? [String]
+    else { return }
+    let affectedIDs = Set(affectedStrings.compactMap(UUID.init(uuidString:)))
+    guard affectedIDs.contains(note.id) else { return }
+    let removedIDs = Set(removedStrings.compactMap(UUID.init(uuidString:)))
+    guard !removedIDs.isEmpty else { return }
+    editedContent = OutgoingNotelinkScanner.removingNotelinks(
+      targeting: removedIDs,
+      from: editedContent
+    )
+    let contentWithAI =
+      editedContent
+      + Self.buildAIBlock(
+        summary: aiSummaryText, keyPoints: aiKeyPointsItems)
+    lastSavedSnapshot = DraftSnapshot(title: editedTitle, content: contentWithAI)
+  }
+
   private func persistIfNeeded() {
     // Merge AI block into content for persistence
     let contentWithAI =
@@ -2110,6 +2157,59 @@ struct NoteDetailView: View {
     }
     autosaveWorkItem = workItem
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: workItem)
+  }
+
+  private func scheduleAITagAutogeneration() {
+    guard appleIntelligenceService.isAvailable else { return }
+    guard !noteForPersist.isLocked else { return }
+
+    aiTagAutogenDebounceWorkItem?.cancel()
+    let work = DispatchWorkItem {
+      runAITagAutogenerationIfNeeded()
+    }
+    aiTagAutogenDebounceWorkItem = work
+    DispatchQueue.main.asyncAfter(
+      deadline: .now() + AITagAutogen.debounceInterval, execute: work)
+  }
+
+  private func runAITagAutogenerationIfNeeded() {
+    guard appleIntelligenceService.isAvailable else { return }
+    guard !noteForPersist.isLocked else { return }
+
+    let targetID = noteForPersist.id
+    let stripped = AppleIntelligenceService.stripMarkupForAI(editedContent)
+    guard stripped.count >= AITagAutogen.minStrippedBodyCharacters else { return }
+
+    let userTags = notesManager.notes.first { $0.id == targetID }?.tags ?? []
+    let userKey = userTags.sorted().joined(separator: "\u{1E}")
+    let fp = AITagAutogen.fingerprint(strippedBody: stripped, userTagSortedKey: userKey)
+    if fp == lastSuccessfulAITagFingerprint { return }
+
+    aiTagAutogenTask?.cancel()
+    aiTagAutogenTask = Task { @MainActor in
+      do {
+        let raw = try await AppleIntelligenceService.shared.suggestNoteTags(
+          title: editedTitle,
+          bodyPlainText: stripped,
+          userTags: userTags
+        )
+        try Task.checkCancellation()
+        guard targetID == noteForPersist.id else { return }
+        let finalUser = notesManager.notes.first { $0.id == targetID }?.tags ?? []
+        let finalTags = AIGeneratedTagSanitization.sanitize(
+          suggested: raw,
+          userTags: finalUser
+        )
+        try Task.checkCancellation()
+        guard targetID == noteForPersist.id else { return }
+        notesManager.updateAIGeneratedTags(id: targetID, tags: finalTags)
+        let finalUserKey = finalUser.sorted().joined(separator: "\u{1E}")
+        lastSuccessfulAITagFingerprint = AITagAutogen.fingerprint(
+          strippedBody: stripped, userTagSortedKey: finalUserKey)
+      } catch {
+        // Cancelled, unavailable, or model failure — no logging (project rules).
+      }
+    }
   }
 
   private func insertStickerAtCenter() {

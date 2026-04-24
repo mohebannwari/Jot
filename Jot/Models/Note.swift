@@ -14,6 +14,8 @@ struct Note: Identifiable, Codable, Equatable {
     var date: Date
     var createdAt: Date = Date()
     var tags: [String]
+    /// On-device Apple Intelligence suggestions; separate from `tags` (user-defined).
+    var aiGeneratedTags: [String] = []
     var isPinned: Bool = false
     var folderID: UUID?
     var isArchived: Bool = false

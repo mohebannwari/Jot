@@ -82,6 +82,27 @@ final class SimpleSwiftDataManagerTests: XCTestCase {
         XCTAssertEqual(manager.notes.count, 0)
     }
 
+    func testAIGeneratedTagsIsolatedFromUserTagsAndAutosavers() throws {
+        let n = manager.addNote(title: "T", content: "Body", tags: ["u1"])
+        manager.updateAIGeneratedTags(id: n.id, tags: ["s1", "s2"])
+        XCTAssertEqual(manager.notes.first?.tags, ["u1"])
+        XCTAssertEqual(Set(manager.notes.first?.aiGeneratedTags ?? []), Set(["s1", "s2"]))
+
+        var u = try XCTUnwrap(manager.notes.first)
+        u.title = "T2"
+        u.content = "C2"
+        manager.updateNote(u)
+        XCTAssertEqual(manager.notes.first?.tags, ["u1"])
+        XCTAssertEqual(Set(manager.notes.first?.aiGeneratedTags ?? []), Set(["s1", "s2"]))
+
+        manager.updateTags(id: n.id, tags: ["u1", "u2"])
+        XCTAssertEqual(Set(manager.notes.first?.aiGeneratedTags ?? []), Set(["s1", "s2"]))
+
+        manager.updateAIGeneratedTags(id: n.id, tags: ["a"])
+        manager.updateTags(id: n.id, tags: ["u1"])
+        XCTAssertEqual(manager.notes.first?.aiGeneratedTags, ["a"])
+    }
+
     func testSearch() async throws {
         // Add test notes
         _ = manager.addNote(title: "Swift Programming", content: "Learning SwiftUI", tags: ["swift", "programming"])
@@ -207,6 +228,23 @@ final class SimpleSwiftDataManagerTests: XCTestCase {
         XCTAssertEqual(deletedCount, 2)
         XCTAssertEqual(manager.notes.count, 1)
         XCTAssertEqual(manager.notes.first?.id, keep.id)
+    }
+
+    func testMoveToTrashStripsOutgoingNotelinksFromSurvivingNote() throws {
+        let noteA = manager.addNote(title: "Target", content: "Body A")
+        let token = "[[notelink|\(noteA.id.uuidString)|Target title]]"
+        let noteB = manager.addNote(title: "Mentioner", content: "Intro \(token) outro")
+
+        XCTAssertTrue(noteB.content.contains("[[notelink|"))
+
+        let moved = manager.moveToTrash(ids: [noteA.id])
+        XCTAssertEqual(moved, 1)
+
+        let survived = try XCTUnwrap(manager.notes.first { $0.id == noteB.id })
+        XCTAssertFalse(survived.content.contains("[[notelink|"))
+        XCTAssertFalse(survived.content.contains(noteA.id.uuidString))
+        XCTAssertTrue(survived.content.contains("Intro"))
+        XCTAssertTrue(survived.content.contains("outro"))
     }
 
     func testMoveNotesMovesSetAndClearsPins() {
