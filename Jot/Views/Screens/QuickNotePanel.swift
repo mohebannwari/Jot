@@ -263,7 +263,7 @@ struct QuickNotePanelView: View {
     VStack(spacing: 0) {
       TextField("Title", text: $title)
         .textFieldStyle(.plain)
-        .font(FontManager.heading(size: 22, weight: .semibold))
+        .jotUI(FontManager.uiPro(size: 22, weight: .regular))
         .foregroundColor(Color("PrimaryTextColor"))
         .padding(.horizontal, 24)
         .padding(.top, 22)
@@ -357,7 +357,7 @@ struct QuickNotePanelView: View {
     Button(action: performSave) {
       HStack(spacing: 6) {
         Text("Save")
-          .font(FontManager.heading(size: 13, weight: .semibold))
+          .jotUI(FontManager.uiLabel3(weight: .regular))
         Text("\u{2318}\u{21A9}")
           .jotMetadataLabelTypography()
           .opacity(0.6)

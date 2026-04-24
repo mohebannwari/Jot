@@ -278,7 +278,7 @@ struct SettingsPage: View {
                 Spacer()
                 Text("Settings")
                     // Pinned window title: **12pt** (Label-4) — was briefly bumped to H4; keep in UI ramp + `jotUI` tracking.
-                    .jotUI(FontManager.uiLabel4(weight: .medium))
+                    .jotUI(FontManager.uiLabel4(weight: .regular))
                     .foregroundColor(Color("PrimaryTextColor").opacity(0.5))
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -1160,7 +1160,7 @@ struct SettingsPage: View {
 
                     VStack(alignment: .center, spacing: 6) {
                         Text("Jot")
-                            .jotUI(FontManager.uiPro(size: 28, weight: .medium))
+                            .jotUI(FontManager.uiPro(size: 28, weight: .regular))
                             .foregroundColor(Color("SettingsPrimaryTextColor"))
                             .multilineTextAlignment(.center)
 

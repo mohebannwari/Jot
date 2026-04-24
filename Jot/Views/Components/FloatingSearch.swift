@@ -1430,7 +1430,7 @@ struct FloatingSearch: View {
             of: query,
             options: [.caseInsensitive, .diacriticInsensitive]
         ) {
-            attributed[range].font = FontManager.uiLabel5(weight: .semibold).font
+            attributed[range].font = FontManager.uiLabel5(weight: .regular).font
             attributed[range].foregroundColor = Color("PrimaryTextColor")
         }
 

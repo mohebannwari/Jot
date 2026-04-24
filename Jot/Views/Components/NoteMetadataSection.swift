@@ -204,7 +204,7 @@ struct NoteMetadataSection: View {
             HStack {
                 Button { onDismiss?() } label: {
                     Image(systemName: "xmark")
-                        .font(FontManager.uiMicro(weight: .bold).font)
+                        .font(FontManager.uiMicro(weight: .regular).font)
                         .foregroundColor(Color("SecondaryTextColor"))
                         .frame(width: 22, height: 22)
                         .background(Color("SurfaceTranslucentColor"), in: Circle())
@@ -220,7 +220,7 @@ struct NoteMetadataSection: View {
 
             // Title
             Text("Properties")
-                .jotUI(FontManager.uiPro(size: 14, weight: .semibold))
+                .jotUI(FontManager.uiPro(size: 14, weight: .regular))
                 .foregroundColor(Color("PrimaryTextColor"))
                 .padding(.horizontal, 16)
                 .padding(.bottom, 12)
@@ -650,7 +650,6 @@ struct NoteMetadataSection: View {
 
                             Text(link.domain)
                                 .jotUI(FontManager.uiLabel4())
-                                .textCase(.lowercase)
                                 .lineLimit(1)
                                 .truncationMode(.tail)
                                 .padding(.horizontal, 4)
