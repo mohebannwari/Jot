@@ -1475,7 +1475,8 @@ struct NoteDetailView: View {
   }
 
   private func handlePropertiesPanelToggleTodo(_ notification: Notification) {
-    guard case .propertiesPanelToggleTodo(let targetID, let lineIndex) = notification.appCommand,
+    guard case .propertiesPanelToggleTodo(let decodedEditorID, let lineIndex) = notification.appCommand,
+      let targetID = decodedEditorID,
       targetID == editorInstanceID
     else { return }
     var lines = editedContent.components(separatedBy: "\n")
