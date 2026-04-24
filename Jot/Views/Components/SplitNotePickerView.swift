@@ -28,7 +28,7 @@ struct SplitNotePickerView: View {
             Spacer(minLength: 0)
 
             Text("Select a note")
-                .jotUI(FontManager.uiLabel5(weight: .medium))
+                .jotUI(FontManager.uiLabel5(weight: .regular))
                 .foregroundColor(Color("SecondaryTextColor"))
                 .padding(.horizontal, 8)
                 .padding(.vertical, 8)
@@ -41,7 +41,7 @@ struct SplitNotePickerView: View {
                     .foregroundColor(Color("SecondaryTextColor"))
                     .frame(width: 15, height: 15)
                 TextField("Search", text: $searchQuery)
-                    .jotUI(FontManager.uiLabel5(weight: .medium))
+                    .jotUI(FontManager.uiLabel5(weight: .regular))
                     .textFieldStyle(.plain)
             }
             .padding(8)
@@ -60,7 +60,7 @@ struct SplitNotePickerView: View {
             if showCloseButton {
                 Button(action: onClose) {
                     Text("Close splitview")
-                        .jotUI(FontManager.uiLabel3(weight: .medium))
+                        .jotUI(FontManager.uiLabel3(weight: .regular))
                         .foregroundColor(Color("SecondaryTextColor"))
                         .padding(.horizontal, 16)
                         .padding(.vertical, 12)
@@ -93,7 +93,7 @@ private struct PickerNoteRow: View {
                     .foregroundColor(Color("SecondaryTextColor"))
                     .frame(width: 15, height: 15)
                 Text(note.title.isEmpty ? "Untitled" : note.title)
-                    .jotUI(FontManager.uiLabel2(weight: .medium))
+                    .jotUI(FontManager.uiLabel2(weight: .regular))
                     .foregroundColor(.primary)
                     .lineLimit(1)
                 Spacer(minLength: 0)

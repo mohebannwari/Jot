@@ -3616,7 +3616,7 @@ struct ContentView: View {
             // Header: timestamp badge + title
             VStack(alignment: .leading, spacing: 8) {
                 Text(version.createdAt, format: .dateTime.month(.abbreviated).day().year().hour().minute())
-                    .font(FontManager.heading(size: 11, weight: .medium))
+                    .jotUI(FontManager.uiLabel5(weight: .regular))
                     .foregroundColor(Color("SettingsPlaceholderTextColor"))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
@@ -3627,8 +3627,7 @@ struct ContentView: View {
 
                 if !version.title.isEmpty {
                     Text(version.title)
-                        .font(FontManager.heading(size: 28, weight: .bold))
-                        .tracking(-0.4)
+                        .jotUI(FontManager.uiPro(size: 28, weight: .regular))
                         .foregroundColor(Color("PrimaryTextColor"))
                 }
             }
@@ -3654,7 +3653,7 @@ struct ContentView: View {
         VStack(spacing: 16) {
             SecureField("Enter Password", text: $lockPasswordInput)
                 .textFieldStyle(.plain)
-                .font(FontManager.heading(size: 15, weight: .medium))
+                .jotUI(FontManager.uiLabel2(weight: .regular))
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
@@ -3676,7 +3675,7 @@ struct ContentView: View {
                     }
                 } label: {
                     Text("Use Touch ID")
-                        .font(FontManager.heading(size: 14, weight: .medium))
+                        .jotUI(FontManager.uiPro(size: 14, weight: .regular))
                         .foregroundColor(Color("SecondaryTextColor"))
                 }
                 .buttonStyle(.plain)
@@ -5559,13 +5558,13 @@ private struct SplitPickerOverlayCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Title — Label/Label-5/Medium
+            // Title — Label/Label-5/Regular
             Text("Switch note")
-                .jotUI(FontManager.uiLabel5(weight: .medium))
+                .jotUI(FontManager.uiLabel5(weight: .regular))
                 .foregroundColor(Color("SecondaryTextColor"))
                 .padding(8)
 
-            // Search field — Label/Label-4/Medium
+            // Search field — Label/Label-4/Regular
             HStack(spacing: 8) {
                 Image("IconMagnifyingGlass")
                     .renderingMode(.template)
@@ -5574,7 +5573,7 @@ private struct SplitPickerOverlayCard: View {
                     .foregroundColor(Color("SecondaryTextColor"))
                     .frame(width: 15, height: 15)
                 TextField("Search", text: $searchQuery)
-                    .jotUI(FontManager.uiLabel5(weight: .medium))
+                    .jotUI(FontManager.uiLabel5(weight: .regular))
                     .textFieldStyle(.plain)
             }
             .padding(8)
@@ -5610,7 +5609,7 @@ private struct SplitPickerOverlayRow: View {
                     .foregroundColor(Color("SecondaryTextColor"))
                     .frame(width: 15, height: 15)
                 Text(note.title.isEmpty ? "Untitled" : note.title)
-                    .jotUI(FontManager.uiLabel2(weight: .medium))
+                    .jotUI(FontManager.uiLabel2(weight: .regular))
                     .foregroundColor(.primary)
                     .lineLimit(1)
                 Spacer(minLength: 0)
@@ -6387,8 +6386,9 @@ struct PinnedNoteChip: View {
             onTap(Self.selectionInteractionFromCurrentEvent())
         } label: {
             Text(note.title)
-                .font(FontManager.heading(size: 14, weight: isSelected ? .semibold : .regular))
-                .foregroundColor(Color.primary)
+                .jotUI(FontManager.uiPro(size: 14, weight: .regular))
+                // Selection signal now lives in foreground color + border stroke below (typography is flat Regular per cleanup plan).
+                .foregroundColor(isSelected ? Color.primary : Color("SecondaryTextColor"))
                 .lineLimit(1)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
@@ -6702,7 +6702,7 @@ struct PropertiesPanelButton: View {
         .overlay(alignment: .bottomTrailing) {
             if isHovered {
                 Text("Properties")
-                    .font(FontManager.heading(size: 11, weight: .medium))
+                    .jotUI(FontManager.uiLabel5(weight: .regular))
                     .foregroundColor(Color("PrimaryTextColor"))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)

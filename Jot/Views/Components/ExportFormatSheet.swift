@@ -103,8 +103,7 @@ struct ExportFormatSheet: View {
 
             // "Preview" badge
             Text("Preview")
-                .font(FontManager.heading(size: 11, weight: .semibold))
-                .tracking(-0.2)
+                .jotUI(FontManager.uiLabel5(weight: .regular))
                 .foregroundColor(.white)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
@@ -160,8 +159,7 @@ struct ExportFormatSheet: View {
                 handleExport()
             } label: {
                 Text("Export")
-                    .font(FontManager.heading(size: 12, weight: .semibold))
-                    .tracking(0)
+                    .jotUI(FontManager.uiLabel4(weight: .regular))
                     .foregroundColor(Color("ButtonPrimaryTextColor"))
                     .frame(height: 44)
                     .frame(maxWidth: .infinity)
@@ -176,8 +174,7 @@ struct ExportFormatSheet: View {
                 isPresented = false
             } label: {
                 Text("Cancel")
-                    .font(FontManager.heading(size: 12, weight: .semibold))
-                    .tracking(0)
+                    .jotUI(FontManager.uiLabel4(weight: .regular))
                     .foregroundColor(Color("PrimaryTextColor"))
                     .frame(height: 36)
                     .frame(maxWidth: .infinity)
@@ -232,8 +229,7 @@ private struct FormatPillButton: View {
                     .frame(width: 15, height: 15)
 
                 Text(format.rawValue)
-                    .font(FontManager.heading(size: 13, weight: .medium))
-                    .tracking(-0.1)
+                    .jotUI(FontManager.uiLabel3(weight: .regular))
                     .foregroundColor(isSelected ? Color("ButtonPrimaryTextColor") : Color("PrimaryTextColor"))
             }
             .padding(.horizontal, 12)

@@ -138,7 +138,7 @@ struct NotePickerMenuItem: View {
                 .foregroundStyle(isHighlighted ? highlightedForegroundColor.opacity(0.7) : .secondary)
 
             Text(note.title.isEmpty ? "Untitled" : note.title)
-                .font(FontManager.heading(size: 13, weight: .medium))
+                .jotUI(FontManager.uiLabel3(weight: .regular))
                 .foregroundStyle(isHighlighted ? highlightedForegroundColor : .primary)
                 .lineLimit(1)
         }

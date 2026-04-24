@@ -66,8 +66,7 @@ struct CreateFolderSheet: View {
     private var nameInputRow: some View {
         HStack(spacing: 8) {
             TextField("Folder name", text: $folderName)
-                .font(FontManager.heading(size: 15, weight: .medium))
-                .tracking(-0.2)
+                .jotUI(FontManager.uiLabel2(weight: .regular))
                 .foregroundColor(Color("PrimaryTextColor"))
                 .textFieldStyle(.plain)
                 .focused($isNameFieldFocused)
@@ -215,8 +214,7 @@ struct CreateFolderSheet: View {
                 submitCreate()
             } label: {
                 Text(isEditing ? "Save" : "Create")
-                    .font(FontManager.heading(size: 12, weight: .semibold))
-                    .tracking(0)
+                    .jotUI(FontManager.uiLabel4(weight: .regular))
                     .foregroundColor(Color("ButtonPrimaryTextColor"))
                     .frame(height: 44)
                     .frame(maxWidth: .infinity)
@@ -232,8 +230,7 @@ struct CreateFolderSheet: View {
                 onCancel()
             } label: {
                 Text("Cancel")
-                    .font(FontManager.heading(size: 12, weight: .semibold))
-                    .tracking(0)
+                    .jotUI(FontManager.uiLabel4(weight: .regular))
                     .foregroundColor(Color("PrimaryTextColor"))
                     .frame(height: 36)
                     .frame(maxWidth: .infinity)

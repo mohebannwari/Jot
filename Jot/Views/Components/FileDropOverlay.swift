@@ -32,7 +32,7 @@ struct FileDropOverlay: View {
                     .foregroundStyle(Color("DropImportIconColor"))
 
                 Text("Drop files here to import")
-                    .jotUI(FontManager.uiLabel5(weight: .medium))
+                    .jotUI(FontManager.uiLabel5(weight: .regular))
                     .foregroundStyle(.secondary)
             }
         }
@@ -51,7 +51,7 @@ struct ImportProgressOverlay: View {
                 .frame(width: 200)
 
             Text("Importing \(progress.current) of \(progress.total)...")
-                .jotUI(FontManager.uiLabel4(weight: .medium))
+                .jotUI(FontManager.uiLabel4(weight: .regular))
 
             Text(progress.currentFilename)
                 .jotUI(FontManager.uiLabel5(weight: .regular))

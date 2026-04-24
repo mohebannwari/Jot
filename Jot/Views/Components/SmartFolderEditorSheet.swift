@@ -131,7 +131,7 @@ struct SmartFolderEditorSheet: View {
                 .foregroundColor(Color("SecondaryTextColor"))
                 .padding(.leading, Self.insetFieldTitleLeading)
             TextField("Smart folder name", text: $name)
-                .font(FontManager.heading(size: 15, weight: .medium))
+                .jotUI(FontManager.uiLabel2(weight: .regular))
                 .foregroundColor(Color("PrimaryTextColor"))
                 .textFieldStyle(.plain)
                 .focused($focusedField, equals: .name)
@@ -178,7 +178,7 @@ struct SmartFolderEditorSheet: View {
     private var dateSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             Toggle("Filter by date", isOn: $dateFilterEnabled)
-                .font(FontManager.heading(size: 13, weight: .medium))
+                .jotUI(FontManager.uiLabel3(weight: .regular))
                 .foregroundColor(Color("PrimaryTextColor"))
 
             if dateFilterEnabled {
@@ -189,14 +189,14 @@ struct SmartFolderEditorSheet: View {
                 .pickerStyle(.segmented)
 
                 Toggle("On or after", isOn: $dateStartEnabled)
-                    .font(FontManager.heading(size: 13, weight: .medium))
+                    .jotUI(FontManager.uiLabel3(weight: .regular))
                 if dateStartEnabled {
                     DatePicker("Start", selection: $dateStart, displayedComponents: [.date, .hourAndMinute])
                         .labelsHidden()
                 }
 
                 Toggle("On or before", isOn: $dateEndEnabled)
-                    .font(FontManager.heading(size: 13, weight: .medium))
+                    .jotUI(FontManager.uiLabel3(weight: .regular))
                 if dateEndEnabled {
                     DatePicker("End", selection: $dateEnd, displayedComponents: [.date, .hourAndMinute])
                         .labelsHidden()
@@ -212,13 +212,13 @@ struct SmartFolderEditorSheet: View {
                 .foregroundColor(Color("SecondaryTextColor"))
 
             Toggle("Pinned notes", isOn: $requirePinned)
-                .font(FontManager.heading(size: 13, weight: .medium))
+                .jotUI(FontManager.uiLabel3(weight: .regular))
             Toggle("Locked notes", isOn: $requireLocked)
-                .font(FontManager.heading(size: 13, weight: .medium))
+                .jotUI(FontManager.uiLabel3(weight: .regular))
             Toggle("Has attachments", isOn: $requireHasAttachments)
-                .font(FontManager.heading(size: 13, weight: .medium))
+                .jotUI(FontManager.uiLabel3(weight: .regular))
             Toggle("Has checklist items", isOn: $requireHasChecklist)
-                .font(FontManager.heading(size: 13, weight: .medium))
+                .jotUI(FontManager.uiLabel3(weight: .regular))
         }
     }
 
@@ -236,7 +236,7 @@ struct SmartFolderEditorSheet: View {
                 submit()
             } label: {
                 Text(editingSmartFolder != nil ? "Save" : "Create")
-                    .font(FontManager.heading(size: 12, weight: .semibold))
+                    .jotUI(FontManager.uiLabel4(weight: .regular))
                     .foregroundColor(Color("ButtonPrimaryTextColor"))
                     .frame(height: 44)
                     .frame(maxWidth: .infinity)
@@ -253,7 +253,7 @@ struct SmartFolderEditorSheet: View {
                 onCancel()
             } label: {
                 Text("Cancel")
-                    .font(FontManager.heading(size: 12, weight: .semibold))
+                    .jotUI(FontManager.uiLabel4(weight: .regular))
                     .foregroundColor(Color("PrimaryTextColor"))
                     .frame(height: 36)
                     .frame(maxWidth: .infinity)
