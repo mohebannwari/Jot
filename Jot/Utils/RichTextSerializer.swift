@@ -261,7 +261,7 @@ enum RichTextSerializer {
             }
 
             output.append(openTags)
-            output.append(rangeText)
+            output.append(JotMarkupLiteral.escapeIfNeeded(rangeText))
             output.append(closeTags)
         }
         return output
@@ -327,6 +327,12 @@ enum RichTextSerializer {
 
         while index < text.endIndex {
             let remaining = text[index...]
+
+            if let literal = JotMarkupLiteral.consumeToken(in: text, at: index) {
+                textBuffer += literal.decoded
+                index = literal.end
+                continue
+            }
 
             // Skip known attachment tags that cards don't support
             if remaining.hasPrefix("[[image") || remaining.hasPrefix("[[webclip|") ||

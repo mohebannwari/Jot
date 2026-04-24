@@ -24,6 +24,15 @@ final class NoteSerializerTests: XCTestCase {
         XCTAssertEqual(NoteSerializer.serialize(storage), "hello world")
     }
 
+    func testPlainTextLookingLikeJotMarkupSerializesAsLiteralRawToken() {
+        let literal = "[[file|type|stored|name]] [x]"
+        let storage = NSTextStorage(string: literal)
+        let output = NoteSerializer.serialize(storage)
+
+        XCTAssertFalse(output.contains(literal), "Plain typed text must not become executable storage markup: \(output)")
+        XCTAssertEqual(JotMarkupLiteral.replacingRawTokens(in: output), literal)
+    }
+
     // MARK: - Inline formatting
 
     func testBoldFont_EmitsBoldTags() {

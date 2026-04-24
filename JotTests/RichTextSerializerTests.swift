@@ -89,6 +89,16 @@ final class RichTextSerializerTests: XCTestCase {
         XCTAssertEqual(attributed.attribute(.inlineCode, at: 0, effectiveRange: nil) as? Bool, true)
     }
 
+    func testLiteralJotMarkupRoundTripDoesNotBecomeControlSyntax() {
+        let literal = JotMarkupLiteral.encode("[[h3]]")
+        let attributed = RichTextSerializer.deserializeToAttributedString(literal)
+        let roundTrip = RichTextSerializer.serializeAttributedString(attributed)
+
+        XCTAssertEqual(attributed.string, "[[h3]]")
+        XCTAssertFalse(roundTrip.contains("[[h3]]"), "Literal text must not serialize as executable heading markup: \(roundTrip)")
+        XCTAssertEqual(JotMarkupLiteral.replacingRawTokens(in: roundTrip), "[[h3]]")
+    }
+
     // MARK: - Malformed color tag recovery (C2)
 
     /// Regression: `[[color|HEX]]` with malformed hex (neither 6 nor 8 chars) used to fall

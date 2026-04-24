@@ -90,6 +90,7 @@
 		32921E052E424DC0006A7C11 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
+				AA000004MARKDOWN000004 /* Markdown in Frameworks */,
 				AA000001SPARKLE00000001 /* Sparkle in Frameworks */,
 			);
 		};
@@ -109,6 +110,10 @@
 		AA000001SPARKLE00000001 /* Sparkle in Frameworks */ = {
 			isa = PBXBuildFile;
 			productRef = AA000002SPARKLE00000002 /* Sparkle */;
+		};
+		AA000004MARKDOWN000004 /* Markdown in Frameworks */ = {
+			isa = PBXBuildFile;
+			productRef = AA000005MARKDOWN000005 /* Markdown */;
 		};
 /* End PBXBuildFile section */
 
@@ -155,6 +160,7 @@
 			);
 			name = Jot;
 			packageProductDependencies = (
+				AA000005MARKDOWN000005 /* Markdown */,
 				AA000002SPARKLE00000002 /* Sparkle */,
 			);
 			productName = Jot;
@@ -228,6 +234,7 @@
 			mainGroup = 32921DFF2E424DC0006A7C11;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				AA000006MARKDOWN000006 /* XCRemoteSwiftPackageReference "swift-markdown" */,
 				AA000003SPARKLE00000003 /* XCRemoteSwiftPackageReference "Sparkle" */,
 			);
 			preferredProjectObjectVersion = 90;
@@ -648,9 +655,22 @@
 				minimumVersion = 2.0.0;
 			};
 		};
+		AA000006MARKDOWN000006 /* XCRemoteSwiftPackageReference "swift-markdown" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/swiftlang/swift-markdown";
+			requirement = {
+				branch = main;
+				kind = branch;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		AA000005MARKDOWN000005 /* Markdown */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AA000006MARKDOWN000006 /* XCRemoteSwiftPackageReference "swift-markdown" */;
+			productName = Markdown;
+		};
 		AA000002SPARKLE00000002 /* Sparkle */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = AA000003SPARKLE00000003 /* XCRemoteSwiftPackageReference "Sparkle" */;

@@ -339,8 +339,8 @@ struct NoteMetadataSection: View {
         label: String,
         @ViewBuilder value: () -> Value
     ) -> some View {
-        // Gutter between label and value columns (canonical spacing scale).
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
+        // Gutter between label and value columns (`sm` on the canonical spacing scale).
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
             // Label column — fixed width, aligned with header
             Text(label)
                 .jotUI(FontManager.uiLabel4())
@@ -448,7 +448,7 @@ struct NoteMetadataSection: View {
 
     /// "AI generated" on one line, "tags" on the next — same column width as other property labels.
     private var aiGeneratedTagsPropertyRow: some View {
-        HStack(alignment: .top, spacing: 8) {
+        HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("AI generated")
                     .jotUI(FontManager.uiLabel4())

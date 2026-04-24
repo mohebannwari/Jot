@@ -9,6 +9,9 @@ import AppKit
 import SwiftUI
 
 struct ExportFormatSheet: View {
+    /// Same width:height as exported PDF pages (`NoteExportService` 612×792) so placeholder height matches PDF and text previews when switching formats.
+    private static let placeholderDocumentAspectRatio: CGFloat = 612.0 / 792.0
+
     @Binding var isPresented: Bool
     let notes: [Note]
     var onShowQuickLook: (([Note], NoteExportFormat) -> Void)?
@@ -17,6 +20,14 @@ struct ExportFormatSheet: View {
     @State private var selectedFormat: NoteExportFormat = .pdf
     @State private var previewImage: NSImage?
     @State private var isLoadingPreview = false
+
+    /// Drives aspect-fit layout: bitmap aspect for PDF/text previews, placeholder ratio while loading.
+    private var previewAspectRatio: CGFloat {
+        guard let image = previewImage, image.size.height > 0 else {
+            return Self.placeholderDocumentAspectRatio
+        }
+        return image.size.width / image.size.height
+    }
 
     init(
         isPresented: Binding<Bool>,
@@ -51,18 +62,18 @@ struct ExportFormatSheet: View {
 
     private var previewSection: some View {
         ZStack(alignment: .topLeading) {
-            // Thumbnail card
+            // Thumbnail card — full width of the sheet content, aspect-locked, never cropped (was fixed 228×337 + scaledToFill).
             ZStack {
                 if let image = previewImage {
                     Image(nsImage: image)
                         .resizable()
-                        .scaledToFill()
-                        .frame(width: 228, height: 337)
-                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .aspectRatio(previewAspectRatio, contentMode: .fit)
+                        .frame(maxWidth: .infinity)
                 } else {
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
                         .fill(Color("SurfaceElevatedColor"))
-                        .frame(width: 228, height: 337)
+                        .aspectRatio(Self.placeholderDocumentAspectRatio, contentMode: .fit)
+                        .frame(maxWidth: .infinity)
                         .shimmering(active: isLoadingPreview)
                 }
 
@@ -85,6 +96,7 @@ struct ExportFormatSheet: View {
                 .buttonStyle(.plain)
                 .subtleHoverScale(1.06)
             }
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
             .shadow(color: Color.black.opacity(0.16), radius: 20, x: 0, y: 8)
             .shadow(color: Color.black.opacity(0.08), radius: 6, x: 0, y: 2)
             .shadow(color: Color.black.opacity(0.04), radius: 2, x: 0, y: 1)

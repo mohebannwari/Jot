@@ -15,6 +15,10 @@ struct NotePreviewHTMLGenerator {
             tagsHTML = "<div class=\"tags\">\(pills)</div>"
         }
         let bodyHTML = NoteMarkupHTMLRenderer.renderFragment(note.content, context: .quickLook)
+        let trimmedBody = bodyHTML.trimmingCharacters(in: .whitespacesAndNewlines)
+        let headerDividerHTML = trimmedBody.isEmpty || trimmedBody.hasPrefix("<hr class=\"note-divider\"")
+            ? ""
+            : "<div class=\"header-divider\"></div>"
 
         return """
         <!DOCTYPE html>
@@ -58,7 +62,7 @@ struct NotePreviewHTMLGenerator {
               font-size: 22px;
               font-weight: 600;
               margin: 0 0 8px;
-              letter-spacing: -0.3px;
+              letter-spacing: 0;
             }
             .tags {
               display: flex;
@@ -85,7 +89,7 @@ struct NotePreviewHTMLGenerator {
         <body>
           <h1>\(title)</h1>
           \(tagsHTML)
-          <div class="header-divider"></div>
+          \(headerDividerHTML)
           <div class="note-markup">\(bodyHTML)</div>
         </body>
         </html>

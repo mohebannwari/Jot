@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 @MainActor
@@ -105,7 +106,7 @@ struct NoteMarkupHTMLRenderer {
           color: var(--note-markup-fg);
           font-weight: 600;
           margin: 22px 0 8px;
-          letter-spacing: -0.02em;
+          letter-spacing: 0;
         }
         .note-markup h2 { font-size: 20px; }
         .note-markup h3 { font-size: 17px; }
@@ -301,7 +302,7 @@ struct NoteMarkupHTMLRenderer {
           color: var(--note-markup-muted);
           font-size: 12px;
           font-weight: 600;
-          letter-spacing: -0.02em;
+          letter-spacing: 0;
         }
         .note-markup .tabs-chip.is-active {
           border-color: var(--tab-accent-border, var(--note-markup-border));
@@ -314,7 +315,7 @@ struct NoteMarkupHTMLRenderer {
         .note-markup table {
           width: 100%;
           border-collapse: collapse;
-          min-width: 320px;
+          table-layout: fixed;
         }
         .note-markup td,
         .note-markup th {
@@ -323,7 +324,9 @@ struct NoteMarkupHTMLRenderer {
           border-right: 1px solid var(--note-markup-border);
           text-align: left;
           vertical-align: top;
-          word-break: break-word;
+          word-break: normal;
+          overflow-wrap: break-word;
+          white-space: normal;
         }
         .note-markup tr:last-child td,
         .note-markup tr:last-child th {
@@ -689,14 +692,27 @@ struct NoteMarkupHTMLRenderer {
             return attachmentChip(icon: "Table", label: "Unsupported table")
         }
 
-        let rows = table.cells.map { row in
+        let widths = normalizedColumnWidths(for: table)
+        let colgroup = "<colgroup>"
+            + widths.map { "<col style=\"width:\(Int(ceil($0)))px\">" }.joined()
+            + "</colgroup>"
+        let minWidth = Int(ceil(widths.reduce(0, +)))
+
+        let rows = table.cells.enumerated().map { rowIndex, row in
+            let tag = rowIndex == 0 ? "th" : "td"
             let columns = row.map { cell in
-                "<td>\(escapeHTML(cell).replacingOccurrences(of: "\n", with: "<br>"))</td>"
+                "<\(tag)>\(escapeHTML(cell).replacingOccurrences(of: "\n", with: "<br>"))</\(tag)>"
             }.joined()
             return "<tr>\(columns)</tr>"
         }.joined()
 
-        return "<div class=\"table-wrapper\"><table>\(rows)</table></div>"
+        return "<div class=\"table-wrapper\"><table style=\"min-width:\(minWidth)px\">\(colgroup)\(rows)</table></div>"
+    }
+
+    private static func normalizedColumnWidths(for table: NoteTableData) -> [CGFloat] {
+        let fallback = Array(repeating: NoteTableData.defaultColumnWidth, count: table.columns)
+        guard table.columnWidths.count == table.columns else { return fallback }
+        return table.columnWidths.map { max(64, $0) }
     }
 
     private static func renderCodeBlock(from lines: [String], start: inout Int) -> String? {
@@ -860,6 +876,12 @@ struct NoteMarkupHTMLRenderer {
         while index < text.endIndex {
             let remaining = text[index...]
 
+            if let literal = JotMarkupLiteral.consumeToken(in: text, at: index) {
+                output += escapeHTML(literal.decoded)
+                index = literal.end
+                continue
+            }
+
             if remaining.hasPrefix("[[b]]") {
                 output += "<strong>"
                 index = text.index(index, offsetBy: 5)
@@ -901,12 +923,19 @@ struct NoteMarkupHTMLRenderer {
                 continue
             }
             if remaining.hasPrefix("[[ic]]") {
-                output += "<code>"
-                index = text.index(index, offsetBy: 6)
+                let contentStart = text.index(index, offsetBy: 6)
+                if let close = text[contentStart...].range(of: "[[/ic]]") {
+                    let inner = String(text[contentStart..<close.lowerBound])
+                    output += "<code>\(renderInlineCodeLiteral(inner))</code>"
+                    index = close.upperBound
+                } else {
+                    output += escapeHTML("[[ic]]")
+                    index = contentStart
+                }
                 continue
             }
             if remaining.hasPrefix("[[/ic]]") {
-                output += "</code>"
+                output += escapeHTML("[[/ic]]")
                 index = text.index(index, offsetBy: 7)
                 continue
             }
@@ -994,6 +1023,10 @@ struct NoteMarkupHTMLRenderer {
         }
 
         return output
+    }
+
+    private static func renderInlineCodeLiteral(_ text: String) -> String {
+        escapeHTML(JotMarkupLiteral.replacingRawTokens(in: text))
     }
 
     private static func renderLinkToken(_ body: String) -> String {

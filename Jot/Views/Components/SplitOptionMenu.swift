@@ -19,8 +19,8 @@ struct SplitOptionMenu: View {
         }
         .padding(4)
         .thinLiquidGlass(in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .frame(width: 120)
         .shadow(color: .black.opacity(0.08), radius: 8, x: 0, y: 4)
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     private func menuRow(icon: String, label: String, action: @escaping () -> Void) -> some View {

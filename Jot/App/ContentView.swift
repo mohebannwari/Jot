@@ -3241,6 +3241,8 @@ struct ContentView: View {
                 isZenMode: !isSidebarVisible
             )
             .environmentObject(themeManager)
+            // Full-height frame + top alignment keeps the palette under the same top inset as before
+            // (`fixedSize` on `FloatingSearch` prevents the *inner* surface from stretching vertically).
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .padding(.top, 182)
         }
@@ -3695,60 +3697,135 @@ struct ContentView: View {
     }
 
     private func handleLockIconTap(_ note: Note) {
-        if themeManager.lockPasswordType == .custom {
-            let alert = NSAlert()
-            alert.messageText = "Remove Lock"
-            alert.informativeText = "Enter your password to permanently remove the lock from this note."
-
-            let passwordField = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
-            alert.accessoryView = passwordField
-            alert.addButton(withTitle: "Unlock")
-            alert.addButton(withTitle: "Cancel")
-
-            if let okButton = alert.buttons.first {
-                okButton.hasDestructiveAction = false
-                okButton.bezelColor = NSColor.controlAccentColor
+        // Defer all modal auth UI until after the context menu (or other transient UI) dismisses.
+        // Synchronous `runModal` in the same turn as menu dismissal can fail to show or look like a no-op.
+        DispatchQueue.main.async {
+            if self.themeManager.lockPasswordType == .custom {
+                self.presentRemoveLockCustomPassword(note)
+            } else {
+                self.presentRemoveLockLoginPassword(note)
             }
+        }
+    }
 
-            alert.window.initialFirstResponder = passwordField
+    // MARK: Remove lock (sidebar / menu)
 
-            let response = alert.runModal()
-            if response == .alertFirstButtonReturn {
-                let input = passwordField.stringValue
-                if let stored = KeychainManager.loadPassword(), KeychainManager.verifyPassword(input, against: stored) {
-                    notesManager.toggleLock(id: note.id)
-                }
-            }
-        } else if themeManager.useTouchID {
-            authManager.authenticate(noteID: note.id, method: .touchID) { success in
-                if success {
-                    notesManager.toggleLock(id: note.id)
-                }
-            }
+    /// `NSAlert` for remove-lock flows: secure field + `Unlock` + optional `Use Touch ID` + `Cancel` (in that add order).
+    private func makeRemoveLockPasswordAlert(
+        messageText: String,
+        informativeText: String,
+        includeTouchIDButton: Bool
+    ) -> (NSAlert, NSSecureTextField) {
+        let alert = NSAlert()
+        alert.messageText = messageText
+        alert.informativeText = informativeText
+        let passwordField = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
+        alert.accessoryView = passwordField
+        alert.addButton(withTitle: "Unlock")
+        if includeTouchIDButton {
+            alert.addButton(withTitle: "Use Touch ID")
+        }
+        alert.addButton(withTitle: "Cancel")
+        if let okButton = alert.buttons.first {
+            okButton.hasDestructiveAction = false
+            okButton.bezelColor = NSColor.controlAccentColor
+        }
+        alert.window.initialFirstResponder = passwordField
+        return (alert, passwordField)
+    }
+
+    private func runRemoveLockErrorAlert(message: String, detail: String) {
+        let a = NSAlert()
+        a.messageText = message
+        a.informativeText = detail
+        a.addButton(withTitle: "OK")
+        a.runModal()
+    }
+
+    private func runRemoveLockMissingCustomPasswordAlert() {
+        runRemoveLockErrorAlert(
+            message: "No custom lock password saved",
+            detail:
+                "In Settings, open Locked notes and set a custom password, or choose Use Login Password. Then try Remove Lock again."
+        )
+    }
+
+    private func presentRemoveLockCustomPassword(_ note: Note) {
+        guard let stored = KeychainManager.loadPassword() else {
+            runRemoveLockMissingCustomPasswordAlert()
+            return
+        }
+
+        let (alert, passwordField) = makeRemoveLockPasswordAlert(
+            messageText: "Remove Lock",
+            informativeText: "Enter your custom lock password to permanently remove the lock from this note.",
+            includeTouchIDButton: false
+        )
+
+        let response = alert.runModal()
+        guard response == .alertFirstButtonReturn else { return }
+
+        let input = passwordField.stringValue
+        if input.isEmpty {
+            runRemoveLockErrorAlert(
+                message: "Password required",
+                detail: "Type your custom lock password, or choose Cancel."
+            )
+            return
+        }
+        if KeychainManager.verifyPassword(input, against: stored) {
+            notesManager.toggleLock(id: note.id)
         } else {
-            let alert = NSAlert()
-            alert.messageText = "Remove Lock"
-            alert.informativeText = "Enter your macOS login password to permanently remove the lock from this note."
+            runRemoveLockErrorAlert(
+                message: "Couldn’t remove the lock",
+                detail: "That password doesn’t match your saved custom lock password."
+            )
+        }
+    }
 
-            let passwordField = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
-            alert.accessoryView = passwordField
-            alert.addButton(withTitle: "Unlock")
-            alert.addButton(withTitle: "Cancel")
+    private func presentRemoveLockLoginPassword(_ note: Note) {
+        let canOfferTouchID = themeManager.useTouchID && authManager.isNoteBiometryAvailable
+        var info = "Enter the password for the account “\(NSUserName())” to permanently remove the lock from this note."
+        if themeManager.useTouchID, !authManager.isNoteBiometryAvailable {
+            info += "\n\nTouch ID isn’t available on this Mac. Use your account password with Unlock."
+        }
 
-            if let okButton = alert.buttons.first {
-                okButton.hasDestructiveAction = false
-                okButton.bezelColor = NSColor.controlAccentColor
+        let (alert, passwordField) = makeRemoveLockPasswordAlert(
+            messageText: "Remove Lock",
+            informativeText: info,
+            includeTouchIDButton: canOfferTouchID
+        )
+
+        let response = alert.runModal()
+
+        if response == .alertFirstButtonReturn {
+            let input = passwordField.stringValue
+            if input.isEmpty {
+                runRemoveLockErrorAlert(
+                    message: "Password required",
+                    detail: "Type your macOS account password, then click Unlock, or use Touch ID if you added that button."
+                )
+                return
             }
-
-            alert.window.initialFirstResponder = passwordField
-
-            let response = alert.runModal()
-            if response == .alertFirstButtonReturn {
-                let input = passwordField.stringValue
-                authManager.authenticate(noteID: note.id, method: .login, customPasswordInput: input) { success in
-                    if success {
-                        notesManager.toggleLock(id: note.id)
-                    }
+            authManager.authenticate(noteID: note.id, method: .login, customPasswordInput: input) { [self] success in
+                if success {
+                    self.notesManager.toggleLock(id: note.id)
+                } else {
+                    self.runRemoveLockErrorAlert(
+                        message: "Couldn’t remove the lock",
+                        detail: "The password is incorrect, or this Mac could not verify your user account. Try again."
+                    )
+                }
+            }
+        } else if canOfferTouchID, response == .alertSecondButtonReturn {
+            authManager.authenticate(noteID: note.id, method: .touchID) { [self] success in
+                if success {
+                    self.notesManager.toggleLock(id: note.id)
+                } else {
+                    self.runRemoveLockErrorAlert(
+                        message: "Couldn’t remove the lock",
+                        detail: "Touch ID did not complete. Try again, or use Unlock and enter your account password."
+                    )
                 }
             }
         }

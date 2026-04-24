@@ -22,10 +22,11 @@ final class CardSectionOverlayView: NSView {
     private let cardBorder   = CardSectionData.cardBorderWidth     // 2
     private let cardGap      = CardSectionData.cardGap             // 12
     private let plusBtnWidth  = CardSectionData.plusButtonWidth     // 28
-    private let plusIconSize: CGFloat = 18
     private let resizeZone:  CGFloat = 20
-    private let dashLength:  CGFloat = 6
-    private let dashGap:     CGFloat = 4
+    /// Matches `NoteTableOverlayView.addIconSize` / `drawPlusIcon` arm length from center.
+    private let addTableStylePlusHalf: CGFloat = 4
+    /// Matches `NoteTableOverlayView.addButtonDashPattern`.
+    private let addTableStyleDashPattern: [CGFloat] = [4, 3]
     private let dragHandleHeight: CGFloat = 24  // drag handle strip at top of card
     private let gripDotSize: CGFloat = 2.5
     private let gripDotGap:  CGFloat = 2
@@ -853,31 +854,41 @@ final class CardSectionOverlayView: NSView {
         let path = CGPath(roundedRect: rect, cornerWidth: rect.width / 2,
                           cornerHeight: rect.width / 2, transform: nil)
 
-        // Dashed border
-        ctx.saveGState()
-        ctx.addPath(path)
-        let dashColor: NSColor = isDark
-            ? NSColor.white.withAlphaComponent(0.09)
-            : NSColor.black.withAlphaComponent(0.09)
-        ctx.setStrokeColor(dashColor.cgColor)
-        ctx.setLineWidth(2)
-        ctx.setLineDash(phase: 0, lengths: [dashLength, dashGap])
-        ctx.strokePath()
-        ctx.restoreGState()
+        // Same stack as `NoteTableOverlayView.drawAddRowButton` / `drawAddColumnButton`: accent fill,
+        // dashed accent stroke, stroked plus (not a template bitmap).
+        let fillColor = NSColor.controlAccentColor.withAlphaComponent(isDark ? 0.18 : 0.08)
+        let strokeColor = NSColor.controlAccentColor.withAlphaComponent(isDark ? 0.55 : 0.4)
+        let iconColor = NSColor.controlAccentColor.withAlphaComponent(isDark ? 0.85 : 0.7)
 
-        // Plus icon
-        if let plusImage = NSImage(named: "IconPlusSmall") {
-            let iconRect = CGRect(
-                x: rect.midX - plusIconSize / 2,
-                y: rect.midY - plusIconSize / 2,
-                width: plusIconSize, height: plusIconSize
-            )
-            let iconColor: NSColor = isDark
-                ? NSColor.white.withAlphaComponent(0.3)
-                : NSColor.black.withAlphaComponent(0.3)
-            let tinted = plusImage.tinted(with: iconColor)
-            tinted.draw(in: iconRect, from: .zero, operation: .sourceOver, fraction: 1.0)
-        }
+        ctx.saveGState()
+        defer { ctx.restoreGState() }
+
+        ctx.addPath(path)
+        ctx.setFillColor(fillColor.cgColor)
+        ctx.fillPath()
+
+        ctx.addPath(path)
+        ctx.setStrokeColor(strokeColor.cgColor)
+        ctx.setLineWidth(1)
+        ctx.setLineCap(.round)
+        ctx.setLineJoin(.round)
+        ctx.setLineDash(phase: 0, lengths: addTableStyleDashPattern)
+        ctx.strokePath()
+
+        let cx = rect.midX
+        let cy = rect.midY
+        let half = addTableStylePlusHalf
+        ctx.setStrokeColor(iconColor.cgColor)
+        ctx.setLineWidth(1)
+        ctx.setLineCap(.round)
+        ctx.setLineDash(phase: 0, lengths: [])
+        let plus = CGMutablePath()
+        plus.move(to: CGPoint(x: cx - half, y: cy))
+        plus.addLine(to: CGPoint(x: cx + half, y: cy))
+        plus.move(to: CGPoint(x: cx, y: cy - half))
+        plus.addLine(to: CGPoint(x: cx, y: cy + half))
+        ctx.addPath(plus)
+        ctx.strokePath()
     }
 
     /// Draws a 2x3 grid of grip dots centered horizontally in the drag handle zone.

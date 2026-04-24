@@ -13,6 +13,14 @@ enum AuthMethod {
 final class NoteAuthenticationManager: ObservableObject {
     @Published var unlockedNoteIDs: Set<UUID> = []
 
+    /// True when the system can present biometrics (e.g. Touch ID) for a note -- used to decide whether
+    /// the UI can offer a Touch ID path alongside the password, and to show accurate messaging when
+    /// "Use Touch ID" is enabled in settings but hardware/software cannot evaluate biometrics.
+    var isNoteBiometryAvailable: Bool {
+        var error: NSError?
+        return LAContext().canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error)
+    }
+
     /// Pending re-lock timers keyed by note ID.
     private var relockTimers: [UUID: DispatchWorkItem] = [:]
 

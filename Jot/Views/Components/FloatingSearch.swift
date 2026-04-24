@@ -158,6 +158,7 @@ struct FloatingSearch: View {
 
     /// Global command palette width (668pt).
     private let surfaceWidth: CGFloat = 668
+    /// Figma command palette shell: **22pt** continuous radius — glass `in:` shape and inner `clipShape`.
     private let surfaceCornerRadius: CGFloat = 22
     private let resultItemCornerRadius: CGFloat = 12
     /// Visible root quick actions in palette order (excluding optional deferred-update row).
@@ -514,6 +515,8 @@ struct FloatingSearch: View {
             }
             kickCommandPaletteNativeSearchFocus()
         }
+        // Intrinsic height so a parent `maxHeight: .infinity` does not stretch the palette vertically.
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     // MARK: - Search Surface
@@ -1145,7 +1148,7 @@ struct FloatingSearch: View {
                         RoundedRectangle(cornerRadius: 4, style: .continuous)
                             .fill(floatingSearchFooterKeycapFill)
                         Text("esc")
-                            .jotMetadataLabelTypography()
+                            .jotMetadataLabelTypography(size: 9, weight: .medium)
                             .tracking(floatingSearchMetadataCapsTracking)
                             .foregroundColor(Color("SecondaryTextColor"))
                     }
@@ -1210,7 +1213,9 @@ struct FloatingSearch: View {
     private var typedQueryUnifiedList: some View {
         let hasCommands = !filteredRootQuickActionSpecs.isEmpty
         let hasResults = !engine.results.isEmpty
-        ScrollView {
+        // `ScrollView` defaults `showsIndicators: true` on macOS → legacy gutter always reserved.
+        // Turn that off, then `.scrollIndicators(.automatic)` restores overlay indicators when scrolling.
+        ScrollView(.vertical, showsIndicators: false) {
             VStack(spacing: 0) {
                 if hasCommands {
                     VStack(spacing: 0) {

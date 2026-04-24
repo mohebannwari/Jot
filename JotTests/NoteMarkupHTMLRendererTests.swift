@@ -179,4 +179,20 @@ final class NoteMarkupHTMLRendererTests: XCTestCase {
         XCTAssertFalse(quickLook.contains("[[cards|"), "Quick Look leaked cards token: \(quickLook)")
         XCTAssertFalse(exported.contains("[[tabs|"), "HTML export leaked tabs token: \(exported)")
     }
+
+    func testQuickLookTableUsesSerializedColumnWidths() {
+        let table = NoteTableData(
+            columns: 3,
+            cells: [["Step", "Skill", "What to do"], ["1", "`superpowers:brainstorming`", "Refine the spec with clarifying questions."]],
+            columnWidths: [88, 260, 520]
+        ).serialize()
+        let note = Note(title: "Widths", content: table)
+
+        let html = NotePreviewHTMLGenerator.generate(note: note)
+
+        XCTAssertTrue(html.contains("<colgroup>"), "Expected table colgroup so narrow columns do not collapse: \(html)")
+        XCTAssertTrue(html.contains("width:88px"), "Expected first column width to be honored: \(html)")
+        XCTAssertTrue(html.contains("width:260px"), "Expected second column width to be honored: \(html)")
+        XCTAssertTrue(html.contains("min-width:868px"), "Expected table min-width to follow serialized widths: \(html)")
+    }
 }

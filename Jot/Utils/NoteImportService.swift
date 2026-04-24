@@ -8,6 +8,7 @@
 
 import AppKit
 import Foundation
+import Markdown
 import PDFKit
 import UniformTypeIdentifiers
 
@@ -69,6 +70,18 @@ final class NoteImportService {
     static let shared = NoteImportService()
     private init() {}
 
+    private struct ImportResult {
+        let title: String
+        let content: String
+        let tags: [String]
+    }
+
+    private struct MarkdownFrontmatter {
+        let body: String
+        let title: String?
+        let tags: [String]
+    }
+
     // MARK: - Public API
 
     /// Import a single file, returning the created Note
@@ -79,20 +92,20 @@ final class NoteImportService {
     ) async -> Note? {
         guard let format = NoteImportFormat.from(url: url) else { return nil }
 
-        let result: (title: String, content: String)?
+        let result: ImportResult?
 
         switch format {
-        case .txt:      result = convertTXT(at: url)
+        case .txt:      result = convertTXT(at: url).map { ImportResult(title: $0.title, content: $0.content, tags: []) }
         case .markdown: result = await convertMarkdown(at: url)
-        case .html:     result = await convertHTML(at: url)
-        case .rtf:      result = await convertRTF(at: url)
-        case .docx:     result = await convertDOCX(at: url)
-        case .pdf:      result = await convertPDF(at: url)
-        case .csv:      result = convertCSV(at: url)
+        case .html:     result = await convertHTML(at: url).map { ImportResult(title: $0.title, content: $0.content, tags: []) }
+        case .rtf:      result = await convertRTF(at: url).map { ImportResult(title: $0.title, content: $0.content, tags: []) }
+        case .docx:     result = await convertDOCX(at: url).map { ImportResult(title: $0.title, content: $0.content, tags: []) }
+        case .pdf:      result = await convertPDF(at: url).map { ImportResult(title: $0.title, content: $0.content, tags: []) }
+        case .csv:      result = convertCSV(at: url).map { ImportResult(title: $0.title, content: $0.content, tags: []) }
         }
 
-        guard let (title, content) = result else { return nil }
-        return manager.addNote(title: title, content: content, folderID: folderID)
+        guard let result else { return nil }
+        return manager.addNote(title: result.title, content: result.content, tags: result.tags, folderID: folderID)
     }
 
     /// Import multiple files with optional progress callback
@@ -156,9 +169,9 @@ final class NoteImportService {
         return (titleFromURL(url), text)
     }
 
-    private func convertMarkdown(at url: URL) async -> (title: String, content: String)? {
+    private func convertMarkdown(at url: URL) async -> ImportResult? {
         guard let raw = try? String(contentsOf: url, encoding: .utf8) else { return nil }
-        return await convertMarkdownDocument(
+        return await convertMarkdownDocumentResult(
             raw: raw,
             baseDirectory: url.deletingLastPathComponent(),
             fileURLForFallbackTitle: url
@@ -166,447 +179,473 @@ final class NoteImportService {
     }
 
     /// Converts a Markdown string to Jot markup (shared by file import and unit tests).
-    ///
-    /// **Markdown fidelity:** strips leading YAML `---` … `---`, lifts a leading ATX `#` title out of
-    /// the body, hoists inline `` `code` `` before bold/italic passes, preserves labeled links,
-    /// autolinks, and normalizes line-start `->` / `=>` to Unicode arrows.
+    /// Kept as a tuple shim for existing tests; file import uses `convertMarkdownDocumentResult`
+    /// so YAML tags can be persisted on the created note.
     internal func convertMarkdownDocument(
         raw: String,
         baseDirectory: URL,
         fileURLForFallbackTitle: URL
     ) async -> (title: String, content: String) {
-        let baseDir = baseDirectory
-        // Drop YAML frontmatter first so `---` lines are not mistaken for setext / HR during preprocess.
-        let rawWithoutFrontmatter = Self.stripLeadingYAMLFrontmatter(raw)
-
-        // Pre-pass: convert setext-style headings to ATX-style
-        // (Title\n=== -> # Title, Subtitle\n--- -> ## Subtitle)
-        let rawLines = rawWithoutFrontmatter.components(separatedBy: .newlines)
-        var preprocessed: [String] = []
-        var idx = 0
-        while idx < rawLines.count {
-            let current = rawLines[idx]
-            let currentTrimmed = current.trimmingCharacters(in: .whitespaces)
-            if idx + 1 < rawLines.count && !currentTrimmed.isEmpty {
-                let nextTrimmed = rawLines[idx + 1].trimmingCharacters(in: .whitespaces)
-                if nextTrimmed.count >= 2 && nextTrimmed.allSatisfy({ $0 == "=" }) {
-                    preprocessed.append("# \(currentTrimmed)")
-                    idx += 2
-                    continue
-                } else if nextTrimmed.count >= 2 && nextTrimmed.allSatisfy({ $0 == "-" }) {
-                    preprocessed.append("## \(currentTrimmed)")
-                    idx += 2
-                    continue
-                }
-            }
-            preprocessed.append(current)
-            idx += 1
-        }
-
-        // Leading `# Title` becomes the note title (Obsidian/Bear-style) and is removed from body.
-        var bodyLines = preprocessed
-        var resolvedTitle = titleFromURL(fileURLForFallbackTitle)
-        if let firstContentIndex = bodyLines.firstIndex(where: {
-            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        }) {
-            let trimmed = bodyLines[firstContentIndex].trimmingCharacters(in: .whitespaces)
-            // Single-level ATX H1 only (`# `), not `##` / `###`.
-            if trimmed.hasPrefix("# "), !trimmed.hasPrefix("## ") {
-                let titleText = String(trimmed.dropFirst(2)).trimmingCharacters(in: .whitespacesAndNewlines)
-                if !titleText.isEmpty {
-                    resolvedTitle = titleText
-                    bodyLines.remove(at: firstContentIndex)
-                    // Drop blank lines that followed the removed H1 so the body does not start with an empty paragraph.
-                    while firstContentIndex < bodyLines.count,
-                          bodyLines[firstContentIndex].trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        bodyLines.remove(at: firstContentIndex)
-                    }
-                }
-            }
-        }
-
-        var lines: [String] = []
-        var codeBlockLanguage: String? = nil   // nil = not inside a code block
-        var codeBlockLines: [String] = []
-        var indentedCodeLines: [String]? = nil  // nil = not inside an indented block
-        var pendingTableRows: [[String]] = []
-        var quoteLines: [String] = []
-        var isCallout = false
-        var calloutType = "note"
-
-        /// Flush accumulated pipe-table rows into a [[table|...]] block
-        func flushPipeTable() {
-            guard !pendingTableRows.isEmpty else { return }
-            let maxCols = pendingTableRows.map(\.count).max() ?? 1
-            let normalized = pendingTableRows.map { row in
-                row + Array(repeating: "", count: max(0, maxCols - row.count))
-            }
-            let tableData = NoteTableData(columns: maxCols, cells: normalized, columnWidths: Array(repeating: NoteTableData.defaultColumnWidth, count: maxCols))
-            lines.append(tableData.serialize())
-            pendingTableRows.removeAll()
-        }
-
-        /// Flush accumulated blockquote lines
-        func flushQuoteBlock() {
-            guard !quoteLines.isEmpty else { return }
-            if isCallout {
-                let content = quoteLines.joined(separator: "\n")
-                let escaped = content
-                    .replacingOccurrences(of: "\\", with: "\\\\")
-                    .replacingOccurrences(of: "\n", with: "\\n")
-                lines.append("[[callout|\(calloutType)]]\(escaped)[[/callout]]")
-            } else {
-                for ql in quoteLines {
-                    lines.append("[[quote]]\(ql)[[/quote]]")
-                }
-            }
-            quoteLines.removeAll()
-            isCallout = false
-            calloutType = "note"
-        }
-
-        /// Flush accumulated indented code block lines
-        func flushIndentedCode() {
-            guard let codeLines = indentedCodeLines, !codeLines.isEmpty else {
-                indentedCodeLines = nil
-                return
-            }
-            let code = codeLines.joined(separator: "\n")
-            let data = CodeBlockData(language: "plaintext", code: code)
-            lines.append(data.serialize())
-            indentedCodeLines = nil
-        }
-
-        for line in bodyLines {
-            // Code fences — accumulate into CodeBlockData
-            if line.hasPrefix("```") {
-                flushPipeTable()
-                if codeBlockLanguage != nil {
-                    // Closing fence — emit code block
-                    let lang = codeBlockLanguage ?? "plaintext"
-                    let code = codeBlockLines.joined(separator: "\n")
-                    let data = CodeBlockData(language: lang, code: code)
-                    lines.append(data.serialize())
-                    codeBlockLanguage = nil
-                    codeBlockLines.removeAll()
-                } else {
-                    // Opening fence — extract language hint
-                    let hint = String(line.dropFirst(3)).trimmingCharacters(in: .whitespaces)
-                    codeBlockLanguage = Self.normalizeCodeLanguage(hint)
-                }
-                continue
-            }
-            if codeBlockLanguage != nil {
-                codeBlockLines.append(line)
-                continue
-            }
-
-            // Indented code blocks: 4+ spaces or 1 tab prefix
-            let indentedContent: String?
-            if line.hasPrefix("    ") {
-                indentedContent = String(line.dropFirst(4))
-            } else if line.hasPrefix("\t") {
-                indentedContent = String(line.dropFirst(1))
-            } else {
-                indentedContent = nil
-            }
-            if let codeContent = indentedContent {
-                flushPipeTable()
-                flushQuoteBlock()
-                if indentedCodeLines == nil { indentedCodeLines = [] }
-                indentedCodeLines!.append(codeContent)
-                continue
-            } else {
-                flushIndentedCode()
-            }
-
-            // Pipe-delimited markdown table detection
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.hasPrefix("|") && trimmed.hasSuffix("|") {
-                // Check if this is a separator row (e.g. |---|---|)
-                let inner = trimmed.dropFirst().dropLast()
-                let isSeparator = inner.allSatisfy { $0 == "-" || $0 == "|" || $0 == ":" || $0 == " " }
-                if isSeparator && inner.contains("-") {
-                    // Skip separator rows, they don't carry data
-                    continue
-                }
-                // Parse cells from pipe-delimited row
-                let cells = inner.components(separatedBy: "|").map {
-                    $0.trimmingCharacters(in: .whitespaces)
-                }
-                pendingTableRows.append(cells)
-                continue
-            } else {
-                // Non-table line — flush any accumulated table
-                flushPipeTable()
-            }
-
-            var converted = line
-            // Soft line break: strip 2+ trailing spaces (Markdown line-break signal)
-            converted = converted.replacingOccurrences(of: #"\s{2,}$"#, with: "", options: .regularExpression)
-
-            // Line-start ASCII arrows (e.g. CLAUDE.md task lists) → Unicode, with optional indent preserved.
-            let wsLead = converted.prefix(while: { $0 == " " || $0 == "\t" })
-            let restAfterWs = converted.dropFirst(wsLead.count)
-            // Prefixes are exactly three UTF-16 scalars: `-`/`=` + `>` + space.
-            if restAfterWs.hasPrefix("-> ") {
-                converted = String(wsLead) + "[[arrow]] " + String(restAfterWs.dropFirst(3))
-            } else if restAfterWs.hasPrefix("=> ") {
-                converted = String(wsLead) + "\u{21D2} " + String(restAfterWs.dropFirst(3))
-            }
-
-            var blockPrefix = ""
-            var blockSuffix = ""
-
-            // Inline `` `code` `` must be extracted BEFORE link/image/URL passes so backtick spans
-            // containing `[](...)` or `https://...` are not corrupted (review: hoist before linkify).
-            let (convertedWithCodePH, codeSpans) = replaceInlineCodeWithPlaceholders(converted)
-            converted = convertedWithCodePH
-
-            // Horizontal rules: ---, ***, ___  → divider tag
-            let hrTrimmed = converted.trimmingCharacters(in: .whitespaces)
-            if hrTrimmed.count >= 3,
-               hrTrimmed.allSatisfy({ $0 == "-" || $0 == "*" || $0 == "_" }),
-               Set(hrTrimmed).count == 1
-            {
-                lines.append("[[divider]]")
-                continue
-            }
-
-            // Block quotes: accumulate multi-line > blocks (nested >> flattened to single level)
-            let isQuote = converted.hasPrefix(">")
-            if isQuote {
-                let quoteLine = converted.replacingOccurrences(of: #"^(>\s?)+"#, with: "", options: .regularExpression)
-                // Detect callout syntax on first line: > [!type]
-                if quoteLines.isEmpty {
-                    if let calloutMatch = quoteLine.firstMatch(of: /^\[!(\w+)\]\s*(.*)$/) {
-                        let rawType = String(calloutMatch.1).lowercased()
-                        if let normalized = Self.normalizeCalloutType(rawType) {
-                            isCallout = true
-                            calloutType = normalized
-                            let remainder = String(calloutMatch.2)
-                            if !remainder.isEmpty {
-                                quoteLines.append(remainder)
-                            }
-                        } else {
-                            quoteLines.append(quoteLine)
-                        }
-                    } else {
-                        quoteLines.append(quoteLine)
-                    }
-                } else {
-                    quoteLines.append(quoteLine)
-                }
-                continue
-            } else {
-                // Non-quote line — flush accumulated quote block
-                flushQuoteBlock()
-            }
-
-            // Headings: after block-quote strip so "> # heading" works.
-            // No `continue` — inline formatting now applies to heading content.
-            if let match = converted.firstMatch(of: /^###\s+(.+)$/) {
-                converted = String(match.1)
-                blockPrefix += "[[h3]]"
-                blockSuffix = "[[/h3]]" + blockSuffix
-            } else if let match = converted.firstMatch(of: /^##\s+(.+)$/) {
-                converted = String(match.1)
-                blockPrefix += "[[h2]]"
-                blockSuffix = "[[/h2]]" + blockSuffix
-            } else if let match = converted.firstMatch(of: /^#\s+(.+)$/) {
-                converted = String(match.1)
-                blockPrefix += "[[h1]]"
-                blockSuffix = "[[/h1]]" + blockSuffix
-            }
-
-            // Task lists: - [x], - [ ], * [x], * [ ], + [x], + [ ]
-            converted = converted.replacingOccurrences(
-                of: #"^[-*+]\s*\[x\]\s?"#, with: "[x] ", options: .regularExpression
-            )
-            converted = converted.replacingOccurrences(
-                of: #"^[-*+]\s*\[ \]\s?"#, with: "[ ] ", options: .regularExpression
-            )
-
-            // Ordered lists: N. text (strip leading whitespace for indented items)
-            let leadingOL = converted.prefix(while: { $0 == " " || $0 == "\t" })
-            let olIndentDepth = leadingOL.reduce(0) { $0 + ($1 == "\t" ? 2 : 1) } / 2
-            let strippedForOL = converted.drop(while: { $0 == " " || $0 == "\t" })
-            if let match = String(strippedForOL).firstMatch(of: /^(\d+)\.\s+(.*)$/) {
-                let num = String(match.1)
-                converted = String(match.2)
-                let indent = String(repeating: "  ", count: olIndentDepth)
-                blockPrefix += "\(indent)[[ol|\(num)]]"
-            }
-
-            // Unordered list bullets: - item, * item, + item → • prefix
-            let leadingBullet = converted.prefix(while: { $0 == " " || $0 == "\t" })
-            let bulletIndentDepth = leadingBullet.reduce(0) { $0 + ($1 == "\t" ? 2 : 1) } / 2
-            let strippedForBullet = converted.drop(while: { $0 == " " || $0 == "\t" })
-            let bulletStr = String(strippedForBullet)
-            if (bulletStr.hasPrefix("- ") && !bulletStr.hasPrefix("- ["))
-                || bulletStr.hasPrefix("* ")
-                || bulletStr.hasPrefix("+ ")
-            {
-                let indent = String(repeating: "  ", count: bulletIndentDepth)
-                converted = "\(indent)\u{2022} " + String(bulletStr.dropFirst(2))
-            }
-
-            // Images: ![alt](path "title") — optional title is stripped; resolve local paths relative to .md dir
-            for match in converted.matches(of: /!\[([^\]]*)\]\(([^)]+?)(?:\s+"[^"]*")?\)/).reversed() {
-                let path = String(match.2)
-                let imageURL: URL?
-                if let u = URL(string: path), u.scheme != nil {
-                    imageURL = u
-                } else {
-                    imageURL = canonicalFileURLIfUnderBase(relativePath: path, baseDir: baseDir)
-                }
-                guard let resolvedImageURL = imageURL else { continue }
-                if let filename = await ImageStorageManager.shared.saveImage(from: resolvedImageURL) {
-                    converted = converted.replacing(
-                        match.0, with: "[[image|||\(filename)]]"
-                    )
-                }
-            }
-
-            // CSV file links: [text](path.csv) — inline as table (Notion exports)
-            if let csvMatch = converted.firstMatch(of: /\[([^\]]*)\]\(([^)]+\.csv)(?:\s+"[^"]*")?\)/) {
-                let csvPath = String(csvMatch.2)
-                let csvURL: URL?
-                if let u = URL(string: csvPath), u.scheme != nil {
-                    csvURL = u
-                } else {
-                    let decoded = csvPath.removingPercentEncoding ?? csvPath
-                    csvURL = canonicalFileURLIfUnderBase(relativePath: decoded, baseDir: baseDir)
-                }
-                if let resolvedCsvURL = csvURL,
-                   FileManager.default.fileExists(atPath: resolvedCsvURL.path),
-                   let csvText = try? String(contentsOf: resolvedCsvURL, encoding: .utf8) {
-                    let csvRows = csvText.components(separatedBy: .newlines).filter { !$0.isEmpty }
-                    if !csvRows.isEmpty {
-                        let parsedRows = csvRows.map { Self.parseCSVRow($0) }
-                        let maxCols = parsedRows.map { $0.count }.max() ?? 1
-                        let normalized = parsedRows.map { $0 + Array(repeating: "", count: max(0, maxCols - $0.count)) }
-                        let tableData = NoteTableData(columns: maxCols, cells: normalized, columnWidths: Array(repeating: NoteTableData.defaultColumnWidth, count: maxCols))
-                        converted = converted.replacing(csvMatch.0, with: "\n" + tableData.serialize())
-                    }
-                }
-            }
-
-            // Links: [text](url "title") — optional CommonMark title is stripped; collapse when label == URL.
-            converted = replacePattern(
-                in: converted, pattern: #"\[([^\]]+)\]\(([^)]+?)(?:\s+"[^"]*")?\)"#
-            ) { groups in
-                let label = groups[1]
-                let url = groups[2]
-                if label == url { return "[[link|\(url)]]" }
-                return "[[link|\(url)|\(label)]]"
-            }
-
-            // Autolink brackets: <https://...>, <mailto:...>
-            converted = replacePattern(
-                in: converted,
-                pattern: #"<((?:https?://|mailto:)[^>\s]+)>"#
-            ) { "[[link|\($0[1])]]" }
-
-            // Bare URLs: detect URLs not already converted to [[link|...]] tags
-            if !converted.contains("[[link|") {
-                converted = replacePattern(
-                    in: converted,
-                    pattern: #"(https?://[^\s\)\]\>]+)"#
-                ) { "[[link|\($0[1])]]" }
-            }
-
-            // Bold-italic: ***text*** or ___text___ (before bold/italic to consume triple delimiters first)
-            converted = replacePattern(
-                in: converted, pattern: #"\*{3}(.+?)\*{3}"#
-            ) { "[[b]][[i]]\($0[1])[[/i]][[/b]]" }
-            converted = replacePattern(
-                in: converted, pattern: #"_{3}(.+?)_{3}"#
-            ) { "[[b]][[i]]\($0[1])[[/i]][[/b]]" }
-
-            // Bold: **text** or __text__ (before italic to avoid conflicts)
-            converted = replacePattern(
-                in: converted, pattern: #"\*\*(.+?)\*\*"#
-            ) { "[[b]]\($0[1])[[/b]]" }
-            converted = replacePattern(
-                in: converted, pattern: #"__(.+?)__"#
-            ) { "[[b]]\($0[1])[[/b]]" }
-
-            // Italic: *text* or _text_
-            converted = replacePattern(
-                in: converted, pattern: #"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)"#
-            ) { "[[i]]\($0[1])[[/i]]" }
-            converted = replacePattern(
-                in: converted, pattern: #"(?<!_)_(?!_)(.+?)(?<!_)_(?!_)"#
-            ) { "[[i]]\($0[1])[[/i]]" }
-
-            // Strikethrough: ~~text~~
-            converted = replacePattern(
-                in: converted, pattern: #"~~(.+?)~~"#
-            ) { "[[s]]\($0[1])[[/s]]" }
-
-            // Restore inline code spans as dedicated `[[ic]]...[[/ic]]` markup (editor + export round-trip).
-            for (i, code) in codeSpans.enumerated() {
-                converted = converted.replacingOccurrences(
-                    of: "\u{F00C}CODE\(i)\u{F00C}",
-                    with: "[[ic]]\(code)[[/ic]]"
-                )
-            }
-
-            lines.append(blockPrefix + converted + blockSuffix)
-        }
-
-        flushIndentedCode()
-        flushQuoteBlock()
-
-        // Flush any trailing pipe table
-        flushPipeTable()
-
-        // Markdown uses blank lines as block separators; Jot storage uses a single \n
-        // between paragraphs. Collapse runs of newlines so imported .md does not create
-        // phantom empty paragraphs (huge vertical gaps) in the editor.
-        return (resolvedTitle, collapseMarkdownParagraphSeparators(lines.joined(separator: "\n")))
+        let result = await convertMarkdownDocumentResult(
+            raw: raw,
+            baseDirectory: baseDirectory,
+            fileURLForFallbackTitle: fileURLForFallbackTitle
+        )
+        return (result.title, result.content)
     }
 
-    /// Strips a leading YAML frontmatter block when it opens and closes with a line that is exactly `---`.
-    private static func stripLeadingYAMLFrontmatter(_ raw: String) -> String {
+    private func convertMarkdownDocumentResult(
+        raw: String,
+        baseDirectory: URL,
+        fileURLForFallbackTitle: URL
+    ) async -> ImportResult {
+        let frontmatter = Self.parseLeadingYAMLFrontmatter(raw)
+        let document = Document(parsing: frontmatter.body)
+        var blocks = Array(document.children)
+
+        var resolvedTitle = frontmatter.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if resolvedTitle?.isEmpty == true { resolvedTitle = nil }
+
+        if let firstContentIndex = blocks.firstIndex(where: { !Self.markdownPlainText($0).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || $0 is ThematicBreak || $0 is CodeBlock || $0 is Table }),
+           let heading = blocks[firstContentIndex] as? Heading,
+           heading.level == 1 {
+            let headingTitle = Self.markdownPlainText(heading).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !headingTitle.isEmpty {
+                resolvedTitle = headingTitle
+                blocks.remove(at: firstContentIndex)
+            }
+        }
+
+        let lines = await renderMarkdownBlocks(blocks, baseDirectory: baseDirectory, indent: 0)
+        let normalized = normalizeImportedMarkdownLines(lines)
+        let title = resolvedTitle ?? titleFromURL(fileURLForFallbackTitle)
+        return ImportResult(title: title, content: normalized.joined(separator: "\n"), tags: frontmatter.tags)
+    }
+
+    private static func parseLeadingYAMLFrontmatter(_ raw: String) -> MarkdownFrontmatter {
         let lines = raw.components(separatedBy: .newlines)
-        guard let first = lines.first?.trimmingCharacters(in: .whitespacesAndNewlines), first == "---" else {
-            return raw
+        guard lines.first?.trimmingCharacters(in: .whitespacesAndNewlines) == "---" else {
+            return MarkdownFrontmatter(body: raw, title: nil, tags: [])
         }
-        for idx in 1..<lines.count {
-            if lines[idx].trimmingCharacters(in: .whitespacesAndNewlines) == "---" {
-                let tail = lines.dropFirst(idx + 1)
-                return tail.joined(separator: "\n")
-            }
+
+        var closeIndex: Int?
+        for index in 1..<lines.count where lines[index].trimmingCharacters(in: .whitespacesAndNewlines) == "---" {
+            closeIndex = index
+            break
         }
-        return raw
+        guard let closeIndex else {
+            return MarkdownFrontmatter(body: raw, title: nil, tags: [])
+        }
+
+        let frontmatterLines = Array(lines[1..<closeIndex])
+        let body = lines.dropFirst(closeIndex + 1).joined(separator: "\n")
+        return MarkdownFrontmatter(
+            body: body,
+            title: parseYAMLTitle(frontmatterLines),
+            tags: parseYAMLTags(frontmatterLines)
+        )
     }
 
-    /// Replaces each `` `inline` `` span with a private-use placeholder so later emphasis passes cannot
-    /// mutate characters inside code. Indices in placeholders match `spans` order left-to-right.
-    private func replaceInlineCodeWithPlaceholders(_ string: String) -> (String, [String]) {
-        guard let regex = try? NSRegularExpression(pattern: #"`([^`\n]+)`"#, options: []) else {
-            return (string, [])
+    private static func parseYAMLTitle(_ lines: [String]) -> String? {
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard trimmed.lowercased().hasPrefix("title:") else { continue }
+            return cleanYAMLScalar(String(trimmed.dropFirst("title:".count)))
         }
-        let nsString = string as NSString
-        let full = NSRange(location: 0, length: nsString.length)
-        let matches = regex.matches(in: string, options: [], range: full)
-        guard !matches.isEmpty else { return (string, []) }
+        return nil
+    }
 
-        var spans: [String] = []
-        spans.reserveCapacity(matches.count)
-        for m in matches {
-            spans.append(nsString.substring(with: m.range(at: 1)))
-        }
-        var result = string
-        for (i, m) in matches.enumerated().reversed() {
-            let placeholder = "\u{F00C}CODE\(i)\u{F00C}"
-            if let swiftRange = Range(m.range, in: result) {
-                result.replaceSubrange(swiftRange, with: placeholder)
+    private static func parseYAMLTags(_ lines: [String]) -> [String] {
+        var tags: [String] = []
+        var index = 0
+
+        while index < lines.count {
+            let trimmed = lines[index].trimmingCharacters(in: .whitespaces)
+            guard trimmed.lowercased().hasPrefix("tags:") else {
+                index += 1
+                continue
             }
+
+            let value = String(trimmed.dropFirst("tags:".count)).trimmingCharacters(in: .whitespaces)
+            if value.hasPrefix("[") && value.hasSuffix("]") {
+                let inner = value.dropFirst().dropLast()
+                tags += inner.split(separator: ",").map { cleanYAMLTag(String($0)) }
+            } else if !value.isEmpty {
+                tags += value.split(separator: ",").map { cleanYAMLTag(String($0)) }
+            } else {
+                var childIndex = index + 1
+                while childIndex < lines.count {
+                    let child = lines[childIndex].trimmingCharacters(in: .whitespaces)
+                    guard child.hasPrefix("- ") else { break }
+                    tags.append(cleanYAMLTag(String(child.dropFirst(2))))
+                    childIndex += 1
+                }
+                index = childIndex - 1
+            }
+            index += 1
         }
-        return (result, spans)
+
+        var seen: Set<String> = []
+        return tags.compactMap { tag in
+            let cleaned = tag.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !cleaned.isEmpty, !seen.contains(cleaned) else { return nil }
+            seen.insert(cleaned)
+            return cleaned
+        }
+    }
+
+    private static func cleanYAMLScalar(_ raw: String) -> String {
+        var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value.count >= 2,
+           (value.hasPrefix("\"") && value.hasSuffix("\"")) || (value.hasPrefix("'") && value.hasSuffix("'")) {
+            value.removeFirst()
+            value.removeLast()
+        }
+        return value
+    }
+
+    private static func cleanYAMLTag(_ raw: String) -> String {
+        var value = cleanYAMLScalar(raw)
+        if value.hasPrefix("#") {
+            value.removeFirst()
+        }
+        return value.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func renderMarkdownBlocks(
+        _ blocks: [Markup],
+        baseDirectory: URL,
+        indent: Int
+    ) async -> [String] {
+        var lines: [String] = []
+        for block in blocks {
+            lines += await renderMarkdownBlock(block, baseDirectory: baseDirectory, indent: indent)
+        }
+        return lines
+    }
+
+    private func renderMarkdownBlock(
+        _ block: Markup,
+        baseDirectory: URL,
+        indent: Int
+    ) async -> [String] {
+        let continuationPrefix = String(repeating: "  ", count: indent)
+
+        switch block {
+        case let document as Document:
+            return await renderMarkdownBlocks(Array(document.children), baseDirectory: baseDirectory, indent: indent)
+        case let paragraph as Paragraph:
+            let content = await renderInlineChildren(paragraph, baseDirectory: baseDirectory)
+            guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return [] }
+            return content.components(separatedBy: "\n").compactMap { rawLine in
+                let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+                return line.isEmpty ? nil : continuationPrefix + normalizeImportedLinePrefix(line)
+            }
+        case let heading as Heading:
+            let content = await renderInlineChildren(heading, baseDirectory: baseDirectory)
+            guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return [] }
+            let level = min(max(heading.level, 1), 3)
+            return ["[[h\(level)]]\(content)[[/h\(level)]]"]
+        case is ThematicBreak:
+            return ["[[divider]]"]
+        case let codeBlock as CodeBlock:
+            let language = Self.normalizeCodeLanguage(codeBlock.language ?? "")
+            return [CodeBlockData(language: language, code: Self.normalizedMarkdownCodeBlockBody(codeBlock.code)).serialize()]
+        case let htmlBlock as HTMLBlock:
+            let rawHTML = htmlBlock.rawHTML.trimmingCharacters(in: .whitespacesAndNewlines)
+            return rawHTML.isEmpty ? [] : [JotMarkupLiteral.escapeIfNeeded(rawHTML)]
+        case let quote as BlockQuote:
+            return await renderMarkdownBlockQuote(quote, baseDirectory: baseDirectory)
+        case let list as OrderedList:
+            return await renderOrderedList(list, baseDirectory: baseDirectory, indent: indent)
+        case let list as UnorderedList:
+            return await renderUnorderedList(list, baseDirectory: baseDirectory, indent: indent)
+        case let table as Table:
+            return [renderMarkdownTable(table)]
+        default:
+            let text = Self.markdownPlainText(block).trimmingCharacters(in: .whitespacesAndNewlines)
+            return text.isEmpty ? [] : [continuationPrefix + JotMarkupLiteral.escapeIfNeeded(text)]
+        }
+    }
+
+    private func renderMarkdownBlockQuote(_ quote: BlockQuote, baseDirectory: URL) async -> [String] {
+        let quoteLines = await renderMarkdownBlocks(Array(quote.children), baseDirectory: baseDirectory, indent: 0)
+        guard let first = quoteLines.first else { return [] }
+        let trimmedFirst = first.trimmingCharacters(in: .whitespaces)
+
+        if let callout = Self.parseObsidianCalloutMarker(trimmedFirst) {
+            let normalized = Self.normalizeCalloutType(callout.type) ?? "note"
+            let calloutType = CalloutData.CalloutType(rawValue: normalized) ?? .note
+            var bodyLines: [String] = []
+            if !callout.title.isEmpty {
+                bodyLines.append(callout.title)
+            }
+            bodyLines += quoteLines.dropFirst()
+            return [CalloutData(type: calloutType, content: bodyLines.joined(separator: "\n")).serialize()]
+        }
+
+        return quoteLines.map { "[[quote]]\($0)[[/quote]]" }
+    }
+
+    private static func parseObsidianCalloutMarker(_ line: String) -> (type: String, title: String)? {
+        guard line.hasPrefix("[!") else { return nil }
+        guard let close = line.firstIndex(of: "]") else { return nil }
+        let marker = line[line.index(line.startIndex, offsetBy: 2)..<close]
+        guard !marker.isEmpty else { return nil }
+        var type = String(marker).lowercased()
+        if type.hasSuffix("+") || type.hasSuffix("-") {
+            type.removeLast()
+        }
+        var remainder = String(line[line.index(after: close)...]).trimmingCharacters(in: .whitespaces)
+        if remainder.hasPrefix("+") || remainder.hasPrefix("-") {
+            remainder.removeFirst()
+            remainder = remainder.trimmingCharacters(in: .whitespaces)
+        }
+        let title = remainder
+        return (type, title)
+    }
+
+    private func renderOrderedList(_ list: OrderedList, baseDirectory: URL, indent: Int) async -> [String] {
+        var lines: [String] = []
+        let start = Int(list.startIndex)
+        for (offset, child) in Array(list.children).enumerated() {
+            guard let item = child as? Markdown.ListItem else { continue }
+            lines += await renderListItem(
+                item,
+                marker: "[[ol|\(start + offset)]]",
+                baseDirectory: baseDirectory,
+                indent: indent
+            )
+        }
+        return lines
+    }
+
+    private func renderUnorderedList(_ list: UnorderedList, baseDirectory: URL, indent: Int) async -> [String] {
+        var lines: [String] = []
+        for child in list.children {
+            guard let item = child as? Markdown.ListItem else { continue }
+            let marker: String
+            switch item.checkbox {
+            case .some(.checked):
+                marker = "[x] "
+            case .some(.unchecked):
+                marker = "[ ] "
+            case nil:
+                marker = "• "
+            }
+            lines += await renderListItem(item, marker: marker, baseDirectory: baseDirectory, indent: indent)
+        }
+        return lines
+    }
+
+    private func renderListItem(
+        _ item: Markdown.ListItem,
+        marker: String,
+        baseDirectory: URL,
+        indent: Int
+    ) async -> [String] {
+        let prefix = String(repeating: "  ", count: indent)
+        var children = Array(item.children)
+        var lines: [String] = []
+
+        if let first = children.first as? Paragraph {
+            let content = await renderInlineChildren(first, baseDirectory: baseDirectory)
+            let contentLines = content.components(separatedBy: "\n").filter {
+                !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }
+            if let firstLine = contentLines.first {
+                lines.append(prefix + marker + normalizeImportedLinePrefix(firstLine.trimmingCharacters(in: .whitespacesAndNewlines)))
+                let continuation = String(repeating: "  ", count: indent + 1)
+                for extraLine in contentLines.dropFirst() {
+                    lines.append(continuation + normalizeImportedLinePrefix(extraLine.trimmingCharacters(in: .whitespacesAndNewlines)))
+                }
+            } else {
+                lines.append(prefix + marker.trimmingCharacters(in: .whitespaces))
+            }
+            children.removeFirst()
+        } else {
+            lines.append(prefix + marker.trimmingCharacters(in: .whitespaces))
+        }
+
+        for child in children {
+            lines += await renderMarkdownBlock(child, baseDirectory: baseDirectory, indent: indent + 1)
+        }
+        return lines
+    }
+
+    private func renderInlineChildren(_ markup: Markup, baseDirectory: URL) async -> String {
+        var result = ""
+        for child in markup.children {
+            result += await renderInline(child, baseDirectory: baseDirectory)
+        }
+        return result
+    }
+
+    private func renderInline(_ markup: Markup, baseDirectory: URL) async -> String {
+        switch markup {
+        case let text as Text:
+            return JotMarkupLiteral.escapeIfNeeded(text.string)
+        case let code as InlineCode:
+            return "[[ic]]\(JotMarkupLiteral.escapeIfNeeded(code.code))[[/ic]]"
+        case is SoftBreak:
+            return "\n"
+        case is LineBreak:
+            return "\n"
+        case let html as InlineHTML:
+            let raw = html.rawHTML
+            if raw.lowercased().hasPrefix("<br") {
+                return "\n"
+            }
+            return JotMarkupLiteral.escapeIfNeeded(raw)
+        case let strong as Strong:
+            return "[[b]]\(await renderInlineChildren(strong, baseDirectory: baseDirectory))[[/b]]"
+        case let emphasis as Emphasis:
+            return "[[i]]\(await renderInlineChildren(emphasis, baseDirectory: baseDirectory))[[/i]]"
+        case let strike as Strikethrough:
+            return "[[s]]\(await renderInlineChildren(strike, baseDirectory: baseDirectory))[[/s]]"
+        case let link as Link:
+            let destination = (link.destination ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let label = Self.markdownPlainText(link)
+            guard !destination.isEmpty else { return JotMarkupLiteral.escapeIfNeeded(label) }
+            guard Self.isSafeTokenField(destination), Self.isSafeTokenField(label) else {
+                return JotMarkupLiteral.escapeIfNeeded("\(JotMarkupLiteral.replacingRawTokens(in: label)) (\(destination))")
+            }
+            return label == destination ? "[[link|\(destination)]]" : "[[link|\(destination)|\(label)]]"
+        case let image as Image:
+            return await renderMarkdownImage(image, baseDirectory: baseDirectory)
+        default:
+            return JotMarkupLiteral.escapeIfNeeded(Self.markdownPlainText(markup))
+        }
+    }
+
+    private func renderMarkdownImage(_ image: Image, baseDirectory: URL) async -> String {
+        let altText = Self.markdownPlainText(image)
+        guard let source = image.source, !source.isEmpty else {
+            return JotMarkupLiteral.escapeIfNeeded(altText)
+        }
+
+        let imageURL: URL?
+        if let url = URL(string: source), url.scheme != nil {
+            imageURL = url
+        } else {
+            imageURL = canonicalFileURLIfUnderBase(relativePath: source, baseDir: baseDirectory)
+        }
+
+        if let imageURL, let filename = await ImageStorageManager.shared.saveImage(from: imageURL) {
+            return "[[image|||\(filename)]]"
+        }
+
+        let readable = altText.isEmpty ? source : altText
+        return JotMarkupLiteral.escapeIfNeeded(readable)
+    }
+
+    private static func isSafeTokenField(_ field: String) -> Bool {
+        !field.contains("|") && !field.contains("]]") && !field.contains("\n")
+    }
+
+    private func renderMarkdownTable(_ table: Table) -> String {
+        var rows: [[String]] = []
+        let header = renderMarkdownTableRow(table.head)
+        if !header.isEmpty { rows.append(header) }
+        for child in table.body.children {
+            guard let row = child as? Table.Row else { continue }
+            rows.append(renderMarkdownTableRow(row))
+        }
+
+        let columnCount = max(table.maxColumnCount, rows.map(\.count).max() ?? 1)
+        let normalizedRows = rows.map { row in
+            row + Array(repeating: "", count: max(0, columnCount - row.count))
+        }
+        let widths = Self.estimatedMarkdownTableColumnWidths(normalizedRows, columnCount: columnCount)
+        return NoteTableData(columns: columnCount, cells: normalizedRows, columnWidths: widths, wrapText: true).serialize()
+    }
+
+    private func renderMarkdownTableRow(_ row: Markup) -> [String] {
+        row.children.compactMap { child in
+            guard let cell = child as? Table.Cell else { return nil }
+            return Self.markdownPlainText(cell)
+                .replacingOccurrences(of: "\n", with: " ")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    }
+
+    private static func estimatedMarkdownTableColumnWidths(_ rows: [[String]], columnCount: Int) -> [CGFloat] {
+        guard columnCount > 0 else { return [] }
+        return (0..<columnCount).map { column in
+            let maxLength = rows.map { row in
+                row.indices.contains(column) ? row[column].count : 0
+            }.max() ?? 0
+            return min(max(CGFloat(maxLength * 8 + 40), 88), 520)
+        }
+    }
+
+    private static func markdownPlainText(_ markup: Markup) -> String {
+        switch markup {
+        case let text as Text:
+            return JotMarkupLiteral.replacingRawTokens(in: text.string)
+        case let code as InlineCode:
+            return code.code
+        case is SoftBreak:
+            return " "
+        case is LineBreak:
+            return "\n"
+        case let html as InlineHTML:
+            return html.rawHTML
+        case let html as HTMLBlock:
+            return html.rawHTML
+        case let codeBlock as CodeBlock:
+            return codeBlock.code
+        default:
+            return markup.children.map { markdownPlainText($0) }.joined()
+        }
+    }
+
+    private func normalizeImportedMarkdownLines(_ lines: [String]) -> [String] {
+        var normalized: [String] = []
+        var previousWasDivider = false
+
+        for rawLine in lines {
+            let line = Self.trimmingTrailingHorizontalWhitespace(rawLine)
+            let semanticLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !semanticLine.isEmpty else { continue }
+            if semanticLine == "[[divider]]" {
+                guard !previousWasDivider else { continue }
+                previousWasDivider = true
+            } else {
+                previousWasDivider = false
+            }
+            normalized.append(line)
+        }
+
+        while normalized.first == "[[divider]]" {
+            normalized.removeFirst()
+        }
+        while normalized.last == "[[divider]]" {
+            normalized.removeLast()
+        }
+        return normalized
+    }
+
+    private static func trimmingTrailingHorizontalWhitespace(_ text: String) -> String {
+        var end = text.endIndex
+        while end > text.startIndex {
+            let previous = text.index(before: end)
+            guard text[previous] == " " || text[previous] == "\t" else { break }
+            end = previous
+        }
+        return String(text[..<end]).trimmingCharacters(in: .newlines)
+    }
+
+    private func normalizeImportedLinePrefix(_ line: String) -> String {
+        let leading = line.prefix { $0 == " " || $0 == "\t" }
+        let rest = line.dropFirst(leading.count)
+        if rest.hasPrefix("-> ") {
+            return String(leading) + "[[arrow]] " + String(rest.dropFirst(3))
+        }
+        if rest.hasPrefix("=> ") {
+            return String(leading) + "\u{21D2} " + String(rest.dropFirst(3))
+        }
+        return line
     }
 
     private func convertHTML(at url: URL) async -> (title: String, content: String)? {
@@ -975,10 +1014,14 @@ final class NoteImportService {
                 // Link attribute — emit [[link|...]] and skip formatting
                 if let linkURL = attrs[.link] as? URL ?? (attrs[.link] as? String).flatMap(URL.init(string:)) {
                     let urlString = linkURL.absoluteString
-                    if substring == urlString || substring.isEmpty {
+                    let label = JotMarkupLiteral.replacingRawTokens(in: substring)
+                    if !Self.isSafeTokenField(urlString) || !Self.isSafeTokenField(label) {
+                        let readable = label.isEmpty ? urlString : "\(label) (\(urlString))"
+                        paraContent += JotMarkupLiteral.escapeIfNeeded(readable)
+                    } else if label == urlString || label.isEmpty {
                         paraContent += "[[link|\(urlString)]]"
                     } else {
-                        paraContent += "[[link|\(urlString)|\(substring)]]"
+                        paraContent += "[[link|\(urlString)|\(label)]]"
                     }
                     continue
                 }
@@ -1000,7 +1043,7 @@ final class NoteImportService {
                 }
 
                 // Nesting: bold/italic > underline > strikethrough > color
-                var wrapped = substring
+                var wrapped = JotMarkupLiteral.escapeIfNeeded(substring)
                 if let hex = colorHex { wrapped = "[[color|\(hex)]]\(wrapped)[[/color]]" }
                 if hasStrikethrough { wrapped = "[[s]]\(wrapped)[[/s]]" }
                 if hasUnderline { wrapped = "[[u]]\(wrapped)[[/u]]" }
@@ -1243,6 +1286,11 @@ final class NoteImportService {
         return CodeBlockData.supportedLanguages.contains(resolved) ? resolved : "plaintext"
     }
 
+    private static func normalizedMarkdownCodeBlockBody(_ raw: String) -> String {
+        guard raw.hasSuffix("\n") else { return raw }
+        return String(raw.dropLast())
+    }
+
     /// Map callout/admonition type aliases to CalloutData.CalloutType raw values.
     private static func normalizeCalloutType(_ raw: String) -> String? {
         let mapping: [String: String] = [
@@ -1315,31 +1363,4 @@ final class NoteImportService {
             .replacingOccurrences(of: "&quot;", with: "\"")
     }
 
-    /// Regex replacement helper — processes matches in reverse for safe mutation
-    private func replacePattern(
-        in string: String,
-        pattern: String,
-        transform: ([String]) -> String
-    ) -> String {
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return string }
-        let nsString = string as NSString
-        let range = NSRange(location: 0, length: nsString.length)
-        let matches = regex.matches(in: string, range: range)
-
-        var result = string
-        for match in matches.reversed() {
-            var groups: [String] = []
-            for i in 0..<match.numberOfRanges {
-                let r = match.range(at: i)
-                groups.append(
-                    r.location != NSNotFound ? nsString.substring(with: r) : ""
-                )
-            }
-            let replacement = transform(groups)
-            if let swiftRange = Range(match.range, in: result) {
-                result = result.replacingCharacters(in: swiftRange, with: replacement)
-            }
-        }
-        return result
-    }
 }

@@ -141,6 +141,12 @@ extension TodoEditorRepresentable.Coordinator {
                     lastWasWebClip = false
                     continue
                 }
+                if let literal = JotMarkupLiteral.consumeToken(in: text, at: index) {
+                    textBuffer += literal.decoded
+                    index = literal.end
+                    lastWasWebClip = false
+                    continue
+                }
                 if text[index...].hasPrefix("[x]") || text[index...].hasPrefix("[ ]") {
                     flushBuffer()
                     let isChecked = text[index...].hasPrefix("[x]")

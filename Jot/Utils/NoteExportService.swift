@@ -11,6 +11,7 @@ import os
 import PDFKit
 import UniformTypeIdentifiers
 import AppKit
+import WebKit
 
 /// Enum representing available export formats for notes
 enum NoteExportFormat: String, CaseIterable, Identifiable {
@@ -56,6 +57,16 @@ final class NoteExportService {
 
     private let logger = Logger(subsystem: "com.jot", category: "NoteExportService")
 
+    /// PDF/text thumbnails for `ExportFormatSheet` — ~2× usable sheet width, height matched to PDF page size (`buildPDFDataFromHTML` 612×792) so every format shares the same preview height.
+    private enum ExportSheetPreviewBitmap {
+        static let width: CGFloat = 666
+        private static let pdfPageWidth: CGFloat = 612
+        private static let pdfPageHeight: CGFloat = 792
+        static var size: CGSize {
+            CGSize(width: width, height: width * (pdfPageHeight / pdfPageWidth))
+        }
+    }
+
     private init() {}
 
     // MARK: - Public Export Methods
@@ -98,111 +109,61 @@ final class NoteExportService {
     /// Builds raw PDF Data for the given notes without triggering a save dialog.
     /// Returns nil if the PDF context could not be created.
     func buildPDFData(notes: [Note]) async -> Data? {
-        let pdfData = NSMutableData()
+        let html = buildHTMLString(notes: notes, title: exportTitle(for: notes), mode: .pdf)
 
-        // Page dimensions (US Letter)
-        let pageRect = CGRect(x: 0, y: 0, width: 612, height: 792)
-        let margins: CGFloat = 72 // 1 inch
-
-        guard let pdfConsumer = CGDataConsumer(data: pdfData),
-              let pdfContext = CGContext(consumer: pdfConsumer, mediaBox: nil, nil) else {
-            logger.error("buildPDFData: Failed to create PDF context")
+        do {
+            return try await buildPDFDataFromHTML(html)
+        } catch {
+            logger.error("buildPDFData: Failed to render PDF from HTML: \(error.localizedDescription)")
             return nil
         }
+    }
 
-        for note in notes {
-            pdfContext.beginPDFPage(nil)
-            pdfContext.saveGState()
-            pdfContext.concatenate(CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: 0, ty: pageRect.height))
-            let nsGraphicsContext = NSGraphicsContext(cgContext: pdfContext, flipped: true)
-            NSGraphicsContext.saveGraphicsState()
-            NSGraphicsContext.current = nsGraphicsContext
+    private func buildPDFDataFromHTML(_ html: String) async throws -> Data {
+        let pageSize = CGSize(width: 612, height: 792)
+        let webView = WKWebView(frame: CGRect(origin: .zero, size: pageSize))
 
-            // Extract image filenames from raw content, convert text to plain readable form
-            let (_, imageFilenames) = extractImages(from: note.content)
-            let cleanContent = convertMarkupToPlainText(note.content)
+        let loadDelegate = WebViewLoadDelegate()
+        webView.navigationDelegate = loadDelegate
+        try await loadDelegate.load(html, in: webView)
 
-            NSColor.white.setFill()
-            NSBezierPath(rect: pageRect).fill()
+        let heightScript = """
+        Math.ceil(Math.max(
+          document.body.scrollHeight,
+          document.documentElement.scrollHeight,
+          document.body.offsetHeight,
+          document.documentElement.offsetHeight
+        ))
+        """
+        let rawHeight = try await webView.evaluateJavaScript(heightScript)
+        let contentHeight = max(
+            pageSize.height,
+            CGFloat((rawHeight as? NSNumber)?.doubleValue ?? pageSize.height)
+        )
 
-            var yPosition: CGFloat = margins
+        let pageCount = max(1, Int(ceil(contentHeight / pageSize.height)))
+        let mergedDocument = PDFDocument()
 
-            // Draw title
-            let titleAttributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 24, weight: .bold),
-                .foregroundColor: NSColor.black
-            ]
-            let titleString = NSAttributedString(string: note.title, attributes: titleAttributes)
-            let titleRect = CGRect(x: margins, y: yPosition, width: pageRect.width - (margins * 2), height: 100)
-            titleString.draw(in: titleRect)
-            yPosition += titleString.size().height + 10
+        for pageIndex in 0..<pageCount {
+            let y = CGFloat(pageIndex) * pageSize.height
+            let remainingHeight = max(1, contentHeight - y)
+            let captureHeight = min(pageSize.height, remainingHeight)
+            let configuration = WKPDFConfiguration()
+            configuration.rect = CGRect(x: 0, y: y, width: pageSize.width, height: captureHeight)
 
-            // Draw date
-            let dateFormatter = DateFormatter()
-            dateFormatter.dateStyle = .long
-            dateFormatter.timeStyle = .short
-            let dateAttributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 12, weight: .regular),
-                .foregroundColor: NSColor.gray
-            ]
-            let dateString = NSAttributedString(string: dateFormatter.string(from: note.date), attributes: dateAttributes)
-            let dateRect = CGRect(x: margins, y: yPosition, width: pageRect.width - (margins * 2), height: 20)
-            dateString.draw(in: dateRect)
-            yPosition += dateString.size().height + 10
-
-            // Draw tags
-            if !note.tags.isEmpty {
-                let tagsString = note.tags.map { "#\($0)" }.joined(separator: " ")
-                let tagsAttributes: [NSAttributedString.Key: Any] = [
-                    .font: NSFont.systemFont(ofSize: 12, weight: .medium),
-                    .foregroundColor: NSColor.systemBlue
-                ]
-                let tagsAttrString = NSAttributedString(string: tagsString, attributes: tagsAttributes)
-                let tagsRect = CGRect(x: margins, y: yPosition, width: pageRect.width - (margins * 2), height: 20)
-                tagsAttrString.draw(in: tagsRect)
-                yPosition += tagsAttrString.size().height + 20
+            let pageData = try await webView.pdf(configuration: configuration)
+            guard let pageDocument = PDFDocument(data: pageData) else { continue }
+            for index in 0..<pageDocument.pageCount {
+                guard let page = pageDocument.page(at: index) else { continue }
+                mergedDocument.insert(page, at: mergedDocument.pageCount)
             }
-
-            // Draw content
-            let contentAttributes: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 14, weight: .regular),
-                .foregroundColor: NSColor.black
-            ]
-            let contentString = NSAttributedString(string: cleanContent, attributes: contentAttributes)
-            let contentRect = CGRect(x: margins, y: yPosition, width: pageRect.width - (margins * 2), height: pageRect.height - yPosition - margins)
-            contentString.draw(in: contentRect)
-            yPosition += contentString.boundingRect(with: contentRect.size, options: [.usesLineFragmentOrigin]).height + 20
-
-            // Draw images
-            for imageFilename in imageFilenames {
-                if let imageURL = ImageStorageManager.shared.getImageURL(for: imageFilename),
-                   let image = NSImage(contentsOf: imageURL) {
-
-                    let maxWidth = pageRect.width - (margins * 2)
-                    let aspectRatio = image.size.height / image.size.width
-                    let imageWidth = min(image.size.width, maxWidth)
-                    let imageHeight = imageWidth * aspectRatio
-
-                    if yPosition + imageHeight < pageRect.height - margins {
-                        let imageRect = CGRect(
-                            x: margins,
-                            y: yPosition,
-                            width: imageWidth,
-                            height: imageHeight
-                        )
-                        image.draw(in: imageRect)
-                        yPosition += imageHeight + 20
-                    }
-                }
-            }
-
-            NSGraphicsContext.restoreGraphicsState()
-            pdfContext.restoreGState()
-            pdfContext.endPDFPage()
         }
 
-        pdfContext.closePDF()
-        return pdfData as Data
+        guard let data = mergedDocument.dataRepresentation(), mergedDocument.pageCount > 0 else {
+            throw PDFExportError.emptyPDF
+        }
+
+        return data
     }
 
     /// Generates a Retina-quality thumbnail image of the first page of a note's PDF representation.
@@ -210,8 +171,7 @@ final class NoteExportService {
         guard let data = await buildPDFData(notes: [note]),
               let pdfDoc = PDFDocument(data: data),
               let page = pdfDoc.page(at: 0) else { return nil }
-        // 2× of 228×337 for Retina sharpness
-        return page.thumbnail(of: CGSize(width: 456, height: 674), for: .mediaBox)
+        return page.thumbnail(of: ExportSheetPreviewBitmap.size, for: .mediaBox)
     }
 
     /// Generates a format-aware preview thumbnail for the export sheet.
@@ -234,30 +194,34 @@ final class NoteExportService {
     }
 
     @MainActor private func generateTextPreviewImage(_ text: String) -> NSImage? {
-        generateTextPreviewImage(text, size: CGSize(width: 456, height: 674))
+        generateTextPreviewImage(text, size: ExportSheetPreviewBitmap.size)
     }
 
     @MainActor private func generateTextPreviewImage(_ text: String, size: CGSize) -> NSImage? {
         let image = NSImage(size: size)
-        image.lockFocus()
-        NSColor.white.setFill()
-        NSBezierPath(rect: NSRect(origin: .zero, size: size)).fill()
-        let margin: CGFloat = size.width * 0.05
-        let fontSize: CGFloat = size.width * 0.017
-        let font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
-        let paragraphStyle = NSMutableParagraphStyle()
-        paragraphStyle.lineBreakMode = .byWordWrapping
-        paragraphStyle.lineSpacing = 1
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: font,
-            .foregroundColor: NSColor(red: 0.15, green: 0.15, blue: 0.15, alpha: 1.0),
-            .paragraphStyle: paragraphStyle
-        ]
-        (text as NSString).draw(
-            in: NSRect(x: margin, y: margin, width: size.width - margin * 2, height: size.height - margin * 2),
-            withAttributes: attrs
-        )
-        image.unlockFocus()
+        // Offscreen “paper” preview — resolve label under light appearance so text stays dark on white in dark mode.
+        let lightAppearance = NSAppearance(named: .aqua) ?? NSAppearance.currentDrawing()
+        lightAppearance.performAsCurrentDrawingAppearance {
+            image.lockFocus()
+            NSColor.white.setFill()
+            NSBezierPath(rect: NSRect(origin: .zero, size: size)).fill()
+            let margin: CGFloat = size.width * 0.05
+            let fontSize: CGFloat = size.width * 0.017
+            let font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+            let paragraphStyle = NSMutableParagraphStyle()
+            paragraphStyle.lineBreakMode = .byWordWrapping
+            paragraphStyle.lineSpacing = 1
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: font,
+                .foregroundColor: NSColor.labelColor,
+                .paragraphStyle: paragraphStyle
+            ]
+            (text as NSString).draw(
+                in: NSRect(x: margin, y: margin, width: size.width - margin * 2, height: size.height - margin * 2),
+                withAttributes: attrs
+            )
+            image.unlockFocus()
+        }
         return image
     }
 
@@ -274,28 +238,29 @@ final class NoteExportService {
 
     /// Builds a Markdown string for the given notes without any I/O.
     func buildMarkdownString(notes: [Note]) -> String {
-        var markdown = ""
-
-        for (index, note) in notes.enumerated() {
-            if index > 0 {
-                markdown += "\n\n---\n\n"
-            }
-
-            markdown += "# \(note.title)\n\n"
-
-            let dateFormatter = DateFormatter()
-            dateFormatter.dateStyle = .long
-            dateFormatter.timeStyle = .short
-            markdown += "*\(dateFormatter.string(from: note.date))*\n\n"
+        let documents = notes.map { note in
+            var parts: [String] = [
+                "# \(markdownEscapedInlineText(note.title))",
+                "*\(exportDateString(note.date))*",
+            ]
 
             if !note.tags.isEmpty {
-                markdown += "**Tags:** \(note.tags.map { "#\($0)" }.joined(separator: " "))\n\n"
+                let tags = note.tags
+                    .map { "#\(markdownEscapedInlineText($0))" }
+                    .joined(separator: " ")
+                parts.append("**Tags:** \(tags)")
             }
 
-            markdown += convertMarkupToMarkdown(note.content) + "\n\n"
+            let body = convertMarkupToMarkdown(note.content)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !body.isEmpty {
+                parts.append(body)
+            }
+
+            return parts.joined(separator: "\n\n")
         }
 
-        return markdown
+        return documents.joined(separator: "\n\n---\n\n") + "\n"
     }
 
     // MARK: - HTML Export
@@ -311,6 +276,22 @@ final class NoteExportService {
 
     /// Builds an HTML string for the given notes without any I/O.
     func buildHTMLString(notes: [Note], title: String = "Notes") -> String {
+        buildHTMLString(notes: notes, title: title, mode: .html)
+    }
+
+    private enum HTMLExportMode {
+        case html
+        case pdf
+
+        var bodyClass: String {
+            switch self {
+            case .html: return "export-html"
+            case .pdf: return "export-pdf"
+            }
+        }
+    }
+
+    private func buildHTMLString(notes: [Note], title: String, mode: HTMLExportMode) -> String {
         var html = """
         <!DOCTYPE html>
         <html>
@@ -319,60 +300,112 @@ final class NoteExportService {
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title>\(NoteMarkupHTMLRenderer.escapeHTML(title))</title>
             <style>
+                @page {
+                    size: 612px 792px;
+                    margin: 0;
+                }
+                * {
+                    box-sizing: border-box;
+                }
                 body {
                     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+                    line-height: 1.58;
+                    color: #1a1a1a;
+                    background: #fff;
+                    margin: 0;
+                    padding: 0;
+                    -webkit-print-color-adjust: exact;
+                    print-color-adjust: exact;
+                }
+                body.export-html {
                     max-width: 800px;
                     margin: 40px auto;
                     padding: 20px;
-                    line-height: 1.6;
-                    color: #333;
                 }
-                h1 {
+                body.export-pdf {
+                    width: 612px;
+                    overflow: visible;
+                }
+                .export-note {
+                    break-inside: avoid-page;
+                    page-break-inside: avoid;
+                }
+                .export-pdf .export-note {
+                    width: 612px;
+                    padding: 56px 64px;
+                }
+                .export-html .export-note {
+                    margin-bottom: 30px;
+                }
+                .export-note + .export-note {
+                    margin-top: 40px;
+                }
+                .export-pdf .export-note + .export-note {
+                    border-top: 1px solid rgba(0, 0, 0, 0.12);
+                }
+                .export-title {
                     color: #000;
-                    margin-bottom: 10px;
+                    font-size: 30px;
+                    line-height: 1.15;
+                    letter-spacing: 0;
+                    margin: 0 0 12px;
                 }
                 .date {
-                    color: #666;
+                    color: rgba(26, 26, 26, 0.62);
                     font-size: 14px;
-                    margin-bottom: 20px;
+                    margin-bottom: 16px;
                 }
                 .tags {
-                    margin-bottom: 20px;
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 6px;
+                    margin-bottom: 18px;
                 }
                 .tag {
                     display: inline-block;
-                    background: #e3f2fd;
-                    color: #1976d2;
-                    padding: 4px 12px;
-                    border-radius: 16px;
-                    font-size: 14px;
-                    margin-right: 8px;
+                    background: rgba(37, 99, 235, 0.10);
+                    color: #2563eb;
+                    padding: 4px 10px;
+                    border-radius: 999px;
+                    font-size: 12px;
+                    font-weight: 600;
                 }
                 .content {
-                    margin-bottom: 30px;
+                    margin-top: 0;
                 }
-                hr {
+                .note-separator {
                     border: none;
-                    border-top: 1px solid #ddd;
+                    border-top: 1px solid rgba(0, 0, 0, 0.12);
                     margin: 40px 0;
+                }
+                .export-pdf .note-separator {
+                    display: none;
+                }
+                .note-markup pre,
+                .note-markup table,
+                .note-markup blockquote,
+                .note-markup .callout,
+                .note-markup .code-block,
+                .note-markup .image-block,
+                .note-markup .cards-card,
+                .note-markup .tabs-section {
+                    break-inside: avoid-page;
+                    page-break-inside: avoid;
                 }
                 \(NoteMarkupHTMLRenderer.sharedStyles(for: .export))
             </style>
         </head>
-        <body>
+        <body class="\(mode.bodyClass)">
         """
 
         for (index, note) in notes.enumerated() {
             if index > 0 {
-                html += "<hr>\n"
+                html += "<hr class=\"note-separator\">\n"
             }
 
-            html += "<h1>\(NoteMarkupHTMLRenderer.escapeHTML(note.title))</h1>\n"
-
-            let dateFormatter = DateFormatter()
-            dateFormatter.dateStyle = .long
-            dateFormatter.timeStyle = .short
-            html += "<div class=\"date\">\(dateFormatter.string(from: note.date))</div>\n"
+            html += "<article class=\"export-note\">\n"
+            html += "<h1 class=\"export-title\">\(NoteMarkupHTMLRenderer.escapeHTML(note.title))</h1>\n"
+            html += "<div class=\"date\">\(NoteMarkupHTMLRenderer.escapeHTML(exportDateString(note.date)))</div>\n"
 
             if !note.tags.isEmpty {
                 html += "<div class=\"tags\">\n"
@@ -383,6 +416,7 @@ final class NoteExportService {
             }
 
             html += "<div class=\"content note-markup\">\(convertMarkupToHTML(note.content))</div>\n"
+            html += "</article>\n"
         }
 
         html += """
@@ -402,172 +436,32 @@ final class NoteExportService {
     }
 
     func buildPlainTextString(notes: [Note]) -> String {
-        var result = ""
-        for (index, note) in notes.enumerated() {
-            if index > 0 { result += "\n\n---\n\n" }
-            result += note.title + "\n\n"
-            result += convertMarkupToPlainText(note.content)
+        let documents = notes.map { note in
+            var parts = [note.title, exportDateString(note.date)]
+            if !note.tags.isEmpty {
+                parts.append("Tags: \(note.tags.map { "#\($0)" }.joined(separator: " "))")
+            }
+            let body = convertMarkupToPlainText(note.content)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !body.isEmpty {
+                parts.append(body)
+            }
+            return parts.joined(separator: "\n\n")
         }
-        return result
+
+        return documents.joined(separator: "\n\n---\n\n")
     }
 
     // MARK: - Markup Conversion Engine
 
     /// Convert serialized [[...]] markup to plain text (strip all formatting)
     func convertMarkupToPlainText(_ content: String) -> String {
-        // Strip AI metadata block — it's internal persistence, not user content
-        var text = NoteDetailView.stripAIBlock(content).content
-        // Strip formatting tag pairs
-        let tagPairs = ["b", "i", "u", "s", "h1", "h2", "h3", "code", "ic", "quote"]
-        for tag in tagPairs {
-            text = text.replacingOccurrences(of: "[[\(tag)]]", with: "")
-            text = text.replacingOccurrences(of: "[[/\(tag)]]", with: "")
-        }
-        // Strip align tags
-        if let regex = try? NSRegularExpression(pattern: #"\[\[align:[a-z]+\]\]"#) {
-            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "")
-        }
-        text = text.replacingOccurrences(of: "[[/align]]", with: "")
-        // Strip color tags
-        if let regex = try? NSRegularExpression(pattern: #"\[\[color\|[0-9a-fA-F]{6}\]\]"#) {
-            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "")
-        }
-        text = text.replacingOccurrences(of: "[[/color]]", with: "")
-        // Strip highlight tags
-        if let regex = try? NSRegularExpression(pattern: #"\[\[hl\|[0-9a-fA-F]{6}\]\]"#) {
-            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "")
-        }
-        text = text.replacingOccurrences(of: "[[/hl]]", with: "")
-        text = text.replacingOccurrences(of: "[[arrow]]", with: "\u{2192}")
-        // Convert ordered list prefixes to "N. "
-        if let regex = try? NSRegularExpression(pattern: #"\[\[ol\|(\d+)\]\]"#) {
-            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "$1. ")
-        }
-        // Convert checkboxes
-        text = text.replacingOccurrences(of: "[x] ", with: "[done] ")
-        text = text.replacingOccurrences(of: "[ ] ", with: "[todo] ")
-        // Convert dividers
-        text = text.replacingOccurrences(of: "[[divider]]", with: "---")
-        // Convert links (labeled two-pipe form first, then bare single-pipe URL)
-        if let regex = try? NSRegularExpression(pattern: #"\[\[link\|([^|\]]+)\|([^\]]+)\]\]"#) {
-            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "$2 ($1)")
-        }
-        if let regex = try? NSRegularExpression(pattern: #"\[\[link\|([^\]]+)\]\]"#) {
-            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "$1")
-        }
-        // Convert images to placeholder
-        if let regex = try? NSRegularExpression(pattern: #"\[\[image\|\|\|[^\]]+\]\]"#) {
-            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "[Image]")
-        }
-        if let regex = try? NSRegularExpression(pattern: #"\[\[map\|([^|]*)\|[^\]]+\]\]"#) {
-            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "[Map: $1]")
-        }
-        // Convert file attachments to placeholder
-        if let regex = try? NSRegularExpression(pattern: #"\[\[file\|[^|]+\|([^|]+)\|[^\]]*\]\]"#) {
-            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "[File: $1]")
-        }
-        // Convert web clips
-        if let regex = try? NSRegularExpression(pattern: #"\[\[webclip\|([^|]*)\|([^|]*)\|[^|]*\|[^\]]*\]\]"#) {
-            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "$2 ($1)")
-        }
-        // Convert link cards
-        if let regex = try? NSRegularExpression(pattern: #"\[\[linkcard\|([^|]*)\|([^|]*)\|([^\]]*)\]\]"#) {
-            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "$1 ($3)")
-        }
-        // Strip table markup (just show raw cell text)
-        if let regex = try? NSRegularExpression(pattern: #"\[\[table\|[^\]]*\]\]"#) {
-            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "[Table]")
-        }
-        return text
+        MarkupTextExporter(format: .plainText).render(content)
     }
 
     /// Convert serialized [[...]] markup to Markdown
     func convertMarkupToMarkdown(_ content: String) -> String {
-        // Strip AI metadata block — it's internal persistence, not user content
-        var text = NoteDetailView.stripAIBlock(content).content
-        // Headings — must be converted BEFORE stripping inline tags
-        text = text.replacingOccurrences(of: "[[h1]]", with: "# ")
-        text = text.replacingOccurrences(of: "[[/h1]]", with: "")
-        text = text.replacingOccurrences(of: "[[h2]]", with: "## ")
-        text = text.replacingOccurrences(of: "[[/h2]]", with: "")
-        text = text.replacingOccurrences(of: "[[h3]]", with: "### ")
-        text = text.replacingOccurrences(of: "[[/h3]]", with: "")
-        // Bold / italic / strikethrough
-        text = text.replacingOccurrences(of: "[[b]]", with: "**")
-        text = text.replacingOccurrences(of: "[[/b]]", with: "**")
-        text = text.replacingOccurrences(of: "[[i]]", with: "*")
-        text = text.replacingOccurrences(of: "[[/i]]", with: "*")
-        text = text.replacingOccurrences(of: "[[s]]", with: "~~")
-        text = text.replacingOccurrences(of: "[[/s]]", with: "~~")
-        // Underline has no markdown equivalent — strip
-        text = text.replacingOccurrences(of: "[[u]]", with: "")
-        text = text.replacingOccurrences(of: "[[/u]]", with: "")
-        // Inline code — before block [[code]] (ic is a prefix of code).
-        text = text.replacingOccurrences(of: "[[ic]]", with: "`")
-        text = text.replacingOccurrences(of: "[[/ic]]", with: "`")
-        // Code blocks
-        text = text.replacingOccurrences(of: "[[code]]", with: "```\n")
-        text = text.replacingOccurrences(of: "[[/code]]", with: "\n```")
-        // Block quotes — convert to "> " prefix per line
-        text = text.replacingOccurrences(of: "[[quote]]", with: "> ")
-        text = text.replacingOccurrences(of: "[[/quote]]", with: "")
-        // Figma inline arrow — markdown `-> `.
-        text = text.replacingOccurrences(of: "[[arrow]]", with: "-> ")
-        // Ordered list prefix
-        if let regex = try? NSRegularExpression(pattern: #"\[\[ol\|(\d+)\]\]"#) {
-            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "$1. ")
-        }
-        // Checkboxes
-        text = text.replacingOccurrences(of: "[x] ", with: "- [x] ")
-        text = text.replacingOccurrences(of: "[ ] ", with: "- [ ] ")
-        // Dividers
-        text = text.replacingOccurrences(of: "[[divider]]", with: "\n---\n")
-        // Links — labeled first so single-pipe bare links do not mis-parse.
-        if let regex = try? NSRegularExpression(pattern: #"\[\[link\|([^|\]]+)\|([^\]]+)\]\]"#) {
-            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "[$2]($1)")
-        }
-        if let regex = try? NSRegularExpression(pattern: #"\[\[link\|([^\]]+)\]\]"#) {
-            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "[$1]($1)")
-        }
-        // Images
-        if let regex = try? NSRegularExpression(pattern: #"\[\[image\|\|\|([^\]|]+)(?:\|\|\|[0-9]*\.?[0-9]+)?\]\]"#) {
-            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "![Image]($1)")
-        }
-        if let regex = try? NSRegularExpression(pattern: #"\[\[map\|([^|]*)\|[^\]]+\]\]"#) {
-            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "[Map: $1]")
-        }
-        // File attachments
-        if let regex = try? NSRegularExpression(pattern: #"\[\[file\|[^|]+\|([^|]+)\|[^\]]*\]\]"#) {
-            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "[$1]")
-        }
-        // Web clips
-        if let regex = try? NSRegularExpression(pattern: #"\[\[webclip\|([^|]*)\|([^|]*)\|[^|]*\|[^\]]*\]\]"#) {
-            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "[$2]($1)")
-        }
-        // Link cards
-        if let regex = try? NSRegularExpression(pattern: #"\[\[linkcard\|([^|]*)\|([^|]*)\|([^\]]*)\]\]"#) {
-            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "[$1]($3)")
-        }
-        // Strip alignment (no markdown equivalent)
-        if let regex = try? NSRegularExpression(pattern: #"\[\[align:[a-z]+\]\]"#) {
-            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "")
-        }
-        text = text.replacingOccurrences(of: "[[/align]]", with: "")
-        // Strip color (no markdown equivalent)
-        if let regex = try? NSRegularExpression(pattern: #"\[\[color\|[0-9a-fA-F]{6}\]\]"#) {
-            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "")
-        }
-        text = text.replacingOccurrences(of: "[[/color]]", with: "")
-        // Strip highlight (no markdown equivalent)
-        if let regex = try? NSRegularExpression(pattern: #"\[\[hl\|[0-9a-fA-F]{6}\]\]"#) {
-            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "")
-        }
-        text = text.replacingOccurrences(of: "[[/hl]]", with: "")
-        // Table markup
-        if let regex = try? NSRegularExpression(pattern: #"\[\[table\|[^\]]*\]\]"#) {
-            text = regex.stringByReplacingMatches(in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "[Table]")
-        }
-        return text
+        MarkupTextExporter(format: .markdown).render(content)
     }
 
     /// Convert serialized [[...]] markup to HTML
@@ -575,37 +469,646 @@ final class NoteExportService {
         NoteMarkupHTMLRenderer.renderFragment(content, context: .export)
     }
 
-    // MARK: - Helper Methods
+    private func exportTitle(for notes: [Note]) -> String {
+        if notes.count == 1, let title = notes.first?.title, !title.isEmpty {
+            return title
+        }
+        return "Notes Export"
+    }
 
-    /// Extract image references from note content
-    /// Returns tuple of (clean content without image tags, array of image filenames)
-    private func extractImages(from content: String) -> (String, [String]) {
-        let pattern = #"\[\[image\|\|\|([^\]]+)\]\]"#
+    private func exportDateString(_ date: Date) -> String {
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateStyle = .long
+        dateFormatter.timeStyle = .short
+        return dateFormatter.string(from: date)
+    }
 
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else {
-            return (content, [])
+    private func markdownEscapedInlineText(_ text: String) -> String {
+        Self.markdownEscapedInlineText(text)
+    }
+
+    private static func markdownEscapedInlineText(_ text: String) -> String {
+        JotMarkupLiteral.replacingRawTokens(in: text)
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "[", with: "\\[")
+            .replacingOccurrences(of: "]", with: "\\]")
+    }
+
+    private struct MarkupTextExporter {
+        enum Format {
+            case markdown
+            case plainText
         }
 
-        var imageFilenames: [String] = []
-        let matches = regex.matches(in: content, options: [], range: NSRange(content.startIndex..., in: content))
+        let format: Format
 
-        for match in matches {
-            if let range = Range(match.range(at: 1), in: content) {
-                let filename = String(content[range])
-                imageFilenames.append(filename)
+        func render(_ content: String) -> String {
+            let source = NoteDetailView.stripAIBlock(content).content
+                .replacingOccurrences(of: "\r\n", with: "\n")
+                .replacingOccurrences(of: "\r", with: "\n")
+            return renderBlocks(source).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        private func renderBlocks(_ content: String) -> String {
+            guard !content.isEmpty else { return "" }
+
+            let lines = content.components(separatedBy: "\n")
+            var index = 0
+            var output: [String] = []
+
+            func append(_ block: String) {
+                let trimmed = block.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else {
+                    if output.last != "" {
+                        output.append("")
+                    }
+                    return
+                }
+                output.append(trimmed)
+            }
+
+            while index < lines.count {
+                if let block = gatherDelimitedBlock(
+                    from: lines,
+                    start: index,
+                    openPrefix: "[[codeblock|",
+                    closeMarker: "[[/codeblock]]"
+                ) {
+                    append(renderCodeBlock(block.blockText))
+                    index = block.nextIndex
+                    continue
+                }
+
+                if let block = gatherDelimitedBlock(
+                    from: lines,
+                    start: index,
+                    openPrefix: "[[code]]",
+                    closeMarker: "[[/code]]"
+                ) {
+                    append(renderLegacyCodeBlock(block.blockText))
+                    index = block.nextIndex
+                    continue
+                }
+
+                if let block = gatherDelimitedBlock(
+                    from: lines,
+                    start: index,
+                    openPrefix: "[[table|",
+                    closeMarker: "[[/table]]"
+                ) {
+                    append(renderTable(block.blockText))
+                    index = block.nextIndex
+                    continue
+                }
+
+                if let block = gatherDelimitedBlock(
+                    from: lines,
+                    start: index,
+                    openPrefix: "[[callout|",
+                    closeMarker: "[[/callout]]"
+                ) {
+                    append(renderCallout(block.blockText))
+                    index = block.nextIndex
+                    continue
+                }
+
+                if let block = gatherDelimitedBlock(
+                    from: lines,
+                    start: index,
+                    openPrefix: "[[cards|",
+                    closeMarker: "[[/cards]]"
+                ) {
+                    append(renderCards(block.blockText))
+                    index = block.nextIndex
+                    continue
+                }
+
+                if let block = gatherDelimitedBlock(
+                    from: lines,
+                    start: index,
+                    openPrefix: "[[tabs|",
+                    closeMarker: "[[/tabs]]"
+                ) {
+                    append(renderTabs(block.blockText))
+                    index = block.nextIndex
+                    continue
+                }
+
+                append(renderLine(lines[index]))
+                index += 1
+            }
+
+            return output
+                .joined(separator: "\n")
+                .replacingOccurrences(of: "\n\n\n+", with: "\n\n", options: .regularExpression)
+        }
+
+        private func renderLine(_ rawLine: String) -> String {
+            let (line, _) = unwrapAlignment(rawLine)
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+
+            guard !trimmed.isEmpty else { return "" }
+
+            if trimmed == "[[divider]]" {
+                return "---"
+            }
+
+            if line.hasPrefix("[[quote]]"), line.hasSuffix("[[/quote]]") {
+                let inner = String(line.dropFirst(9).dropLast(10))
+                let body = renderInline(inner)
+                return format == .markdown ? "> \(body)" : body
+            }
+
+            if let heading = renderHeading(line) {
+                return heading
+            }
+
+            if let list = renderListLine(line) {
+                return list
+            }
+
+            return renderInline(line)
+        }
+
+        private func renderHeading(_ line: String) -> String? {
+            let mappings: [(String, String, String)] = [
+                ("[[h1]]", "[[/h1]]", format == .markdown ? "## " : ""),
+                ("[[h2]]", "[[/h2]]", format == .markdown ? "### " : ""),
+                ("[[h3]]", "[[/h3]]", format == .markdown ? "#### " : ""),
+            ]
+
+            for (open, close, prefix) in mappings where line.hasPrefix(open) && line.hasSuffix(close) {
+                let innerStart = line.index(line.startIndex, offsetBy: open.count)
+                let innerEnd = line.index(line.endIndex, offsetBy: -close.count)
+                return prefix + renderInline(String(line[innerStart..<innerEnd]))
+            }
+
+            return nil
+        }
+
+        private func renderListLine(_ line: String) -> String? {
+            let leading = line.prefix { $0 == " " || $0 == "\t" }
+            let indentWidth = leading.reduce(0) { $0 + ($1 == "\t" ? 2 : 1) }
+            let indent = String(repeating: " ", count: format == .markdown ? indentWidth : 0)
+            let stripped = String(line.dropFirst(leading.count))
+
+            if stripped.hasPrefix("[x] ") {
+                let body = renderInline(String(stripped.dropFirst(4)))
+                return format == .markdown ? "\(indent)- [x] \(body)" : "[done] \(body)"
+            }
+            if stripped == "[x]" {
+                return format == .markdown ? "\(indent)- [x]" : "[done]"
+            }
+            if stripped.hasPrefix("[ ] ") {
+                let body = renderInline(String(stripped.dropFirst(4)))
+                return format == .markdown ? "\(indent)- [ ] \(body)" : "[todo] \(body)"
+            }
+            if stripped == "[ ]" {
+                return format == .markdown ? "\(indent)- [ ]" : "[todo]"
+            }
+
+            for marker in ["• ", "- ", "* ", "+ "] where stripped.hasPrefix(marker) {
+                let body = renderInline(String(stripped.dropFirst(2)))
+                return format == .markdown ? "\(indent)- \(body)" : "- \(body)"
+            }
+
+            if stripped.hasPrefix("[[ol|"), let closeRange = stripped.range(of: "]]") {
+                let numberStart = stripped.index(stripped.startIndex, offsetBy: 5)
+                let number = String(stripped[numberStart..<closeRange.lowerBound])
+                let body = renderInline(String(stripped[closeRange.upperBound...]))
+                return "\(indent)\(number). \(body)"
+            }
+
+            return nil
+        }
+
+        private func renderCodeBlock(_ blockText: String) -> String {
+            guard let codeBlock = CodeBlockData.deserialize(from: blockText) else {
+                return format == .markdown ? "```text\nUnsupported code block\n```" : "Unsupported code block"
+            }
+
+            switch format {
+            case .markdown:
+                let language = codeBlock.language == "plaintext" ? "" : codeBlock.language
+                let fence = codeFence(for: codeBlock.code)
+                return "\(fence)\(language)\n\(codeBlock.code)\n\(fence)"
+            case .plainText:
+                return codeBlock.code
             }
         }
 
-        // Remove image tags from content
-        let cleanContent = regex.stringByReplacingMatches(
-            in: content,
-            options: [],
-            range: NSRange(content.startIndex..., in: content),
-            withTemplate: "[Image]"
-        )
+        private func renderLegacyCodeBlock(_ blockText: String) -> String {
+            guard let openRange = blockText.range(of: "[[code]]"),
+                  let closeRange = blockText.range(of: "[[/code]]") else {
+                return ""
+            }
+            let code = String(blockText[openRange.upperBound..<closeRange.lowerBound])
+            switch format {
+            case .markdown:
+                let fence = codeFence(for: code)
+                return "\(fence)\n\(code)\n\(fence)"
+            case .plainText:
+                return code
+            }
+        }
 
-        return (cleanContent, imageFilenames)
+        private func renderTable(_ blockText: String) -> String {
+            guard let table = NoteTableData.deserialize(from: blockText) else {
+                return format == .markdown ? "[Unsupported table]" : "Unsupported table"
+            }
+
+            switch format {
+            case .markdown:
+                let rows = table.cells
+                guard let header = rows.first else { return "" }
+                let headerLine = markdownTableRow(header)
+                let divider = "| " + Array(repeating: "---", count: max(1, table.columns)).joined(separator: " | ") + " |"
+                let body = rows.dropFirst().map(markdownTableRow).joined(separator: "\n")
+                return [headerLine, divider, body]
+                    .filter { !$0.isEmpty }
+                    .joined(separator: "\n")
+            case .plainText:
+                return table.cells
+                    .map { row in row.map(plainTableCell).joined(separator: "\t") }
+                    .joined(separator: "\n")
+            }
+        }
+
+        private func markdownTableRow(_ row: [String]) -> String {
+            "| " + row.map(markdownTableCell).joined(separator: " | ") + " |"
+        }
+
+        private func markdownTableCell(_ value: String) -> String {
+            let decoded = JotMarkupLiteral.replacingRawTokens(in: value)
+                .replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "|", with: "\\|")
+                .replacingOccurrences(of: "\n", with: "<br>")
+            return decoded.isEmpty ? " " : decoded
+        }
+
+        private func plainTableCell(_ value: String) -> String {
+            JotMarkupLiteral.replacingRawTokens(in: value)
+                .replacingOccurrences(of: "\n", with: " / ")
+        }
+
+        private func renderCallout(_ blockText: String) -> String {
+            guard let callout = CalloutData.deserialize(from: blockText) else {
+                return format == .markdown ? "> [!note]\n> Unsupported callout" : "Unsupported callout"
+            }
+
+            let body = renderBlocks(callout.content)
+            switch format {
+            case .markdown:
+                let prefix = "> [!\(callout.type.rawValue)]"
+                let bodyLines = body.components(separatedBy: "\n").map { line in
+                    line.isEmpty ? ">" : "> \(line)"
+                }
+                return ([prefix] + bodyLines).joined(separator: "\n")
+            case .plainText:
+                return "\(callout.type.rawValue.capitalized)\n\(body)"
+            }
+        }
+
+        private func renderCards(_ blockText: String) -> String {
+            guard let cards = CardSectionData.deserialize(from: blockText) else {
+                return format == .markdown ? "[Unsupported cards]" : "Unsupported cards"
+            }
+
+            var rendered: [String] = []
+            for (columnIndex, column) in cards.columns.enumerated() {
+                for (cardIndex, card) in column.enumerated() {
+                    let title = "Card \(columnIndex + 1).\(cardIndex + 1)"
+                    let body = renderBlocks(card.content)
+                    switch format {
+                    case .markdown:
+                        rendered.append("#### \(title)\n\(body)")
+                    case .plainText:
+                        rendered.append("\(title)\n\(body)")
+                    }
+                }
+            }
+            return rendered.joined(separator: "\n\n")
+        }
+
+        private func renderTabs(_ blockText: String) -> String {
+            guard let tabs = TabsContainerData.deserialize(from: blockText) else {
+                return format == .markdown ? "[Unsupported tabs]" : "Unsupported tabs"
+            }
+
+            return tabs.panes.map { pane in
+                let body = renderBlocks(pane.content)
+                switch format {
+                case .markdown:
+                    return "#### Tab: \(Self.markdownEscapedInlineText(pane.name))\n\(body)"
+                case .plainText:
+                    return "Tab: \(pane.name)\n\(body)"
+                }
+            }
+            .joined(separator: "\n\n")
+        }
+
+        private func renderInline(_ text: String) -> String {
+            guard !text.isEmpty else { return "" }
+
+            var output = ""
+            var index = text.startIndex
+
+            while index < text.endIndex {
+                let remaining = text[index...]
+
+                if let literal = JotMarkupLiteral.consumeToken(in: text, at: index) {
+                    output += escapedText(literal.decoded)
+                    index = literal.end
+                    continue
+                }
+
+                if remaining.hasPrefix("[[b]]") {
+                    output += format == .markdown ? "**" : ""
+                    index = text.index(index, offsetBy: 5)
+                    continue
+                }
+                if remaining.hasPrefix("[[/b]]") {
+                    output += format == .markdown ? "**" : ""
+                    index = text.index(index, offsetBy: 6)
+                    continue
+                }
+                if remaining.hasPrefix("[[i]]") {
+                    output += format == .markdown ? "*" : ""
+                    index = text.index(index, offsetBy: 5)
+                    continue
+                }
+                if remaining.hasPrefix("[[/i]]") {
+                    output += format == .markdown ? "*" : ""
+                    index = text.index(index, offsetBy: 6)
+                    continue
+                }
+                if remaining.hasPrefix("[[s]]") {
+                    output += format == .markdown ? "~~" : ""
+                    index = text.index(index, offsetBy: 5)
+                    continue
+                }
+                if remaining.hasPrefix("[[/s]]") {
+                    output += format == .markdown ? "~~" : ""
+                    index = text.index(index, offsetBy: 6)
+                    continue
+                }
+                if remaining.hasPrefix("[[u]]") {
+                    index = text.index(index, offsetBy: 5)
+                    continue
+                }
+                if remaining.hasPrefix("[[/u]]") {
+                    index = text.index(index, offsetBy: 6)
+                    continue
+                }
+                if remaining.hasPrefix("[[ic]]") {
+                    let contentStart = text.index(index, offsetBy: 6)
+                    if let close = text[contentStart...].range(of: "[[/ic]]") {
+                        let inner = JotMarkupLiteral.replacingRawTokens(in: String(text[contentStart..<close.lowerBound]))
+                        output += format == .markdown ? markdownCodeSpan(inner) : inner
+                        index = close.upperBound
+                    } else {
+                        output += escapedText("[[ic]]")
+                        index = contentStart
+                    }
+                    continue
+                }
+                if remaining.hasPrefix("[[/ic]]") {
+                    output += escapedText("[[/ic]]")
+                    index = text.index(index, offsetBy: 7)
+                    continue
+                }
+                if remaining.hasPrefix("[[arrow]]") {
+                    output += format == .markdown ? "->" : "\u{2192}"
+                    index = text.index(index, offsetBy: 9)
+                    continue
+                }
+                if remaining.hasPrefix("[[color|"), let close = remaining.range(of: "]]") {
+                    index = close.upperBound
+                    continue
+                }
+                if remaining.hasPrefix("[[/color]]") {
+                    index = text.index(index, offsetBy: 10)
+                    continue
+                }
+                if remaining.hasPrefix("[[hl|"), let close = remaining.range(of: "]]") {
+                    index = close.upperBound
+                    continue
+                }
+                if remaining.hasPrefix("[[/hl]]") {
+                    index = text.index(index, offsetBy: 7)
+                    continue
+                }
+                if remaining.hasPrefix("[[link|"), let close = remaining.range(of: "]]") {
+                    let body = String(remaining[remaining.index(remaining.startIndex, offsetBy: 7)..<close.lowerBound])
+                    output += renderLinkToken(body)
+                    index = close.upperBound
+                    continue
+                }
+                if remaining.hasPrefix("[[notelink|"), let close = remaining.range(of: "]]") {
+                    let body = String(remaining[remaining.index(remaining.startIndex, offsetBy: 11)..<close.lowerBound])
+                    output += renderNoteLinkToken(body)
+                    index = close.upperBound
+                    continue
+                }
+                if remaining.hasPrefix("[[webclip|"), let close = remaining.range(of: "]]") {
+                    let body = String(remaining[remaining.index(remaining.startIndex, offsetBy: 10)..<close.lowerBound])
+                    output += renderWebClipToken(body)
+                    index = close.upperBound
+                    continue
+                }
+                if remaining.hasPrefix("[[linkcard|"), let close = remaining.range(of: "]]") {
+                    let body = String(remaining[remaining.index(remaining.startIndex, offsetBy: 11)..<close.lowerBound])
+                    output += renderLinkCardToken(body)
+                    index = close.upperBound
+                    continue
+                }
+                if remaining.hasPrefix("[[filelink|"), let close = remaining.range(of: "]]") {
+                    let body = String(remaining[remaining.index(remaining.startIndex, offsetBy: 11)..<close.lowerBound])
+                    output += renderFileLinkToken(body)
+                    index = close.upperBound
+                    continue
+                }
+                if remaining.hasPrefix("[[file|"), let close = remaining.range(of: "]]") {
+                    let body = String(remaining[remaining.index(remaining.startIndex, offsetBy: 7)..<close.lowerBound])
+                    output += renderFileToken(body)
+                    index = close.upperBound
+                    continue
+                }
+                if remaining.hasPrefix("[[image|||"), let close = remaining.range(of: "]]") {
+                    let body = String(remaining[remaining.index(remaining.startIndex, offsetBy: 10)..<close.lowerBound])
+                    output += renderImageToken(body)
+                    index = close.upperBound
+                    continue
+                }
+                if remaining.hasPrefix(MapBlockData.markupPrefix), let close = remaining.range(of: "]]") {
+                    let token = String(remaining[..<close.upperBound])
+                    output += renderMapToken(token)
+                    index = close.upperBound
+                    continue
+                }
+                if remaining.hasPrefix("[["), let close = remaining.range(of: "]]") {
+                    let tokenBody = String(remaining[remaining.index(remaining.startIndex, offsetBy: 2)..<close.lowerBound])
+                    output += escapedText(tokenBody)
+                    index = close.upperBound
+                    continue
+                }
+
+                output += escapedText(String(text[index]))
+                index = text.index(after: index)
+            }
+
+            return output
+        }
+
+        private func renderLinkToken(_ body: String) -> String {
+            let parts = body.components(separatedBy: "|")
+            guard let rawURL = parts.first else { return "" }
+            let label = parts.count > 1 ? parts[1] : rawURL
+            switch format {
+            case .markdown:
+                return "[\(Self.markdownEscapedInlineText(label))](\(markdownURL(rawURL)))"
+            case .plainText:
+                return parts.count > 1 ? "\(label) (\(rawURL))" : rawURL
+            }
+        }
+
+        private func renderNoteLinkToken(_ body: String) -> String {
+            let parts = body.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false)
+            let title = parts.count == 2 ? String(parts[1]) : "Mentioned Note"
+            return format == .markdown ? "@\(Self.markdownEscapedInlineText(title))" : "@\(title)"
+        }
+
+        private func renderWebClipToken(_ body: String) -> String {
+            let parts = body.components(separatedBy: "|")
+            let title = parts.first(where: { !$0.isEmpty }) ?? "Web Clip"
+            let url = parts.count >= 3 ? parts[2] : (parts.last ?? "#")
+            return format == .markdown
+                ? "[\(Self.markdownEscapedInlineText(title))](\(markdownURL(url)))"
+                : "\(title) (\(url))"
+        }
+
+        private func renderLinkCardToken(_ body: String) -> String {
+            let parts = body.components(separatedBy: "|")
+            let title = parts.first(where: { !$0.isEmpty }) ?? "Link"
+            let url = parts.count >= 3 ? parts[2] : (parts.last ?? "#")
+            return format == .markdown
+                ? "[\(Self.markdownEscapedInlineText(title))](\(markdownURL(url)))"
+                : "\(title) (\(url))"
+        }
+
+        private func renderFileLinkToken(_ body: String) -> String {
+            let parts = body.components(separatedBy: "|")
+            let displayName = parts.count >= 2 ? parts[1] : (parts.first ?? "File")
+            return format == .markdown ? "[\(Self.markdownEscapedInlineText(displayName))]" : "[File: \(displayName)]"
+        }
+
+        private func renderFileToken(_ body: String) -> String {
+            let parts = body.components(separatedBy: "|")
+            let originalName: String
+            if parts.count >= 3 {
+                originalName = parts[2]
+            } else if let fallback = parts.last {
+                originalName = fallback
+            } else {
+                originalName = "File"
+            }
+            return format == .markdown ? "[\(Self.markdownEscapedInlineText(originalName))]" : "[File: \(originalName)]"
+        }
+
+        private func renderImageToken(_ body: String) -> String {
+            let filename = body.components(separatedBy: "|||").first ?? ""
+            return format == .markdown
+                ? "![Image](\(markdownURL(filename)))"
+                : "[Image: \(filename.isEmpty ? "Image" : filename)]"
+        }
+
+        private func renderMapToken(_ token: String) -> String {
+            let title = MapBlockData.deserialize(from: token)?.displayTitle ?? "Map"
+            return format == .markdown ? "[Map: \(Self.markdownEscapedInlineText(title))]" : "[Map: \(title)]"
+        }
+
+        private func escapedText(_ text: String) -> String {
+            switch format {
+            case .markdown:
+                return Self.markdownEscapedInlineText(text)
+            case .plainText:
+                return JotMarkupLiteral.replacingRawTokens(in: text)
+            }
+        }
+
+        private func markdownCodeSpan(_ text: String) -> String {
+            let longestRun = longestBacktickRun(in: text)
+            let delimiter = String(repeating: "`", count: max(1, longestRun + 1))
+            if text.hasPrefix("`") || text.hasSuffix("`") || text.contains("\n") {
+                return "\(delimiter) \(text) \(delimiter)"
+            }
+            return "\(delimiter)\(text)\(delimiter)"
+        }
+
+        private func codeFence(for code: String) -> String {
+            String(repeating: "`", count: max(3, longestBacktickRun(in: code) + 1))
+        }
+
+        private func longestBacktickRun(in text: String) -> Int {
+            var longest = 0
+            var current = 0
+            for character in text {
+                if character == "`" {
+                    current += 1
+                    longest = max(longest, current)
+                } else {
+                    current = 0
+                }
+            }
+            return longest
+        }
+
+        private func markdownURL(_ value: String) -> String {
+            value
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .replacingOccurrences(of: " ", with: "%20")
+                .replacingOccurrences(of: ")", with: "%29")
+        }
+
+        private static func markdownEscapedInlineText(_ text: String) -> String {
+            NoteExportService.markdownEscapedInlineText(text)
+        }
+
+        private func unwrapAlignment(_ line: String) -> (String, String?) {
+            let prefixes = ["[[align:center]]", "[[align:right]]", "[[align:justify]]"]
+            for prefix in prefixes where line.hasPrefix(prefix) {
+                var body = String(line.dropFirst(prefix.count))
+                if body.hasSuffix("[[/align]]") {
+                    body.removeLast("[[/align]]".count)
+                }
+                return (body, prefix)
+            }
+            return (line, nil)
+        }
+
+        private func gatherDelimitedBlock(
+            from lines: [String],
+            start: Int,
+            openPrefix: String,
+            closeMarker: String
+        ) -> (blockText: String, nextIndex: Int)? {
+            let trimmed = lines[start].trimmingCharacters(in: .whitespaces)
+            guard trimmed.hasPrefix(openPrefix) else { return nil }
+
+            var collected: [String] = []
+            var index = start
+            while index < lines.count {
+                collected.append(lines[index])
+                if lines[index].contains(closeMarker) {
+                    return (collected.joined(separator: "\n"), index + 1)
+                }
+                index += 1
+            }
+            return nil
+        }
     }
+
+    // MARK: - Helper Methods
 
     /// Save file using NSSavePanel — always called on main thread
     @MainActor
@@ -641,5 +1144,50 @@ final class NoteExportService {
     private func sanitizeFilename(_ filename: String) -> String {
         let invalidCharacters = CharacterSet(charactersIn: ":/\\?%*|\"<>")
         return filename.components(separatedBy: invalidCharacters).joined(separator: "-")
+    }
+}
+
+private enum PDFExportError: LocalizedError {
+    case emptyPDF
+
+    var errorDescription: String? {
+        switch self {
+        case .emptyPDF:
+            return "WebKit returned an empty PDF document."
+        }
+    }
+}
+
+@MainActor
+private final class WebViewLoadDelegate: NSObject, WKNavigationDelegate {
+    private var continuation: CheckedContinuation<Void, Error>?
+
+    func load(_ html: String, in webView: WKWebView) async throws {
+        try await withCheckedThrowingContinuation { continuation in
+            self.continuation = continuation
+            webView.loadHTMLString(html, baseURL: nil)
+        }
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        resume()
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: any Error) {
+        resume(throwing: error)
+    }
+
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: any Error) {
+        resume(throwing: error)
+    }
+
+    private func resume(throwing error: (any Error)? = nil) {
+        guard let continuation else { return }
+        self.continuation = nil
+        if let error {
+            continuation.resume(throwing: error)
+        } else {
+            continuation.resume()
+        }
     }
 }

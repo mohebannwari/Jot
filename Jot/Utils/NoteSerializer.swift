@@ -270,7 +270,7 @@ enum NoteSerializer {
                 }
 
                 output.append(openTags)
-                output.append(rangeText)
+                output.append(JotMarkupLiteral.escapeIfNeeded(rangeText))
                 output.append(closeTags)
 
             }

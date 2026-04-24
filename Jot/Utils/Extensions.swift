@@ -508,25 +508,27 @@ extension String {
     /// Removes attachment tags, formatting wrappers (`[[b]]`, `[[/b]]`, etc.),
     /// checkbox markers, and collapses excessive newlines.
     var strippingAllMarkup: String {
-        var result = self
+        JotMarkupLiteral.protectingRawTokens(in: self) { protectedSource in
+            var result = protectedSource
 
-        // 1. Remove self-closing attachment tags (binary blobs — vanish entirely)
-        result = MarkupRegex.attachmentRegex.stringByReplacingMatches(
-            in: result, range: NSRange(result.startIndex..., in: result), withTemplate: "")
+            // 1. Remove self-closing attachment tags (binary blobs — vanish entirely)
+            result = MarkupRegex.attachmentRegex.stringByReplacingMatches(
+                in: result, range: NSRange(result.startIndex..., in: result), withTemplate: "")
 
-        // 2. Strip all remaining [[tag]] and [[/tag]] wrappers
-        result = MarkupRegex.tagRegex.stringByReplacingMatches(
-            in: result, range: NSRange(result.startIndex..., in: result), withTemplate: "")
+            // 2. Strip all remaining [[tag]] and [[/tag]] wrappers
+            result = MarkupRegex.tagRegex.stringByReplacingMatches(
+                in: result, range: NSRange(result.startIndex..., in: result), withTemplate: "")
 
-        // 3. Remove checkbox markers
-        result = result.replacingOccurrences(of: "[x]", with: "")
-        result = result.replacingOccurrences(of: "[ ]", with: "")
+            // 3. Remove checkbox markers
+            result = result.replacingOccurrences(of: "[x]", with: "")
+            result = result.replacingOccurrences(of: "[ ]", with: "")
 
-        // 4. Collapse 3+ consecutive newlines to 2, trim
-        result = MarkupRegex.newlineRegex.stringByReplacingMatches(
-            in: result, range: NSRange(result.startIndex..., in: result), withTemplate: "\n\n")
+            // 4. Collapse 3+ consecutive newlines to 2, trim
+            result = MarkupRegex.newlineRegex.stringByReplacingMatches(
+                in: result, range: NSRange(result.startIndex..., in: result), withTemplate: "\n\n")
 
-        return result.trimmingCharacters(in: .whitespacesAndNewlines)
+            return result.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
     }
 }
 
