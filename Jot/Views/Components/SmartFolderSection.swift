@@ -40,7 +40,7 @@ struct SmartFolderSection: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
                 Text("Smart Folders")
-                    .font(FontManager.heading(size: 11, weight: .regular))
+                    .jotUI(FontManager.uiLabel5(weight: .regular))
                     .foregroundColor(Color("SecondaryTextColor"))
 
                 Circle()

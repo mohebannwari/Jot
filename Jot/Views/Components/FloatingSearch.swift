@@ -16,6 +16,14 @@ enum FloatingSearchOpenIntent: Equatable {
     case startMeetingSessionPickNote
 }
 
+// MARK: - Window-level presentation (shared with ContentView)
+
+/// Curves for `isSearchPresented` / `$isPresented` so the scrim, palette, and in-palette `withAnimation` dismiss use one timing — avoids competing transactions that read as a shimmy on open.
+enum FloatingSearchOverlayAnimation {
+    static let appear = Animation.bouncy(duration: 0.35)
+    static let disappear = Animation.snappy(duration: 0.24)
+}
+
 /// Extra SwiftUI `.tracking` (points) for **all-caps** monospaced labels in this palette (section
 /// headers, footer hints). Mono caps in a compact glass panel read tight without a slight open
 /// track; this stays local to global search so sidebar metadata invariants are unchanged.
@@ -201,8 +209,8 @@ struct FloatingSearch: View {
     }
 
     private enum SearchAnimations {
-        static let appear = Animation.bouncy(duration: 0.35)
-        static let disappear = Animation.snappy(duration: 0.24)
+        static let appear = FloatingSearchOverlayAnimation.appear
+        static let disappear = FloatingSearchOverlayAnimation.disappear
         static let resultHover = Animation.spring(response: 0.25, dampingFraction: 0.86)
         /// Quick actions ↔ meeting note picker: spring paired with symmetric scale+opacity (same in/out; `.slide` is asymmetric and reverses by insert vs remove).
         static let paletteSwap = Animation.spring(duration: 0.38, bounce: 0.28)
@@ -450,7 +458,9 @@ struct FloatingSearch: View {
                     .transition(.scale(scale: 0.95).combined(with: .opacity))
             }
         }
-        .animation(SearchAnimations.appear, value: isPresented)
+        // Do not add `.animation(..., value: isPresented)` here: `ContentView` drives one
+        // `withAnimation(FloatingSearchOverlayAnimation.*)` for `isSearchPresented` so the scrim and
+        // palette share a single transaction.
         .onChange(of: isPresented) { _, newValue in
             handlePresentationChange(newValue)
         }
@@ -1471,24 +1481,29 @@ struct FloatingSearch: View {
             openIntent = .commandPaletteRoot
         } else {
             searchText = engine.query
-            withPaletteSwapAnimation {
-                paletteMode = .root
+            if paletteMode != .root {
+                withPaletteSwapAnimation {
+                    paletteMode = .root
+                }
             }
         }
         kickCommandPaletteNativeSearchFocus()
     }
 
-    /// Ensures the macOS AppKit-backed palette field can become first responder after overlay layout, Liquid Glass, and window key state settle.
+    /// Ensures the macOS AppKit-backed palette field becomes first responder after the open animation
+    /// and layout settle, so `makeKey` / `makeFirstResponder` are not interleaved with the bouncy scale
+    /// entry (reduces “shaking”). The `FloatingSearchNativeTextField` coordinator still runs its retry ladder.
     private func kickCommandPaletteNativeSearchFocus() {
-        isSearchFocused = true
-        commandPaletteNativeFocusGeneration &+= 1
-        // Next tick: SwiftUI has usually committed the `NSHostingView` subtree by then.
-        DispatchQueue.main.async {
+        Task { @MainActor in
+            // Aligns with `FloatingSearchOverlayAnimation.appear` so focus work is not on the same frames
+            // as the scale+opacity transition.
+            try? await Task.sleep(nanoseconds: 230_000_000)
+            guard isPresented else { return }
             isSearchFocused = true
             commandPaletteNativeFocusGeneration &+= 1
         }
-        // Late pass: catches races where the field’s `window` or key status flips a few frames after presentation.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 420_000_000)
             guard isPresented else { return }
             isSearchFocused = true
             commandPaletteNativeFocusGeneration &+= 1

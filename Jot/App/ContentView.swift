@@ -921,7 +921,7 @@ struct ContentView: View {
                 // the global chord reliably shows “Start recording in:” (palette open or closed).
                 floatingSearchOpenIntent = .startMeetingSessionPickNote
                 if !isSearchPresented {
-                    isSearchPresented = true
+                    setSearchPresented(true)
                 }
                 DispatchQueue.main.async {
                     NotificationCenter.default.post(.floatingSearchSwitchToMeetingPickNote)
@@ -1123,7 +1123,8 @@ struct ContentView: View {
             if newValue && isFloatingSidebarVisible {
                 floatingSidebarDismissWorkItem?.cancel()
                 floatingSidebarDismissWorkItem = nil
-                withAnimation(.jotSpring) { isFloatingSidebarVisible = false }
+                // Ease the floating sidebar away (no spring) so the main layout does not bounce under the palette.
+                withAnimation(.easeInOut(duration: 0.2)) { isFloatingSidebarVisible = false }
             }
         }
         .onChange(of: anyPanelOverlayActive) { _, newValue in
@@ -1549,7 +1550,8 @@ struct ContentView: View {
                             .strokeBorder(style: StrokeStyle(lineWidth: 1, lineCap: .round, dash: [4, 3]))
                             .foregroundColor(Color.accentColor.opacity(colorScheme == .dark ? 0.55 : 0.4))
                         Image(systemName: "plus")
-                            .font(FontManager.uiPro(size: 24, weight: .light).font)
+                            // Split-pane drop target: stay on **regular** (never `.light`) per typography policy.
+                            .font(FontManager.uiPro(size: 24, weight: .regular).font)
                             .foregroundColor(Color.accentColor.opacity(colorScheme == .dark ? 0.85 : 0.7))
                     }
                         .frame(width: secW)
@@ -2286,7 +2288,7 @@ struct ContentView: View {
             }
             .onTapGesture {
                 if isSearchPresented {
-                    isSearchPresented = false
+                    setSearchPresented(false)
                 }
             }
         }
@@ -2828,7 +2830,7 @@ struct ContentView: View {
     private var sidebarNotesHeader: some View {
         HStack(spacing: 2) {
             Text(isShowingArchive ? "Archive" : "Notes")
-                .font(FontManager.heading(size: 11, weight: .regular))
+                .jotUI(FontManager.uiLabel5(weight: .regular))
                 .foregroundColor(Color("SecondaryTextColor"))
 
             Spacer(minLength: 0)
@@ -2912,7 +2914,7 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 2) {
             if notesManager.archivedFolders.isEmpty && notesManager.archivedNotes.isEmpty {
                 Text("No archived items")
-                    .font(FontManager.heading(size: 11, weight: .regular))
+                    .jotUI(FontManager.uiLabel5(weight: .regular))
                     .foregroundColor(Color("SecondaryTextColor"))
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.leading, sidebarItemLeadingPadding)
@@ -2921,7 +2923,7 @@ struct ContentView: View {
             } else {
                 if !notesManager.archivedFolders.isEmpty {
                     Text("Folders")
-                        .font(FontManager.heading(size: 11, weight: .regular))
+                        .jotUI(FontManager.uiLabel5(weight: .regular))
                         .foregroundColor(Color("SecondaryTextColor"))
                         .padding(.horizontal, sidebarItemLeadingPadding)
                         .padding(.top, 12)
@@ -3075,7 +3077,7 @@ struct ContentView: View {
                 if !notesManager.archivedNotes.isEmpty {
                     if !notesManager.archivedFolders.isEmpty {
                         Text("Notes")
-                            .font(FontManager.heading(size: 11, weight: .regular))
+                            .jotUI(FontManager.uiLabel5(weight: .regular))
                             .foregroundColor(Color("SecondaryTextColor"))
                             .padding(.horizontal, sidebarItemLeadingPadding)
                             .padding(.top, 16)
@@ -3104,19 +3106,29 @@ struct ContentView: View {
         }
     }
 
+    /// One `withAnimation` for `isSearchPresented` (scrim + palette in `appCenteredSearchOverlay`) — do not
+    /// mix with an extra `.animation(..., value: isSearchPresented)` on the overlay `ZStack`.
+    private func setSearchPresented(_ presented: Bool) {
+        withAnimation(
+            presented ? FloatingSearchOverlayAnimation.appear : FloatingSearchOverlayAnimation.disappear
+        ) {
+            isSearchPresented = presented
+        }
+    }
+
     private func presentSearch() {
         withAnimation(.easeInOut(duration: 0.18)) {
             isSettingsPresented = false
-            floatingSearchOpenIntent = .commandPaletteRoot
-            isSearchPresented = true
         }
+        floatingSearchOpenIntent = .commandPaletteRoot
+        setSearchPresented(true)
     }
 
     private func presentSettings() {
         withAnimation(.easeInOut(duration: 0.18)) {
-            isSearchPresented = false
             isSettingsPresented = true
         }
+        setSearchPresented(false)
     }
 
     private func handleImportDrop(urls: [URL]) {
@@ -3170,7 +3182,7 @@ struct ContentView: View {
                     .ignoresSafeArea()
                     .transition(.opacity)
                     .onTapGesture {
-                        isSearchPresented = false
+                        setSearchPresented(false)
                     }
             }
 
@@ -3218,11 +3230,11 @@ struct ContentView: View {
                 },
                 onResumeSparkleDeferredUpdate: {
                     updateManager.resumeDeferredUpdateFromCommandPalette()
-                    isSearchPresented = false
+                    setSearchPresented(false)
                 },
                 onResumeDevDeferredRelaunch: {
                     #if DEBUG
-                    isSearchPresented = false
+                    setSearchPresented(false)
                     buildWatcher.relaunch()
                     #endif
                 },
@@ -3232,7 +3244,6 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .padding(.top, 182)
         }
-        .animation(.easeInOut(duration: 0.2), value: isSearchPresented)
     }
 
     @ViewBuilder
@@ -3476,7 +3487,7 @@ struct ContentView: View {
         }
         .onTapGesture {
             if isSearchPresented {
-                isSearchPresented = false
+                setSearchPresented(false)
             }
         }
         .modifier(FloatingSidebarBackgroundModifier(
@@ -3817,7 +3828,7 @@ struct ContentView: View {
                 // Header: "Active Split" label + add/cancel button
                 HStack {
                     Text("Active Split")
-                        .font(FontManager.heading(size: 11, weight: .regular))
+                        .jotUI(FontManager.uiLabel5(weight: .regular))
                         .foregroundColor(Color("SecondaryTextColor"))
                     Spacer()
                     Button {
@@ -3830,7 +3841,7 @@ struct ContentView: View {
                         Group {
                             if splitWorkspace.pendingID != nil {
                                 Text("Cancel")
-                                    .font(FontManager.heading(size: 11, weight: .regular))
+                                    .jotUI(FontManager.uiLabel5(weight: .regular))
                                     .foregroundColor(.red)
                             } else {
                                 Image("IconPlusSmall")
@@ -5372,8 +5383,9 @@ struct NotesSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            // Same ramp + weight as ``FloatingSettings/sectionLabel`` (Label-5 / regular + proportional tracking).
             Text(title)
-                .font(FontManager.heading(size: 11, weight: .regular))
+                .jotUI(FontManager.uiLabel5(weight: .regular))
                 .foregroundColor(Color("SecondaryTextColor"))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 8)
@@ -6015,7 +6027,7 @@ struct PinnedNotesSection: View {
             // Header
             HStack(spacing: 8) {
                 Text("Pinned notes")
-                    .font(FontManager.heading(size: 11, weight: .regular))
+                    .jotUI(FontManager.uiLabel5(weight: .regular))
                     .foregroundColor(Color("SecondaryTextColor"))
 
                 Circle()
@@ -6160,7 +6172,7 @@ struct LockedNotesSection: View {
             // Header
             HStack(spacing: 8) {
                 Text("Locked notes")
-                    .font(FontManager.heading(size: 11, weight: .regular))
+                    .jotUI(FontManager.uiLabel5(weight: .regular))
                     .foregroundColor(Color("SecondaryTextColor"))
 
                 Circle()

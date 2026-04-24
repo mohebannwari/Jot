@@ -327,7 +327,6 @@ struct FontManager {
     
     /// Font weight enumeration for consistent weight handling across platforms
     enum Weight {
-        case light
         case regular
         case medium
         case semibold
@@ -335,7 +334,6 @@ struct FontManager {
 
         nonisolated func toSwiftUIWeight() -> Font.Weight {
             switch self {
-            case .light: return .light
             case .regular: return .regular
             case .medium: return .medium
             case .semibold: return .semibold
@@ -345,7 +343,6 @@ struct FontManager {
 
         nonisolated func toNSWeight() -> NSFont.Weight {
             switch self {
-            case .light: return .light
             case .regular: return .regular
             case .medium: return .medium
             case .semibold: return .semibold
@@ -362,7 +359,7 @@ struct FontManager {
 
         nonisolated func toCharterName() -> String {
             switch self {
-            case .light, .regular: return "Roman"
+            case .regular: return "Roman"
             case .medium: return "Roman"  // Charter doesn't have medium, use Roman
             case .semibold: return "Bold"
             case .bold: return "Bold"

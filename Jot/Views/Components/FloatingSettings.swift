@@ -277,7 +277,8 @@ struct SettingsPage: View {
             HStack {
                 Spacer()
                 Text("Settings")
-                    .jotUI(FontManager.uiHeadingH4(weight: .medium))
+                    // Pinned window title: **12pt** (Label-4) — was briefly bumped to H4; keep in UI ramp + `jotUI` tracking.
+                    .jotUI(FontManager.uiLabel4(weight: .medium))
                     .foregroundColor(Color("PrimaryTextColor").opacity(0.5))
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -699,9 +700,10 @@ struct SettingsPage: View {
             }
         } label: {
             settingsCapsuleRow {
+                // Same primary row style as ``settingsCheckbox`` titles (e.g. “Group notes by date”).
                 Text("Sort notes by:")
-                    .jotUI(FontManager.uiLabel5(weight: .regular))
-                    .foregroundColor(Color("SettingsPlaceholderTextColor"))
+                    .jotUI(FontManager.uiLabel3(weight: .regular))
+                    .foregroundColor(Color("SettingsPrimaryTextColor"))
 
                 Spacer()
 
@@ -1513,10 +1515,10 @@ struct SettingsPage: View {
     // MARK: - Helpers
 
     /// Settings section chrome (e.g. “Sort options”) uses **SF Pro**, not the mono metadata face,
-    /// in **sentence case** — not all caps — so grouped headers read as product UI.
+    /// in **sentence case** — **regular** weight to match sidebar date rails (`NotesSection`).
     private func sectionLabel(_ text: String) -> some View {
         Text(text)
-            .jotUI(FontManager.uiLabel5(weight: .medium))
+            .jotUI(FontManager.uiLabel5(weight: .regular))
             .foregroundColor(Color("SettingsPlaceholderTextColor"))
     }
 
