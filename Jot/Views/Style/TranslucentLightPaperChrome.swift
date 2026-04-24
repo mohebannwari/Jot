@@ -27,6 +27,37 @@ extension View {
             self
         }
     }
+
+    /// Hairline stroke matching ``NoteTableOverlayView``’s light-mode outer border: black 8% @ 0.5pt.
+    /// Use only when ``enabled`` is the same gate as ``liquidGlassPaperElevatedShadow`` (light + translucency + not reducing transparency).
+    @ViewBuilder
+    func translucentLightPaperTableStroke<S: Shape>(shape: S, enabled: Bool) -> some View {
+        if enabled {
+            self.overlay {
+                shape.stroke(TranslucentLightPaperTableStroke.lightStrokeSwiftUIColor, lineWidth: TranslucentLightPaperTableStroke.lineWidth)
+            }
+        } else {
+            self
+        }
+    }
+}
+
+// MARK: - Table-matched stroke (shared with NoteTableOverlayView outer border)
+
+/// Constants for the inline table’s outer perimeter in light mode — reused by Settings paper cards and code blocks.
+enum TranslucentLightPaperTableStroke {
+    /// Same alpha as ``NoteTableOverlayView`` `borderColor` in light (not ``BorderSubtleColor``).
+    static let lightStrokeBlackAlpha: CGFloat = 0.08
+    /// Matches table perimeter line width (half-point hairline).
+    static let lineWidth: CGFloat = 0.5
+
+    static var lightStrokeSwiftUIColor: Color {
+        Color.black.opacity(lightStrokeBlackAlpha)
+    }
+
+    static func lightOuterStrokeNSColor() -> NSColor {
+        NSColor.black.withAlphaComponent(lightStrokeBlackAlpha)
+    }
 }
 
 // MARK: - AppKit (inline editor overlays)
@@ -61,6 +92,24 @@ enum LiquidPaperShadowChrome {
             layer.shadowOpacity = 0
             layer.shadowRadius = 0
             layer.shadowOffset = .zero
+        }
+    }
+
+    /// Table-matched hairline on a dedicated ``CAShapeLayer`` (stroke only, no fill). Path should be the rounded rect
+    /// used for the code block shell, inset by half ``TranslucentLightPaperTableStroke/lineWidth`` like ``NoteTableOverlayView``.
+    static func applyLightTableOuterStroke(to layer: CAShapeLayer?, path: CGPath?, enabled: Bool) {
+        guard let layer else { return }
+        if enabled, let path {
+            layer.isHidden = false
+            layer.fillColor = nil
+            layer.strokeColor = TranslucentLightPaperTableStroke.lightOuterStrokeNSColor().cgColor
+            layer.lineWidth = TranslucentLightPaperTableStroke.lineWidth
+            layer.path = path
+            layer.lineJoin = .round
+        } else {
+            layer.isHidden = true
+            layer.path = nil
+            layer.strokeColor = nil
         }
     }
 }

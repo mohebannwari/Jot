@@ -730,6 +730,7 @@ struct SettingsPage: View {
         .background(
             Capsule()
                 .fill(colorScheme == .light ? Color.white : Color("SettingsOptionCardColor"))
+                .translucentLightPaperTableStroke(shape: Capsule(), enabled: shouldElevateLightPaperChrome)
                 .liquidGlassPaperElevatedShadow(enabled: shouldElevateLightPaperChrome)
         )
     }
@@ -743,6 +744,10 @@ struct SettingsPage: View {
         .background(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .fill(colorScheme == .light ? Color.white : Color("SettingsOptionCardColor"))
+                .translucentLightPaperTableStroke(
+                    shape: RoundedRectangle(cornerRadius: 22, style: .continuous),
+                    enabled: shouldElevateLightPaperChrome
+                )
                 .liquidGlassPaperElevatedShadow(enabled: shouldElevateLightPaperChrome)
         )
     }
@@ -1022,6 +1027,10 @@ struct SettingsPage: View {
                 ZStack {
                     RoundedRectangle(cornerRadius: bodyFontCardRadius, style: .continuous)
                         .fill(colorScheme == .light ? Color.white : Color("SettingsOptionCardColor"))
+                        .translucentLightPaperTableStroke(
+                            shape: RoundedRectangle(cornerRadius: bodyFontCardRadius, style: .continuous),
+                            enabled: shouldElevateLightPaperChrome
+                        )
                         .liquidGlassPaperElevatedShadow(enabled: shouldElevateLightPaperChrome)
 
                     Text("Aa")
@@ -1070,6 +1079,10 @@ struct SettingsPage: View {
                 ZStack {
                     RoundedRectangle(cornerRadius: lineSpacingCardRadius, style: .continuous)
                         .fill(colorScheme == .light ? Color.white : Color("SettingsOptionCardColor"))
+                        .translucentLightPaperTableStroke(
+                            shape: RoundedRectangle(cornerRadius: lineSpacingCardRadius, style: .continuous),
+                            enabled: shouldElevateLightPaperChrome
+                        )
                         .liquidGlassPaperElevatedShadow(enabled: shouldElevateLightPaperChrome)
 
                     lineSpacingPreview(for: spacing)
@@ -1182,6 +1195,10 @@ struct SettingsPage: View {
             .background(
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
                     .fill(colorScheme == .light ? Color.white : Color("SettingsOptionCardColor"))
+                    .translucentLightPaperTableStroke(
+                        shape: RoundedRectangle(cornerRadius: 22, style: .continuous),
+                        enabled: shouldElevateLightPaperChrome
+                    )
                     .liquidGlassPaperElevatedShadow(enabled: shouldElevateLightPaperChrome)
             )
         }
@@ -1279,6 +1296,7 @@ struct SettingsPage: View {
             .background(
                 Capsule()
                     .fill(colorScheme == .light ? Color.white : Color("SettingsOptionCardColor"))
+                    .translucentLightPaperTableStroke(shape: Capsule(), enabled: shouldElevateLightPaperChrome)
                     .liquidGlassPaperElevatedShadow(enabled: shouldElevateLightPaperChrome)
             )
         }
@@ -1381,6 +1399,10 @@ struct SettingsPage: View {
         .background(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .fill(colorScheme == .light ? Color.white : Color("SettingsOptionCardColor"))
+                .translucentLightPaperTableStroke(
+                    shape: RoundedRectangle(cornerRadius: 22, style: .continuous),
+                    enabled: shouldElevateLightPaperChrome
+                )
                 .liquidGlassPaperElevatedShadow(enabled: shouldElevateLightPaperChrome)
         )
     }

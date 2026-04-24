@@ -334,6 +334,10 @@ struct BackupSettingsPanel: View {
         .background(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .fill(colorScheme == .light ? Color.white : Color("SettingsOptionCardColor"))
+                .translucentLightPaperTableStroke(
+                    shape: RoundedRectangle(cornerRadius: 22, style: .continuous),
+                    enabled: shouldElevateLightPaperChrome
+                )
                 .liquidGlassPaperElevatedShadow(enabled: shouldElevateLightPaperChrome)
         )
     }

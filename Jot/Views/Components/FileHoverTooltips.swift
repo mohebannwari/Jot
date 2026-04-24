@@ -24,6 +24,15 @@ struct FileHoverTooltips: View {
 }
 
 struct ExtractTooltipPill: View {
+    @EnvironmentObject private var themeManager: ThemeManager
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    private var shouldElevateLightPaperChrome: Bool {
+        colorScheme == .light && !reduceTransparency
+            && min(1, max(0, themeManager.detailPaneTranslucency)) > 0.001
+    }
+
     var body: some View {
         HStack(spacing: 6) {
             Image("IconExtract")
@@ -41,6 +50,7 @@ struct ExtractTooltipPill: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .liquidGlassTooltip(shape: RoundedRectangle(cornerRadius: 999, style: .continuous))
+        .liquidGlassPaperElevatedShadow(enabled: shouldElevateLightPaperChrome)
         .contentShape(RoundedRectangle(cornerRadius: 999, style: .continuous))
         .onContinuousHover { phase in
             switch phase {

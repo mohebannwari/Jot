@@ -161,6 +161,10 @@ final class CodeBlockOverlayView: NSView {
     /// Frosted scrim that should sit on the same surface token pair as the code body itself.
     private let copyBackdropView = _CodeCopyBackdropView()
 
+    /// Table-matched hairline in **flipped** view space; sits above ``blockView`` and forwards mouse hits.
+    /// A root-level ``CAShapeLayer`` was unreliable here (layer coords vs flipped ``NSView`` + sibling ordering).
+    private let shellBorderView = _CodeBlockShellBorderView()
+
     // MARK: - State
 
     private var isApplyingHighlight = false
@@ -264,6 +268,9 @@ final class CodeBlockOverlayView: NSView {
         scrollView.documentView = textView
         blockView.addSubview(scrollView)
 
+        shellBorderView.forwardMouseTo = blockView
+        addSubview(shellBorderView)
+
         // Chip pill -- floats as sibling of blockView, straddles top edge
         chipView.wantsLayer = true
         chipView.layer?.cornerCurve = .continuous
@@ -302,6 +309,7 @@ final class CodeBlockOverlayView: NSView {
         // Block fills width, offset down by pill overflow
         let blockH = max(bounds.height - pO, 50)
         blockView.frame = CGRect(x: 0, y: pO, width: bounds.width, height: blockH)
+        shellBorderView.frame = blockView.frame
 
         // ScrollView inside block (blockView is non-flipped: y=0 at bottom)
         let svW = max(bounds.width - blockPaddingH * 2, 40)
@@ -372,6 +380,7 @@ final class CodeBlockOverlayView: NSView {
     }
 
     /// Soft shadow on the root layer when light mode + note translucency (see LiquidPaperShadowChrome).
+    /// Also drives the table-matched shell stroke on ``shellBorderView``.
     private func updatePaperShadowIfNeeded() {
         let pO = pillOverflow
         let blockH = max(bounds.height - pO, 50)
@@ -379,6 +388,10 @@ final class CodeBlockOverlayView: NSView {
         let path = NSBezierPath(roundedRect: rect, xRadius: blockRadius, yRadius: blockRadius).cgPath
         let enabled = LiquidPaperShadowChrome.shouldShowPaperShadow(effectiveAppearance: hostAppearance)
         LiquidPaperShadowChrome.applyPaperShadow(to: layer, path: path, enabled: enabled)
+
+        shellBorderView.showsTableMatchedStroke = enabled
+        shellBorderView.cornerRadius = blockRadius
+        shellBorderView.needsDisplay = true
     }
 
     // MARK: - Resize
@@ -660,6 +673,44 @@ final class CodeBlockOverlayView: NSView {
         let codeH = CGFloat(lineCount) * lineHeight
         // pillOverflow(13) + paddingTop(24) + content(min 20) + paddingBottom(16)
         return min(13 + 24 + max(codeH, 20) + 16, maxHeight)
+    }
+}
+
+// MARK: - Shell border (table-matched stroke in flipped view space)
+
+/// Draws the same half-point hairline as ``NoteTableOverlayView`` when translucency + light chrome is active.
+/// Implemented as a flipped ``NSView`` above the white shell so coordinates match layout math; forwards mouse
+/// hits to ``blockView`` so the editor keeps first responder / selection behavior.
+private final class _CodeBlockShellBorderView: NSView {
+
+    weak var forwardMouseTo: NSView?
+
+    var showsTableMatchedStroke = false {
+        didSet { needsDisplay = true }
+    }
+
+    var cornerRadius: CGFloat = 22 {
+        didSet { needsDisplay = true }
+    }
+
+    override var isFlipped: Bool { true }
+
+    override var isOpaque: Bool { false }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard let fwd = forwardMouseTo else { return nil }
+        return fwd.hitTest(convert(point, to: fwd))
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard showsTableMatchedStroke else { return }
+        let inset = TranslucentLightPaperTableStroke.lineWidth / 2
+        let rect = bounds.insetBy(dx: inset, dy: inset)
+        guard rect.width > 0.5, rect.height > 0.5 else { return }
+        let path = NSBezierPath(roundedRect: rect, xRadius: cornerRadius, yRadius: cornerRadius)
+        path.lineWidth = TranslucentLightPaperTableStroke.lineWidth
+        TranslucentLightPaperTableStroke.lightOuterStrokeNSColor().setStroke()
+        path.stroke()
     }
 }
 
