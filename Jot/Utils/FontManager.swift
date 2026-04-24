@@ -299,7 +299,9 @@ struct FontManager {
 
     /// SwiftUI font for the note title ``TextField``. Omits ``.leading(.tight)`` from ``heading(...)``
     /// so wrapped lines and tall capitals are not clipped by overly tight line metrics.
-    static func noteDetailTitleFont(weight: Weight = .regular) -> Font {
+    /// Semibold is the one documented exception to the app-wide Regular rule — 32pt at Regular
+    /// reads visibly weak against SF Pro’s optical metrics, and titles need display weight.
+    static func noteDetailTitleFont(weight: Weight = .semibold) -> Font {
         Font.system(size: noteDetailTitlePointSize, weight: weight.toSwiftUIWeight(), design: .default)
     }
 
