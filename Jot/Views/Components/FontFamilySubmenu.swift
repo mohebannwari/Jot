@@ -58,11 +58,11 @@ struct FontFamilySubmenu: View {
     private func fontFor(_ style: BodyFontStyle, size: CGFloat) -> Font {
         switch style {
         case .default:
-            return Font.custom("Charter", size: size).weight(.medium)
+            return Font.custom("Charter", size: size).weight(.regular)
         case .system:
-            return Font.system(size: size, weight: .medium)
+            return Font.system(size: size, weight: .regular)
         case .mono:
-            return Font.system(size: size, weight: .medium, design: .monospaced)
+            return Font.system(size: size, weight: .regular, design: .monospaced)
         }
     }
 }

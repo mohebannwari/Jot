@@ -169,7 +169,7 @@ struct AIToolsOverlay: View {
                         .foregroundColor(Color("SecondaryTextColor"))
                         .frame(width: 15, height: 15)
                     Text("Generate Text")
-                        .font(FontManager.heading(size: 11, weight: .semibold))
+                        .jotUI(FontManager.uiLabel5(weight: .regular))
                         .foregroundColor(Color("PrimaryTextColor"))
                 }
                 .padding(.horizontal, 8)
@@ -207,7 +207,7 @@ struct AIToolsOverlay: View {
                 submitTextGen()
             } label: {
                 Text("Generate")
-                    .font(FontManager.heading(size: 12, weight: .semibold))
+                    .jotUI(FontManager.uiLabel4(weight: .regular))
                     .foregroundColor(enterButtonTextColor)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 10)

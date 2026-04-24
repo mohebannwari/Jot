@@ -184,9 +184,8 @@ final class CalloutOverlayView: NSView {
         chipLabel.attributedStringValue = NSAttributedString(
             string: calloutData.type.rawValue.capitalized,
             attributes: [
-                .font: NSFont.systemFont(ofSize: 11, weight: .medium),
-                .foregroundColor: NSColor.white,
-                .kern: NSNumber(value: -0.2)
+                .font: NSFont.systemFont(ofSize: 11, weight: .regular),
+                .foregroundColor: NSColor.white
             ]
         )
 

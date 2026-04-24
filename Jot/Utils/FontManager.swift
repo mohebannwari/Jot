@@ -306,7 +306,7 @@ struct FontManager {
 
     /// SwiftUI font for the note title ``TextField``. Omits ``.leading(.tight)`` from ``heading(...)``
     /// so wrapped lines and tall capitals are not clipped by overly tight line metrics.
-    static func noteDetailTitleFont(weight: Weight = .semibold) -> Font {
+    static func noteDetailTitleFont(weight: Weight = .regular) -> Font {
         Font.system(size: noteDetailTitlePointSize, weight: weight.toSwiftUIWeight(), design: .default)
     }
 

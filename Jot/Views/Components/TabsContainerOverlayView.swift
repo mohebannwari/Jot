@@ -1146,7 +1146,7 @@ private final class _TabChipView: NSView, NSTextFieldDelegate {
         self.padV = padV
 
         self.label = NSTextField(labelWithString: text)
-        self.label.font = NSFont.systemFont(ofSize: 13, weight: .medium)
+        self.label.font = NSFont.systemFont(ofSize: 13, weight: .regular)
 
         // Active + colored: white text on solid color bg
         // Active (no color): text/primary
@@ -1260,7 +1260,7 @@ private final class _TabChipView: NSView, NSTextFieldDelegate {
     func controlTextDidChange(_ obj: Notification) {
         guard isEditing else { return }
         let text = label.stringValue as NSString
-        let attrs: [NSAttributedString.Key: Any] = [.font: label.font ?? NSFont.systemFont(ofSize: 13, weight: .medium)]
+        let attrs: [NSAttributedString.Key: Any] = [.font: label.font ?? NSFont.systemFont(ofSize: 13, weight: .regular)]
         let textW = ceil(text.size(withAttributes: attrs).width)
         let newW = padH * 2 + textW + 8
         var f = frame

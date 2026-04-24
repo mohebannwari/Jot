@@ -65,8 +65,7 @@ struct QuickLookOverlayView: View {
     private var headerView: some View {
         HStack(spacing: 0) {
             Text("Quick look")
-                .font(FontManager.heading(size: 11, weight: .medium))
-                .tracking(-0.2)
+                .jotUI(FontManager.uiLabel5(weight: .regular))
                 .foregroundStyle(Color("PrimaryTextColor"))
 
             if pageCount > 1 {
@@ -76,8 +75,7 @@ struct QuickLookOverlayView: View {
                     .frame(width: 2, height: 2)
                 Spacer().frame(width: 8)
                 Text("\(currentPage) of \(pageCount) pages")
-                    .font(FontManager.heading(size: 11, weight: .medium))
-                    .tracking(-0.2)
+                    .jotUI(FontManager.uiLabel5(weight: .regular))
                     .foregroundStyle(Color("SecondaryTextColor"))
                     .animation(.jotSpring, value: currentPage)
                     .contentTransition(.numericText())

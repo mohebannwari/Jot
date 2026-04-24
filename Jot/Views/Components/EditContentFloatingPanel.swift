@@ -156,7 +156,7 @@ struct EditContentFloatingPanel: View {
     private var buttonRow: some View {
         HStack(spacing: 6) {
             Button("Replace", action: onReplace)
-                .font(FontManager.heading(size: 12, weight: .semibold))
+                .jotUI(FontManager.uiLabel4(weight: .regular))
                 .foregroundColor(Color("ButtonPrimaryTextColor"))
                 .padding(.horizontal, 14)
                 .padding(.vertical, 7)
@@ -168,7 +168,7 @@ struct EditContentFloatingPanel: View {
             dismissButton
 
             Button("Redo", action: onRedo)
-                .font(FontManager.heading(size: 12, weight: .semibold))
+                .jotUI(FontManager.uiLabel4(weight: .regular))
                 .foregroundColor(Color("PrimaryTextColor"))
                 .padding(.horizontal, 14)
                 .padding(.vertical, 7)
@@ -181,7 +181,7 @@ struct EditContentFloatingPanel: View {
 
     private var dismissButton: some View {
         Button("Dismiss", action: onDismiss)
-            .font(FontManager.heading(size: 12, weight: .semibold))
+            .jotUI(FontManager.uiLabel4(weight: .regular))
             .foregroundColor(Color("PrimaryTextColor"))
             .padding(.horizontal, 14)
             .padding(.vertical, 7)

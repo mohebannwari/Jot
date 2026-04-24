@@ -30,7 +30,7 @@ struct TranslateInputSubmenu: View {
 
             Button(action: submit) {
                 Text("Translate")
-                    .font(FontManager.heading(size: 12, weight: .semibold))
+                    .jotUI(FontManager.uiLabel4(weight: .regular))
                     .foregroundColor(Color("ButtonPrimaryTextColor"))
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 7)

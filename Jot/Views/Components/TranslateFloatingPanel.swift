@@ -156,7 +156,7 @@ struct TranslateFloatingPanel: View {
     private var buttonRow: some View {
         HStack(spacing: 6) {
             Button("Replace", action: onReplace)
-                .font(FontManager.heading(size: 12, weight: .semibold))
+                .jotUI(FontManager.uiLabel4(weight: .regular))
                 .foregroundColor(Color("ButtonPrimaryTextColor"))
                 .padding(.horizontal, 14)
                 .padding(.vertical, 7)
@@ -166,7 +166,7 @@ struct TranslateFloatingPanel: View {
                 .subtleHoverScale(1.04)
 
             Button("Copy", action: onCopy)
-                .font(FontManager.heading(size: 12, weight: .semibold))
+                .jotUI(FontManager.uiLabel4(weight: .regular))
                 .foregroundColor(Color("PrimaryTextColor"))
                 .padding(.horizontal, 14)
                 .padding(.vertical, 7)
@@ -176,7 +176,7 @@ struct TranslateFloatingPanel: View {
                 .subtleHoverScale(1.04)
 
             Button("Retranslate", action: onRetranslate)
-                .font(FontManager.heading(size: 12, weight: .semibold))
+                .jotUI(FontManager.uiLabel4(weight: .regular))
                 .foregroundColor(Color("PrimaryTextColor"))
                 .padding(.horizontal, 14)
                 .padding(.vertical, 7)
@@ -189,7 +189,7 @@ struct TranslateFloatingPanel: View {
 
     private var dismissButton: some View {
         Button("Dismiss", action: onDismiss)
-            .font(FontManager.heading(size: 12, weight: .semibold))
+            .jotUI(FontManager.uiLabel4(weight: .regular))
             .foregroundColor(Color("PrimaryTextColor"))
             .padding(.horizontal, 14)
             .padding(.vertical, 7)

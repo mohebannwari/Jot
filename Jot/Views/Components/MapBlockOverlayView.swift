@@ -385,7 +385,7 @@ private struct MapBlockHostedView: View {
                 state.openInMaps()
             } label: {
                 Text("Open in Maps")
-                .jotUI(FontManager.uiLabel5(weight: .medium))
+                .jotUI(FontManager.uiLabel5(weight: .regular))
                 .lineLimit(1)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 12)

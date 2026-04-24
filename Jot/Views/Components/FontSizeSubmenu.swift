@@ -45,7 +45,7 @@ struct FontSizeSubmenu: View {
             // Custom size input
             HStack(spacing: 6) {
                 TextField("Custom", text: $customSizeText)
-                    .jotUI(FontManager.uiLabel3(weight: .medium))
+                    .jotUI(FontManager.uiLabel3(weight: .regular))
                     .textFieldStyle(.plain)
                     .frame(width: 52)
                     .focused($isCustomFieldFocused)

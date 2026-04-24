@@ -530,7 +530,7 @@ struct NoteDetailView: View {
           HStack {
             Spacer()
             Text(editedTitle.isEmpty ? "Untitled" : editedTitle)
-              .font(FontManager.heading(size: FontManager.noteDetailOverlayHeadingSize, weight: .medium))
+              .jotUI(FontManager.uiLabel4(weight: .regular))
               .foregroundColor(Color("PrimaryTextColor"))
               .opacity(0.5)
               .lineLimit(1)
@@ -1771,7 +1771,7 @@ struct NoteDetailView: View {
     HStack(spacing: 8) {
       BrailleLoader(pattern: .snake, size: 11)
       Text("Proofreading...")
-        .font(FontManager.heading(size: FontManager.noteDetailOverlayHeadingSize, weight: .medium))
+        .jotUI(FontManager.uiLabel4(weight: .regular))
         .foregroundColor(Color("PrimaryTextColor"))
         .shimmering(active: true)
     }
@@ -1783,7 +1783,7 @@ struct NoteDetailView: View {
   private func aiErrorPill(message: String) -> some View {
     HStack(spacing: 8) {
       Text(message)
-        .font(FontManager.heading(size: FontManager.noteDetailOverlayHeadingSize, weight: .medium))
+        .jotUI(FontManager.uiLabel4(weight: .regular))
         .foregroundColor(Color.red.opacity(0.8))
         .lineLimit(1)
 
@@ -1836,8 +1836,10 @@ struct NoteDetailView: View {
 
       HStack(spacing: 8) {
         if count > 1 {
+          // monospacedDigit requires chaining off Font; matches jotUI manually.
           Text("\(clampedIndex + 1)/\(count)")
-            .font(FontManager.heading(size: FontManager.noteDetailOverlayHeadingSize, weight: .medium).monospacedDigit())
+            .font(FontManager.uiPro(size: FontManager.noteDetailOverlayHeadingSize, weight: .regular).font.monospacedDigit())
+            .tracking(FontManager.proportionalUITracking(pointSize: FontManager.noteDetailOverlayHeadingSize))
             .foregroundColor(Color("SecondaryTextColor"))
             .padding(.leading, 8)
 
@@ -1888,7 +1890,7 @@ struct NoteDetailView: View {
         Button("Replace All") {
           replaceAllSuggestions()
         }
-        .font(FontManager.heading(size: FontManager.noteDetailOverlayHeadingSize, weight: .semibold))
+        .jotUI(FontManager.uiLabel4(weight: .regular))
         .foregroundColor(.white)
         .padding(.horizontal, 14)
         .padding(.vertical, 7)
@@ -1909,7 +1911,7 @@ struct NoteDetailView: View {
         .foregroundColor(.green)
         .font(FontManager.uiPro(size: 14, weight: .regular).font)
       Text("Looks good")
-        .font(FontManager.heading(size: FontManager.noteDetailOverlayHeadingSize, weight: .medium))
+        .jotUI(FontManager.uiLabel4(weight: .regular))
         .foregroundColor(Color("PrimaryTextColor"))
     }
     .padding(.horizontal, 16)
@@ -1944,7 +1946,7 @@ struct NoteDetailView: View {
 
       TextField("Enter URL", text: $linkInputText)
         .textFieldStyle(.plain)
-        .font(FontManager.heading(size: FontManager.noteDetailOverlayHeadingSize, weight: .medium))
+        .jotUI(FontManager.uiLabel4(weight: .regular))
         .foregroundColor(Color("PrimaryTextColor"))
         .focused($isLinkInputFocused)
         .submitLabel(.done)
@@ -1994,15 +1996,16 @@ struct NoteDetailView: View {
     VStack(spacing: 0) {
       // Find row
       HStack(spacing: 8) {
+        // monospacedDigit requires chaining off Font; matches jotUI manually.
         Text(searchCountLabel)
-          .font(FontManager.heading(size: FontManager.noteDetailOverlayHeadingSize, weight: .medium))
+          .font(FontManager.uiPro(size: FontManager.noteDetailOverlayHeadingSize, weight: .regular).font.monospacedDigit())
+          .tracking(FontManager.proportionalUITracking(pointSize: FontManager.noteDetailOverlayHeadingSize))
           .foregroundColor(Color("SecondaryTextColor"))
-          .monospacedDigit()
           .frame(minWidth: 28, alignment: .trailing)
 
         TextField("Search", text: $searchOnPageQuery)
           .textFieldStyle(.plain)
-          .font(FontManager.heading(size: FontManager.noteDetailOverlayHeadingSize, weight: .medium))
+          .jotUI(FontManager.uiLabel4(weight: .regular))
           .foregroundColor(Color("PrimaryTextColor"))
           .focused($isSearchOnPageFocused)
           .onChange(of: searchOnPageQuery) { _, newValue in

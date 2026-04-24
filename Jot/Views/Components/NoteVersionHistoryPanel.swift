@@ -47,8 +47,7 @@ struct NoteVersionHistoryPanel: View {
     private var header: some View {
         HStack {
             Text("Version History")
-                .font(FontManager.heading(size: 14, weight: .semibold))
-                .tracking(-0.3)
+                .jotUI(FontManager.uiPro(size: 14, weight: .regular))
                 .foregroundColor(Color("PrimaryTextColor"))
 
             Spacer()
@@ -80,11 +79,11 @@ struct NoteVersionHistoryPanel: View {
         if versions.isEmpty {
             VStack(spacing: 8) {
                 Text("No versions yet")
-                    .font(FontManager.heading(size: 14, weight: .medium))
+                    .jotUI(FontManager.uiPro(size: 14, weight: .regular))
                     .foregroundColor(Color("SettingsPlaceholderTextColor"))
 
                 Text("Versions are saved 30 seconds after you stop editing.")
-                    .font(FontManager.heading(size: 12, weight: .regular))
+                    .jotUI(FontManager.uiLabel4(weight: .regular))
                     .foregroundColor(Color("SettingsPlaceholderTextColor"))
                     .multilineTextAlignment(.center)
             }
@@ -122,8 +121,7 @@ struct NoteVersionHistoryPanel: View {
                 showRestoreConfirmation = true
             } label: {
                 Text("Restore This Version")
-                    .font(FontManager.heading(size: 13, weight: .medium))
-                    .tracking(-0.2)
+                    .jotUI(FontManager.uiLabel3(weight: .regular))
                     .foregroundColor(colorScheme == .light ? Color.white : Color.black)
                     .frame(maxWidth: .infinity)
                     .frame(height: 36)
@@ -141,8 +139,7 @@ struct NoteVersionHistoryPanel: View {
                 }
             } label: {
                 Text("Back to Current")
-                    .font(FontManager.heading(size: 13, weight: .medium))
-                    .tracking(-0.2)
+                    .jotUI(FontManager.uiLabel3(weight: .regular))
                     .foregroundColor(Color("PrimaryTextColor"))
                     .frame(maxWidth: .infinity)
                     .frame(height: 36)
@@ -202,17 +199,18 @@ private struct VersionRowButton: View {
         Button(action: action) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(version.createdAt, style: .relative)
-                        .font(FontManager.heading(size: 13, weight: isActive ? .semibold : .medium))
-                        .tracking(-0.2)
-                        .foregroundColor(Color("PrimaryTextColor"))
+                    // Text concatenation requires Text-typed operands; apply chrome font + tracking
+                    // manually so `+` still works (jotUI returns `some View`, not Text).
+                    (Text(version.createdAt, style: .relative)
+                        .font(FontManager.uiLabel3(weight: .regular).font)
+                        .foregroundColor(isActive ? Color("PrimaryTextColor") : Color("SecondaryTextColor"))
                     + Text(" ago")
-                        .font(FontManager.heading(size: 13, weight: isActive ? .semibold : .medium))
-                        .tracking(-0.2)
-                        .foregroundColor(Color("PrimaryTextColor"))
+                        .font(FontManager.uiLabel3(weight: .regular).font)
+                        .foregroundColor(isActive ? Color("PrimaryTextColor") : Color("SecondaryTextColor")))
+                        .tracking(FontManager.proportionalUITracking(pointSize: 13))
 
                     Text(version.createdAt, format: .dateTime.month(.abbreviated).day().hour().minute())
-                        .font(FontManager.heading(size: 11, weight: .regular))
+                        .jotUI(FontManager.uiLabel5(weight: .regular))
                         .foregroundColor(Color("SettingsPlaceholderTextColor"))
                 }
 

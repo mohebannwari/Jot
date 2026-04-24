@@ -104,7 +104,7 @@ struct SubmenuRowButton: View {
                         .foregroundColor(isActive ? Color("AccentColor") : Color("IconSecondaryColor"))
                 }
                 Text(label)
-                    .jotUI(FontManager.uiLabel3(weight: .medium))
+                    .jotUI(FontManager.uiLabel3(weight: .regular))
                     .foregroundColor(isActive ? Color("AccentColor") : Color("PrimaryTextColor"))
                     .lineLimit(1)
                 Spacer()

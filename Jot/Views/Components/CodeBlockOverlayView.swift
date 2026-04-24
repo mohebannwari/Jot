@@ -457,9 +457,8 @@ final class CodeBlockOverlayView: NSView {
         langLabel.attributedStringValue = NSAttributedString(
             string: CodeBlockData.displayName(for: codeBlockData.language),
             attributes: [
-                .font: NSFont.systemFont(ofSize: 11, weight: .medium),
-                .foregroundColor: NSColor.white,
-                .kern: NSNumber(value: -0.2)
+                .font: NSFont.systemFont(ofSize: 11, weight: .regular),
+                .foregroundColor: NSColor.white
             ]
         )
 
@@ -487,9 +486,8 @@ final class CodeBlockOverlayView: NSView {
         langLabel.attributedStringValue = NSAttributedString(
             string: display,
             attributes: [
-                .font: NSFont.systemFont(ofSize: 11, weight: .medium),
-                .foregroundColor: NSColor.white,
-                .kern: NSNumber(value: -0.2)
+                .font: NSFont.systemFont(ofSize: 11, weight: .regular),
+                .foregroundColor: NSColor.white
             ]
         )
         needsLayout = true
