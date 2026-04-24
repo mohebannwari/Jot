@@ -3873,11 +3873,6 @@ struct TodoEditorRepresentable: NSViewRepresentable {
 
         // MARK: - Quick Look
 
-        private struct QuickLookPreviewTarget {
-            let url: URL
-            let requiresSecurityScope: Bool
-        }
-
         @MainActor
         private func triggerQuickLookForLinkAtCursor() {
             guard let textView = self.textView as? InlineNSTextView,
@@ -3994,7 +3989,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             let origBookmark = fileLinkAtt.bookmarkBase64
 
             // Resolve the file URL (handle security-scoped bookmark)
-            guard let resolvedURL = resolveFileLinkURL(
+            guard let resolvedURL = EditorQuickLookTargetResolver.resolveFileLinkURL(
                 path: origPath, bookmark: origBookmark
             ) else { return }
 
@@ -4058,7 +4053,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         }
 
         @MainActor
-        private func openQuickLookPreview(_ previewTarget: QuickLookPreviewTarget, in textView: InlineNSTextView) {
+        private func openQuickLookPreview(_ previewTarget: EditorQuickLookPreviewTarget, in textView: InlineNSTextView) {
             var stopAccessing: (() -> Void)?
             if previewTarget.requiresSecurityScope {
                 guard previewTarget.url.startAccessingSecurityScopedResource() else {
@@ -4075,7 +4070,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
         /// Examines text attributes at the given character index and returns a Quick Look-compatible file URL.
         /// For web URLs, creates a temporary `.webloc` file so QLPreviewPanel can render the page.
         @MainActor
-        private func resolveQuickLookTarget(at charIndex: Int, in textStorage: NSTextStorage) -> QuickLookPreviewTarget? {
+        private func resolveQuickLookTarget(at charIndex: Int, in textStorage: NSTextStorage) -> EditorQuickLookPreviewTarget? {
             let attrs = textStorage.attributes(at: charIndex, effectiveRange: nil)
 
             // 1. File link with security-scoped bookmark
@@ -4093,7 +4088,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             // 2. Stored file attachment
             if let storedFilename = attrs[.fileStoredFilename] as? String,
                let fileURL = FileAttachmentStorageManager.shared.fileURL(for: storedFilename) {
-                return QuickLookPreviewTarget(url: fileURL, requiresSecurityScope: false)
+                return EditorQuickLookPreviewTarget(url: fileURL, requiresSecurityScope: false)
             }
 
             // Note mention — serialize note content to a temp HTML file
@@ -4101,7 +4096,7 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                let noteID = UUID(uuidString: idStr),
                let note = fetchNote?(noteID) {
                 guard let previewURL = generateNotePreviewHTML(for: note) else { return nil }
-                return QuickLookPreviewTarget(url: previewURL, requiresSecurityScope: false)
+                return EditorQuickLookPreviewTarget(url: previewURL, requiresSecurityScope: false)
             }
 
             // 3. Web clip URL
@@ -4109,73 +4104,44 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                let linkStr = Self.linkURLString(from: attrs),
                let webURL = URL(string: linkStr) {
                 guard let previewURL = createWeblocFile(for: webURL) else { return nil }
-                return QuickLookPreviewTarget(url: previewURL, requiresSecurityScope: false)
+                return EditorQuickLookPreviewTarget(url: previewURL, requiresSecurityScope: false)
             }
 
             // 3b. Link card URL
             if let linkCard = attrs[.attachment] as? NoteLinkCardAttachment,
                let webURL = URL(string: linkCard.url) {
                 guard let previewURL = createWeblocFile(for: webURL) else { return nil }
-                return QuickLookPreviewTarget(url: previewURL, requiresSecurityScope: false)
+                return EditorQuickLookPreviewTarget(url: previewURL, requiresSecurityScope: false)
             }
 
             // 4. Plain link URL
             if let linkStr = attrs[.plainLinkURL] as? String,
                let webURL = URL(string: linkStr) {
                 guard let previewURL = createWeblocFile(for: webURL) else { return nil }
-                return QuickLookPreviewTarget(url: previewURL, requiresSecurityScope: false)
+                return EditorQuickLookPreviewTarget(url: previewURL, requiresSecurityScope: false)
             }
 
             // 5. Standard .link attribute (bare link text)
             if let url = attrs[.link] as? URL {
                 if url.isFileURL {
-                    return QuickLookPreviewTarget(url: url, requiresSecurityScope: false)
+                    return EditorQuickLookPreviewTarget(url: url, requiresSecurityScope: false)
                 }
                 guard let previewURL = createWeblocFile(for: url) else { return nil }
-                return QuickLookPreviewTarget(url: previewURL, requiresSecurityScope: false)
+                return EditorQuickLookPreviewTarget(url: previewURL, requiresSecurityScope: false)
             }
             if let linkStr = attrs[.link] as? String, let url = URL(string: linkStr) {
                 if url.isFileURL {
-                    return QuickLookPreviewTarget(url: url, requiresSecurityScope: false)
+                    return EditorQuickLookPreviewTarget(url: url, requiresSecurityScope: false)
                 }
                 guard let previewURL = createWeblocFile(for: url) else { return nil }
-                return QuickLookPreviewTarget(url: previewURL, requiresSecurityScope: false)
+                return EditorQuickLookPreviewTarget(url: previewURL, requiresSecurityScope: false)
             }
 
             return nil
         }
 
-        private func resolveFileLinkPreviewTarget(path: String, bookmark: String) -> QuickLookPreviewTarget? {
-            if !bookmark.isEmpty, let data = Data(base64Encoded: bookmark) {
-                var isStale = false
-                if let resolvedURL = try? URL(
-                    resolvingBookmarkData: data,
-                    options: .withSecurityScope,
-                    relativeTo: nil,
-                    bookmarkDataIsStale: &isStale
-                ) {
-                    return QuickLookPreviewTarget(url: resolvedURL, requiresSecurityScope: true)
-                }
-            }
-
-            guard let resolvedURL = resolveFileLinkURL(path: path, bookmark: "") else { return nil }
-            return QuickLookPreviewTarget(url: resolvedURL, requiresSecurityScope: false)
-        }
-
-        private func resolveFileLinkURL(path: String, bookmark: String) -> URL? {
-            if !bookmark.isEmpty, let data = Data(base64Encoded: bookmark) {
-                var isStale = false
-                if let resolved = try? URL(
-                    resolvingBookmarkData: data,
-                    options: .withSecurityScope,
-                    relativeTo: nil,
-                    bookmarkDataIsStale: &isStale
-                ) {
-                    return resolved
-                }
-            }
-            let fileURL = URL(fileURLWithPath: path)
-            return FileManager.default.fileExists(atPath: path) ? fileURL : nil
+        private func resolveFileLinkPreviewTarget(path: String, bookmark: String) -> EditorQuickLookPreviewTarget? {
+            EditorQuickLookTargetResolver.resolveFileLinkPreviewTarget(path: path, bookmark: bookmark)
         }
 
         private func createWeblocFile(for url: URL) -> URL? {
@@ -7962,155 +7928,22 @@ final class InlineNSTextView: NSTextView, QLPreviewPanelDataSource, QLPreviewPan
     }
 
     static func isLikelyURL(_ text: String) -> Bool {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !trimmed.contains(" "), !trimmed.contains("\n") else {
-            return false
-        }
-        guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else {
-            return false
-        }
-        let fullRange = NSRange(location: 0, length: (trimmed as NSString).length)
-        let matches = detector.matches(in: trimmed, options: [], range: fullRange)
-        // The detected link must span the entire trimmed text
-        return matches.count == 1 && matches[0].range.location == 0 && matches[0].range.length == fullRange.length
+        EditorPasteClassifier.isLikelyURL(text)
     }
 
     /// Extracts the first URL found within arbitrary text using NSDataDetector.
     static func firstURL(in text: String) -> URL? {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return nil }
-        guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else {
-            return nil
-        }
-        let fullRange = NSRange(location: 0, length: (trimmed as NSString).length)
-        return detector.firstMatch(in: trimmed, options: [], range: fullRange)?.url
+        EditorPasteClassifier.firstURL(in: text)
     }
 
     /// Detect if pasted text is likely source code.
     private static func isLikelyCode(_ text: String) -> (isCode: Bool, language: String) {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return (false, "plaintext") }
-
-        let lines = trimmed.components(separatedBy: .newlines)
-        let isMultiline = lines.count > 1
-
-        // Strong signals — any one sufficient for multi-line, required for single-line
-        let strongPatterns: [String] = [
-            #"^import\s+"#, #"^from\s+\S+\s+import"#,
-            #"^func\s+"#, #"^def\s+"#, #"^class\s+"#, #"^struct\s+"#,
-            #"^enum\s+"#, #"^#include\s+"#, #"^package\s+"#,
-            #"^use\s+"#, #"^module\s+"#,
-            #"=>\s*\{"#, #"->\s*\{"#,
-        ]
-        let lineEndPatterns: [String] = [
-            #"\{\s*$"#, #"\};\s*$"#,
-        ]
-
-        var strongCount = 0
-        for line in lines {
-            let t = line.trimmingCharacters(in: .whitespaces)
-            for pattern in strongPatterns {
-                if t.range(of: pattern, options: .regularExpression) != nil {
-                    strongCount += 1
-                    break
-                }
-            }
-            for pattern in lineEndPatterns {
-                if t.range(of: pattern, options: .regularExpression) != nil {
-                    strongCount += 1
-                    break
-                }
-            }
-        }
-
-        // Medium signals — need 2+ to trigger
-        var mediumCount = 0
-        let fullText = trimmed
-
-        if fullText.contains("{") && fullText.contains("}") { mediumCount += 1 }
-        if lines.contains(where: { $0.trimmingCharacters(in: .whitespaces).hasSuffix(";") }) { mediumCount += 1 }
-        if fullText.contains("->") { mediumCount += 1 }
-        if lines.contains(where: {
-            let t = $0.trimmingCharacters(in: .whitespaces)
-            return t.hasPrefix("//") || (t.hasPrefix("#") && !t.hasPrefix("# ") && !t.hasPrefix("## "))
-        }) { mediumCount += 1 }
-        if fullText.range(of: #"(let|var|const|val)\s+\w+\s*="#, options: .regularExpression) != nil { mediumCount += 1 }
-        let nonEmptyLines = lines.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-        if nonEmptyLines.count > 1 {
-            let indentedCount = nonEmptyLines.filter { $0.hasPrefix("  ") || $0.hasPrefix("\t") }.count
-            if Double(indentedCount) / Double(nonEmptyLines.count) >= 0.5 { mediumCount += 1 }
-        }
-        // Function call pattern: word immediately followed by ( with no space
-        // (excludes prose like "the function (which is called)")
-        if fullText.range(of: #"\w+\([^)]*\)"#, options: .regularExpression) != nil { mediumCount += 1 }
-
-        // Negative signals
-        var negativeCount = 0
-        for line in lines {
-            let words = line.split(separator: " ")
-            let hasOperators = line.contains("{") || line.contains("}") || line.contains(";")
-                || line.contains("=") || line.contains("(") || line.contains("->")
-            if words.count >= 5 && !hasOperators {
-                negativeCount += 1
-            }
-        }
-        if lines.contains(where: { $0.hasPrefix("# ") || $0.hasPrefix("## ") }) { negativeCount += 1 }
-        if trimmed.count < 8 && strongCount == 0 { return (false, "plaintext") }
-
-        let isCode: Bool
-        if isMultiline {
-            isCode = strongCount > 0 || (mediumCount >= 2 && negativeCount < nonEmptyLines.count / 2)
-        } else {
-            isCode = strongCount > 0
-        }
-
-        if !isCode { return (false, "plaintext") }
-        let language = detectCodeLanguage(trimmed)
-        return (true, language)
+        EditorPasteClassifier.classifyCode(text)
     }
 
     /// Detect programming language from keyword clusters.
     private static func detectCodeLanguage(_ text: String) -> String {
-        struct LangScore {
-            let language: String
-            let exclusiveKeywords: [String]
-            let keywords: [String]
-        }
-
-        let languages: [LangScore] = [
-            LangScore(language: "swift", exclusiveKeywords: ["guard ", "@State", "@Published", "import SwiftUI", "import UIKit"], keywords: ["func ", "let ", "var "]),
-            LangScore(language: "go", exclusiveKeywords: [":=", "fmt.", "go func", "package main"], keywords: ["func ", "package "]),
-            LangScore(language: "python", exclusiveKeywords: ["elif ", "__init__", "self."], keywords: ["def ", "import "]),
-            LangScore(language: "javascript", exclusiveKeywords: ["===", "console.log", "require("], keywords: ["function ", "const ", "=> "]),
-            LangScore(language: "typescript", exclusiveKeywords: [": string", ": number", ": boolean", "interface "], keywords: ["function ", "const ", "=> "]),
-            LangScore(language: "rust", exclusiveKeywords: ["fn ", "mut ", "impl ", "pub fn"], keywords: ["::"]),
-            LangScore(language: "java", exclusiveKeywords: ["public static void", "System.out", "@Override"], keywords: ["class ", "import "]),
-            LangScore(language: "cpp", exclusiveKeywords: ["#include", "std::", "nullptr", "int main"], keywords: ["::", "cout"]),
-            LangScore(language: "sql", exclusiveKeywords: ["SELECT ", "INSERT INTO", "CREATE TABLE"], keywords: ["FROM ", "WHERE ", "JOIN "]),
-            LangScore(language: "html", exclusiveKeywords: ["<div", "<span", "<html", "className="], keywords: ["</"]),
-            LangScore(language: "css", exclusiveKeywords: ["font-size:", "margin:", "padding:", "display:"], keywords: ["{", "}"]),
-            LangScore(language: "bash", exclusiveKeywords: ["#!/bin/bash", "#!/bin/sh"], keywords: ["echo ", "export "]),
-            LangScore(language: "ruby", exclusiveKeywords: ["puts ", "require '", "attr_accessor"], keywords: ["def ", "end"]),
-        ]
-
-        var bestLang = "plaintext"
-        var bestScore = 0
-
-        for lang in languages {
-            var score = 0
-            for kw in lang.exclusiveKeywords {
-                if text.contains(kw) { score += 3 }
-            }
-            for kw in lang.keywords {
-                if text.contains(kw) { score += 1 }
-            }
-            if score > bestScore {
-                bestScore = score
-                bestLang = lang.language
-            }
-        }
-
-        return bestScore > 0 ? bestLang : "plaintext"
+        EditorPasteClassifier.detectCodeLanguage(text)
     }
 
     override func pasteAsPlainText(_ sender: Any?) {
