@@ -96,7 +96,7 @@ struct FilePreviewContent: View {
         } label: {
             HStack(spacing: 2) {
                 Text(originalFilename)
-                    .jotUI(FontManager.uiLabel5(weight: .medium))
+                    .jotUI(FontManager.uiLabel5(weight: .regular))
                     .foregroundStyle(Color("PrimaryTextColor"))
                     .lineLimit(1)
                 Image("IconChevronDownSmall")
@@ -121,7 +121,7 @@ struct FilePreviewContent: View {
                         .frame(width: 15, height: 15)
                 }
                 Text("Open in \(appName)")
-                    .jotUI(FontManager.uiLabel5(weight: .medium))
+                    .jotUI(FontManager.uiLabel5(weight: .regular))
                     .foregroundStyle(Color("PrimaryTextColor"))
                     .lineLimit(1)
                 Image("IconArrowRightUpCircle")

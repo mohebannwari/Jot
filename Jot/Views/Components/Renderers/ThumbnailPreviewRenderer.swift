@@ -69,7 +69,7 @@ struct ThumbnailPreviewRenderer: View {
                         .aspectRatio(contentMode: .fit)
                         .frame(width: 48, height: 48)
                     Text(displayFilename)
-                        .jotUI(FontManager.uiLabel5(weight: .medium))
+                        .jotUI(FontManager.uiLabel5(weight: .regular))
                         .foregroundStyle(Color("SecondaryTextColor"))
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -85,7 +85,7 @@ struct ThumbnailPreviewRenderer: View {
             .frame(height: previewHeight)
             .overlay {
                 Text(message)
-                    .jotUI(FontManager.uiLabel5(weight: .medium))
+                    .jotUI(FontManager.uiLabel5(weight: .regular))
                     .foregroundStyle(Color("SecondaryTextColor"))
             }
     }

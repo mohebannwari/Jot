@@ -33,7 +33,7 @@ struct ExtractTooltipPill: View {
                 .frame(width: 15, height: 15)
 
             Text("Extract")
-                .font(FontManager.heading(size: 11, weight: .medium))
+                .jotUI(FontManager.uiLabel5(weight: .regular))
                 .lineLimit(1)
                 .fixedSize()
         }

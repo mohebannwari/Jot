@@ -128,7 +128,7 @@ struct MeetingNotesFloatingPanel: View {
             .frame(width: 18, height: 18)
 
             Text(statusLabel)
-                .font(FontManager.heading(size: 11, weight: .medium))
+                .jotUI(FontManager.uiLabel5(weight: .regular))
                 .foregroundColor(Color("PrimaryTextColor"))
 
             // Same typography as `recordingControls` / `processingControls` timer (SF Mono + tabular digits).
@@ -210,8 +210,9 @@ struct MeetingNotesFloatingPanel: View {
                         selectedTab = tab
                     }
                 } label: {
+                    // Selection signal: tinted capsule fill + foregroundColor delta (weight is invariant; chrome never uses weight for state).
                     Text(tab.label)
-                        .font(FontManager.heading(size: 11, weight: selectedTab == tab ? .semibold : .medium))
+                        .jotUI(FontManager.uiLabel5(weight: .regular))
                         .foregroundColor(selectedTab == tab ? Color("PrimaryTextColor") : Color("SecondaryTextColor"))
                         .frame(maxWidth: .infinity)
                         .frame(height: tabHeight)
@@ -289,7 +290,7 @@ struct MeetingNotesFloatingPanel: View {
                 )
 
                 Text(statusLabel)
-                    .font(FontManager.heading(size: 12, weight: .semibold))
+                    .jotUI(FontManager.uiLabel4(weight: .regular))
                     .foregroundColor(Color("PrimaryTextColor"))
 
                 Spacer()
@@ -363,7 +364,7 @@ struct MeetingNotesFloatingPanel: View {
             BrailleLoader(pattern: .checkerboard, size: 11)
 
             Text(statusLabel)
-                .font(FontManager.heading(size: 12, weight: .semibold))
+                .jotUI(FontManager.uiLabel4(weight: .regular))
                 .foregroundColor(Color("PrimaryTextColor"))
                 .shimmering(active: true)
 
@@ -394,7 +395,7 @@ struct MeetingNotesFloatingPanel: View {
         HStack(spacing: 4) {
             Button(action: onSave) {
                 Text("Save to note")
-                    .font(FontManager.heading(size: 11, weight: .medium))
+                    .jotUI(FontManager.uiLabel5(weight: .regular))
                     .foregroundColor(Color("ButtonPrimaryTextColor"))
                     .frame(maxWidth: .infinity)
                     .frame(height: buttonHeight)
@@ -407,7 +408,7 @@ struct MeetingNotesFloatingPanel: View {
 
             Button(action: { showDismissConfirmation = true }) {
                 Text("Dismiss")
-                    .font(FontManager.heading(size: 11, weight: .medium))
+                    .jotUI(FontManager.uiLabel5(weight: .regular))
                     .foregroundColor(Color("PrimaryTextColor"))
                     .frame(maxWidth: .infinity)
                     .frame(height: buttonHeight)
@@ -431,7 +432,7 @@ struct MeetingNotesFloatingPanel: View {
                 VStack(alignment: .leading, spacing: 10) {
                     if !result.title.isEmpty {
                         Text(result.title)
-                            .font(FontManager.heading(size: 15, weight: .bold))
+                            .jotUI(FontManager.uiLabel2(weight: .regular))
                             .foregroundColor(Color("PrimaryTextColor"))
                     }
 
@@ -444,7 +445,7 @@ struct MeetingNotesFloatingPanel: View {
 
                     if !result.keyPoints.isEmpty {
                         Text("Key Points")
-                            .font(FontManager.heading(size: 12, weight: .semibold))
+                            .jotUI(FontManager.uiLabel4(weight: .regular))
                             .foregroundColor(Color("SecondaryTextColor"))
                             .padding(.top, 4)
 
@@ -471,7 +472,7 @@ struct MeetingNotesFloatingPanel: View {
 
                     if !result.actionItems.isEmpty {
                         Text("Action Items")
-                            .font(FontManager.heading(size: 12, weight: .semibold))
+                            .jotUI(FontManager.uiLabel4(weight: .regular))
                             .foregroundColor(Color("SecondaryTextColor"))
                             .padding(.top, 4)
 
@@ -494,7 +495,10 @@ struct MeetingNotesFloatingPanel: View {
                                         }
                                     }
                                     if item.assignee != "Unassigned" {
-                                        // Assignee names stay natural case; mono 11 medium only.
+                                        // Documented sentence-case mono override (proper noun).
+                                        // `jotMetadataLabelTypography()` would uppercase the name — wrong for people.
+                                        // See `.claude/rules/design-system.md` → Typography: "do not ship sentence-case
+                                        // mono labels except where product explicitly overrides."
                                         Text(item.assignee)
                                             .font(FontManager.metadata(size: 11, weight: .medium))
                                             .foregroundColor(Color("TertiaryTextColor"))
@@ -506,7 +510,7 @@ struct MeetingNotesFloatingPanel: View {
 
                     if !result.decisions.isEmpty {
                         Text("Decisions")
-                            .font(FontManager.heading(size: 12, weight: .semibold))
+                            .jotUI(FontManager.uiLabel4(weight: .regular))
                             .foregroundColor(Color("SecondaryTextColor"))
                             .padding(.top, 4)
 

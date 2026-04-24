@@ -35,7 +35,7 @@ struct FileAttachmentTagView: View {
                 .frame(width: 14, height: 14)
 
             Text(label)
-                .jotUI(FontManager.uiLabel5(weight: .medium))
+                .jotUI(FontManager.uiLabel5(weight: .regular))
                 .lineLimit(1)
 
             Image("IconArrowRightUpCircle")

@@ -24,12 +24,7 @@ struct MapInsertPrompt: View {
 
                 TextField("Search for a place", text: $service.query)
                     .textFieldStyle(.plain)
-                    .font(
-                        FontManager.heading(
-                            size: FontManager.noteDetailOverlayHeadingSize,
-                            weight: .medium
-                        )
-                    )
+                    .jotUI(FontManager.uiLabel4(weight: .regular))
                     .foregroundColor(Color("PrimaryTextColor"))
                     .focused($isQueryFocused)
                     .submitLabel(.done)
@@ -60,7 +55,7 @@ struct MapInsertPrompt: View {
                         } label: {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(result.title)
-                                    .font(FontManager.heading(size: 13, weight: .medium))
+                                    .jotUI(FontManager.uiLabel3(weight: .regular))
                                     .foregroundColor(Color("PrimaryTextColor"))
                                     .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -83,7 +78,7 @@ struct MapInsertPrompt: View {
                 }
             } else if !service.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Text((service.errorMessage ?? "No places found").uppercased())
-                    .font(FontManager.heading(size: 11, weight: .medium))
+                    .jotUI(FontManager.uiLabel5(weight: .regular))
                     .foregroundColor(Color("SecondaryTextColor"))
             }
         }

@@ -91,12 +91,12 @@ struct AudioPreviewRenderer: View {
     private var timeLabels: some View {
         HStack {
             Text(formatTime(currentTime))
-                .jotUI(FontManager.uiLabel5(weight: .medium))
+                .jotUI(FontManager.uiLabel5(weight: .regular))
                 .foregroundStyle(Color("SecondaryTextColor"))
                 .monospacedDigit()
             Spacer()
             Text(formatTime(duration))
-                .jotUI(FontManager.uiLabel5(weight: .medium))
+                .jotUI(FontManager.uiLabel5(weight: .regular))
                 .foregroundStyle(Color("SecondaryTextColor"))
                 .monospacedDigit()
         }
@@ -113,7 +113,7 @@ struct AudioPreviewRenderer: View {
                         .font(FontManager.uiLabel2(weight: .medium).font)
                         .foregroundStyle(Color("SecondaryTextColor"))
                     Text(message)
-                        .jotUI(FontManager.uiLabel5(weight: .medium))
+                        .jotUI(FontManager.uiLabel5(weight: .regular))
                         .foregroundStyle(Color("SecondaryTextColor"))
                 }
             }

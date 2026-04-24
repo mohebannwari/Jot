@@ -102,7 +102,7 @@ struct VideoPreviewRenderer: View {
                         .font(FontManager.uiLabel2(weight: .medium).font)
                         .foregroundStyle(Color("SecondaryTextColor"))
                     Text(message)
-                        .jotUI(FontManager.uiLabel5(weight: .medium))
+                        .jotUI(FontManager.uiLabel5(weight: .regular))
                         .foregroundStyle(Color("SecondaryTextColor"))
                 }
             }

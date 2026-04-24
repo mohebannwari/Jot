@@ -225,8 +225,9 @@ private struct SessionAccordion: View {
                         selectedTab = tab
                     }
                 } label: {
+                    // Selection signal: capsule background + foregroundColor delta (weight is invariant; chrome never uses weight for state).
                     Text(tab.label)
-                        .font(FontManager.heading(size: 11, weight: selectedTab == tab ? .semibold : .medium))
+                        .jotUI(FontManager.uiLabel5(weight: .regular))
                         .foregroundColor(selectedTab == tab ? Color("PrimaryTextColor") : Color("SecondaryTextColor"))
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
@@ -310,11 +311,11 @@ private struct SessionAccordion: View {
 
         if line.contains("[[h1]]") {
             Text(stripped)
-                .font(FontManager.heading(size: 15, weight: .bold))
+                .jotUI(FontManager.uiLabel2(weight: .regular))
                 .foregroundColor(Color("PrimaryTextColor"))
         } else if line.contains("[[h2]]") {
             Text(stripped)
-                .font(FontManager.heading(size: 13, weight: .semibold))
+                .jotUI(FontManager.uiLabel3(weight: .regular))
                 .foregroundColor(Color("SecondaryTextColor"))
                 .padding(.top, 4)
         } else if line.hasPrefix("[ ] ") {
@@ -367,7 +368,7 @@ private struct SessionAccordion: View {
         VStack(alignment: .leading, spacing: 6) {
             if cachedSegments.isEmpty {
                 Text("No transcript available.")
-                    .font(FontManager.body(size: 14))
+                    .jotUI(FontManager.uiPro(size: 14, weight: .regular))
                     .foregroundColor(Color("TertiaryTextColor"))
             } else {
                 ForEach(cachedSegments) { segment in
@@ -465,7 +466,7 @@ private struct NotesEditor: View {
             .overlay(alignment: .topLeading) {
                 if editableText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Text("Add notes...")
-                        .font(FontManager.body(size: 14))
+                        .jotUI(FontManager.uiPro(size: 14, weight: .regular))
                         .foregroundColor(Color("TertiaryTextColor"))
                         .allowsHitTesting(false)
                         .padding(.top, 9)

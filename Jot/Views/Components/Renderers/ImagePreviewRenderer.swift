@@ -46,7 +46,7 @@ struct ImagePreviewRenderer: View {
             .frame(height: 200)
             .overlay {
                 Text(message)
-                    .jotUI(FontManager.uiLabel5(weight: .medium))
+                    .jotUI(FontManager.uiLabel5(weight: .regular))
                     .foregroundStyle(Color("SecondaryTextColor"))
             }
     }

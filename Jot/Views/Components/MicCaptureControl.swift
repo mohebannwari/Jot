@@ -274,7 +274,7 @@ private extension MicCaptureControl {
                 .foregroundStyle(.orange)
 
             Text(message)
-                .font(FontManager.heading(size: 14, weight: .medium))
+                .jotUI(FontManager.uiPro(size: 14, weight: .regular))
                 .foregroundStyle(Color.primary)
 
             Spacer(minLength: 8)
@@ -282,7 +282,7 @@ private extension MicCaptureControl {
             Button("Open Settings") {
                 viewModel.openSettings()
             }
-            .font(FontManager.heading(size: 13, weight: .medium))
+            .jotUI(FontManager.uiLabel3(weight: .regular))
             .buttonStyle(.plain)
             .macPointingHandCursor()
             .foregroundStyle(Color.accentColor)

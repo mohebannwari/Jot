@@ -40,9 +40,8 @@ struct WebClipView: View {
                     .frame(width: 14, height: 14)
 
                 Text(cleanedDomain)
-                    .jotUI(FontManager.uiLabel4(weight: .medium))
+                    .jotUI(FontManager.uiLabel4(weight: .regular))
                     .lineLimit(1)
-                    .textCase(.lowercase)
                     .padding(.horizontal, 4)
 
                 Image("IconArrowRightUpCircle")
@@ -113,23 +112,23 @@ struct LinkCardView: View {
                     )
             }
 
-            // Title -- Label-2/Medium
+            // Title -- Label-2 (Regular per SF Pro chrome rule)
             Text(title)
-                .jotUI(FontManager.uiLabel2(weight: .medium))
+                .jotUI(FontManager.uiLabel2(weight: .regular))
                 .lineSpacing(3)
                 .foregroundStyle(Color("PrimaryTextColor"))
                 .lineLimit(1)
 
-            // Description -- Label-4/Medium
+            // Description -- Label-4 (Regular per SF Pro chrome rule)
             if !description.isEmpty {
                 Text(description)
-                    .jotUI(FontManager.uiLabel4(weight: .medium))
+                    .jotUI(FontManager.uiLabel4(weight: .regular))
                     .lineSpacing(2)
                     .foregroundStyle(Color("SecondaryTextColor"))
                     .lineLimit(1)
             }
 
-            // Domain link row -- Micro/Medium
+            // Domain link row -- Micro (Regular per SF Pro chrome rule)
             HStack(spacing: 4) {
                 Image("IconChainLink")
                     .renderingMode(.template)
@@ -137,7 +136,7 @@ struct LinkCardView: View {
                     .scaledToFit()
                     .frame(width: 10, height: 10)
                 Text(cleanedDomain)
-                    .jotUI(FontManager.uiPro(size: 9, weight: .medium))
+                    .jotUI(FontManager.uiPro(size: 9, weight: .regular))
                     .lineLimit(1)
             }
             .foregroundStyle(Color("AccentColor"))
