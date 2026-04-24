@@ -50,10 +50,6 @@ struct NoteSelectionCommands: Commands {
     }
 
     private func post(_ action: NoteSelectionCommandAction) {
-        NotificationCenter.default.post(
-            name: .noteSelectionCommandTriggered,
-            object: nil,
-            userInfo: ["action": action.rawValue]
-        )
+        NotificationCenter.default.post(.noteSelection(action))
     }
 }

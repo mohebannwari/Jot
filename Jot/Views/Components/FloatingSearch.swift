@@ -487,7 +487,7 @@ struct FloatingSearch: View {
                 prepareForPresentation()
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .floatingSearchSwitchToMeetingPickNote)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: AppCommand.Kind.floatingSearchSwitchToMeetingPickNote.name)) { _ in
             guard isPresented else { return }
             guard appleIntelligenceService.refreshMeetingNotesCapability().showsEntryPoints else {
                 withPaletteSwapAnimation {
@@ -1571,7 +1571,7 @@ struct FloatingSearch: View {
 
         switch index {
         case 0:
-            NotificationCenter.default.post(name: .createNewNote, object: nil)
+            NotificationCenter.default.post(.createNewNote)
             dismissSearch()
         case 1:
             #if os(macOS)
@@ -1588,10 +1588,10 @@ struct FloatingSearch: View {
                 selectedResultIndex = 0
             }
         case 3:
-            NotificationCenter.default.post(name: .createNewFolder, object: nil)
+            NotificationCenter.default.post(.createNewFolder)
             dismissSearch()
         case 4:
-            NotificationCenter.default.post(name: .requestSplitViewFromCommandPalette, object: nil)
+            NotificationCenter.default.post(.requestSplitViewFromCommandPalette)
             dismissSearch()
         case 5:
             guard selectedNote != nil else { return }
@@ -1605,7 +1605,7 @@ struct FloatingSearch: View {
             onArchiveOrRestoreSelectedNote()
             dismissSearch()
         case 8:
-            NotificationCenter.default.post(name: .openSettings, object: nil)
+            NotificationCenter.default.post(.openSettings)
             dismissSearch()
         default:
             break

@@ -144,7 +144,7 @@ final class BuildWatcherManager: ObservableObject {
         clearDeferredDevRelaunch()
 
         // Force autosave so no user data is lost
-        NotificationCenter.default.post(name: .forceSaveNote, object: nil)
+        NotificationCenter.default.post(.forceSaveNote)
 
         let appPath = Bundle.main.bundleURL.path
 

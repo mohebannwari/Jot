@@ -13,7 +13,7 @@ private enum MeetingNotesHotKeyRegistrar {
     static func syncRegistration() {
         AppleIntelligenceService.shared.refreshAvailability()
         GlobalHotKeyManager.shared.setHandler({
-            NotificationCenter.default.post(name: .openMeetingSessionCommandPalette, object: nil)
+            NotificationCenter.default.post(.openMeetingSessionCommandPalette)
         }, for: .startMeetingSession)
 
         guard AppleIntelligenceService.shared.meetingNotesCapability.registersGlobalHotKey else {
@@ -167,14 +167,14 @@ struct JotApp: App {
             CommandGroup(replacing: .printItem) { }
             CommandGroup(replacing: .appSettings) {
                 Button("Settings...") {
-                    NotificationCenter.default.post(name: .openSettings, object: nil)
+                    NotificationCenter.default.post(.openSettings)
                 }
                 .keyboardShortcut(",", modifiers: .command)
 
                 Divider()
 
                 Button("Check for Updates...") {
-                    NotificationCenter.default.post(name: .checkForUpdates, object: nil)
+                    NotificationCenter.default.post(.checkForUpdates)
                 }
             }
         }

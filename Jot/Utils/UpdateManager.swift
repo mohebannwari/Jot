@@ -56,7 +56,7 @@ final class UpdateManager: NSObject, ObservableObject {
 
         // Listen for menu bar "Check for Updates" trigger
         checkForUpdatesObserver = NotificationCenter.default
-            .publisher(for: .checkForUpdates)
+            .publisher(for: AppCommand.Kind.checkForUpdates.name)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.checkForUpdates()
@@ -73,7 +73,7 @@ final class UpdateManager: NSObject, ObservableObject {
         clearDeferredInstallReminder()
 
         // 1. Force autosave so no user data is lost
-        NotificationCenter.default.post(name: .forceSaveNote, object: nil)
+        NotificationCenter.default.post(.forceSaveNote)
 
         // 2. Brief delay for SwiftData WAL flush, then tell Sparkle to install
         Task { @MainActor in

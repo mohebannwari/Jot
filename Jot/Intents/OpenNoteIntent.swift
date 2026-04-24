@@ -16,11 +16,7 @@ struct OpenNoteIntent: AppIntent {
     @MainActor
     func perform() async throws -> some IntentResult {
         _ = try await awaitManager()
-        NotificationCenter.default.post(
-            name: .openNoteFromSpotlight,
-            object: nil,
-            userInfo: ["noteID": note.id]
-        )
+        NotificationCenter.default.post(.openNoteFromSpotlight(noteID: note.id))
         return .result()
     }
 }

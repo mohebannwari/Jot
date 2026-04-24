@@ -894,21 +894,20 @@ struct ContentView: View {
 
     private var contentWithBehaviors: some View {
         contentBaseLayout
-            .onReceive(NotificationCenter.default.publisher(for: .noteSelectionCommandTriggered)) { notification in
-                guard let rawAction = notification.userInfo?["action"] as? String,
-                      let action = NoteSelectionCommandAction(rawValue: rawAction) else { return }
+            .onReceive(NotificationCenter.default.publisher(for: AppCommand.Kind.noteSelection.name)) { notification in
+                guard case .noteSelection(let action) = notification.appCommand else { return }
                 handleSelectionCommand(action)
             }
-            .onReceive(NotificationCenter.default.publisher(for: .openSettings)) { _ in
+            .onReceive(NotificationCenter.default.publisher(for: AppCommand.Kind.openSettings.name)) { _ in
                 presentSettings()
             }
-            .onReceive(NotificationCenter.default.publisher(for: .requestSplitViewFromCommandPalette)) { _ in
+            .onReceive(NotificationCenter.default.publisher(for: AppCommand.Kind.requestSplitViewFromCommandPalette.name)) { _ in
                 withAnimation(.jotSpring) {
                     isSplitMenuVisible = false
                     addNewSplit()
                 }
             }
-            .onReceive(NotificationCenter.default.publisher(for: .openMeetingSessionCommandPalette)) { _ in
+            .onReceive(NotificationCenter.default.publisher(for: AppCommand.Kind.openMeetingSessionCommandPalette.name)) { _ in
                 guard appleIntelligenceService.refreshMeetingNotesCapability().showsEntryPoints else { return }
                 // Global shortcut may fire while another app is frontmost; bring Jot forward
                 // so the command palette is visible and receives keyboard focus.
@@ -925,13 +924,13 @@ struct ContentView: View {
                     isSearchPresented = true
                 }
                 DispatchQueue.main.async {
-                    NotificationCenter.default.post(
-                        name: .floatingSearchSwitchToMeetingPickNote, object: nil)
+                    NotificationCenter.default.post(.floatingSearchSwitchToMeetingPickNote)
                 }
             }
-            .onReceive(NotificationCenter.default.publisher(for: .toggleVersionHistory)) { notification in
+            .onReceive(NotificationCenter.default.publisher(for: AppCommand.Kind.toggleVersionHistory.name)) { notification in
                 guard selectedNote != nil else { return }
-                let requestedPane: SplitPickerPane = (notification.object as? UUID) == splitEditorID ? .secondary : .primary
+                guard case .toggleVersionHistory(let editorInstanceID) = notification.appCommand else { return }
+                let requestedPane: SplitPickerPane = editorInstanceID == splitEditorID ? .secondary : .primary
                 withAnimation(.easeInOut(duration: 0.2)) {
                     if isVersionHistoryVisible && versionHistoryPane == requestedPane {
                         isVersionHistoryVisible = false
@@ -943,9 +942,10 @@ struct ContentView: View {
                     }
                 }
             }
-            .onReceive(NotificationCenter.default.publisher(for: .togglePropertiesPanel)) { notification in
+            .onReceive(NotificationCenter.default.publisher(for: AppCommand.Kind.togglePropertiesPanel.name)) { notification in
                 guard selectedNote != nil else { return }
-                let requestedPane: SplitPickerPane = (notification.object as? UUID) == splitEditorID ? .secondary : .primary
+                guard case .togglePropertiesPanel(let editorInstanceID) = notification.appCommand else { return }
+                let requestedPane: SplitPickerPane = editorInstanceID == splitEditorID ? .secondary : .primary
                 isPropertiesPanelAnimating = true
                 withAnimation(Self.propertiesPanelAnimation) {
                     if isPropertiesPanelVisible && propertiesPanelPane == requestedPane {
@@ -959,30 +959,30 @@ struct ContentView: View {
                     isPropertiesPanelAnimating = false
                 }
             }
-            .onReceive(NotificationCenter.default.publisher(for: .createNewNote)) { _ in
+            .onReceive(NotificationCenter.default.publisher(for: AppCommand.Kind.createNewNote.name)) { _ in
                 createAndOpenNewNote()
             }
-            .onReceive(NotificationCenter.default.publisher(for: .createNewFolder)) { _ in
+            .onReceive(NotificationCenter.default.publisher(for: AppCommand.Kind.createNewFolder.name)) { _ in
                 isCreateFolderAlertPresented = true
                 pendingFolderCreationIntent = .standalone
             }
-            .onReceive(NotificationCenter.default.publisher(for: .trashFocusedNote)) { _ in
+            .onReceive(NotificationCenter.default.publisher(for: AppCommand.Kind.trashFocusedNote.name)) { _ in
                 if let note = selectedNote {
                     requestDeleteNotes([note.id])
                 } else if !selectedNoteIDs.isEmpty {
                     requestDeleteNotes(selectedNoteIDs)
                 }
             }
-            .onReceive(NotificationCenter.default.publisher(for: .navigateNote)) { notification in
-                guard let direction = notification.userInfo?["direction"] as? String else { return }
-                navigateToAdjacentNote(direction: direction == "up" ? .up : .down)
+            .onReceive(NotificationCenter.default.publisher(for: AppCommand.Kind.navigateNote.name)) { notification in
+                guard case .navigateNote(let direction) = notification.appCommand else { return }
+                navigateToAdjacentNote(direction: direction == .up ? .up : .down)
             }
-            .onReceive(NotificationCenter.default.publisher(for: .openNoteFromSpotlight)) { notification in
-                guard let noteID = notification.userInfo?["noteID"] as? UUID else { return }
+            .onReceive(NotificationCenter.default.publisher(for: AppCommand.Kind.openNoteFromSpotlight.name)) { notification in
+                guard case .openNoteFromSpotlight(let noteID) = notification.appCommand else { return }
                 openNoteByID(noteID)
             }
-            .onReceive(NotificationCenter.default.publisher(for: .exportSingleNote)) { notification in
-                guard let noteID = notification.userInfo?["noteID"] as? UUID,
+            .onReceive(NotificationCenter.default.publisher(for: AppCommand.Kind.exportSingleNote.name)) { notification in
+                guard case .exportSingleNote(let noteID) = notification.appCommand,
                       let note = notesManager.notes.first(where: { $0.id == noteID }) else { return }
                 notesPendingExport = [note]
                 withAnimation(.jotSpring) { isBatchExportSheetPresented = true }
@@ -3285,7 +3285,7 @@ struct ContentView: View {
 
             // Cmd+S -> force save current note
             Button(action: {
-                NotificationCenter.default.post(name: .forceSaveNote, object: nil)
+                NotificationCenter.default.post(.forceSaveNote)
             }) {
                 Color.clear.frame(width: 1, height: 1)
             }
@@ -4179,9 +4179,10 @@ struct ContentView: View {
             },
             onToggleTodo: { lineIndex in
                 NotificationCenter.default.post(
-                    name: .propertiesPanelToggleTodo,
-                    object: editorInstanceID,
-                    userInfo: ["lineIndex": lineIndex]
+                    .propertiesPanelToggleTodo(
+                        editorInstanceID: editorInstanceID,
+                        lineIndex: lineIndex
+                    )
                 )
             },
             onNavigateToNote: navigateToNote,
@@ -6592,7 +6593,7 @@ struct PropertiesPanelButton: View {
 
     var body: some View {
         Button {
-            NotificationCenter.default.post(name: .togglePropertiesPanel, object: editorInstanceID)
+            NotificationCenter.default.post(.togglePropertiesPanel(editorInstanceID: editorInstanceID))
         } label: {
             Image("IconSidebarHiddenRightWide")
                 .renderingMode(.template)

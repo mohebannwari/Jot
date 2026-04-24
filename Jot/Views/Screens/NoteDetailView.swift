@@ -712,7 +712,7 @@ struct NoteDetailView: View {
       .onChange(of: meetingRecorderManager.recordingState) { _, _ in
         applyMeetingPanelVisibilityForActiveSession()
       }
-      .onReceive(NotificationCenter.default.publisher(for: .forceSaveNote)) { _ in
+      .onReceive(NotificationCenter.default.publisher(for: AppCommand.Kind.forceSaveNote.name)) { _ in
         autosaveWorkItem?.cancel()
         persistIfNeeded()
       }
@@ -863,7 +863,7 @@ struct NoteDetailView: View {
   // Search results + menu/picker observers — split to reduce type-checker pressure
   private var noteContentEvents2: some View {
     noteContentEvents
-      .onReceive(NotificationCenter.default.publisher(for: .propertiesPanelToggleTodo)) {
+      .onReceive(NotificationCenter.default.publisher(for: AppCommand.Kind.propertiesPanelToggleTodo.name)) {
         notification in
         handlePropertiesPanelToggleTodo(notification)
       }
@@ -1475,8 +1475,8 @@ struct NoteDetailView: View {
   }
 
   private func handlePropertiesPanelToggleTodo(_ notification: Notification) {
-    guard let targetID = notification.object as? UUID, targetID == editorInstanceID,
-      let lineIndex = notification.userInfo?["lineIndex"] as? Int
+    guard case .propertiesPanelToggleTodo(let targetID, let lineIndex) = notification.appCommand,
+      targetID == editorInstanceID
     else { return }
     var lines = editedContent.components(separatedBy: "\n")
     guard lineIndex < lines.count else { return }

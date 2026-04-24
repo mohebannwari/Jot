@@ -16,7 +16,7 @@ final class PrintKeyHandler {
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
                event.charactersIgnoringModifiers == "p" {
-                NotificationCenter.default.post(name: .printCurrentNote, object: nil)
+                NotificationCenter.default.post(.printCurrentNote)
                 return nil
             }
             return event

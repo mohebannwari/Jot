@@ -15,11 +15,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return false
         }
 
-        NotificationCenter.default.post(
-            name: .openNoteFromSpotlight,
-            object: nil,
-            userInfo: ["noteID": noteID]
-        )
+        NotificationCenter.default.post(.openNoteFromSpotlight(noteID: noteID))
         return true
     }
 }

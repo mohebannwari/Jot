@@ -6,38 +6,30 @@ struct NoteManagementCommands: Commands {
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
             Button("New Note") {
-                NotificationCenter.default.post(name: .createNewNote, object: nil)
+                NotificationCenter.default.post(.createNewNote)
             }
             .keyboardShortcut("n", modifiers: .command)
 
             Button("New Folder") {
-                NotificationCenter.default.post(name: .createNewFolder, object: nil)
+                NotificationCenter.default.post(.createNewFolder)
             }
             .keyboardShortcut("n", modifiers: [.command, .shift])
 
             Divider()
 
             Button("Move to Trash") {
-                NotificationCenter.default.post(name: .trashFocusedNote, object: nil)
+                NotificationCenter.default.post(.trashFocusedNote)
             }
         }
 
         SwiftUI.CommandMenu("Navigate") {
             Button("Previous Note") {
-                NotificationCenter.default.post(
-                    name: .navigateNote,
-                    object: nil,
-                    userInfo: ["direction": "up"]
-                )
+                NotificationCenter.default.post(.navigateNote(.up))
             }
             .keyboardShortcut(.upArrow, modifiers: [.command, .option])
 
             Button("Next Note") {
-                NotificationCenter.default.post(
-                    name: .navigateNote,
-                    object: nil,
-                    userInfo: ["direction": "down"]
-                )
+                NotificationCenter.default.post(.navigateNote(.down))
             }
             .keyboardShortcut(.downArrow, modifiers: [.command, .option])
         }
