@@ -174,21 +174,14 @@ struct FontManager {
     /// Letter spacing for fixed-size **proportional** SF chrome (SwiftUI `.tracking` points).
     ///
     /// Apple’s SF fonts ship with optical size tables; `Font.system(size:)` does not apply the
-    /// same tracking as `TextStyle`-based text. This curve follows HIG/WWDC “UI typography”
-    /// guidance: keep **small** label sizes slightly **open** (small positive tracking) for
-    /// readability, and use **mild** negative tracking only at **larger** display sizes so
-    /// headlines do not feel loose. Values are intentionally gentler than aggressive print
-    /// tightening so the UI does not read “cramped”.
+    /// same tracking as `TextStyle`-based text. Policy: **zero tracking through Label-2 (15pt)**
+    /// — lets SF Pro’s built-in optical metrics handle small UI sizes instead of layering extra
+    /// positive tracking. Display sizes (17pt+) use mild negative tracking so headlines do not
+    /// feel loose.
     nonisolated static func proportionalUITracking(pointSize: CGFloat) -> CGFloat {
         let s = pointSize
         switch s {
-        case ..<9: return 0.22
-        case 9..<10: return 0.18
-        case 10..<11: return 0.16
-        case 11..<12: return 0.14
-        case 12..<13: return 0.08
-        case 13..<14: return 0.04
-        case 14..<17: return 0
+        case ..<17: return 0
         case 17..<22: return -0.04
         case 22..<28: return -0.08
         default: return -0.12
