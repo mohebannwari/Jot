@@ -1173,7 +1173,7 @@ struct SettingsPage: View {
 
                     VStack(alignment: .center, spacing: 6) {
                         Text("Jot")
-                            .jotUI(FontManager.uiPro(size: 28, weight: .regular))
+                            .jotUI(FontManager.uiPro(size: 28, weight: .semibold))
                             .foregroundColor(Color("SettingsPrimaryTextColor"))
                             .multilineTextAlignment(.center)
 

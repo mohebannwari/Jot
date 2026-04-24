@@ -263,7 +263,7 @@ struct QuickNotePanelView: View {
     VStack(spacing: 0) {
       TextField("Title", text: $title)
         .textFieldStyle(.plain)
-        .jotUI(FontManager.uiPro(size: 22, weight: .regular))
+        .jotUI(FontManager.uiPro(size: 22, weight: .semibold))
         .foregroundColor(Color("PrimaryTextColor"))
         .padding(.horizontal, 24)
         .padding(.top, 22)

@@ -3627,7 +3627,7 @@ struct ContentView: View {
 
                 if !version.title.isEmpty {
                     Text(version.title)
-                        .jotUI(FontManager.uiPro(size: 28, weight: .regular))
+                        .jotUI(FontManager.uiPro(size: 28, weight: .semibold))
                         .foregroundColor(Color("PrimaryTextColor"))
                 }
             }
