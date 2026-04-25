@@ -311,8 +311,8 @@ final class ThemeManagerTests: XCTestCase {
             }
         }
 
-        // DetailPaneSurfaceColor dark base (#1C1917) — must match ThemeManager.swift.
-        let darkBase = NSColor(srgbRed: 28 / 255, green: 25 / 255, blue: 23 / 255, alpha: 1)
+        // neutral-950 dark base (#0A0A0A) — must match ThemeManager.swift.
+        let darkBase = NSColor(srgbRed: 10 / 255, green: 10 / 255, blue: 10 / 255, alpha: 1)
             .usingColorSpace(.sRGB)!
         standard.set(0.25, forKey: ThemeManager.tintHueKey)
         standard.set(0.0, forKey: ThemeManager.tintIntensityKey)
