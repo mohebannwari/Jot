@@ -2725,7 +2725,11 @@ struct TodoEditorRepresentable: NSViewRepresentable {
                     height: displaySize.height
                 )
             } else {
-                // Extracted mode: reserve space for overlay view
+                // Extracted mode: reserve space for overlay view.
+                // Null `image` first so the layout manager queries CalloutSizeAttachmentCell
+                // instead of falling back to a stale pill bitmap if this attachment instance
+                // was previously rendered as a tag pill.
+                attachment.image = nil
                 var containerWidth = textView?.textContainer?.containerSize.width ?? 400
                 if containerWidth < 1 { containerWidth = 400 }
                 let previewWidth: CGFloat = metadata.viewMode == .full

@@ -25,6 +25,7 @@ struct HotKeyRecorderView: View {
     @State private var errorMessage: String?
     @State private var localMonitor: Any?
     @Environment(\.colorScheme) private var colorScheme
+    @EnvironmentObject private var themeManager: ThemeManager
 
     var body: some View {
         HStack(spacing: 8) {
@@ -76,10 +77,10 @@ struct HotKeyRecorderView: View {
         if isRecording {
             return Color.accentColor.opacity(0.15)
         }
-        // Idle state — use the semantic translucent surface token, which
-        // already encodes the 6% black/white light/dark variants in the
-        // asset catalog.
-        return Color("SurfaceTranslucentColor")
+        // Idle state — same tinted-inner-pill surface the settings counters and
+        // "Change" button use, so every interactive pill inside a settings card
+        // lands one tier darker than the card (neutral-950 in dark).
+        return themeManager.tintedSettingsInnerPill(for: colorScheme)
     }
 
     // MARK: - Recording lifecycle

@@ -124,12 +124,6 @@ struct FilePreviewContent: View {
                     .jotUI(FontManager.uiLabel5(weight: .regular))
                     .foregroundStyle(Color("PrimaryTextColor"))
                     .lineLimit(1)
-                Image("IconArrowRightUpCircle")
-                    .renderingMode(.template)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 14, height: 14)
-                    .foregroundStyle(Color("IconSecondaryColor"))
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 4)

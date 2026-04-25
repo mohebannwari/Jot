@@ -702,7 +702,7 @@ final class ThemeManager: ObservableObject {
     // MARK: - Settings Inner Pill Tint
 
     /// Computes the tinted settings inner pill color.
-    /// Base: SettingsInnerPillColor (#E5E5E5 light / #000000 pure black dark + hairline neutral-900 border at consumer)
+    /// Base: SettingsInnerPillColor (#E5E5E5 light / #0A0A0A neutral-950 dark — one tier darker than the surrounding settings card at neutral-900)
     func tintedSettingsInnerPill(for colorScheme: ColorScheme) -> Color {
         let base = Color("SettingsInnerPillColor")
         guard tintIntensity > 0 else { return base }

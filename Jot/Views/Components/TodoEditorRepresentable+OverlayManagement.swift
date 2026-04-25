@@ -1553,6 +1553,9 @@ extension TodoEditorRepresentable.Coordinator {
                     textStorage.endEditing()
                     layoutManager.invalidateGlyphs(forCharacterRange: range, changeInLength: 0, actualCharacterRange: nil)
                     layoutManager.invalidateLayout(forCharacterRange: range, actualCharacterRange: nil)
+                    // Force whole-container reflow so neighbouring block overlays read stable
+                    // glyph rects on the same pass instead of querying mid-typeset positions.
+                    layoutManager.ensureLayout(for: textContainer)
                 }
 
                 let glyphRange = layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
