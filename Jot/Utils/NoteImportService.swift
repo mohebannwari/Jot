@@ -265,8 +265,14 @@ final class NoteImportService {
         for raw in lines {
             let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmed.isEmpty {
-                insideBlockScalar = false
                 continue
+            }
+            // Block-scalar continuation (line is indented after a `key: |` / `key: >` / `key:` opener).
+            if insideBlockScalar {
+                if raw.first?.isWhitespace == true {
+                    continue
+                }
+                insideBlockScalar = false
             }
             // Markdown heading (`##` or deeper) — never YAML.
             if trimmed.hasPrefix("##") {
@@ -285,10 +291,6 @@ final class NoteImportService {
             // Top-level list item (rare but valid YAML).
             if trimmed.hasPrefix("- ") {
                 insideBlockScalar = false
-                continue
-            }
-            // Block-scalar continuation (line is indented after a `key: |` / `key: >` / `key:` opener).
-            if insideBlockScalar, raw.first?.isWhitespace == true {
                 continue
             }
             // `key: value` — key must be a valid YAML identifier.

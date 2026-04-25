@@ -248,7 +248,6 @@ struct MeetingNotesFloatingPanel: View {
         .background {
             RoundedRectangle(cornerRadius: contentRadius, style: .continuous)
                 .fill(colorScheme == .dark ? Color("DetailPaneColor") : Color.white)
-                .darkSurfaceHairlineBorder(RoundedRectangle(cornerRadius: contentRadius, style: .continuous))
         }
         .clipShape(RoundedRectangle(cornerRadius: contentRadius, style: .continuous))
         .overlay(

@@ -187,7 +187,6 @@ struct AIToolsOverlay: View {
                 .background(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .fill(textAreaBackgroundColor)
-                        .darkSurfaceHairlineBorder(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)

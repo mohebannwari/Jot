@@ -37,6 +37,17 @@ final class NoteImportServiceTests: XCTestCase {
     private var importTestBaseURL: URL { URL(fileURLWithPath: NSTemporaryDirectory()) }
     private var importTestFileURL: URL { URL(fileURLWithPath: "/tmp/NoteImportServiceTests.md") }
 
+    private static let agentsMarkdownFixture = """
+    ---
+    # Jot -- agent instructions
+    **Single source of truth:** edit `AGENTS.md` at the repository root only.
+    iOS 26+ / macOS 26+ note-taking app in SwiftUI with Apple Liquid Glass design system.
+    ---
+
+    ## Forward Thinking -- READ BEFORE EVERYTHING ELSE
+    Body.
+    """
+
     func testInlineCodeWithUnderscoresSurvivesItalicPass() async {
         let md = "Use `read_file` and `grep_search`."
         let (_, content) = await NoteImportService.shared.convertMarkdownDocument(
@@ -300,14 +311,11 @@ final class NoteImportServiceTests: XCTestCase {
         XCTAssertTrue(html.contains("<code>[x]</code>"), "Literal todo marker should remain visible as code: \(html)")
     }
 
-    func testAttachedAgentsFixtureImportDoesNotCreatePhantomBlocks() async throws {
-        let fixtureURL = URL(fileURLWithPath: "/Users/mohebanwari/development/Jot/AGENTS.md")
-        let raw = try String(contentsOf: fixtureURL, encoding: .utf8)
-
+    func testAttachedAgentsFixtureImportDoesNotCreatePhantomBlocks() async {
         let (_, content) = await NoteImportService.shared.convertMarkdownDocument(
-            raw: raw,
-            baseDirectory: fixtureURL.deletingLastPathComponent(),
-            fileURLForFallbackTitle: fixtureURL
+            raw: Self.agentsMarkdownFixture,
+            baseDirectory: importTestBaseURL,
+            fileURLForFallbackTitle: importTestFileURL
         )
 
         XCTAssertFalse(content.contains("\n\n"), "Markdown import should not create empty editor paragraphs: \(content.prefix(1000))")
@@ -390,17 +398,38 @@ final class NoteImportServiceTests: XCTestCase {
         )
     }
 
-    /// Verifies the actual `AGENTS.md` fixture round-trips the previously-dropped chunk
+    /// Valid YAML block scalars may contain indented Markdown. The shape check must
+    /// not reject a `##` line while it is still inside the scalar body.
+    func testYAMLFrontmatterAllowsIndentedMarkdownInsideBlockScalar() async {
+        let md = """
+        ---
+        title: Scalar Note
+        tags:
+          - docs
+        description: |
+          ## Markdown inside YAML
+          Body copy with **formatting**.
+        ---
+        Note body.
+        """
+        let (title, content) = await NoteImportService.shared.convertMarkdownDocument(
+            raw: md,
+            baseDirectory: importTestBaseURL,
+            fileURLForFallbackTitle: importTestFileURL
+        )
+
+        XCTAssertEqual(title, "Scalar Note")
+        XCTAssertEqual(content, "Note body.")
+    }
+
+    /// Verifies an `AGENTS.md`-shaped fixture round-trips the previously-dropped chunk
     /// (the user's reported bug). After the fix the body must contain the bold "Single
     /// source of truth" lead and the iOS-26 paragraph.
-    func testAGENTSFixtureRecoversPreviouslyDroppedContent() async throws {
-        let fixtureURL = URL(fileURLWithPath: "/Users/mohebanwari/development/Jot/AGENTS.md")
-        let raw = try String(contentsOf: fixtureURL, encoding: .utf8)
-
+    func testAGENTSFixtureRecoversPreviouslyDroppedContent() async {
         let (_, content) = await NoteImportService.shared.convertMarkdownDocument(
-            raw: raw,
-            baseDirectory: fixtureURL.deletingLastPathComponent(),
-            fileURLForFallbackTitle: fixtureURL
+            raw: Self.agentsMarkdownFixture,
+            baseDirectory: importTestBaseURL,
+            fileURLForFallbackTitle: importTestFileURL
         )
 
         // Anchor on phrasing unique to the frontmatter prefix — "Single source of truth"
@@ -408,7 +437,7 @@ final class NoteImportServiceTests: XCTestCase {
         // from line 11 to prove the previously-dropped chunk was recovered.
         XCTAssertTrue(
             content.contains("note-taking app in SwiftUI"),
-            "AGENTS.md import must include the line-11 deployment-target paragraph that lives inside the leading `---...---` block; got prefix: \(content.prefix(1200))"
+            "AGENTS.md-shaped import must include the deployment-target paragraph that lives inside the leading `---...---` block; got prefix: \(content.prefix(1200))"
         )
     }
 }

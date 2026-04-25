@@ -138,7 +138,6 @@ struct SmartFolderEditorSheet: View {
                 .padding(12)
                 .background(themeManager.tintedDetailPane(for: colorScheme))
                 .clipShape(Capsule())
-                .darkSurfaceHairlineBorder(Capsule())
         }
     }
 
@@ -156,7 +155,6 @@ struct SmartFolderEditorSheet: View {
                 .padding(12)
                 .background(themeManager.tintedDetailPane(for: colorScheme))
                 .clipShape(Capsule())
-                .darkSurfaceHairlineBorder(Capsule())
         }
     }
 
@@ -174,7 +172,6 @@ struct SmartFolderEditorSheet: View {
                 .padding(12)
                 .background(themeManager.tintedDetailPane(for: colorScheme))
                 .clipShape(Capsule())
-                .darkSurfaceHairlineBorder(Capsule())
         }
     }
 

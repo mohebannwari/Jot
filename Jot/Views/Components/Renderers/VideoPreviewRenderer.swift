@@ -95,7 +95,6 @@ struct VideoPreviewRenderer: View {
     private func placeholder(_ message: String) -> some View {
         RoundedRectangle(cornerRadius: 10, style: .continuous)
             .fill(colorScheme == .dark ? Color("DetailPaneColor") : Color.white)
-            .darkSurfaceHairlineBorder(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .frame(width: containerWidth, height: contentHeight)
             .overlay {
                 HStack(spacing: 8) {

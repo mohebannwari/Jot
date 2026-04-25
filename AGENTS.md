@@ -477,10 +477,6 @@ All semantic colors live in `Jot/Ressources/Assets.xcassets/`. Reference by name
 | `TagBackgroundColor`                   | `#608DFA59` (35% accent)                                     | `#608DFA40` (25% accent)                       |
 | `TagTextColor`                         | `#1A1A1A`                                                    | `#FFFFFF`                                      |
 | `TertiaryTextColor`                    | `#52525B`                                                    | `#A19FA9`                                      |
-| `DarkSurfaceHairlineColor`             | `#171717` (only consumed by tables outer border)             | `#171717`                                      |
-
-`**DarkSurfaceHairlineColor`:\*\* Currently consumed only by the table outer border (`NoteTableOverlayView`). The earlier hairline-on-every-pure-black-surface policy was retired — surfaces shifted to neutral-900 instead, which provides enough lift against the neutral-950 detail-pane wash without needing strokes. The SwiftUI `View.darkSurfaceHairlineBorder(_:)` helper is now a no-op stub (call sites compile, paint nothing) until a future pass removes them.
-
 `**EditorCommandMenuItemForegroundColor`:** Slash/command menu (`CommandMenu`) idle rows — apply this **one** token to **both the template icon and the row title so they always match. Keyboard-selection and hover use `PrimaryTextColor` for icon + title together. Values track `IconSecondaryColor`; the dedicated name documents shared editor-menu usage.
 
 `**InlineCodeBgColor`:** Inline code pills in the editor use `ThemeManager.tintedInlineCodePillNS(isDark:)` — neutral-300 / neutral-700 bases with the same tint **targets as `tintedBlockContainerNS` (slightly lighter dark base than block chrome’s neutral-800). The asset holds the untinted pair for any `Color("InlineCodeBgColor")` usage.

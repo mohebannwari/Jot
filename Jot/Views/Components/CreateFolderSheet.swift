@@ -90,7 +90,6 @@ struct CreateFolderSheet: View {
         .padding(12)
         .background(themeManager.tintedDetailPane(for: colorScheme))
         .clipShape(Capsule())
-        .darkSurfaceHairlineBorder(Capsule())
     }
 
     // MARK: - Color Section

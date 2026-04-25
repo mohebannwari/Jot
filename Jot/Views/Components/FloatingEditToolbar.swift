@@ -95,11 +95,9 @@ struct FloatingEditToolbar: View {
         if colorScheme == .dark {
             Capsule()
                 .fill(pillBg)
-                .darkSurfaceHairlineBorder(Capsule())
         } else {
             Capsule()
                 .fill(pillBg)
-                .darkSurfaceHairlineBorder(Capsule())
                 .shadow(color: Color.black.opacity(0.12), radius: 2, x: 0, y: 1)
         }
     }

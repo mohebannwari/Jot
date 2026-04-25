@@ -42,7 +42,6 @@ struct ImagePreviewRenderer: View {
     private func placeholder(_ message: String) -> some View {
         RoundedRectangle(cornerRadius: 10, style: .continuous)
             .fill(colorScheme == .dark ? Color("DetailPaneColor") : Color.white)
-            .darkSurfaceHairlineBorder(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .frame(maxWidth: containerWidth)
             .frame(height: 200)
             .overlay {

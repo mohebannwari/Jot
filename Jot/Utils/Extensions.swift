@@ -304,18 +304,6 @@ extension View {
     }
 }
 
-// MARK: - Dark Surface Hairline Border
-
-extension View {
-    /// No-op since the dark-surface hairline policy was retired (only tables retain a visible
-    /// outer border, painted directly in `NoteTableOverlayView`). Kept as a stub so existing
-    /// call sites continue to compile; remove the calls in a future cleanup pass.
-    func darkSurfaceHairlineBorder<S: InsettableShape>(_ shape: S) -> some View {
-        _ = shape
-        return self
-    }
-}
-
 // MARK: - Color Hex Initializer
 
 extension Color {
