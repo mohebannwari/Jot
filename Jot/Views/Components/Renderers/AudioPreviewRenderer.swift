@@ -56,7 +56,6 @@ struct AudioPreviewRenderer: View {
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(colorScheme == .dark ? Color("DetailPaneColor") : Color.white)
-                .darkSurfaceHairlineBorder(RoundedRectangle(cornerRadius: 10, style: .continuous))
         )
         .shadow(color: .black.opacity(0.1), radius: 5, x: 0, y: 5)
     }
@@ -107,7 +106,6 @@ struct AudioPreviewRenderer: View {
     private func placeholder(_ message: String) -> some View {
         RoundedRectangle(cornerRadius: 10, style: .continuous)
             .fill(colorScheme == .dark ? Color("DetailPaneColor") : Color.white)
-            .darkSurfaceHairlineBorder(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .frame(height: contentHeight)
             .overlay {
                 HStack(spacing: 8) {

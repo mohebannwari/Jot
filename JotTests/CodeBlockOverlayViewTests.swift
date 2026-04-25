@@ -7,12 +7,12 @@ import XCTest
 @MainActor
 final class CodeBlockOverlayViewTests: XCTestCase {
 
-    private func horizontalScrollEvent(deltaX: Int32) -> NSEvent {
+    private func scrollEvent(deltaX: Int32, deltaY: Int32 = 0) -> NSEvent {
         let event = CGEvent(
             scrollWheelEvent2Source: nil,
             units: .pixel,
             wheelCount: 2,
-            wheel1: 0,
+            wheel1: deltaY,
             wheel2: deltaX,
             wheel3: 0
         ).flatMap(NSEvent.init(cgEvent:))
@@ -77,7 +77,7 @@ final class CodeBlockOverlayViewTests: XCTestCase {
     func testHorizontalWheelOverCodeTextScrollsCodeBody() {
         let overlay = CodeBlockOverlayView(codeBlockData: CodeBlockData(
             language: "bash",
-            code: String(repeating: "cd /Users/mohebanwari/development/Jot && xcodebuild ", count: 12),
+            code: String(repeating: "cd project && xcodebuild ", count: 16),
             preferredContentWidth: nil
         ))
         overlay.frame = NSRect(x: 0, y: 0, width: 420, height: CodeBlockOverlayView.heightForData(overlay.codeBlockData, width: 420))
@@ -91,6 +91,27 @@ final class CodeBlockOverlayViewTests: XCTestCase {
         XCTAssertGreaterThan(overlay.testability_codeBodyScrollOriginX, 0)
     }
 
+    func testDiagonalWheelAtHorizontalEdgeFallsThroughForVerticalScroll() {
+        let overlay = CodeBlockOverlayView(codeBlockData: CodeBlockData(
+            language: "bash",
+            code: String(repeating: "cd project && xcodebuild ", count: 16),
+            preferredContentWidth: nil
+        ))
+        overlay.frame = NSRect(x: 0, y: 0, width: 420, height: CodeBlockOverlayView.heightForData(overlay.codeBlockData, width: 420))
+        overlay.layoutSubtreeIfNeeded()
+
+        for _ in 0..<20 {
+            _ = overlay.scrollCodeBodyHorizontally(with: scrollEvent(deltaX: -240))
+        }
+        let edgeOriginX = overlay.testability_codeBodyScrollOriginX
+        XCTAssertGreaterThan(edgeOriginX, 0)
+
+        let handled = overlay.scrollCodeBodyHorizontally(with: scrollEvent(deltaX: -120, deltaY: -40))
+
+        XCTAssertFalse(handled, "Vertical wheel delta should fall through when horizontal scrolling is already pinned at the edge")
+        XCTAssertEqual(overlay.testability_codeBodyScrollOriginX, edgeOriginX)
+    }
+
     func testOuterEditorWheelInsideCodeBlockRedirectsToCodeBody() {
         let editor = InlineNSTextView(frame: NSRect(x: 0, y: 0, width: 700, height: 240))
         let coordinator = TodoEditorRepresentable.Coordinator(
@@ -102,7 +123,7 @@ final class CodeBlockOverlayViewTests: XCTestCase {
 
         let overlay = CodeBlockOverlayView(codeBlockData: CodeBlockData(
             language: "bash",
-            code: String(repeating: "cd /Users/mohebanwari/development/Jot && xcodebuild ", count: 12),
+            code: String(repeating: "cd project && xcodebuild ", count: 16),
             preferredContentWidth: nil
         ))
         overlay.frame = NSRect(
@@ -121,7 +142,7 @@ final class CodeBlockOverlayViewTests: XCTestCase {
         let handled = coordinator.scrollCodeBlockOverlay(
             at: pointInsideOverlay,
             in: editor,
-            event: horizontalScrollEvent(deltaX: -120)
+            event: scrollEvent(deltaX: -120)
         )
 
         XCTAssertTrue(handled)

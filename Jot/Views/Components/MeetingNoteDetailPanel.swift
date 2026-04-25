@@ -56,8 +56,6 @@ struct MeetingNoteDetailPanel: View {
       } else {
         RoundedRectangle(cornerRadius: panelRadius, style: .continuous)
           .fill(panelBackground)
-          .darkSurfaceHairlineBorder(
-            RoundedRectangle(cornerRadius: panelRadius, style: .continuous))
       }
     }
     .modifier(AIGlassModifier(cornerRadius: panelRadius))
@@ -475,7 +473,6 @@ private struct NotesEditor: View {
       .background(
         RoundedRectangle(cornerRadius: 12, style: .continuous)
           .fill(notesEditorChromeFill)
-          .darkSurfaceHairlineBorder(RoundedRectangle(cornerRadius: 12, style: .continuous))
       )
       .overlay(
         RoundedRectangle(cornerRadius: 12, style: .continuous)

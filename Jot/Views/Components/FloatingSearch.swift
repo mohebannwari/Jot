@@ -551,8 +551,6 @@ struct FloatingSearch: View {
         .background(
           RoundedRectangle(cornerRadius: surfaceCornerRadius, style: .continuous)
             .fill(searchPanelPreGlassFill)
-            .darkSurfaceHairlineBorder(
-              RoundedRectangle(cornerRadius: surfaceCornerRadius, style: .continuous))
         )
         .overlay(
           RoundedRectangle(cornerRadius: surfaceCornerRadius, style: .continuous)

@@ -739,7 +739,9 @@ private final class _CodeBlockScrollView: NSScrollView {
 
         let currentX = contentView.bounds.origin.x
         let nextX = min(max(currentX - event.scrollingDeltaX, 0), maxX)
-        guard nextX != currentX else { return true }
+        guard nextX != currentX else {
+            return event.scrollingDeltaY == 0
+        }
 
         contentView.scroll(to: NSPoint(x: nextX, y: contentView.bounds.origin.y))
         reflectScrolledClipView(contentView)

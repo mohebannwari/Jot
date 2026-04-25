@@ -36,7 +36,6 @@ struct UpdatePanelView: View {
         .padding(8)
         .background { backgroundLayer }
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-        .darkSurfaceHairlineBorder(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
     }
 
     // MARK: - Background

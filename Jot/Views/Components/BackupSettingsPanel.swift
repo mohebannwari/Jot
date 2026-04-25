@@ -102,7 +102,6 @@ struct BackupSettingsPanel: View {
                                 Capsule()
                                     .fill(themeManager.tintedSettingsInnerPill(for: colorScheme))
                             )
-                            .darkSurfaceHairlineBorder(Capsule())
                     }
                     .buttonStyle(.plain)
                     .macPointingHandCursor()
@@ -335,7 +334,6 @@ struct BackupSettingsPanel: View {
         .background(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .fill(themeManager.tintedBlockBody(for: colorScheme))
-                .darkSurfaceHairlineBorder(RoundedRectangle(cornerRadius: 22, style: .continuous))
                 .translucentLightPaperTableStroke(
                     shape: RoundedRectangle(cornerRadius: 22, style: .continuous),
                     enabled: shouldElevateLightPaperChrome

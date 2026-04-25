@@ -661,7 +661,6 @@ struct SettingsPage: View {
                                 Circle()
                                     .fill(themeManager.tintedSettingsInnerPill(for: colorScheme))
                                     .frame(width: 15, height: 15)
-                                    .darkSurfaceHairlineBorder(Circle())
                                 Text("?")
                                     .jotUI(FontManager.uiLabel5(weight: .regular))
                                     .foregroundColor(Color("SettingsPlaceholderTextColor"))
@@ -731,7 +730,6 @@ struct SettingsPage: View {
         .background(
             Capsule()
                 .fill(themeManager.tintedBlockBody(for: colorScheme))
-                .darkSurfaceHairlineBorder(Capsule())
                 .translucentLightPaperTableStroke(shape: Capsule(), enabled: shouldElevateLightPaperChrome)
                 .liquidGlassPaperElevatedShadow(enabled: shouldElevateLightPaperChrome)
         )
@@ -746,7 +744,6 @@ struct SettingsPage: View {
         .background(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .fill(themeManager.tintedBlockBody(for: colorScheme))
-                .darkSurfaceHairlineBorder(RoundedRectangle(cornerRadius: 22, style: .continuous))
                 .translucentLightPaperTableStroke(
                     shape: RoundedRectangle(cornerRadius: 22, style: .continuous),
                     enabled: shouldElevateLightPaperChrome
@@ -1030,7 +1027,6 @@ struct SettingsPage: View {
                 ZStack {
                     RoundedRectangle(cornerRadius: bodyFontCardRadius, style: .continuous)
                         .fill(themeManager.tintedBlockBody(for: colorScheme))
-                        .darkSurfaceHairlineBorder(RoundedRectangle(cornerRadius: bodyFontCardRadius, style: .continuous))
                         .translucentLightPaperTableStroke(
                             shape: RoundedRectangle(cornerRadius: bodyFontCardRadius, style: .continuous),
                             enabled: shouldElevateLightPaperChrome
@@ -1083,7 +1079,6 @@ struct SettingsPage: View {
                 ZStack {
                     RoundedRectangle(cornerRadius: lineSpacingCardRadius, style: .continuous)
                         .fill(themeManager.tintedBlockBody(for: colorScheme))
-                        .darkSurfaceHairlineBorder(RoundedRectangle(cornerRadius: lineSpacingCardRadius, style: .continuous))
                         .translucentLightPaperTableStroke(
                             shape: RoundedRectangle(cornerRadius: lineSpacingCardRadius, style: .continuous),
                             enabled: shouldElevateLightPaperChrome
@@ -1200,7 +1195,6 @@ struct SettingsPage: View {
             .background(
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
                     .fill(themeManager.tintedBlockBody(for: colorScheme))
-                    .darkSurfaceHairlineBorder(RoundedRectangle(cornerRadius: 22, style: .continuous))
                     .translucentLightPaperTableStroke(
                         shape: RoundedRectangle(cornerRadius: 22, style: .continuous),
                         enabled: shouldElevateLightPaperChrome
@@ -1302,7 +1296,6 @@ struct SettingsPage: View {
             .background(
                 Capsule()
                     .fill(themeManager.tintedBlockBody(for: colorScheme))
-                    .darkSurfaceHairlineBorder(Capsule())
                     .translucentLightPaperTableStroke(shape: Capsule(), enabled: shouldElevateLightPaperChrome)
                     .liquidGlassPaperElevatedShadow(enabled: shouldElevateLightPaperChrome)
             )
@@ -1368,7 +1361,6 @@ struct SettingsPage: View {
                                 : themeManager.tintedSettingsInnerPill(for: colorScheme)
                     )
             )
-            .darkSurfaceHairlineBorder(Capsule())
         }
         .buttonStyle(.plain)
         .macPointingHandCursor()
@@ -1407,7 +1399,6 @@ struct SettingsPage: View {
         .background(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .fill(themeManager.tintedBlockBody(for: colorScheme))
-                .darkSurfaceHairlineBorder(RoundedRectangle(cornerRadius: 22, style: .continuous))
                 .translucentLightPaperTableStroke(
                     shape: RoundedRectangle(cornerRadius: 22, style: .continuous),
                     enabled: shouldElevateLightPaperChrome

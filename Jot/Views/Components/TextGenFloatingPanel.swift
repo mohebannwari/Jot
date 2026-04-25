@@ -29,7 +29,6 @@ struct TextGenFloatingPanel: View {
             } else {
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
                     .fill(colorScheme == .dark ? Color("DetailPaneColor") : .white)
-                    .darkSurfaceHairlineBorder(RoundedRectangle(cornerRadius: 22, style: .continuous))
             }
         }
         .modifier(AIGlassModifier(cornerRadius: 22, glowMode: .continuous))

@@ -75,7 +75,6 @@ struct PDFPreviewRenderer: View {
     private func placeholder(_ message: String) -> some View {
         RoundedRectangle(cornerRadius: pageCornerRadius, style: .continuous)
             .fill(colorScheme == .dark ? Color("DetailPaneColor") : Color.white)
-            .darkSurfaceHairlineBorder(RoundedRectangle(cornerRadius: pageCornerRadius, style: .continuous))
             .frame(height: 400)
             .overlay {
                 Text(message)
