@@ -611,17 +611,21 @@ extension NoteDetailView {
     /// change, so the note-switch handler alone never runs.
     @MainActor
     func applyMeetingPanelVisibilityForActiveSession() {
-        let shouldShow =
-            meetingRecorderManager.recordingNoteID == note.id
-            && meetingRecorderManager.recordingState != .idle
+        let shouldShow = MeetingPanelVisibilityPolicy.shouldShow(
+            recordingNoteID: meetingRecorderManager.recordingNoteID,
+            recordingState: meetingRecorderManager.recordingState,
+            visibleNoteID: note.id
+        )
 
         if shouldShow {
             // Defer presenting one turn so panel entrance does not merge with the same
             // transaction as the manager’s @Published updates (matches `startMeetingRecording`).
             DispatchQueue.main.async {
-                guard meetingRecorderManager.recordingNoteID == note.id,
-                    meetingRecorderManager.recordingState != .idle
-                else { return }
+                guard MeetingPanelVisibilityPolicy.shouldShow(
+                    recordingNoteID: meetingRecorderManager.recordingNoteID,
+                    recordingState: meetingRecorderManager.recordingState,
+                    visibleNoteID: note.id
+                ) else { return }
                 showMeetingPanel = true
             }
         } else if showMeetingPanel {

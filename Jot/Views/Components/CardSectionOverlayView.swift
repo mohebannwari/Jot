@@ -4,7 +4,7 @@
 //
 //  Overlay NSView for card section blocks in the rich text editor.
 //  Cards flow horizontally with individual colors, rich text editing,
-//  resize handles, drag reorder, and an always-visible plus button.
+//  resize handles, drag reorder, and a hover-revealed plus button.
 //
 
 #if os(macOS)
@@ -130,6 +130,7 @@ final class CardSectionOverlayView: NSView {
     // MARK: - Hover state
 
     private var hoveredCardIndex: Int?
+    private var isHoveringAddCard = false
     private var mouseMonitor: Any?
 
     // MARK: - Appearance
@@ -403,6 +404,9 @@ final class CardSectionOverlayView: NSView {
     /// Called by the coordinator's `resizeCursorForPoint` to suppress NSTextView's I-beam cursor.
     func cursorForPoint(_ windowPoint: CGPoint) -> NSCursor? {
         let local = convert(windowPoint, from: nil)
+        if plusButtonViewRect.contains(local) {
+            return .pointingHand
+        }
         for h in cornerHandles where !h.isHidden && h.frame.contains(local) {
             return NSCursor.compatFrameResize(position: "bottomRight")
         }
@@ -607,6 +611,11 @@ final class CardSectionOverlayView: NSView {
     private var plusButtonRect: CGRect {
         let x = columnX(at: cardSectionData.columns.count)
         return CGRect(x: x, y: cardBorder, width: plusBtnWidth, height: cardSectionData.maxColumnHeight)
+    }
+
+    /// Returns the rect of the plus button in view space.
+    private var plusButtonViewRect: CGRect {
+        plusButtonRect.offsetBy(dx: -scrollOffset, dy: 0)
     }
 
     /// Converts content-space x to view-space x.
@@ -823,8 +832,10 @@ final class CardSectionOverlayView: NSView {
 
         // Grip dots are NSView subviews (gripDotViews), visibility managed in layout()
 
-        // Draw plus button
-        drawPlusButton(in: ctx, isDark: dark)
+        // Draw plus button only while hovering its hit zone, matching table add controls.
+        if isHoveringAddCard {
+            drawPlusButton(in: ctx, isDark: dark)
+        }
 
         // Draw drag insertion indicator
         if isDragging, dropTarget != nil {
@@ -850,7 +861,7 @@ final class CardSectionOverlayView: NSView {
     }
 
     private func drawPlusButton(in ctx: CGContext, isDark: Bool) {
-        let rect = plusButtonRect.offsetBy(dx: -scrollOffset, dy: 0)
+        let rect = plusButtonViewRect
         let path = CGPath(roundedRect: rect, cornerWidth: rect.width / 2,
                           cornerHeight: rect.width / 2, transform: nil)
 
@@ -1017,10 +1028,38 @@ final class CardSectionOverlayView: NSView {
     private func updateHoverState(from event: NSEvent) {
         guard let window = self.window, event.window === window else { return }
         let localPoint = convert(event.locationInWindow, from: nil)
-        let newHover = cardIndex(at: localPoint)
-        if newHover != hoveredCardIndex {
-            hoveredCardIndex = newHover
+        updateHoverState(at: localPoint)
+    }
+
+    private func updateHoverState(at point: CGPoint) {
+        let newHoveredCard = cardIndex(at: point)
+        let newIsHoveringAddCard = plusButtonViewRect.contains(point)
+
+        if newHoveredCard != hoveredCardIndex {
+            hoveredCardIndex = newHoveredCard
             needsLayout = true
+        }
+
+        if newIsHoveringAddCard != isHoveringAddCard {
+            isHoveringAddCard = newIsHoveringAddCard
+            needsDisplay = true
+        }
+
+        if isHoveringAddCard {
+            NSCursor.pointingHand.set()
+        }
+    }
+
+    private func clearHoverState() {
+        let hadHoveredCard = hoveredCardIndex != nil
+        let wasHoveringAddCard = isHoveringAddCard
+        hoveredCardIndex = nil
+        isHoveringAddCard = false
+        if hadHoveredCard {
+            needsLayout = true
+        }
+        if wasHoveringAddCard {
+            needsDisplay = true
         }
     }
 
@@ -1030,7 +1069,16 @@ final class CardSectionOverlayView: NSView {
             startMouseMonitor()
         } else {
             stopMouseMonitor()
+            clearHoverState()
         }
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        updateHoverState(at: convert(event.locationInWindow, from: nil))
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        clearHoverState()
     }
 
     // MARK: - Mouse handling
@@ -1039,10 +1087,9 @@ final class CardSectionOverlayView: NSView {
         let point = convert(event.locationInWindow, from: nil)
 
         // Plus button?
-        let plusRect = plusButtonRect.offsetBy(dx: -scrollOffset, dy: 0)
+        let plusRect = plusButtonViewRect
         if plusRect.contains(point) {
-            cardSectionData.addCard()
-            onDataChanged?(cardSectionData)
+            addCard()
             return
         }
 
@@ -1223,6 +1270,14 @@ final class CardSectionOverlayView: NSView {
 
         menu.addItem(.separator())
 
+        // Add card
+        let addCardItem = NSMenuItem(title: "Add Card", action: #selector(addCardFromMenu(_:)),
+                                     keyEquivalent: "")
+        addCardItem.target = self
+        menu.addItem(addCardItem)
+
+        menu.addItem(.separator())
+
         // Delete card
         let deleteCardItem = NSMenuItem(title: "Delete Card", action: #selector(deleteCard(_:)),
                                          keyEquivalent: "")
@@ -1256,6 +1311,16 @@ final class CardSectionOverlayView: NSView {
         let idx = sender.tag
         cardSectionData.setCardColor(at: idx, color: color)
         onDataChanged?(cardSectionData)
+    }
+
+    private func addCard() {
+        cardSectionData.addCard()
+        onDataChanged?(cardSectionData)
+        onHeightChanged?(cardSectionData.maxColumnHeight)
+    }
+
+    @objc private func addCardFromMenu(_ sender: NSMenuItem) {
+        addCard()
     }
 
     @objc private func deleteCard(_ sender: NSMenuItem) {

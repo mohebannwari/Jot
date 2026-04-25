@@ -591,6 +591,7 @@ struct NoteDetailView: View {
     noteContentLayout
       .onAppear {
         glassElementsVisible = true
+        applyMeetingPanelVisibilityForActiveSession()
         if isNewNote {
           DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
             titleFocused = true
