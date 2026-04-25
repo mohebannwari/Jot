@@ -34,7 +34,8 @@ struct SmartFolderSection: View {
 
     @State private var hoveredSmartFolderID: UUID?
 
-    private var rowTint: Color { Color("SecondaryTextColor") }
+    private var rowIconTint: Color { Color("IconSecondaryColor") }
+    private var rowNameTint: Color { Color("PrimaryTextColor") }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -57,7 +58,7 @@ struct SmartFolderSection: View {
                     .resizable()
                     .renderingMode(.template)
                     .frame(width: 15, height: 15)
-                    .foregroundColor(Color("SecondaryTextColor"))
+                    .foregroundColor(Color("IconSecondaryColor"))
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 8)
@@ -98,12 +99,12 @@ struct SmartFolderSection: View {
                 .renderingMode(.template)
                 .resizable()
                 .scaledToFit()
-                .foregroundColor(rowTint)
+                .foregroundColor(rowIconTint)
                 .frame(width: 15, height: 15)
 
             Text(smartFolder.name)
                 .font(FontManager.heading(size: 13, weight: .regular))
-                .foregroundColor(rowTint)
+                .foregroundColor(rowNameTint)
                 .tracking(-0.1)
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -145,7 +146,7 @@ struct SmartFolderSection: View {
                 } label: {
                     Image(systemName: "ellipsis")
                         .font(FontManager.icon(size: 12, weight: .regular))
-                        .foregroundColor(Color("SecondaryTextColor"))
+                        .foregroundColor(Color("IconSecondaryColor"))
                         .frame(width: 12, height: 12)
                         .contentShape(Rectangle())
                 }
@@ -221,7 +222,7 @@ struct SmartFolderSection: View {
                             note: note,
                             isSelected: selectedNoteIDs.contains(note.id),
                             isActiveNote: note.id == activeNoteID,
-                            activeIconTint: rowTint,
+                            activeIconTint: rowIconTint,
                             isInsideFolder: true,
                             leadingIconAssetName: note.isLocked
                                 ? "IconLock"

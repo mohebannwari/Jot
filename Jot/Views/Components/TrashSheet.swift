@@ -59,7 +59,7 @@ struct TrashSheet: View {
                 .renderingMode(.template)
                 .resizable()
                 .scaledToFit()
-                .foregroundColor(Color("SecondaryTextColor"))
+                .foregroundColor(Color("IconSecondaryColor"))
                 .frame(width: 15, height: 15)
 
             Text("Trash")
@@ -154,7 +154,7 @@ struct TrashSheet: View {
                         .renderingMode(.template)
                         .resizable()
                         .scaledToFit()
-                        .foregroundColor(Color("SecondaryTextColor"))
+                        .foregroundColor(Color("IconSecondaryColor"))
                         .frame(width: 15, height: 15)
                         .padding(6)
                         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))

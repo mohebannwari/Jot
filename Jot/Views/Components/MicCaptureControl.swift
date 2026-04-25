@@ -119,7 +119,7 @@ private extension MicCaptureControl {
         } label: {
             Image(systemName: "mic")
                 .font(FontManager.icon(size: MicGeometry.iconSize, weight: .medium))
-                .foregroundStyle(Color("SecondaryTextColor"))
+                .foregroundStyle(Color("IconSecondaryColor"))
                 .frame(width: MicGeometry.iconSize, height: MicGeometry.iconSize)
                 .padding(MicGeometry.buttonInset)
                 .contentShape(Circle())
@@ -199,7 +199,7 @@ private extension MicCaptureControl {
                     .renderingMode(.template)
                     .resizable()
                     .scaledToFit()
-                    .foregroundColor(Color("SecondaryTextColor"))
+                    .foregroundColor(Color("IconSecondaryColor"))
                     .frame(width: MicGeometry.iconSize, height: MicGeometry.iconSize)
                     .padding(MicGeometry.buttonInset)
                     .contentShape(Circle())

@@ -78,18 +78,11 @@ struct FloatingEditToolbar: View {
 
     @Environment(\.colorScheme) private var colorScheme
 
-    /// Matches the tabs block content body (`TabsContainerOverlayView.blocksColor` /
-    /// Figma bg/blocks): `SurfaceDefaultColor` in light (white) and
-    /// `DetailPaneColor` in dark (#0C0A09). Drop shadow stays on the capsule layer.
+    /// Picker pill chrome: white in light, `#404040` neutral-700 in dark — one tier above
+    /// the surrounding neutral-900 chrome so the toolbar reads as a floating control.
+    /// Drop shadow stays on the capsule layer.
     private var pillBg: Color {
-        switch colorScheme {
-        case .light:
-            Color("SurfaceDefaultColor")
-        case .dark:
-            Color("DetailPaneColor")
-        @unknown default:
-            Color("SurfaceDefaultColor")
-        }
+        Color("ToolbarPillColor")
     }
 
     private var pillTextColor: Color {
@@ -100,10 +93,13 @@ struct FloatingEditToolbar: View {
     @ViewBuilder
     private func pickerPillCapsuleBackground() -> some View {
         if colorScheme == .dark {
-            Capsule().fill(pillBg)
+            Capsule()
+                .fill(pillBg)
+                .darkSurfaceHairlineBorder(Capsule())
         } else {
             Capsule()
                 .fill(pillBg)
+                .darkSurfaceHairlineBorder(Capsule())
                 .shadow(color: Color.black.opacity(0.12), radius: 2, x: 0, y: 1)
         }
     }
@@ -208,13 +204,13 @@ struct FloatingEditToolbar: View {
                     .resizable()
                     .scaledToFit()
                     .frame(width: 15, height: 15)
-                    .foregroundColor(pillTextColor.opacity(0.6))
+                    .foregroundColor(Color("IconSecondaryColor"))
                 Image("IconChevronDownSmall")
                     .renderingMode(.template)
                     .resizable()
                     .scaledToFit()
                     .frame(width: 15, height: 15)
-                    .foregroundColor(pillTextColor.opacity(0.6))
+                    .foregroundColor(Color("IconSecondaryColor"))
             }
             .padding(.leading, 12)
             .padding(.trailing, 8)
@@ -257,7 +253,7 @@ struct FloatingEditToolbar: View {
                     .resizable()
                     .scaledToFit()
                     .frame(width: 15, height: 15)
-                    .foregroundColor(pillTextColor.opacity(0.6))
+                    .foregroundColor(Color("IconSecondaryColor"))
             }
             .padding(.leading, 12)
             .padding(.trailing, 8)
@@ -284,13 +280,13 @@ struct FloatingEditToolbar: View {
                     .resizable()
                     .scaledToFit()
                     .frame(width: 15.5, height: 15.5)
-                    .foregroundColor(pillTextColor.opacity(0.6))
+                    .foregroundColor(Color("IconSecondaryColor"))
                 Image("IconChevronDownSmall")
                     .renderingMode(.template)
                     .resizable()
                     .scaledToFit()
                     .frame(width: 15, height: 15)
-                    .foregroundColor(pillTextColor.opacity(0.6))
+                    .foregroundColor(Color("IconSecondaryColor"))
             }
             .padding(.leading, 12)
             .padding(.trailing, 8)
@@ -320,7 +316,7 @@ struct FloatingEditToolbar: View {
                     .resizable()
                     .scaledToFit()
                     .frame(width: 15, height: 15)
-                    .foregroundColor(pillTextColor.opacity(0.6))
+                    .foregroundColor(Color("IconSecondaryColor"))
             }
             .padding(.leading, 8)
             .padding(.trailing, 4)

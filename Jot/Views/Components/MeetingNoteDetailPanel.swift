@@ -56,6 +56,7 @@ struct MeetingNoteDetailPanel: View {
             } else {
                 RoundedRectangle(cornerRadius: panelRadius, style: .continuous)
                     .fill(panelBackground)
+                    .darkSurfaceHairlineBorder(RoundedRectangle(cornerRadius: panelRadius, style: .continuous))
             }
         }
         .modifier(AIGlassModifier(cornerRadius: panelRadius))
@@ -69,7 +70,7 @@ struct MeetingNoteDetailPanel: View {
                 .renderingMode(.template)
                 .resizable()
                 .scaledToFit()
-                .foregroundColor(Color("SecondaryTextColor"))
+                .foregroundColor(Color("IconSecondaryColor"))
                 .frame(width: 14, height: 14)
 
             Text("Meeting Notes")
@@ -97,7 +98,7 @@ struct MeetingNoteDetailPanel: View {
                 .renderingMode(.template)
                 .resizable()
                 .scaledToFit()
-                .foregroundColor(Color("SecondaryTextColor"))
+                .foregroundColor(Color("IconSecondaryColor"))
                 .frame(width: 15, height: 15)
 
             if let onDismiss {
@@ -106,7 +107,7 @@ struct MeetingNoteDetailPanel: View {
                         .renderingMode(.template)
                         .resizable()
                         .scaledToFit()
-                        .foregroundColor(Color("SecondaryTextColor"))
+                        .foregroundColor(Color("IconSecondaryColor"))
                         .frame(width: 15, height: 15)
                 }
                 .buttonStyle(.plain)
@@ -202,7 +203,7 @@ private struct SessionAccordion: View {
                 .resizable()
                 .renderingMode(.template)
                 .frame(width: 15, height: 15)
-                .foregroundColor(Color("SecondaryTextColor"))
+                .foregroundColor(Color("IconSecondaryColor"))
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
@@ -458,6 +459,7 @@ private struct NotesEditor: View {
             .background(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(notesEditorChromeFill)
+                    .darkSurfaceHairlineBorder(RoundedRectangle(cornerRadius: 12, style: .continuous))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)

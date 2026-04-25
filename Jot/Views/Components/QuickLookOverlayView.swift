@@ -88,7 +88,7 @@ struct QuickLookOverlayView: View {
                     .renderingMode(.template)
                     .resizable()
                     .scaledToFit()
-                    .foregroundStyle(Color("SecondaryTextColor"))
+                    .foregroundStyle(Color("IconSecondaryColor"))
                     .frame(width: 15, height: 15)
             }
             .buttonStyle(.plain)
@@ -213,6 +213,8 @@ private struct RawTextRepresentable: NSViewRepresentable {
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
         scrollView.autohidesScrollers = true
+        // Pin overlay (auto-fading) scrollers regardless of system "Show scroll bars" preference.
+        scrollView.scrollerStyle = .overlay
         scrollView.backgroundColor = .white
         scrollView.drawsBackground = true
 
@@ -305,6 +307,12 @@ private struct PDFViewRepresentable: NSViewRepresentable {
 private final class FillWidthPDFView: PDFView {
     override func layout() {
         super.layout()
+        // PDFView hosts an internal NSScrollView; pin it to overlay style so the
+        // indicator only fades in on scroll/hover, regardless of system preference.
+        if let inner = documentView?.enclosingScrollView {
+            inner.scrollerStyle = .overlay
+            inner.autohidesScrollers = true
+        }
         guard let page = document?.page(at: 0), bounds.width > 0 else { return }
         let pageWidth = page.bounds(for: .mediaBox).width
         guard pageWidth > 0 else { return }

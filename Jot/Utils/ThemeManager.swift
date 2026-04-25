@@ -143,7 +143,7 @@ final class ThemeManager: ObservableObject {
     static let editorSettingsChangedNotification = Notification.Name("EditorSettingsChanged")
 
     /// Posted whenever tintHue or tintIntensity changes. NSView overlays
-    /// (tabs container, code block chip) that paint stone-300/stone-800
+    /// (tabs container, code block chip) that paint neutral-300/neutral-800
     /// surfaces subscribe to this so they can recompute their layer
     /// background colors without depending on the SwiftUI environment.
     static let tintDidChangeNotification = Notification.Name("JotTintDidChange")
@@ -576,17 +576,17 @@ final class ThemeManager: ObservableObject {
 
     /// NSColor variant of `tintedBlockContainer(for:)` for AppKit overlays
     /// (TabsContainerOverlayView, CodeBlockOverlayView). Reads the current
-    /// tint state from UserDefaults and blends the stone-300 / stone-800
+    /// tint state from UserDefaults and blends the neutral-300 / neutral-800
     /// base toward the hue-derived target in sRGB.
     ///
     /// The target values mirror the SwiftUI helper so light/dark surfaces
     /// land in the same place visually whether they come from SwiftUI or
-    /// AppKit. Base colors (#D6D3D1 / #292524) match the Figma
+    /// AppKit. Base colors (#D4D4D4 / #262626) match the Figma
     /// BlockContainerColor token exactly.
     nonisolated static func tintedBlockContainerNS(isDark: Bool) -> NSColor {
         let base: NSColor = isDark
-            ? NSColor(srgbRed: 41/255, green: 37/255, blue: 36/255, alpha: 1)     // #292524 stone-800
-            : NSColor(srgbRed: 214/255, green: 211/255, blue: 209/255, alpha: 1)  // #D6D3D1 stone-300
+            ? NSColor(srgbRed: 38/255, green: 38/255, blue: 38/255, alpha: 1)     // #262626 neutral-800
+            : NSColor(srgbRed: 212/255, green: 212/255, blue: 212/255, alpha: 1)  // #D4D4D4 neutral-300
 
         let intensity = currentTintIntensity()
         guard intensity > 0 else { return base }
@@ -602,13 +602,13 @@ final class ThemeManager: ObservableObject {
     }
 
     /// NSColor for inline code pill backgrounds in the editor. Same tint **targets** and
-    /// intensity contract as `tintedBlockContainerNS`, but the dark base is **stone-700**
-    /// (`#44403C`) so small monospace pills read slightly lighter than full block chrome
-    /// (stone-800 `#292524`).
+    /// intensity contract as `tintedBlockContainerNS`, but the dark base is **neutral-700**
+    /// (`#404040`) so small monospace pills read slightly lighter than full block chrome
+    /// (neutral-800 `#262626`).
     nonisolated static func tintedInlineCodePillNS(isDark: Bool) -> NSColor {
         let base: NSColor = isDark
-            ? NSColor(srgbRed: 68 / 255, green: 64 / 255, blue: 60 / 255, alpha: 1)   // #44403C stone-700
-            : NSColor(srgbRed: 214 / 255, green: 211 / 255, blue: 209 / 255, alpha: 1) // #D6D3D1 stone-300
+            ? NSColor(srgbRed: 64 / 255, green: 64 / 255, blue: 64 / 255, alpha: 1)   // #404040 neutral-700
+            : NSColor(srgbRed: 212 / 255, green: 212 / 255, blue: 212 / 255, alpha: 1) // #D4D4D4 neutral-300
 
         let intensity = currentTintIntensity()
         guard intensity > 0 else { return base }
@@ -627,15 +627,15 @@ final class ThemeManager: ObservableObject {
     /// table horizontal scroll fade) that must match the note detail pane wash.
     /// Reads tint from `UserDefaults.standard` like `tintedBlockContainerNS`.
     ///
-    /// Base colors match `DetailPaneSurfaceColor` in the asset catalog (#E7E5E4 light,
-    /// #1C1917 dark). Wash targets mirror `tintHueWashTarget` used by
+    /// Base colors match `DetailPaneSurfaceColor` in the asset catalog (#E5E5E5 light,
+    /// #0A0A0A neutral-950 dark + hairline neutral-900 border at consumer). Wash targets mirror `tintHueWashTarget` used by
     /// `blendTowardAppTintWash`. Blending is sRGB like other static bridges; SwiftUI
     /// uses perceptual `Color.mix` on newer OS versions, so colors may diverge slightly
     /// at very high intensity.
     nonisolated static func tintedPaneSurfaceNS(isDark: Bool) -> NSColor {
         let base: NSColor = isDark
-            ? NSColor(srgbRed: 28 / 255, green: 25 / 255, blue: 23 / 255, alpha: 1)   // #1C1917
-            : NSColor(srgbRed: 231 / 255, green: 229 / 255, blue: 228 / 255, alpha: 1) // #E7E5E4
+            ? NSColor(srgbRed: 10 / 255, green: 10 / 255, blue: 10 / 255, alpha: 1)   // #0A0A0A neutral-950 + hairline neutral-900 border at consumer
+            : NSColor(srgbRed: 229 / 255, green: 229 / 255, blue: 229 / 255, alpha: 1) // #E5E5E5 neutral-200
 
         let intensity = currentTintIntensity()
         guard intensity > 0 else { return base }
@@ -654,7 +654,7 @@ final class ThemeManager: ObservableObject {
     // MARK: - Secondary Button Background Tint
 
     /// Computes the tinted secondary button background color.
-    /// Base: ButtonSecondaryBgColor (#D6D3D1 light / #292524 dark - same as BlockContainerColor)
+    /// Base: ButtonSecondaryBgColor (#D4D4D4 light / #171717 dark - neutral-900)
     /// Target: Slightly more saturated than block container to maintain visual hierarchy
     func tintedSecondaryButtonBackground(for colorScheme: ColorScheme) -> Color {
         let base = Color("ButtonSecondaryBgColor")
@@ -683,8 +683,8 @@ final class ThemeManager: ObservableObject {
     /// NSColor variant of `tintedSecondaryButtonBackground(for:)` for AppKit overlays.
     nonisolated static func tintedSecondaryButtonBackgroundNS(isDark: Bool) -> NSColor {
         let base: NSColor = isDark
-            ? NSColor(srgbRed: 41/255, green: 37/255, blue: 36/255, alpha: 1)     // #292524
-            : NSColor(srgbRed: 214/255, green: 211/255, blue: 209/255, alpha: 1)  // #D6D3D1
+            ? NSColor(srgbRed: 23/255, green: 23/255, blue: 23/255, alpha: 1)     // #171717 neutral-900
+            : NSColor(srgbRed: 212/255, green: 212/255, blue: 212/255, alpha: 1)  // #D4D4D4 neutral-300
 
         let intensity = currentTintIntensity()
         guard intensity > 0 else { return base }
@@ -702,7 +702,7 @@ final class ThemeManager: ObservableObject {
     // MARK: - Settings Inner Pill Tint
 
     /// Computes the tinted settings inner pill color.
-    /// Base: SettingsInnerPillColor (#E7E6E4 light / #1C1917 dark)
+    /// Base: SettingsInnerPillColor (#E5E5E5 light / #000000 pure black dark + hairline neutral-900 border at consumer)
     func tintedSettingsInnerPill(for colorScheme: ColorScheme) -> Color {
         let base = Color("SettingsInnerPillColor")
         guard tintIntensity > 0 else { return base }
@@ -730,7 +730,7 @@ final class ThemeManager: ObservableObject {
     // MARK: - Detail Pane Color Tint
 
     /// Computes the tinted detail pane color.
-    /// Base: DetailPaneColor (#E7E5E4 light / #0C0A09 dark)
+    /// Base: DetailPaneColor (#E5E5E5 light / #0A0A0A neutral-950 dark + hairline neutral-900 border at consumer)
     func tintedDetailPane(for colorScheme: ColorScheme) -> Color {
         let base = Color("DetailPaneColor")
         guard tintIntensity > 0 else { return base }

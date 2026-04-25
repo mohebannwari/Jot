@@ -13,41 +13,44 @@ All semantic colors live in `Jot/Ressources/Assets.xcassets/`. Reference by name
 | -------------------------------------- | ------------------------------------------------------------ | ---------------------------------------------- |
 | `AccentColor`                          | `#2563EB`                                                    | `#608DFA`                                      |
 | `MainColor`                            | `#1A1A1A` (= ButtonPrimaryBgColor)                           | `#FFFFFF` (= ButtonPrimaryBgColor)             |
-| `BackgroundColor`                      | `#FFFFFF5C` (36% white)                                      | `#0C0A0908` (3% near-black)                    |
-| `BlockContainerColor`                  | `#D6D3D1` (stone-300)                                        | `#292524` (stone-800)                          |
+| `BackgroundColor`                      | `#FFFFFF5C` (36% white)                                      | `#0000004D` (pure black 30%)                   |
+| `BlockContainerColor`                  | `#D4D4D4` (neutral-300)                                      | `#383838` (luminance-matched neutral)          |
 | `BorderSubtleColor`                    | `#1A1A1A17` (9% black)                                       | `#FFFFFF17` (9% white)                         |
 | `ButtonPrimaryBgColor`                 | `#1A1A1A`                                                    | `#FFFFFF`                                      |
 | `ButtonPrimaryTextColor`               | `#FFFFFF`                                                    | `#1A1A1A`                                      |
-| `ButtonSecondaryBgColor`               | `#D6D3D1` (stone-300)                                        | `#292524` (stone-800)                          |
-| `CardBackgroundColor`                  | `#FFFFFFB3` (70% white)                                      | `#1C1918B3` (70% dark)                         |
+| `ButtonSecondaryBgColor`               | `#D4D4D4` (neutral-300)                                      | `#171717` (neutral-900)                        |
+| `CardBackgroundColor`                  | `#FFFFFFB3` (70% white)                                      | `#000000B3` (pure black 70%)                   |
 | `FolderBadgeBgColor`                   | `#FFFFFF5C` (36% white)                                      | `#FFFFFF1F` (12% white)                        |
 | `HoverBackgroundColor`                 | `#D1D3D0`                                                    | `#444040`                                      |
 | `IconSecondaryColor`                   | `#1A1A1AB3` (70% black)                                      | `#A8A29E`                                      |
 | `EditorCommandMenuItemForegroundColor` | `#1A1A1AB3` (70% black), same chroma as `IconSecondaryColor` | `#A8A29E`, same chroma as `IconSecondaryColor` |
-| `InlineCodeBgColor`                    | `#D6D3D1` (stone-300)                                        | `#44403C` (stone-700)                          |
+| `InlineCodeBgColor`                    | `#D4D4D4` (neutral-300)                                      | `#404040` (neutral-700)                        |
 | `MenuButtonColor`                      | `#1A1A1AB3` (70% black)                                      | `#FFFFFFB3` (70% white)                        |
 | `PinnedBgColor`                        | `#FEF08A` (amber)                                            | `#854D0E` (amber-dark)                         |
 | `PinnedIconColor`                      | `#854D0E`                                                    | `#FEEF8A`                                      |
 | `PrimaryTextColor`                     | `#1A1A1A`                                                    | `#FFFFFF`                                      |
-| `SearchInputBackgroundColor`           | `#FFFFFF`                                                    | `#1C1918`                                      |
-| `SecondaryBackgroundColor`             | `#E7E6E4`                                                    | `#292524`                                      |
+| `SearchInputBackgroundColor`           | `#FFFFFF`                                                    | `#171717` (neutral-900)                        |
+| `SecondaryBackgroundColor`             | `#E5E5E5` (neutral-200)                                      | `#262626` (neutral-800)                        |
 | `SecondaryTextColor`                   | `#1A1A1AB3` (70% black)                                      | `#FFFFFFB3` (70% white)                        |
-| `SettingsActiveTabColor`               | `#F5F4F4`                                                    | `#444040`                                      |
+| `SettingsActiveTabColor`               | `#F5F5F5` (neutral-100)                                      | `#404040` (neutral-700)                        |
 | `SettingsIconSecondaryColor`           | `#1A1A1AB3`                                                  | `#A8A29E`                                      |
-| `SettingsOptionCardColor`              | `#E7E6E4`                                                    | `#0C0A09`                                      |
+| `SettingsOptionCardColor`              | `#E5E5E5` (neutral-200)                                      | `#171717` (neutral-900)                        |
 | `SettingsPanelPrimaryColor`            | `#FFFFFF5C` (36% white)                                      | `#1A1A1ACC` (80% black)                        |
 | `SettingsPlaceholderTextColor`         | `#1A1A1AB3`                                                  | `#FFFFFFB2`                                    |
 | `SettingsPrimaryTextColor`             | `#1A1A1A`                                                    | `#FFFFFF`                                      |
-| `SurfaceDefaultColor`                  | `#FFFFFF`                                                    | `#1C1918`                                      |
-| `SurfaceElevatedColor`                 | `#F5F4F4`                                                    | `#292524`                                      |
-| `SurfaceTranslucentColor`              | `#1A1A1A0F` (6% black)                                       | `#FFFFFF0F` (6% white)                         |
+| `SurfaceDefaultColor`                  | `#FFFFFF`                                                    | `#262626` (neutral-800)                        |
+| `SurfaceElevatedColor`                 | `#F5F5F5` (neutral-100)                                      | `#262626` (neutral-800)                        |
+| `SurfaceTranslucentColor`              | `#1A1A1A14` (8% black)                                       | `#FFFFFF0F` (6% white)                         |
 | `TagBackgroundColor`                   | `#608DFA59` (35% accent)                                     | `#608DFA40` (25% accent)                       |
 | `TagTextColor`                         | `#1A1A1A`                                                    | `#FFFFFF`                                      |
 | `TertiaryTextColor`                    | `#52525B`                                                    | `#A19FA9`                                      |
+| `DarkSurfaceHairlineColor`             | `#171717` (only consumed by tables outer border)             | `#171717`                                      |
+
+**`DarkSurfaceHairlineColor`:** Currently consumed only by the table outer border (`NoteTableOverlayView`). The earlier hairline-on-every-pure-black-surface policy was retired — surfaces shifted to neutral-900 instead, which provides enough lift against the neutral-950 detail-pane wash without needing strokes. The SwiftUI `View.darkSurfaceHairlineBorder(_:)` helper is now a no-op stub (call sites compile, paint nothing) until a future pass removes them.
 
 **`EditorCommandMenuItemForegroundColor`:** Slash/command menu idle state — use for **both** row template icons and row titles (`CommandMenuItem`). Hover/selection uses `PrimaryTextColor` for icon and title together. Chroma matches `IconSecondaryColor`; the name encodes shared editor-menu usage.
 
-**`InlineCodeBgColor`:** Inline code pills use `ThemeManager.tintedInlineCodePillNS(isDark:)` — stone-300 / stone-700 with the same tint blend **targets** as block chrome (lighter dark base than stone-800). The asset holds the untinted pair for any `Color("InlineCodeBgColor")` usage.
+**`InlineCodeBgColor`:** Inline code pills use `ThemeManager.tintedInlineCodePillNS(isDark:)` — neutral-300 / neutral-700 with the same tint blend **targets** as block chrome (lighter dark base than neutral-800). The asset holds the untinted pair for any `Color("InlineCodeBgColor")` usage.
 
 ### Primitive Colors (Figma Variables)
 

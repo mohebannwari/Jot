@@ -156,7 +156,7 @@ struct CommandMenu: View {
         let strokeOpacity: Double = colorScheme == .dark ? 0.22 : 0.08
         let chevron = Image(systemName: "chevron.down")
             .font(FontManager.uiTiny(weight: .bold).font)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Color("IconSecondaryColor"))
             .frame(width: CommandMenuLayout.scrollIndicatorSize, height: CommandMenuLayout.scrollIndicatorSize)
 
         if #available(macOS 26.0, iOS 26.0, *) {
@@ -247,11 +247,7 @@ struct CommandMenuItem: View {
             if let shortcut = tool.keyboardShortcut {
                 Text("⌘\(shortcut.character)")
                     .jotMetadataLabelTypography()
-                    .foregroundStyle(
-                        isHighlighted
-                            ? highlightRowForeground.opacity(0.72)
-                            : idleRowForeground.opacity(0.72)
-                    )
+                    .foregroundStyle(Color("SecondaryTextColor"))
             }
         }
         .padding(.horizontal, 10)

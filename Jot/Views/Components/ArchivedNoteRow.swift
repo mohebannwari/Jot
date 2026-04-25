@@ -50,7 +50,7 @@ struct ArchivedNoteRow: View {
                             .resizable()
                             .scaledToFit()
                             .frame(width: 15, height: 15)
-                            .foregroundColor(Color("SecondaryTextColor"))
+                            .foregroundColor(Color("IconSecondaryColor"))
                             .padding(4)
                             .contentShape(Circle())
                     }
@@ -89,6 +89,7 @@ struct ArchivedNoteRow: View {
         .background(
             Capsule()
                 .fill(backgroundFill)
+                .modifier(ConditionalDarkSurfaceHairline(active: isActive))
         )
         .shadow(color: isActive ? .black.opacity(0.06) : .clear, radius: 3, x: 0, y: 1)
         .shadow(color: isActive ? .black.opacity(0.03) : .clear, radius: 1, x: 0, y: 0)
@@ -153,5 +154,18 @@ struct ArchivedNoteRow: View {
             return Color("HoverBackgroundColor")
         }
         return Color.clear
+    }
+}
+
+/// Adds the dark-mode hairline border to the active capsule only — idle/hover/selected
+/// rows resolve to lighter (non-pure-black) tokens and don't need the border.
+private struct ConditionalDarkSurfaceHairline: ViewModifier {
+    let active: Bool
+    func body(content: Content) -> some View {
+        if active {
+            content.darkSurfaceHairlineBorder(Capsule())
+        } else {
+            content
+        }
     }
 }

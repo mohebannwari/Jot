@@ -5,7 +5,7 @@
 //  Overlay NSView that renders a code block inside the text editor.
 //  Structure: single rounded block with a floating capsule pill straddling the
 //  top edge at left: 18px. Pill contains code icon, language label, and chevron.
-//  Mirrors CalloutOverlayView layout exactly (stone/note palette).
+//  Mirrors CalloutOverlayView layout exactly (neutral/note palette).
 //
 
 import AppKit
@@ -463,7 +463,7 @@ final class CodeBlockOverlayView: NSView {
 
         // Chip pill -- always uses the DARK variant of the tinted block
         // container so it reads as a deep, saturated pill in both light
-        // and dark app modes (matches the original "stone-800 in both
+        // and dark app modes (matches the original "neutral-800 in both
         // modes" design intent, plus picks up the user's hue tint).
         chipView.layer?.backgroundColor = ThemeManager.tintedBlockContainerNS(isDark: true).cgColor
 
@@ -717,11 +717,10 @@ private final class _CodeBlockShellBorderView: NSView {
 // MARK: - Copy glyph helpers
 
 fileprivate extension CodeBlockOverlayView {
-    /// Matches the code-block text area surface: `SurfaceDefaultColor` in light, `DetailPaneColor` in dark.
+    /// Matches the code-block text area surface: `SurfaceDefaultColor` in light, neutral-900 (#171717) in dark.
     static func blockBodySurfaceColor(isDark: Bool) -> NSColor {
         if isDark {
-            return NSColor(named: "DetailPaneColor")
-                ?? NSColor(srgbRed: 12 / 255, green: 10 / 255, blue: 9 / 255, alpha: 1)
+            return NSColor(srgbRed: 23/255, green: 23/255, blue: 23/255, alpha: 1)
         }
         return NSColor(named: "SurfaceDefaultColor") ?? .white
     }

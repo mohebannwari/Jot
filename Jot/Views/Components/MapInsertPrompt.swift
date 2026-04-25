@@ -20,7 +20,7 @@ struct MapInsertPrompt: View {
                     .resizable()
                     .scaledToFit()
                     .frame(width: 15, height: 15)
-                    .foregroundColor(Color("SecondaryTextColor"))
+                    .foregroundColor(Color("IconSecondaryColor"))
 
                 TextField("Search for a place", text: $service.query)
                     .textFieldStyle(.plain)
@@ -41,7 +41,7 @@ struct MapInsertPrompt: View {
                 Button(action: onCancel) {
                     Image(systemName: "xmark.circle.fill")
                         .font(FontManager.uiPro(size: 14, weight: .semibold).font)
-                        .foregroundColor(Color("SecondaryTextColor"))
+                        .foregroundColor(Color("IconSecondaryColor"))
                 }
                 .buttonStyle(.plain)
                 .macPointingHandCursor()

@@ -67,6 +67,41 @@ final class NoteExportService {
         }
     }
 
+    /// Print overrides applied only when `buildHTMLString` is called with `.pdf` mode.
+    /// CSS px ↔ PDF pt is 1:1 in WKWebView's PDF capture, so sizes here are point sizes.
+    /// Body lands at ~11.5pt — Word/Pages default body weight on Letter/A4.
+    private static let pdfPrintOverrides: String = """
+    body.export-pdf .export-note { padding: 72px 72px; }
+    body.export-pdf .export-title { font-size: 22px; line-height: 1.2; margin: 0 0 10px; }
+    body.export-pdf .date { font-size: 11px; margin-bottom: 14px; }
+    body.export-pdf .tag { font-size: 10px; padding: 3px 8px; }
+    body.export-pdf .note-markup { font-size: 11.5px; line-height: 1.5; }
+    body.export-pdf .note-markup h2 { font-size: 16px; margin: 18px 0 6px; }
+    body.export-pdf .note-markup h3 { font-size: 13.5px; margin: 16px 0 6px; }
+    body.export-pdf .note-markup h4 { font-size: 12px; margin: 14px 0 6px; }
+    body.export-pdf .note-markup p { margin: 0 0 6px; }
+    body.export-pdf .note-markup pre { padding: 10px 12px; }
+    body.export-pdf .note-markup pre code { font-size: 10.5px; line-height: 1.45; }
+    body.export-pdf .note-markup code { font-size: 0.9em; }
+    body.export-pdf .note-markup blockquote { margin: 10px 0; }
+    body.export-pdf .note-markup .callout { padding: 10px 12px; }
+    body.export-pdf .note-markup .callout-label { font-size: 10px; }
+
+    /* Print-friendly overflow: drop horizontal scrollers, force fit-to-page. */
+    body.export-pdf .note-markup .table-wrapper,
+    body.export-pdf .note-markup .cards-section,
+    body.export-pdf .note-markup .tabs-bar,
+    body.export-pdf .note-markup .tabs-section { overflow: visible; }
+    body.export-pdf .note-markup table { table-layout: auto; min-width: 0 !important; width: 100%; }
+    body.export-pdf .note-markup table[style] { min-width: 0 !important; }
+    body.export-pdf .note-markup td,
+    body.export-pdf .note-markup th { word-break: break-word; overflow-wrap: anywhere; padding: 6px 8px; font-size: 11px; }
+    body.export-pdf .note-markup .cards-grid { flex-wrap: wrap; }
+    body.export-pdf .note-markup .cards-card { flex: 1 1 220px; }
+    body.export-pdf .note-markup .image-block img,
+    body.export-pdf .note-markup .file-preview { max-width: 100%; }
+    """
+
     private init() {}
 
     // MARK: - Public Export Methods
@@ -120,49 +155,83 @@ final class NoteExportService {
     }
 
     private func buildPDFDataFromHTML(_ html: String) async throws -> Data {
-        let pageSize = CGSize(width: 612, height: 792)
-        let webView = WKWebView(frame: CGRect(origin: .zero, size: pageSize))
+        // US Letter. Margins live in CSS (.export-pdf .export-note { padding: 72px });
+        // the print system gets a zero-margin page so CSS owns the inset.
+        let pageSize = NSSize(width: 612, height: 792)
+
+        // Hidden host window. Required: WKWebView must be window-attached for
+        // printOperation(with:) to lay out, and runModal(for:) requires a non-nil
+        // window. Apple Forum 705138 documents this as the canonical async-safe
+        // path — runOperation()/run() hangs against modern WebKit's async render
+        // pipeline regardless of thread.
+        let hostWindow = NSWindow(
+            contentRect: NSRect(origin: .zero, size: pageSize),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        hostWindow.isReleasedWhenClosed = false
+        hostWindow.isExcludedFromWindowsMenu = true
+        hostWindow.alphaValue = 0
+        hostWindow.setFrameOrigin(NSPoint(x: -10_000, y: -10_000))
+
+        let webView = WKWebView(frame: NSRect(origin: .zero, size: pageSize))
+        hostWindow.contentView = webView
+        // Keeps the window in the window list (needed by the print machinery)
+        // without painting pixels anywhere on screen.
+        hostWindow.orderOut(nil)
 
         let loadDelegate = WebViewLoadDelegate()
         webView.navigationDelegate = loadDelegate
         try await loadDelegate.load(html, in: webView)
 
-        let heightScript = """
-        Math.ceil(Math.max(
-          document.body.scrollHeight,
-          document.documentElement.scrollHeight,
-          document.body.offsetHeight,
-          document.documentElement.offsetHeight
-        ))
-        """
-        let rawHeight = try await webView.evaluateJavaScript(heightScript)
-        let contentHeight = max(
-            pageSize.height,
-            CGFloat((rawHeight as? NSNumber)?.doubleValue ?? pageSize.height)
-        )
+        let tempURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("pdf")
 
-        let pageCount = max(1, Int(ceil(contentHeight / pageSize.height)))
-        let mergedDocument = PDFDocument()
+        let printInfo = NSPrintInfo()
+        printInfo.paperSize = pageSize
+        printInfo.topMargin = 0
+        printInfo.bottomMargin = 0
+        printInfo.leftMargin = 0
+        printInfo.rightMargin = 0
+        printInfo.horizontalPagination = .fit
+        printInfo.verticalPagination = .automatic
+        printInfo.jobDisposition = .save
+        printInfo.dictionary()[NSPrintInfo.AttributeKey.jobSavingURL] = tempURL as NSURL
 
-        for pageIndex in 0..<pageCount {
-            let y = CGFloat(pageIndex) * pageSize.height
-            let remainingHeight = max(1, contentHeight - y)
-            let captureHeight = min(pageSize.height, remainingHeight)
-            let configuration = WKPDFConfiguration()
-            configuration.rect = CGRect(x: 0, y: y, width: pageSize.width, height: captureHeight)
+        let printOp = webView.printOperation(with: printInfo)
+        printOp.showsPrintPanel = false
+        printOp.showsProgressPanel = false
+        // Required per Apple Forum 705138 — without this, paginated render can
+        // produce blank pages or crash inside the WebContent process.
+        printOp.view?.frame = NSRect(origin: .zero, size: pageSize)
 
-            let pageData = try await webView.pdf(configuration: configuration)
-            guard let pageDocument = PDFDocument(data: pageData) else { continue }
-            for index in 0..<pageDocument.pageCount {
-                guard let page = pageDocument.page(at: index) else { continue }
-                mergedDocument.insert(page, at: mergedDocument.pageCount)
-            }
+        defer {
+            hostWindow.contentView = nil
+            hostWindow.close()
+            try? FileManager.default.removeItem(at: tempURL)
         }
 
-        guard let data = mergedDocument.dataRepresentation(), mergedDocument.pageCount > 0 else {
+        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
+            let handler = PrintCompletionHandler(cont)
+            // Self-retain across the AppKit selector bridge — runModal does not
+            // retain its delegate, and the continuation closure returns
+            // immediately, so without this the handler is deallocated before
+            // the callback fires.
+            handler.retainSelf()
+            printOp.runModal(
+                for: hostWindow,
+                delegate: handler,
+                didRun: #selector(PrintCompletionHandler.printOperation(_:didRun:contextInfo:)),
+                contextInfo: nil
+            )
+        }
+
+        let data = try Data(contentsOf: tempURL)
+        guard !data.isEmpty, (PDFDocument(data: data)?.pageCount ?? 0) > 0 else {
             throw PDFExportError.emptyPDF
         }
-
         return data
     }
 
@@ -393,6 +462,7 @@ final class NoteExportService {
                     page-break-inside: avoid;
                 }
                 \(NoteMarkupHTMLRenderer.sharedStyles(for: .export))
+                \(mode == .pdf ? Self.pdfPrintOverrides : "")
             </style>
         </head>
         <body class="\(mode.bodyClass)">
@@ -1149,12 +1219,46 @@ final class NoteExportService {
 
 private enum PDFExportError: LocalizedError {
     case emptyPDF
+    case printFailed
 
     var errorDescription: String? {
         switch self {
         case .emptyPDF:
             return "WebKit returned an empty PDF document."
+        case .printFailed:
+            return "WebKit's print operation did not complete successfully."
         }
+    }
+}
+
+/// Bridges `NSPrintOperation.runModal(for:delegate:didRun:contextInfo:)`'s
+/// Objective-C completion selector into a Swift `CheckedContinuation`.
+/// Self-retains across the AppKit bridge — `runModal` does not retain delegates.
+@MainActor
+private final class PrintCompletionHandler: NSObject {
+    private let continuation: CheckedContinuation<Void, Error>
+    private var selfRef: PrintCompletionHandler?
+
+    init(_ continuation: CheckedContinuation<Void, Error>) {
+        self.continuation = continuation
+        super.init()
+    }
+
+    func retainSelf() {
+        self.selfRef = self
+    }
+
+    @objc func printOperation(
+        _ printOperation: Any,
+        didRun success: Bool,
+        contextInfo: UnsafeMutableRawPointer?
+    ) {
+        if success {
+            continuation.resume()
+        } else {
+            continuation.resume(throwing: PDFExportError.printFailed)
+        }
+        selfRef = nil
     }
 }
 

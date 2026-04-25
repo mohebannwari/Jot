@@ -178,14 +178,15 @@ struct NoteMetadataSection: View {
         #endif
     }
 
-    /// Secondary pill/panel surface for todos and lists — keeps tab/code-table tint alignment.
-    private var todoContainerColor: Color {
-        themeManager.tintedBlockContainer(for: colorScheme)
-    }
-
-    /// User tag pills and AI tag pills both use this so translucency matches the glass properties pane.
+    /// Pill/panel surface shared by tags, AI tags, and todos so all properties-panel
+    /// translucent surfaces read identically against the glass properties pane.
+    /// `SurfaceTranslucentColor` = 6% black (light) / 6% white (dark).
     private var tagPillContainerColor: Color {
         Color("SurfaceTranslucentColor")
+    }
+
+    private var todoContainerColor: Color {
+        tagPillContainerColor
     }
 
     // MARK: - Date Formatting
@@ -205,7 +206,7 @@ struct NoteMetadataSection: View {
                 Button { onDismiss?() } label: {
                     Image(systemName: "xmark")
                         .font(FontManager.uiMicro(weight: .regular).font)
-                        .foregroundColor(Color("SecondaryTextColor"))
+                        .foregroundColor(Color("IconSecondaryColor"))
                         .frame(width: 22, height: 22)
                         .background(Color("SurfaceTranslucentColor"), in: Circle())
                 }
@@ -416,7 +417,7 @@ struct NoteMetadataSection: View {
                         .resizable()
                         .scaledToFit()
                         .frame(width: 18, height: 18)
-                        .foregroundColor(Color("SecondaryTextColor"))
+                        .foregroundColor(Color("IconSecondaryColor"))
                         .padding(.vertical, 2)
                         .padding(.horizontal, 2)
                         .alignmentGuide(.firstTextBaseline) { d in
@@ -527,7 +528,7 @@ struct NoteMetadataSection: View {
                         .resizable()
                         .scaledToFit()
                         .frame(width: 12, height: 12)
-                        .foregroundColor(Color("SecondaryTextColor"))
+                        .foregroundColor(Color("IconSecondaryColor"))
                         .rotationEffect(.degrees(isTodoExpanded ? 90 : 0))
                 }
                 .padding(.leading, 4)

@@ -93,23 +93,16 @@ Defined in `.claude/rules/workflow.md` (auto-ingested). Covers build commands, l
 Spawn subagents immediately. Never block waiting for trivial information.
 
 ```
-Haiku (fire immediately -- don't wait, don't think twice):
+Subagents (parallel heavy lifting):
 - SwiftUI / SDK documentation (Context7)
 - Codebase file discovery and pattern search
-- Figma token extraction (get_variable_defs, get_design_context)
 - Asset catalog structure checks
 - API behavior confirmation
-
-Sonnet subagents (parallel heavy lifting):
 - Isolated feature implementation in a worktree
 - Complex multi-file analysis
 - Test writing / validation runs
 - Code review on a specific component
-
-Opus (escalation only -- not parallel, not fire-and-forget):
-- Escalate when Sonnet is genuinely stuck
 - Consult before major architectural decisions
-- User controls when Opus leads
 ```
 
 ### Hard Rules
@@ -149,7 +142,7 @@ Before any feature implementation:
 
 **How skills relate to commands:** Superpowers is built so skills can **fire on context match** (no slash-command required in some setups). That is **automatic surfacing**, not permission to omit a phase. For feature work, still **walk the list top to bottom** and ensure each skill’s work actually runs.
 
-### Superpowers pipeline (strict order)
+### Superpowers pipeline (strict order) (Codex / GPT-models should use their own Superpowers plugin)
 
 | Step | Skill                                        | What to do                                                                                                                   |
 | ---- | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
@@ -200,7 +193,6 @@ The table below is **Jot-specific routing and minimums** (including mandatory Su
 1. Context7 -- SDK/API docs (always first)
 2. Swift LSP plugin -- type lookups, jump-to-definition, symbol search, diagnostics, code intelligence. Use proactively for any Swift/SwiftUI code to verify types, protocols, and API signatures instead of guessing.
 3. Official Figma MCP plugin (`claude.ai Figma`) -- design tokens, component specs, screenshots, variable definitions
-4. Brave Search -- last resort
 
 **Always parallelize** independent file reads, searches, and tool calls.
 
@@ -454,41 +446,44 @@ All semantic colors live in `Jot/Ressources/Assets.xcassets/`. Reference by name
 | -------------------------------------- | ------------------------------------------------------------ | ---------------------------------------------- |
 | `AccentColor`                          | `#2563EB`                                                    | `#608DFA`                                      |
 | `MainColor`                            | `#1A1A1A` (= ButtonPrimaryBgColor)                           | `#FFFFFF` (= ButtonPrimaryBgColor)             |
-| `BackgroundColor`                      | `#FFFFFF5C` (36% white)                                      | `#0C0A0908` (3% near-black)                    |
-| `BlockContainerColor`                  | `#D6D3D1` (stone-300)                                        | `#292524` (stone-800)                          |
+| `BackgroundColor`                      | `#FFFFFF5C` (36% white)                                      | `#0000004D` (pure black 30%)                   |
+| `BlockContainerColor`                  | `#D4D4D4` (neutral-300)                                      | `#383838` (luminance-matched neutral)          |
 | `BorderSubtleColor`                    | `#1A1A1A17` (9% black)                                       | `#FFFFFF17` (9% white)                         |
 | `ButtonPrimaryBgColor`                 | `#1A1A1A`                                                    | `#FFFFFF`                                      |
 | `ButtonPrimaryTextColor`               | `#FFFFFF`                                                    | `#1A1A1A`                                      |
-| `ButtonSecondaryBgColor`               | `#D6D3D1` (stone-300)                                        | `#292524` (stone-800)                          |
-| `CardBackgroundColor`                  | `#FFFFFFB3` (70% white)                                      | `#1C1918B3` (70% dark)                         |
+| `ButtonSecondaryBgColor`               | `#D4D4D4` (neutral-300)                                      | `#171717` (neutral-900)                        |
+| `CardBackgroundColor`                  | `#FFFFFFB3` (70% white)                                      | `#000000B3` (pure black 70%)                   |
 | `FolderBadgeBgColor`                   | `#FFFFFF5C` (36% white)                                      | `#FFFFFF1F` (12% white)                        |
 | `HoverBackgroundColor`                 | `#D1D3D0`                                                    | `#444040`                                      |
 | `IconSecondaryColor`                   | `#1A1A1AB3` (70% black)                                      | `#A8A29E`                                      |
 | `EditorCommandMenuItemForegroundColor` | `#1A1A1AB3` (70% black), same chroma as `IconSecondaryColor` | `#A8A29E`, same chroma as `IconSecondaryColor` |
-| `InlineCodeBgColor`                    | `#D6D3D1` (stone-300)                                        | `#44403C` (stone-700)                          |
+| `InlineCodeBgColor`                    | `#D4D4D4` (neutral-300)                                      | `#404040` (neutral-700)                        |
 | `MenuButtonColor`                      | `#1A1A1AB3` (70% black)                                      | `#FFFFFFB3` (70% white)                        |
 | `PinnedBgColor`                        | `#FEF08A` (amber)                                            | `#854D0E` (amber-dark)                         |
 | `PinnedIconColor`                      | `#854D0E`                                                    | `#FEEF8A`                                      |
 | `PrimaryTextColor`                     | `#1A1A1A`                                                    | `#FFFFFF`                                      |
-| `SearchInputBackgroundColor`           | `#FFFFFF`                                                    | `#1C1918`                                      |
-| `SecondaryBackgroundColor`             | `#E7E6E4`                                                    | `#292524`                                      |
+| `SearchInputBackgroundColor`           | `#FFFFFF`                                                    | `#171717` (neutral-900)                        |
+| `SecondaryBackgroundColor`             | `#E5E5E5` (neutral-200)                                      | `#262626` (neutral-800)                        |
 | `SecondaryTextColor`                   | `#1A1A1AB3` (70% black)                                      | `#FFFFFFB3` (70% white)                        |
-| `SettingsActiveTabColor`               | `#F5F4F4`                                                    | `#444040`                                      |
+| `SettingsActiveTabColor`               | `#F5F5F5` (neutral-100)                                      | `#404040` (neutral-700)                        |
 | `SettingsIconSecondaryColor`           | `#1A1A1AB3`                                                  | `#A8A29E`                                      |
-| `SettingsOptionCardColor`              | `#E7E6E4`                                                    | `#0C0A09`                                      |
+| `SettingsOptionCardColor`              | `#E5E5E5` (neutral-200)                                      | `#171717` (neutral-900)                        |
 | `SettingsPanelPrimaryColor`            | `#FFFFFF5C` (36% white)                                      | `#1A1A1ACC` (80% black)                        |
 | `SettingsPlaceholderTextColor`         | `#1A1A1AB3`                                                  | `#FFFFFFB2`                                    |
 | `SettingsPrimaryTextColor`             | `#1A1A1A`                                                    | `#FFFFFF`                                      |
-| `SurfaceDefaultColor`                  | `#FFFFFF`                                                    | `#1C1918`                                      |
-| `SurfaceElevatedColor`                 | `#F5F4F4`                                                    | `#292524`                                      |
-| `SurfaceTranslucentColor`              | `#1A1A1A0F` (6% black)                                       | `#FFFFFF0F` (6% white)                         |
+| `SurfaceDefaultColor`                  | `#FFFFFF`                                                    | `#262626` (neutral-800)                        |
+| `SurfaceElevatedColor`                 | `#F5F5F5` (neutral-100)                                      | `#262626` (neutral-800)                        |
+| `SurfaceTranslucentColor`              | `#1A1A1A14` (8% black)                                       | `#FFFFFF0F` (6% white)                         |
 | `TagBackgroundColor`                   | `#608DFA59` (35% accent)                                     | `#608DFA40` (25% accent)                       |
 | `TagTextColor`                         | `#1A1A1A`                                                    | `#FFFFFF`                                      |
 | `TertiaryTextColor`                    | `#52525B`                                                    | `#A19FA9`                                      |
+| `DarkSurfaceHairlineColor`             | `#171717` (only consumed by tables outer border)             | `#171717`                                      |
 
-`**EditorCommandMenuItemForegroundColor`:** Slash/command menu (`CommandMenu`) idle rows — apply this **one** token to **both\*\* the template icon and the row title so they always match. Keyboard-selection and hover use `PrimaryTextColor` for icon + title together. Values track `IconSecondaryColor`; the dedicated name documents shared editor-menu usage.
+`**DarkSurfaceHairlineColor`:\*\* Currently consumed only by the table outer border (`NoteTableOverlayView`). The earlier hairline-on-every-pure-black-surface policy was retired — surfaces shifted to neutral-900 instead, which provides enough lift against the neutral-950 detail-pane wash without needing strokes. The SwiftUI `View.darkSurfaceHairlineBorder(_:)` helper is now a no-op stub (call sites compile, paint nothing) until a future pass removes them.
 
-`**InlineCodeBgColor`:** Inline code pills in the editor use `ThemeManager.tintedInlineCodePillNS(isDark:)` — stone-300 / stone-700 bases with the same tint **targets\*\* as `tintedBlockContainerNS` (slightly lighter dark base than block chrome’s stone-800). The asset holds the untinted pair for any `Color("InlineCodeBgColor")` usage.
+`**EditorCommandMenuItemForegroundColor`:** Slash/command menu (`CommandMenu`) idle rows — apply this **one** token to **both the template icon and the row title so they always match. Keyboard-selection and hover use `PrimaryTextColor` for icon + title together. Values track `IconSecondaryColor`; the dedicated name documents shared editor-menu usage.
+
+`**InlineCodeBgColor`:** Inline code pills in the editor use `ThemeManager.tintedInlineCodePillNS(isDark:)` — neutral-300 / neutral-700 bases with the same tint **targets as `tintedBlockContainerNS` (slightly lighter dark base than block chrome’s neutral-800). The asset holds the untinted pair for any `Color("InlineCodeBgColor")` usage.
 
 #### Primitive Colors (Figma Variables)
 
@@ -514,23 +509,23 @@ All type uses **SF Pro**. Weights: Regular=400, Medium=500, SemiBold=600, Bold=7
 | Tiny       | 10   | 12          | 0                | Medium, SemiBold  |
 | Micro      | 9    | 10          | 0                | SemiBold, Bold    |
 
-**Letter spacing:** The **Tracking (Figma)** column is **reference only** — **do not** implement those values in SwiftUI for SF Pro chrome. **Apple-first:** apply **`jotUI(_:)`** with **`FontManager.uiHeadingH4`**, **`uiLabel2`**–**`uiMicro`**, or **`uiPro(size:weight:)`** so bundled **`proportionalUITracking`** applies; never stack extra **`.tracking(-0.…)`** on top unless product documents an exception. **SF Symbols:** **`.font(chrome.font)`** only, not **`jotUI`**. **Casing:** **all caps only** for **SF Mono** metadata via **`jotMetadataLabelTypography()`**; **SF Pro** `jotUI` / `uiLabel*` uses **sentence case** (no default **`.textCase(.uppercase)`**). **Mono:** no **negative** tracking; optional small **positive** tracking only in **documented** dense overlays (see `.claude/rules/design-system.md` Typography). Full detail: **`.claude/rules/design-system.md` → Typography**.
+**Letter spacing:** The **Tracking (Figma)** column is **reference only** — **do not** implement those values in SwiftUI for SF Pro chrome. **Apple-first:** apply `**jotUI(_:)`** with `**FontManager.uiHeadingH4**`, `**uiLabel2**`–`**uiMicro**`, or `**uiPro(size:weight:)**`so bundled`**proportionalUITracking**`applies; never stack extra`**.tracking(-0.…)**` on top unless product documents an exception. **SF Symbols:** `**.font(chrome.font)`** only, not `**jotUI**`. **Casing:** **all caps only** for **SF Mono** metadata via `**jotMetadataLabelTypography()`**; **SF Pro** `jotUI` / `uiLabel*` uses **sentence case** (no default `**.textCase(.uppercase)`**). **Mono:** no **negative** tracking; optional small **positive** tracking only in **documented** dense overlays (see `.claude/rules/design-system.md` Typography). Full detail: `**.claude/rules/design-system.md` → Typography\*\*.
 
 #### FontManager API (code-level)
 
 **Note body:** **SF Pro** is the first-launch default (`BodyFontStyle.system` when `AppBodyFontStyle` is unset). **Charter** (`BodyFontStyle.default`, raw `"default"`) and **mono** remain options. **SF Mono** is for metadata/code.
 
-| Method                                       | SwiftUI                                             | Size                                     | Weight             | Notes                                                                               |
-| -------------------------------------------- | --------------------------------------------------- | ---------------------------------------- | ------------------ | ----------------------------------------------------------------------------------- |
-| `body()`                                     | Per `BodyFontStyle`: Charter, SF Pro, or monospaced | `ThemeManager.bodyFontSize` (default 16) | As set             | Editor / note body                                                                  |
-| `heading()`                                  | SF Pro                                              | 24 default                               | Medium default     | UI headings; not tied to body font preference                                       |
-| `metadata()`                                 | Monospaced                                          | **11** default                           | **Medium** default | Use `jotMetadataLabelTypography()` for static mono labels                           |
-| `icon()`                                     | SF Pro                                              | 20 default                               | Regular            | SF Symbols                                                                          |
-| `uiPro`, `uiHeadingH4`, `uiLabel2`–`uiMicro` | SF Pro                                              | Figma scale                              | Per method         | App chrome: **`jotUI(…)`** + **`proportionalUITracking`**; `FontManager.UITextRamp` |
+| Method                                       | SwiftUI                                             | Size                                     | Weight             | Notes                                                                                 |
+| -------------------------------------------- | --------------------------------------------------- | ---------------------------------------- | ------------------ | ------------------------------------------------------------------------------------- |
+| `body()`                                     | Per `BodyFontStyle`: Charter, SF Pro, or monospaced | `ThemeManager.bodyFontSize` (default 16) | As set             | Editor / note body                                                                    |
+| `heading()`                                  | SF Pro                                              | 24 default                               | Medium default     | UI headings; not tied to body font preference                                         |
+| `metadata()`                                 | Monospaced                                          | **11** default                           | **Medium** default | Use `jotMetadataLabelTypography()` for static mono labels                             |
+| `icon()`                                     | SF Pro                                              | 20 default                               | Regular            | SF Symbols                                                                            |
+| `uiPro`, `uiHeadingH4`, `uiLabel2`–`uiMicro` | SF Pro                                              | Figma scale                              | Per method         | App chrome: `**jotUI(…)`** + `**proportionalUITracking\*\*`; `FontManager.UITextRamp` |
 
 **SF Pro UI labels:** `jotUI` + `uiLabel*` — **sentence case** (natural casing); do **not** force all caps to match Figma.
 
-**Monospaced static labels (invariant, mono only):** For **`Text`** in **`FontManager.metadata`** / SF Mono only — **11pt, medium, all caps** — `jotMetadataLabelTypography()` (or `.textCase(.uppercase)` with `FontManager.metadata(size: 11, weight: .medium)`). See `.cursor/rules/metadata_label_typography.mdc`. Do not ship sentence-case **mono** labels except where product explicitly overrides. Never force all caps on `TextField` / `TextEditor` content.
+**Monospaced static labels (invariant, mono only):** For `**Text`** in `**FontManager.metadata**` / SF Mono only — **11pt, medium, all caps** — `jotMetadataLabelTypography()` (or `.textCase(.uppercase)` with `FontManager.metadata(size: 11, weight: .medium)`). See `.cursor/rules/metadata_label_typography.mdc`. Do not ship sentence-case **mono\*\* labels except where product explicitly overrides. Never force all caps on `TextField` / `TextEditor` content.
 
 Body font: `system` (default on first launch), `default` (Charter), `mono`. Line spacing: Compact (1.0x), Default (1.2x), Relaxed (1.5x) — `ThemeManager.lineSpacing`.
 

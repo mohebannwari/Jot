@@ -238,12 +238,93 @@ final class NoteImportService {
         }
 
         let frontmatterLines = Array(lines[1..<closeIndex])
+        // Only strip when the interior is actually YAML. A bare `---...---` block whose
+        // contents are markdown (headings, bold, free prose) is a CommonMark thematic
+        // break around body content, not metadata — preserving it matches what every
+        // spec-compliant viewer renders.
+        guard looksLikeYAMLFrontmatter(frontmatterLines) else {
+            return MarkdownFrontmatter(body: raw, title: nil, tags: [])
+        }
+
         let body = lines.dropFirst(closeIndex + 1).joined(separator: "\n")
         return MarkdownFrontmatter(
             body: body,
             title: parseYAMLTitle(frontmatterLines),
             tags: parseYAMLTags(frontmatterLines)
         )
+    }
+
+    /// Conservative YAML-shape check. Returns `true` only when every non-empty line is a
+    /// recognized YAML construct (key/value, indented list item, comment, block-scalar
+    /// continuation) AND at least one line is a key. Fail-closed: any line that doesn't
+    /// fit means "not frontmatter, leave the block as body content."
+    private static func looksLikeYAMLFrontmatter(_ lines: [String]) -> Bool {
+        var sawKey = false
+        var insideBlockScalar = false
+
+        for raw in lines {
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty {
+                insideBlockScalar = false
+                continue
+            }
+            // Markdown heading (`##` or deeper) — never YAML.
+            if trimmed.hasPrefix("##") {
+                return false
+            }
+            // YAML comment: `# foo` or a bare `#`.
+            if trimmed.hasPrefix("# ") || trimmed == "#" {
+                insideBlockScalar = false
+                continue
+            }
+            // Indented list item: `  - foo` (`tags:` continuation, etc.).
+            if raw.first?.isWhitespace == true, trimmed.hasPrefix("- ") {
+                insideBlockScalar = false
+                continue
+            }
+            // Top-level list item (rare but valid YAML).
+            if trimmed.hasPrefix("- ") {
+                insideBlockScalar = false
+                continue
+            }
+            // Block-scalar continuation (line is indented after a `key: |` / `key: >` / `key:` opener).
+            if insideBlockScalar, raw.first?.isWhitespace == true {
+                continue
+            }
+            // `key: value` — key must be a valid YAML identifier.
+            if let colonIndex = trimmed.firstIndex(of: ":") {
+                let key = String(trimmed[trimmed.startIndex..<colonIndex])
+                if isValidYAMLKey(key) {
+                    sawKey = true
+                    let value = String(trimmed[trimmed.index(after: colonIndex)...])
+                        .trimmingCharacters(in: .whitespaces)
+                    insideBlockScalar = value.isEmpty || value == "|" || value == ">"
+                    continue
+                }
+            }
+            // Markdown bold, free prose, malformed key — not YAML.
+            return false
+        }
+
+        return sawKey
+    }
+
+    private static func isValidYAMLKey(_ raw: String) -> Bool {
+        let trimmed = raw.trimmingCharacters(in: .whitespaces)
+        guard let first = trimmed.unicodeScalars.first else { return false }
+        let firstAllowed = (first >= "A" && first <= "Z")
+            || (first >= "a" && first <= "z")
+            || first == "_"
+        guard firstAllowed else { return false }
+        for scalar in trimmed.unicodeScalars.dropFirst() {
+            let allowed = (scalar >= "A" && scalar <= "Z")
+                || (scalar >= "a" && scalar <= "z")
+                || (scalar >= "0" && scalar <= "9")
+                || scalar == "_"
+                || scalar == "-"
+            if !allowed { return false }
+        }
+        return true
     }
 
     private static func parseYAMLTitle(_ lines: [String]) -> String? {

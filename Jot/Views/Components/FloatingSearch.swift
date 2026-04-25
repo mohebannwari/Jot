@@ -195,8 +195,8 @@ struct FloatingSearch: View {
     }
 
     /// Fill for footer shortcut legend keycaps (chevrons, Return, esc). Light mode stays on
-    /// `SurfaceElevatedColor`; dark uses **stone-700** via `InlineCodeBgColor` so the small shells
-    /// read slightly above the palette chrome (stone-800), matching the design-system pair in
+    /// `SurfaceElevatedColor`; dark uses **neutral-700** via `InlineCodeBgColor` so the small shells
+    /// read slightly above the palette chrome (neutral-800), matching the design-system pair in
     /// AGENTS.md / Figma.
     private var floatingSearchFooterKeycapFill: Color {
         switch colorScheme {
@@ -546,6 +546,7 @@ struct FloatingSearch: View {
                 .background(
                     RoundedRectangle(cornerRadius: surfaceCornerRadius, style: .continuous)
                         .fill(searchPanelPreGlassFill)
+                        .darkSurfaceHairlineBorder(RoundedRectangle(cornerRadius: surfaceCornerRadius, style: .continuous))
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: surfaceCornerRadius, style: .continuous)
@@ -590,7 +591,7 @@ struct FloatingSearch: View {
                 .renderingMode(.template)
                 .resizable()
                 .scaledToFit()
-                .foregroundColor(Color("SecondaryTextColor"))
+                .foregroundColor(Color("PrimaryTextColor"))
                 .frame(width: 15, height: 15)
                 .frame(height: searchFieldLineHeight, alignment: .center)
 
@@ -722,13 +723,13 @@ struct FloatingSearch: View {
                 .renderingMode(.template)
                 .resizable()
                 .scaledToFit()
-                .foregroundColor(Color("SecondaryTextColor"))
+                .foregroundColor(Color("PrimaryTextColor"))
                 .frame(width: 15, height: 15)
 
             Text(title)
                 .jotMetadataLabelTypography()
                 .tracking(floatingSearchMetadataCapsTracking)
-                .foregroundColor(Color("SecondaryTextColor"))
+                .foregroundColor(Color("PrimaryTextColor"))
                 .lineLimit(1)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -748,12 +749,12 @@ struct FloatingSearch: View {
                     .renderingMode(.template)
                     .resizable()
                     .scaledToFit()
-                    .foregroundColor(Color("SecondaryTextColor"))
+                    .foregroundColor(Color("PrimaryTextColor"))
                     .frame(width: 15, height: 15)
 
                 Text(title)
                     .jotUI(FontManager.uiLabel3(weight: .regular))
-                    .foregroundColor(Color("SecondaryTextColor"))
+                    .foregroundColor(Color("PrimaryTextColor"))
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -923,13 +924,13 @@ struct FloatingSearch: View {
                         .renderingMode(.template)
                         .resizable()
                         .scaledToFit()
-                        .foregroundColor(Color("SecondaryTextColor"))
+                        .foregroundColor(Color("PrimaryTextColor"))
                         .frame(width: 15, height: 15)
 
-                    // Same token as the template icon (`SecondaryTextColor`) — matches sidebar quick actions.
+                    // Icon + label both at full primary — matches sidebar quick actions.
                     Text(title)
                         .jotUI(FontManager.uiLabel3(weight: .regular))
-                        .foregroundColor(Color("SecondaryTextColor"))
+                        .foregroundColor(Color("PrimaryTextColor"))
                         .lineLimit(1)
                 }
 
@@ -1035,12 +1036,12 @@ struct FloatingSearch: View {
                     .renderingMode(.template)
                     .resizable()
                     .scaledToFit()
-                    .foregroundColor(Color("SecondaryTextColor"))
+                    .foregroundColor(Color("PrimaryTextColor"))
                     .frame(width: 15, height: 15)
 
                 Text(query)
                     .jotUI(FontManager.uiLabel3(weight: .regular))
-                    .foregroundColor(Color("SecondaryTextColor"))
+                    .foregroundColor(Color("PrimaryTextColor"))
                     .lineLimit(1)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -1068,7 +1069,7 @@ struct FloatingSearch: View {
         let leadingIconColor: Color = {
             guard target.kind == .folder,
                 let folder = folders.first(where: { $0.id == target.entityID })
-            else { return Color("SecondaryTextColor") }
+            else { return Color("PrimaryTextColor") }
             return folder.folderDisplayColor(for: colorScheme)
         }()
         return Button {
@@ -1150,7 +1151,7 @@ struct FloatingSearch: View {
                         Text("esc")
                             .jotMetadataLabelTypography(size: 9, weight: .medium)
                             .tracking(floatingSearchMetadataCapsTracking)
-                            .foregroundColor(Color("SecondaryTextColor"))
+                            .foregroundColor(Color("PrimaryTextColor"))
                     }
                     .frame(width: 28, height: 17)
                     .compositingGroup()
@@ -1179,7 +1180,7 @@ struct FloatingSearch: View {
                 .renderingMode(.template)
                 .resizable()
                 .scaledToFit()
-                .foregroundColor(Color("SecondaryTextColor"))
+                .foregroundColor(Color("PrimaryTextColor"))
                 .frame(width: 11, height: 11)
         }
         .frame(width: 15, height: 15)
@@ -1194,7 +1195,7 @@ struct FloatingSearch: View {
                 .fill(floatingSearchFooterKeycapFill)
             Image(systemName: "return.left")
                 .font(FontManager.uiPro(size: 7, weight: .regular).font)
-                .foregroundStyle(Color("SecondaryTextColor"))
+                .foregroundStyle(Color("PrimaryTextColor"))
         }
         .frame(width: 15, height: 15)
         .compositingGroup()
@@ -1275,12 +1276,12 @@ struct FloatingSearch: View {
                         .renderingMode(.template)
                         .resizable()
                         .scaledToFit()
-                        .foregroundColor(Color("SecondaryTextColor"))
+                        .foregroundColor(Color("PrimaryTextColor"))
                         .frame(width: 15, height: 15)
 
                     Text(spec.title)
                         .jotUI(FontManager.uiLabel3(weight: .regular))
-                        .foregroundColor(Color("SecondaryTextColor"))
+                        .foregroundColor(Color("PrimaryTextColor"))
                         .lineLimit(1)
                 }
 
@@ -1324,7 +1325,7 @@ struct FloatingSearch: View {
         // Folder hits: same tint as sidebar (prefer live `folders` for current colorHex).
         let leadingResultIconColor: Color = {
             guard result.isFolderResult, let hitFolder = result.folder else {
-                return Color("SecondaryTextColor")
+                return Color("PrimaryTextColor")
             }
             let folder = folders.first(where: { $0.id == hitFolder.id }) ?? hitFolder
             return folder.folderDisplayColor(for: colorScheme)

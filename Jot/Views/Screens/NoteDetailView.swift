@@ -1205,7 +1205,8 @@ struct NoteDetailView: View {
             let submenuMaxWidth: CGFloat = {
               switch submenu {
               case .textOptions: return 170
-              case .color: return 186
+              case .color:
+                return FloatingColorPicker.pillLayoutWidth(includeRemoveButton: true)
               case .fontFamily: return 140
               case .translate: return 200
               case .editContent: return 220
@@ -1379,7 +1380,7 @@ struct NoteDetailView: View {
         let parentFrame = geometry.frame(in: .global)
         let localX = highlightPickerOffset.x - parentFrame.minX
         let localY = highlightPickerOffset.y - parentFrame.minY
-        let pickerWidth: CGFloat = 186
+        let pickerWidth = FloatingColorPicker.pillLayoutWidth(includeRemoveButton: true)
         let paneWidth = geometry.size.width
         let edgeInset: CGFloat = 12
         let gap: CGFloat = 8
@@ -1794,7 +1795,7 @@ struct NoteDetailView: View {
           .renderingMode(.template)
           .resizable()
           .scaledToFit()
-          .foregroundColor(Color("SecondaryTextColor"))
+          .foregroundColor(Color("IconSecondaryColor"))
           .frame(width: 15, height: 15)
       }
       .buttonStyle(.plain)
@@ -1851,7 +1852,7 @@ struct NoteDetailView: View {
               .resizable().scaledToFit()
               .frame(width: 15, height: 15)
           }
-          .foregroundColor(Color("SecondaryTextColor"))
+          .foregroundColor(Color("IconSecondaryColor"))
           .buttonStyle(.plain)
           .macPointingHandCursor()
           .subtleHoverScale(1.04)
@@ -1864,7 +1865,7 @@ struct NoteDetailView: View {
               .resizable().scaledToFit()
               .frame(width: 15, height: 15)
           }
-          .foregroundColor(Color("SecondaryTextColor"))
+          .foregroundColor(Color("IconSecondaryColor"))
           .buttonStyle(.plain)
           .macPointingHandCursor()
           .subtleHoverScale(1.04)
@@ -1942,7 +1943,7 @@ struct NoteDetailView: View {
         .resizable()
         .scaledToFit()
         .frame(width: 15, height: 15)
-        .foregroundColor(Color("SecondaryTextColor"))
+        .foregroundColor(Color("IconSecondaryColor"))
 
       TextField("Enter URL", text: $linkInputText)
         .textFieldStyle(.plain)
@@ -2020,7 +2021,7 @@ struct NoteDetailView: View {
               .resizable()
               .scaledToFit()
               .frame(width: 15, height: 15)
-              .foregroundColor(Color("SecondaryTextColor"))
+              .foregroundColor(Color("IconSecondaryColor"))
           }
           .buttonStyle(.plain)
           .disabled(searchOnPageMatches.isEmpty)
@@ -2031,7 +2032,7 @@ struct NoteDetailView: View {
               .resizable()
               .scaledToFit()
               .frame(width: 15, height: 15)
-              .foregroundColor(Color("SecondaryTextColor"))
+              .foregroundColor(Color("IconSecondaryColor"))
           }
           .buttonStyle(.plain)
           .disabled(searchOnPageMatches.isEmpty)

@@ -33,17 +33,17 @@ struct NotePreviewHTMLGenerator {
               --fg2: rgba(26,26,26,0.7);
               --tag-bg: rgba(96,141,250,0.24);
               --tag-fg: #1a1a1a;
-              --attach-bg: #f5f4f4;
+              --attach-bg: #f5f5f5;
               --div-clr: rgba(0,0,0,0.1);
             }
             @media (prefers-color-scheme: dark) {
               :root {
-                --bg: #1c1918;
+                --bg: #171717;
                 --fg: #ffffff;
                 --fg2: rgba(255,255,255,0.7);
                 --tag-bg: rgba(96,141,250,0.16);
                 --tag-fg: #608dfa;
-                --attach-bg: #292524;
+                --attach-bg: #262626;
                 --div-clr: rgba(255,255,255,0.1);
               }
             }

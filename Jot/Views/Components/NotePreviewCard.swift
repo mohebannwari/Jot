@@ -82,6 +82,7 @@ struct NotePreviewCard: View {
         .background(
             RoundedRectangle(cornerRadius: innerCornerRadius, style: .continuous)
                 .fill(cardBackgroundColor)
+                .darkSurfaceHairlineBorder(RoundedRectangle(cornerRadius: innerCornerRadius, style: .continuous))
         )
         .overlay(alignment: .bottom) {
             LinearGradient(

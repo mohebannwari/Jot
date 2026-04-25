@@ -314,4 +314,101 @@ final class NoteImportServiceTests: XCTestCase {
         XCTAssertFalse(content.contains("[[divider]]\n[[divider]]"), "Adjacent Markdown rules/frontmatter must not become double dividers")
         XCTAssertFalse(content.contains("[[/h3]][[h3]]"), "Heading/list markers should not smear across adjacent blocks")
     }
+
+    // MARK: - Frontmatter validation: only strip leading `---...---` when it's actually YAML
+
+    /// Regression for the AGENTS.md import bug: a leading `---...---` block whose contents
+    /// are markdown (headings, bold, prose) was being silently discarded as if it were YAML
+    /// frontmatter. The block must now be preserved as body content.
+    func testFrontmatterPreservedWhenInteriorIsMarkdownHeading() async {
+        let md = """
+        ---
+        ## description:
+        alwaysApply: true
+        ---
+        ## Real body
+        """
+        let (_, content) = await NoteImportService.shared.convertMarkdownDocument(
+            raw: md,
+            baseDirectory: importTestBaseURL,
+            fileURLForFallbackTitle: importTestFileURL
+        )
+        XCTAssertTrue(
+            content.contains("description"),
+            "Markdown heading inside `---...---` must not be stripped as YAML frontmatter; got: \(content.debugDescription)"
+        )
+        XCTAssertTrue(
+            content.contains("alwaysApply"),
+            "Prose inside `---...---` must not be stripped as YAML frontmatter; got: \(content.debugDescription)"
+        )
+    }
+
+    /// AGENTS.md-shaped fixture: the real file has bold prose + an H1 inside the leading
+    /// `---...---`. Importing it must surface the recovered content in the body.
+    func testFrontmatterPreservedWhenInteriorContainsBoldProse() async {
+        let md = """
+        ---
+        # Jot -- agent instructions
+        **Single source of truth:** edit `AGENTS.md` at the repository root only.
+        iOS 26+ note-taking app.
+        ---
+        ## Forward Thinking
+        Body.
+        """
+        let (_, content) = await NoteImportService.shared.convertMarkdownDocument(
+            raw: md,
+            baseDirectory: importTestBaseURL,
+            fileURLForFallbackTitle: importTestFileURL
+        )
+        XCTAssertTrue(
+            content.contains("Single source of truth"),
+            "Bold prose inside `---...---` must survive import; got: \(content.debugDescription)"
+        )
+        XCTAssertTrue(
+            content.contains("iOS 26+ note-taking app"),
+            "Plain prose inside `---...---` must survive import; got: \(content.debugDescription)"
+        )
+    }
+
+    /// A line like `This is a sentence: with a colon.` superficially resembles a YAML key/value
+    /// but the "key" contains spaces — invalid. The block must be preserved.
+    func testFrontmatterPreservedWhenInteriorIsProseWithColons() async {
+        let md = """
+        ---
+        This is a sentence: with a colon.
+        ---
+        Body.
+        """
+        let (_, content) = await NoteImportService.shared.convertMarkdownDocument(
+            raw: md,
+            baseDirectory: importTestBaseURL,
+            fileURLForFallbackTitle: importTestFileURL
+        )
+        XCTAssertTrue(
+            content.contains("This is a sentence"),
+            "Prose with colons inside `---...---` must not be mistaken for YAML; got: \(content.debugDescription)"
+        )
+    }
+
+    /// Verifies the actual `AGENTS.md` fixture round-trips the previously-dropped chunk
+    /// (the user's reported bug). After the fix the body must contain the bold "Single
+    /// source of truth" lead and the iOS-26 paragraph.
+    func testAGENTSFixtureRecoversPreviouslyDroppedContent() async throws {
+        let fixtureURL = URL(fileURLWithPath: "/Users/mohebanwari/development/Jot/AGENTS.md")
+        let raw = try String(contentsOf: fixtureURL, encoding: .utf8)
+
+        let (_, content) = await NoteImportService.shared.convertMarkdownDocument(
+            raw: raw,
+            baseDirectory: fixtureURL.deletingLastPathComponent(),
+            fileURLForFallbackTitle: fixtureURL
+        )
+
+        // Anchor on phrasing unique to the frontmatter prefix — "Single source of truth"
+        // and "iOS 26+" both appear later in the file too, so we need the full sentence
+        // from line 11 to prove the previously-dropped chunk was recovered.
+        XCTAssertTrue(
+            content.contains("note-taking app in SwiftUI"),
+            "AGENTS.md import must include the line-11 deployment-target paragraph that lives inside the leading `---...---` block; got prefix: \(content.prefix(1200))"
+        )
+    }
 }

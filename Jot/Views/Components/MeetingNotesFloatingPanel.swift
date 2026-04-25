@@ -248,6 +248,7 @@ struct MeetingNotesFloatingPanel: View {
         .background {
             RoundedRectangle(cornerRadius: contentRadius, style: .continuous)
                 .fill(colorScheme == .dark ? Color("DetailPaneColor") : Color.white)
+                .darkSurfaceHairlineBorder(RoundedRectangle(cornerRadius: contentRadius, style: .continuous))
         }
         .clipShape(RoundedRectangle(cornerRadius: contentRadius, style: .continuous))
         .overlay(
@@ -378,7 +379,7 @@ struct MeetingNotesFloatingPanel: View {
             Button(action: { showDismissConfirmation = true }) {
                 Image(systemName: "xmark")
                     .font(FontManager.uiTiny().font)
-                    .foregroundColor(Color("SecondaryTextColor"))
+                    .foregroundColor(Color("IconSecondaryColor"))
                     .frame(width: 22, height: 22)
                     .contentShape(Circle())
             }
@@ -481,7 +482,7 @@ struct MeetingNotesFloatingPanel: View {
                             HStack(alignment: .top, spacing: 6) {
                                 Image(systemName: "square")
                                     .font(FontManager.uiLabel5(weight: .regular).font)
-                                    .foregroundColor(Color("SecondaryTextColor"))
+                                    .foregroundColor(Color("IconSecondaryColor"))
                                     .padding(.top, 2)
                                 VStack(alignment: .leading, spacing: 1) {
                                     HStack(spacing: 4) {

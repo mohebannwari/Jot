@@ -135,7 +135,7 @@ struct NotePickerMenuItem: View {
                 .resizable()
                 .scaledToFit()
                 .frame(width: 15, height: 15)
-                .foregroundStyle(isHighlighted ? highlightedForegroundColor.opacity(0.7) : .secondary)
+                .foregroundStyle(isHighlighted ? highlightedForegroundColor : Color("IconSecondaryColor"))
 
             Text(note.title.isEmpty ? "Untitled" : note.title)
                 .jotUI(FontManager.uiLabel3(weight: .regular))

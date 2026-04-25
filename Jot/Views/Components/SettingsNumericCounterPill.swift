@@ -78,6 +78,7 @@ struct SettingsNumericCounterPill: View {
             Capsule()
                 .fill(themeManager.tintedSettingsInnerPill(for: colorScheme))
         )
+        .darkSurfaceHairlineBorder(Capsule())
         // Only commit on focus *loss* (true → false), not while the field is waiting for async focus after double-click.
         .onChange(of: valueFieldFocused) { wasFocused, nowFocused in
             if wasFocused && !nowFocused {

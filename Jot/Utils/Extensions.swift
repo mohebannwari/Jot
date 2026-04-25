@@ -304,6 +304,18 @@ extension View {
     }
 }
 
+// MARK: - Dark Surface Hairline Border
+
+extension View {
+    /// No-op since the dark-surface hairline policy was retired (only tables retain a visible
+    /// outer border, painted directly in `NoteTableOverlayView`). Kept as a stub so existing
+    /// call sites continue to compile; remove the calls in a future cleanup pass.
+    func darkSurfaceHairlineBorder<S: InsettableShape>(_ shape: S) -> some View {
+        _ = shape
+        return self
+    }
+}
+
 // MARK: - Color Hex Initializer
 
 extension Color {
@@ -390,10 +402,10 @@ extension Folder {
     ]
 
     /// Returns the solid Tailwind 600 container fill for this folder's color.
-    /// Default (no color) folders use stone-600.
+    /// Default (no color) folders use neutral-600.
     func folderContainerFill(for colorScheme: ColorScheme) -> Color {
         guard let hex = colorHex?.lowercased() else {
-            return Color(hex: "#57534e") // stone-600
+            return Color(hex: "#525252") // neutral-600
         }
 
         if let shade = Self.tailwind600[hex] {

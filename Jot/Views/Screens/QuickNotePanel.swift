@@ -286,8 +286,8 @@ struct QuickNotePanelView: View {
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     // Backdrop matches the main Jot content pane's treatment so the
-    // Quick Note panel reads as a floating "mini detail pane": warm
-    // stone palette, same material family. On macOS 26+ it's tinted
+    // Quick Note panel reads as a floating "mini detail pane": neutral
+    // palette, same material family. On macOS 26+ it's tinted
     // Liquid Glass with DetailPaneSurfaceColor; on pre-26 it falls back
     // to an NSVisualEffectView (.hudWindow / .behindWindow) with a
     // 95%-opaque DetailPaneSurfaceColor over the top, mirroring what

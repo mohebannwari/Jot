@@ -477,7 +477,7 @@ final class TypingAnimationLayoutManager: NSLayoutManager {
         // `boundingRect(forGlyphRange:in:)`, which returns line-fragment-sized rects and would
         // leave the pill much taller than the actual glyphs.
         //
-        // Fill uses stone-300 / stone-700 (dark) with the same UserDefaults tint blend **targets**
+        // Fill uses neutral-300 / neutral-700 (dark) with the same UserDefaults tint blend **targets**
         // as block chrome (`ThemeManager.tintedInlineCodePillNS`), not the static asset name.
         let pillAppearance = animatingTextView?.window?.effectiveAppearance
             ?? animatingTextView?.effectiveAppearance

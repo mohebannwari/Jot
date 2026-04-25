@@ -75,7 +75,7 @@ struct NoteMarkupHTMLRenderer {
               --note-markup-fg: #1a1a1a;
               --note-markup-muted: rgba(26, 26, 26, 0.7);
               --note-markup-border: rgba(0, 0, 0, 0.12);
-              --note-markup-surface: #f5f4f4;
+              --note-markup-surface: #f5f5f5;
               --note-markup-surface-strong: rgba(96, 141, 250, 0.12);
               --note-markup-link: #2563eb;
               --note-markup-code-bg: rgba(26, 26, 26, 0.06);

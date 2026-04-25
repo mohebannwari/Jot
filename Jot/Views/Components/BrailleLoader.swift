@@ -196,11 +196,28 @@ struct BrailleLoader: View {
     @State private var animationTask: Task<Void, Never>?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    /// Reserve horizontal space for the widest frame (and reduce-motion fallback) so the glyph
+    /// cluster stays **optically centered** in glass pills and HStacks. Variable-width frames
+    /// otherwise leave trailing slack inside the measured string bounds, which reads as
+    /// left-heavy misalignment next to a label.
+    private var maxFrameWidth: CGFloat {
+        let font = FontManager.metadataNS(size: size, weight: .medium)
+        var maxW: CGFloat = 0
+        for frame in pattern.frames {
+            let w = (frame as NSString).size(withAttributes: [.font: font]).width
+            maxW = max(maxW, w)
+        }
+        let ellipsisW = ("..." as NSString).size(withAttributes: [.font: font]).width
+        return max(maxW, ellipsisW)
+    }
+
     var body: some View {
         Text(reduceMotion ? "..." : pattern.frames[frameIndex])
             // Braille animation frames: fixed-width 11 medium; no forced caps (glyphs are not words).
             .font(FontManager.metadata(size: size, weight: .medium))
             .foregroundStyle(Color.accentColor)
+            // Center the current glyphs inside the max-width slab so adjacent labels stay balanced.
+            .frame(width: maxFrameWidth, alignment: .center)
             .onAppear { startAnimation() }
             .onDisappear { animationTask?.cancel() }
     }

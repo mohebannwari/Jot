@@ -129,7 +129,7 @@ struct FilePreviewContent: View {
                     .resizable()
                     .scaledToFit()
                     .frame(width: 14, height: 14)
-                    .foregroundStyle(Color("SecondaryTextColor"))
+                    .foregroundStyle(Color("IconSecondaryColor"))
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 4)

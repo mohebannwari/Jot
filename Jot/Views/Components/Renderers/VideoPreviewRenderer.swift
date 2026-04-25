@@ -95,12 +95,13 @@ struct VideoPreviewRenderer: View {
     private func placeholder(_ message: String) -> some View {
         RoundedRectangle(cornerRadius: 10, style: .continuous)
             .fill(colorScheme == .dark ? Color("DetailPaneColor") : Color.white)
+            .darkSurfaceHairlineBorder(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .frame(width: containerWidth, height: contentHeight)
             .overlay {
                 HStack(spacing: 8) {
                     Image(systemName: "play.rectangle")
                         .font(FontManager.uiLabel2(weight: .medium).font)
-                        .foregroundStyle(Color("SecondaryTextColor"))
+                        .foregroundStyle(Color("IconSecondaryColor"))
                     Text(message)
                         .jotUI(FontManager.uiLabel5(weight: .regular))
                         .foregroundStyle(Color("SecondaryTextColor"))

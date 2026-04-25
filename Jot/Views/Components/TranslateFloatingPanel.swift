@@ -30,6 +30,7 @@ struct TranslateFloatingPanel: View {
             } else {
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
                     .fill(colorScheme == .dark ? Color("DetailPaneColor") : .white)
+                    .darkSurfaceHairlineBorder(RoundedRectangle(cornerRadius: 22, style: .continuous))
             }
         }
         .modifier(AIGlassModifier(cornerRadius: 22, glowMode: .continuous))
@@ -62,7 +63,7 @@ struct TranslateFloatingPanel: View {
                     .renderingMode(.template)
                     .resizable()
                     .scaledToFit()
-                    .foregroundColor(Color("SecondaryTextColor"))
+                    .foregroundColor(Color("IconSecondaryColor"))
                     .frame(width: 15, height: 15)
 
                 Text(AITool.translate.aiDisplayName)
@@ -78,7 +79,7 @@ struct TranslateFloatingPanel: View {
                     .renderingMode(.template)
                     .resizable()
                     .scaledToFit()
-                    .foregroundColor(Color("SecondaryTextColor"))
+                    .foregroundColor(Color("IconSecondaryColor"))
                     .frame(width: 15, height: 15)
             }
             .buttonStyle(.plain)

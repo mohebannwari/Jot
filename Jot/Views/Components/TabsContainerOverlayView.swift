@@ -100,7 +100,7 @@ final class TabsContainerOverlayView: NSView {
         setupTranslucencyShadowObserver()
     }
 
-    /// Observe app-wide tint changes so the stone-300 / stone-800 outer
+    /// Observe app-wide tint changes so the neutral-300 / neutral-800 outer
     /// container absorbs the user's picked hue alongside the SwiftUI
     /// surfaces. Uses the shared `formattingObservers` array so cleanup
     /// happens automatically in `deinit`.
@@ -339,8 +339,8 @@ final class TabsContainerOverlayView: NSView {
                     divider.layer?.cornerRadius = dividerW / 2
                     let dark = isDarkMode
                     let divColor = dark
-                        ? NSColor(srgbRed: 168/255, green: 162/255, blue: 158/255, alpha: 1)  // #A8A29E
-                        : NSColor(srgbRed: 68/255, green: 64/255, blue: 60/255, alpha: 1)     // #44403C
+                        ? NSColor(srgbRed: 163/255, green: 163/255, blue: 163/255, alpha: 1)  // #A3A3A3 neutral-400
+                        : NSColor(srgbRed: 64/255, green: 64/255, blue: 64/255, alpha: 1)     // #404040 neutral-700
                     divider.layer?.backgroundColor = divColor.cgColor
                     tabsRowView.addSubview(divider)
                     tabDividers.append((view: divider, afterIndex: i))
@@ -843,14 +843,14 @@ final class TabsContainerOverlayView: NSView {
         effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
     }
 
-    /// bg/blocks: white (light) / #0C0A09 (dark) — from Figma variable tokens
+    /// bg/blocks: white (light) / #171717 neutral-900 (dark)
     private static func blocksColor(isDark: Bool) -> NSColor {
         isDark
-            ? NSColor(srgbRed: 12/255, green: 10/255, blue: 9/255, alpha: 1)    // #0C0A09
+            ? NSColor(srgbRed: 23/255, green: 23/255, blue: 23/255, alpha: 1)
             : NSColor.white
     }
 
-    /// bg/block-container: stone-300 (light) / stone-800 (dark) — from Figma variable tokens.
+    /// bg/block-container: neutral-300 (light) / neutral-800 (dark) — from Figma variable tokens.
     /// Routes through `ThemeManager.tintedBlockContainerNS` so the user's
     /// app-wide hue tint reaches this outer container too.
     private static func containerColor(isDark: Bool) -> NSColor {

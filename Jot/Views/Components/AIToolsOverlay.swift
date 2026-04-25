@@ -166,7 +166,7 @@ struct AIToolsOverlay: View {
                         .renderingMode(.template)
                         .resizable()
                         .scaledToFit()
-                        .foregroundColor(Color("SecondaryTextColor"))
+                        .foregroundColor(Color("IconSecondaryColor"))
                         .frame(width: 15, height: 15)
                     Text("Generate Text")
                         .jotUI(FontManager.uiLabel5(weight: .regular))
@@ -187,6 +187,7 @@ struct AIToolsOverlay: View {
                 .background(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .fill(textAreaBackgroundColor)
+                        .darkSurfaceHairlineBorder(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)

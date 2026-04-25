@@ -37,6 +37,7 @@ struct AIResultPanel: View {
             } else {
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
                     .fill(colorScheme == .dark ? Color("DetailPaneColor") : .white)
+                    .darkSurfaceHairlineBorder(RoundedRectangle(cornerRadius: 22, style: .continuous))
             }
         }
         .modifier(AIGlassModifier(cornerRadius: 22))
@@ -63,7 +64,7 @@ struct AIResultPanel: View {
                     .renderingMode(.template)
                     .resizable()
                     .scaledToFit()
-                    .foregroundColor(Color("SecondaryTextColor"))
+                    .foregroundColor(Color("IconSecondaryColor"))
                     .frame(width: 14, height: 14)
 
                 Text(toolLabel)
@@ -79,7 +80,7 @@ struct AIResultPanel: View {
                     .renderingMode(.template)
                     .resizable()
                     .scaledToFit()
-                    .foregroundColor(Color("SecondaryTextColor"))
+                    .foregroundColor(Color("IconSecondaryColor"))
                     .frame(width: 15, height: 15)
             }
 
@@ -88,7 +89,7 @@ struct AIResultPanel: View {
                     .renderingMode(.template)
                     .resizable()
                     .scaledToFit()
-                    .foregroundColor(Color("SecondaryTextColor"))
+                    .foregroundColor(Color("IconSecondaryColor"))
                     .frame(width: 15, height: 15)
             }
             .buttonStyle(.plain)

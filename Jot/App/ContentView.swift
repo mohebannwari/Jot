@@ -2773,16 +2773,16 @@ struct ContentView: View {
                     assetName: assetName,
                     tint: isActive
                         ? (colorScheme == .light ? Color.white : Color.black)
-                        : Color("SecondaryTextColor")
+                        : Color("PrimaryTextColor")
                 )
                 .scaleEffect(x: flipIcon ? -1 : 1, y: 1)
 
-                // Idle label uses the same token as the row icon (`SecondaryTextColor`) so text and glyph read as one unit.
+                // Icon + label read as one unit at full primary tone.
                 Text(label)
                     .font(FontManager.heading(size: 13, weight: .regular))
                     .foregroundColor(isActive
                         ? (colorScheme == .light ? Color.white : Color.black)
-                        : Color("SecondaryTextColor"))
+                        : Color("PrimaryTextColor"))
                     .tracking(-0.1)
                     .lineLimit(1)
 
@@ -2878,7 +2878,7 @@ struct ContentView: View {
                         }
                     }
                 } label: {
-                    sidebarAssetIcon(assetName: "IconFilterCircle", tint: Color("SecondaryTextColor"))
+                    sidebarAssetIcon(assetName: "IconFilterCircle", tint: Color("PrimaryTextColor"))
                         .padding(4)
                         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
@@ -2899,7 +2899,7 @@ struct ContentView: View {
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            sidebarAssetIcon(assetName: assetName, tint: Color("SecondaryTextColor"), size: iconSize)
+            sidebarAssetIcon(assetName: assetName, tint: Color("PrimaryTextColor"), size: iconSize)
                 .padding(4)
                 .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
@@ -2975,7 +2975,7 @@ struct ContentView: View {
                                             .resizable()
                                             .scaledToFit()
                                             .frame(width: 14, height: 14)
-                                            .foregroundColor(Color("SecondaryTextColor"))
+                                            .foregroundColor(Color("IconSecondaryColor"))
                                             .padding(4)
                                             .contentShape(Circle())
                                     }
@@ -3849,7 +3849,7 @@ struct ContentView: View {
     ) -> some View {
         if withHoverBox {
             Button(action: action) {
-                sidebarAssetIcon(assetName: assetName, tint: Color("SecondaryTextColor"))
+                sidebarAssetIcon(assetName: assetName, tint: Color("PrimaryTextColor"))
                     .padding(4)
                     .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
@@ -3860,7 +3860,7 @@ struct ContentView: View {
             .hoverContainer(cornerRadius: 8)
         } else {
             Button(action: action) {
-                sidebarAssetIcon(assetName: assetName, tint: Color("SecondaryTextColor"))
+                sidebarAssetIcon(assetName: assetName, tint: Color("PrimaryTextColor"))
                     .frame(width: 20, height: 20, alignment: .center)
                     .contentShape(Rectangle())
             }
@@ -3924,7 +3924,7 @@ struct ContentView: View {
                                     .renderingMode(.template)
                                     .resizable()
                                     .scaledToFit()
-                                    .foregroundColor(Color("SecondaryTextColor"))
+                                    .foregroundColor(Color("IconSecondaryColor"))
                                     .frame(width: 15, height: 15)
                                     .padding(4)
                                     .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -4137,7 +4137,7 @@ struct ContentView: View {
                         .renderingMode(.template)
                         .resizable()
                         .scaledToFit()
-                        .foregroundColor(Color("SecondaryTextColor"))
+                        .foregroundColor(Color("IconSecondaryColor"))
                         .frame(width: 15, height: 15)
                         .padding(4)
                         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -4155,7 +4155,7 @@ struct ContentView: View {
                         .renderingMode(.template)
                         .resizable()
                         .scaledToFit()
-                        .foregroundColor(Color("SecondaryTextColor"))
+                        .foregroundColor(Color("IconSecondaryColor"))
                         .frame(width: 15, height: 15)
                         .padding(4)
                         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -4175,7 +4175,7 @@ struct ContentView: View {
                         .renderingMode(.template)
                         .resizable()
                         .scaledToFit()
-                        .foregroundColor(Color("SecondaryTextColor"))
+                        .foregroundColor(Color("IconSecondaryColor"))
                         .frame(width: 15, height: 15)
                         .padding(4)
                         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -5570,7 +5570,7 @@ private struct SplitPickerOverlayCard: View {
                     .renderingMode(.template)
                     .resizable()
                     .scaledToFit()
-                    .foregroundColor(Color("SecondaryTextColor"))
+                    .foregroundColor(Color("IconSecondaryColor"))
                     .frame(width: 15, height: 15)
                 TextField("Search", text: $searchQuery)
                     .jotUI(FontManager.uiLabel5(weight: .regular))
@@ -5606,7 +5606,7 @@ private struct SplitPickerOverlayRow: View {
                     .renderingMode(.template)
                     .resizable()
                     .scaledToFit()
-                    .foregroundColor(Color("SecondaryTextColor"))
+                    .foregroundColor(Color("IconSecondaryColor"))
                     .frame(width: 15, height: 15)
                 Text(note.title.isEmpty ? "Untitled" : note.title)
                     .jotUI(FontManager.uiLabel2(weight: .regular))
@@ -5689,13 +5689,15 @@ struct NoteListCard: View {
         forceLightText ? .white.opacity(0.7) : Color("SecondaryTextColor")
     }
 
-    /// Sidebar note title: same token as idle leading chrome (split/lock) and ellipsis.
+    /// Sidebar note title: pure primary in idle, inverted primary when active.
     private var titleForegroundColor: Color {
-        isActiveNote ? activeTextColor : secondaryTextColor
+        if isActiveNote { return activeTextColor }
+        return forceLightText ? .white : Color("PrimaryTextColor")
     }
 
     private var leadingIconTint: Color {
-        isActiveNote ? activeTextColor : secondaryTextColor
+        if isActiveNote { return activeTextColor }
+        return forceLightText ? .white.opacity(0.7) : Color("IconSecondaryColor")
     }
 
     @ViewBuilder
@@ -5938,9 +5940,7 @@ struct NoteListCard: View {
                 } label: {
                     Image(systemName: "ellipsis")
                         .font(FontManager.icon(size: 12, weight: .regular))
-                        .foregroundColor(isActiveNote
-                            ? activeTextColor.opacity(isEllipsisHovered ? 1.0 : 0.7)
-                            : secondaryTextColor.opacity(isEllipsisHovered ? 1.0 : 0.7))
+                        .foregroundColor(isActiveNote ? activeTextColor : Color("PrimaryTextColor"))
                         // Align optical center with 15×15 sidebar icons (chevron, folder actions).
                         .offset(x: NoteListCard.sidebarEllipsisGlyphOffsetX)
                         .frame(
@@ -6123,7 +6123,7 @@ struct PinnedNotesSection: View {
                     .resizable()
                     .renderingMode(.template)
                     .frame(width: 15, height: 15)
-                    .foregroundColor(Color("SecondaryTextColor"))
+                    .foregroundColor(Color("IconSecondaryColor"))
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 8)
@@ -6176,7 +6176,7 @@ struct PinnedNotesSection: View {
                         .renderingMode(.template)
                         .resizable()
                         .scaledToFit()
-                        .foregroundColor(Color("SecondaryTextColor"))
+                        .foregroundColor(Color("IconSecondaryColor"))
                         .frame(width: 15, height: 15)
 
                     NoteListCard(
@@ -6268,7 +6268,7 @@ struct LockedNotesSection: View {
                     .resizable()
                     .renderingMode(.template)
                     .frame(width: 15, height: 15)
-                    .foregroundColor(Color("SecondaryTextColor"))
+                    .foregroundColor(Color("IconSecondaryColor"))
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 8)
@@ -6321,7 +6321,7 @@ struct LockedNotesSection: View {
                         .renderingMode(.template)
                         .resizable()
                         .scaledToFit()
-                        .foregroundColor(Color("SecondaryTextColor"))
+                        .foregroundColor(Color("IconSecondaryColor"))
                         .frame(width: 15, height: 15)
 
                     NoteListCard(
@@ -6691,7 +6691,7 @@ struct PropertiesPanelButton: View {
                 .renderingMode(.template)
                 .resizable()
                 .scaledToFit()
-                .foregroundColor(Color("SecondaryTextColor"))
+                .foregroundColor(Color("IconSecondaryColor"))
                 .frame(width: 15, height: 15)
                 .padding(4)
                 .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))

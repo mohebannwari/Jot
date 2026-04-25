@@ -80,7 +80,7 @@ struct CreateFolderSheet: View {
                         .renderingMode(.template)
                         .resizable()
                         .scaledToFit()
-                        .foregroundColor(Color("SecondaryTextColor"))
+                        .foregroundColor(Color("IconSecondaryColor"))
                         .frame(width: 15, height: 15)
                 }
                 .buttonStyle(.plain)
@@ -90,6 +90,7 @@ struct CreateFolderSheet: View {
         .padding(12)
         .background(themeManager.tintedDetailPane(for: colorScheme))
         .clipShape(Capsule())
+        .darkSurfaceHairlineBorder(Capsule())
     }
 
     // MARK: - Color Section

@@ -154,13 +154,13 @@ final class NoteTableOverlayView: NSView {
 
     private var borderColor: NSColor {
         isDarkMode
-            ? NSColor.white.withAlphaComponent(0.06)
+            ? NSColor(srgbRed: 23/255, green: 23/255, blue: 23/255, alpha: 1)  // #171717 neutral-900
             : TranslucentLightPaperTableStroke.lightOuterStrokeNSColor()
     }
     private var gridColor: NSColor { .separatorColor }
     private var cellBackgroundColor: NSColor {
         isDarkMode
-            ? NSColor(red: 0x0C/255.0, green: 0x0A/255.0, blue: 0x09/255.0, alpha: 1)
+            ? NSColor(srgbRed: 23/255, green: 23/255, blue: 23/255, alpha: 1)  // #171717 neutral-900
             : .white
     }
 

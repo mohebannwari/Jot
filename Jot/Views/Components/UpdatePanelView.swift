@@ -36,6 +36,7 @@ struct UpdatePanelView: View {
         .padding(8)
         .background { backgroundLayer }
         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        .darkSurfaceHairlineBorder(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
     }
 
     // MARK: - Background
@@ -44,7 +45,7 @@ struct UpdatePanelView: View {
     // Gradient: absolute inset-0, transparent -> bg/secondary
 
     // Gradient endpoint must match the panel's outer container background exactly.
-    // SettingsOptionCardColor dark (#0C0A09) provides the near-black needed for
+    // SettingsOptionCardColor dark (#0A0A0A neutral-950) provides the near-black needed for
     // the image-to-surface fade; .white is used directly in light mode to avoid
     // dynamic color resolution overhead inside the gradient (matches original).
     private var surfaceColor: Color {

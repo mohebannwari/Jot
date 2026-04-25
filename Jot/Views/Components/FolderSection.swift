@@ -102,7 +102,7 @@ struct FolderSection: View {
                     .resizable()
                     .renderingMode(.template)
                     .frame(width: 15, height: 15)
-                    .foregroundColor(Color("SecondaryTextColor"))
+                    .foregroundColor(Color("IconSecondaryColor"))
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 8)
@@ -173,7 +173,7 @@ struct FolderSection: View {
                             .renderingMode(.template)
                             .resizable()
                             .scaledToFit()
-                            .foregroundColor(Color("SecondaryTextColor"))
+                            .foregroundColor(Color("IconSecondaryColor"))
                             .frame(width: 15, height: 15)
 
                         Image("IconFolder1")
@@ -185,8 +185,8 @@ struct FolderSection: View {
 
                         Text(peekFolder.name)
                             .font(FontManager.heading(size: 13, weight: .regular))
-                            // Folder name uses sidebar body text token, not the folder swatch (icon keeps the color).
-                            .foregroundColor(Color("SecondaryTextColor"))
+                            // Matches sidebar note titles at full primary tone — icon alone carries folder color.
+                            .foregroundColor(Color("PrimaryTextColor"))
                             .tracking(-0.1)
                             .lineLimit(1)
                             .truncationMode(.tail)
@@ -292,8 +292,8 @@ struct FolderSection: View {
             } else {
                 Text(folder.name)
                     .font(FontManager.heading(size: 13, weight: .regular))
-                    // Same token as note titles and section chrome — icon alone carries folder color.
-                    .foregroundColor(Color("SecondaryTextColor"))
+                    // Matches sidebar note titles at full primary tone — icon alone carries folder color.
+                    .foregroundColor(Color("PrimaryTextColor"))
                     .tracking(-0.1)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -361,7 +361,7 @@ struct FolderSection: View {
                 } label: {
                     Image(systemName: "ellipsis")
                         .font(FontManager.icon(size: 12, weight: .regular))
-                        .foregroundColor(Color("SecondaryTextColor"))
+                        .foregroundColor(Color("IconSecondaryColor"))
                         .frame(width: 12, height: 12)
                         .contentShape(Rectangle())
                 }
@@ -377,7 +377,7 @@ struct FolderSection: View {
                         .renderingMode(.template)
                         .resizable()
                         .scaledToFit()
-                        .foregroundColor(Color("SecondaryTextColor"))
+                        .foregroundColor(Color("IconSecondaryColor"))
                         .frame(width: 15, height: 15)
                         .contentShape(Rectangle())
                 }
@@ -503,9 +503,9 @@ struct FolderSection: View {
                             hoverLeadingIconAssetName: note.isLocked ? "IconUnlocked" : nil,
                             persistentLeadingIconBg: false,
                             leadingIconBgColor: .clear,
-                            leadingIconFgColor: Color("SecondaryTextColor"),
+                            leadingIconFgColor: Color("IconSecondaryColor"),
                             hoverLeadingIconBgColor: .clear,
-                            hoverLeadingIconFgColor: Color("SecondaryTextColor"),
+                            hoverLeadingIconFgColor: Color("IconSecondaryColor"),
                             onLeadingIconTap: note.isLocked
                                 ? { onLockIconTap?(note) }
                                 : (splitNoteIDs.contains(note.id) ? { onSplitIconTap?(note) } : nil),

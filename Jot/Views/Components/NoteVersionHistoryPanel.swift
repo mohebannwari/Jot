@@ -60,7 +60,7 @@ struct NoteVersionHistoryPanel: View {
             } label: {
                 Image(systemName: "xmark")
                     .font(FontManager.uiMicro(weight: .bold).font)
-                    .foregroundColor(Color("SecondaryTextColor"))
+                    .foregroundColor(Color("IconSecondaryColor"))
                     .frame(width: 22, height: 22)
                     .background(Color("SurfaceTranslucentColor"), in: Circle())
             }

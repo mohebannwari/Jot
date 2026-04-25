@@ -27,8 +27,25 @@ struct FloatingColorPicker: View {
         ("blue",    "#3b82f6"),
     ]
 
+    /// Preset swatches and the custom (+) control share this diameter so the row reads even.
+    private enum Swatch {
+        static let diameter: CGFloat = 20
+        static let interItemSpacing: CGFloat = 8
+        static let horizontalPaddingTotal: CGFloat = 20  // matches `.padding(.horizontal, 10)` on the HStack
+        static let removeControlDiameter: CGFloat = 15
+    }
+
+    /// Width of the glass capsule for parents that clamp center X (`NoteDetailView` toolbar submenu + highlight overlay).
+    static func pillLayoutWidth(includeRemoveButton: Bool) -> CGFloat {
+        let d = Swatch.diameter
+        let remove: CGFloat = includeRemoveButton ? Swatch.removeControlDiameter : 0
+        let itemCount = 5 + 1 + (includeRemoveButton ? 1 : 0)
+        let gaps = CGFloat(max(0, itemCount - 1)) * Swatch.interItemSpacing
+        return CGFloat(5 + 1) * d + remove + gaps + Swatch.horizontalPaddingTotal
+    }
+
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: Swatch.interItemSpacing) {
             ForEach(colors, id: \.hex) { color in
                 colorCircle(hex: color.hex)
             }
@@ -69,7 +86,7 @@ struct FloatingColorPicker: View {
         } label: {
             Circle()
                 .fill(Color(hex: hex))
-                .frame(width: 20, height: 20)
+                .frame(width: Swatch.diameter, height: Swatch.diameter)
         }
         .buttonStyle(.plain)
         .scaleEffect(isPressed ? 0.88 : (circlesVisible ? 1.0 : 0.6))
@@ -91,21 +108,21 @@ struct FloatingColorPicker: View {
                 if let custom = customColor {
                     Circle()
                         .fill(custom)
-                        .frame(width: 20, height: 20)
+                        .frame(width: Swatch.diameter, height: Swatch.diameter)
                 } else {
+                    // Same footprint as preset circles; plus is a sibling so it stays geometrically centered.
                     Circle()
                         .fill(colorScheme == .dark ? Color.white : Color.black)
-                        .frame(width: 15, height: 15)
-                        .overlay(
-                            Image(systemName: "plus")
-                                .font(FontManager.uiMicro(weight: .bold).font)
-                                .foregroundColor(colorScheme == .dark ? .black : .white)
-                        )
+                        .frame(width: Swatch.diameter, height: Swatch.diameter)
+                    Image(systemName: "plus")
+                        .font(FontManager.uiMicro(weight: .bold).font)
+                        .foregroundColor(colorScheme == .dark ? .black : .white)
                 }
             }
+            .frame(width: Swatch.diameter, height: Swatch.diameter)
         }
         .buttonStyle(.plain)
-        .frame(width: 15, height: 15)
+        .frame(width: Swatch.diameter, height: Swatch.diameter)
         .contentShape(Circle())
         .subtleHoverScale(1.06)
         .scaleEffect(circlesVisible ? 1.0 : 0.6)
@@ -124,17 +141,17 @@ struct FloatingColorPicker: View {
             ZStack {
                 Circle()
                     .fill(Color.red.opacity(colorScheme == .dark ? 0.2 : 0.12))
-                    .frame(width: 15, height: 15)
+                    .frame(width: Swatch.removeControlDiameter, height: Swatch.removeControlDiameter)
                 Image("delete")
                     .renderingMode(.template)
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 15, height: 15)
+                    .frame(width: Swatch.removeControlDiameter, height: Swatch.removeControlDiameter)
                     .foregroundColor(.red)
             }
         }
         .buttonStyle(.plain)
-        .frame(width: 15, height: 15)
+        .frame(width: Swatch.removeControlDiameter, height: Swatch.removeControlDiameter)
         .contentShape(Circle())
         .subtleHoverScale(1.06)
         .scaleEffect(circlesVisible ? 1.0 : 0.6)
