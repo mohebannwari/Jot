@@ -843,11 +843,11 @@ final class TabsContainerOverlayView: NSView {
         effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
     }
 
-    /// bg/blocks: white (light) / #171717 neutral-900 (dark)
+    /// bg/blocks — content pane beneath the tab strip. Routes through `ThemeManager.tintedBlockBodyNS`
+    /// so the body inherits the app-wide hue tint alongside the tab strip / outer container
+    /// (both of which use `tintedBlockContainerNS`).
     private static func blocksColor(isDark: Bool) -> NSColor {
-        isDark
-            ? NSColor(srgbRed: 23/255, green: 23/255, blue: 23/255, alpha: 1)
-            : NSColor.white
+        ThemeManager.tintedBlockBodyNS(isDark: isDark)
     }
 
     /// bg/block-container: neutral-300 (light) / neutral-800 (dark) — from Figma variable tokens.

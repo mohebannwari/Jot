@@ -334,7 +334,7 @@ struct BackupSettingsPanel: View {
         .padding(.horizontal, 14)
         .background(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(colorScheme == .light ? Color.white : Color("SettingsOptionCardColor"))
+                .fill(themeManager.tintedBlockBody(for: colorScheme))
                 .darkSurfaceHairlineBorder(RoundedRectangle(cornerRadius: 22, style: .continuous))
                 .translucentLightPaperTableStroke(
                     shape: RoundedRectangle(cornerRadius: 22, style: .continuous),

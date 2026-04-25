@@ -730,7 +730,7 @@ struct SettingsPage: View {
         .padding(.vertical, 8)
         .background(
             Capsule()
-                .fill(colorScheme == .light ? Color.white : Color("SettingsOptionCardColor"))
+                .fill(themeManager.tintedBlockBody(for: colorScheme))
                 .darkSurfaceHairlineBorder(Capsule())
                 .translucentLightPaperTableStroke(shape: Capsule(), enabled: shouldElevateLightPaperChrome)
                 .liquidGlassPaperElevatedShadow(enabled: shouldElevateLightPaperChrome)
@@ -745,7 +745,7 @@ struct SettingsPage: View {
         .padding(.horizontal, 14)
         .background(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(colorScheme == .light ? Color.white : Color("SettingsOptionCardColor"))
+                .fill(themeManager.tintedBlockBody(for: colorScheme))
                 .darkSurfaceHairlineBorder(RoundedRectangle(cornerRadius: 22, style: .continuous))
                 .translucentLightPaperTableStroke(
                     shape: RoundedRectangle(cornerRadius: 22, style: .continuous),
@@ -1029,7 +1029,7 @@ struct SettingsPage: View {
             VStack(spacing: 8) {
                 ZStack {
                     RoundedRectangle(cornerRadius: bodyFontCardRadius, style: .continuous)
-                        .fill(colorScheme == .light ? Color.white : Color("SettingsOptionCardColor"))
+                        .fill(themeManager.tintedBlockBody(for: colorScheme))
                         .darkSurfaceHairlineBorder(RoundedRectangle(cornerRadius: bodyFontCardRadius, style: .continuous))
                         .translucentLightPaperTableStroke(
                             shape: RoundedRectangle(cornerRadius: bodyFontCardRadius, style: .continuous),
@@ -1082,7 +1082,7 @@ struct SettingsPage: View {
             VStack(spacing: 8) {
                 ZStack {
                     RoundedRectangle(cornerRadius: lineSpacingCardRadius, style: .continuous)
-                        .fill(colorScheme == .light ? Color.white : Color("SettingsOptionCardColor"))
+                        .fill(themeManager.tintedBlockBody(for: colorScheme))
                         .darkSurfaceHairlineBorder(RoundedRectangle(cornerRadius: lineSpacingCardRadius, style: .continuous))
                         .translucentLightPaperTableStroke(
                             shape: RoundedRectangle(cornerRadius: lineSpacingCardRadius, style: .continuous),
@@ -1199,7 +1199,7 @@ struct SettingsPage: View {
             .padding(.horizontal, 24)
             .background(
                 RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .fill(colorScheme == .light ? Color.white : Color("SettingsOptionCardColor"))
+                    .fill(themeManager.tintedBlockBody(for: colorScheme))
                     .darkSurfaceHairlineBorder(RoundedRectangle(cornerRadius: 22, style: .continuous))
                     .translucentLightPaperTableStroke(
                         shape: RoundedRectangle(cornerRadius: 22, style: .continuous),
@@ -1301,7 +1301,7 @@ struct SettingsPage: View {
             .padding(.vertical, 8)
             .background(
                 Capsule()
-                    .fill(colorScheme == .light ? Color.white : Color("SettingsOptionCardColor"))
+                    .fill(themeManager.tintedBlockBody(for: colorScheme))
                     .darkSurfaceHairlineBorder(Capsule())
                     .translucentLightPaperTableStroke(shape: Capsule(), enabled: shouldElevateLightPaperChrome)
                     .liquidGlassPaperElevatedShadow(enabled: shouldElevateLightPaperChrome)
@@ -1406,7 +1406,7 @@ struct SettingsPage: View {
         .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(colorScheme == .light ? Color.white : Color("SettingsOptionCardColor"))
+                .fill(themeManager.tintedBlockBody(for: colorScheme))
                 .darkSurfaceHairlineBorder(RoundedRectangle(cornerRadius: 22, style: .continuous))
                 .translucentLightPaperTableStroke(
                     shape: RoundedRectangle(cornerRadius: 22, style: .continuous),

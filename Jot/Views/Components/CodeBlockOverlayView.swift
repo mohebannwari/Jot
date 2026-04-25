@@ -37,20 +37,19 @@ final class CodeBlockOverlayView: NSView {
     // -- Design tokens (matching CalloutOverlayView shell) --------------------
     /// Fixed shell corner radius (points). Matches callout blocks; not derived from size or line count.
     private let blockRadius:        CGFloat = 22
-    private let blockPaddingTop:    CGFloat = 24   // clears pill
-    private let blockPaddingBottom: CGFloat = 16
-    private let blockPaddingH:      CGFloat = 16
+    private let blockPaddingTop:    CGFloat = 12   // pill sits inside, 12pt from top edge
+    private let blockPaddingBottom: CGFloat = 12
+    private let blockPaddingH:      CGFloat = 12
     private let pillPadding:        CGFloat = 4
-    private let pillLeftOffset:     CGFloat = 18
+    private let pillLeftOffset:     CGFloat = 12   // matches blockPaddingH
+    private let pillToContentGap:   CGFloat = 12   // vertical gap between pill bottom and code top
     private let chipIconGap:        CGFloat = 5
     private let chipChevGap:        CGFloat = 3
     private let iconSize:           CGFloat = 15
     private let chevronSize:        CGFloat = 15
 
-    /// Pill height = pillPadding(4) + iconSize(18) + pillPadding(4) = 26px
+    /// Pill height = pillPadding(4) + iconSize(15) + pillPadding(4) = 23px
     private var pillHeight: CGFloat { pillPadding * 2 + iconSize }
-    /// Half the pill extends above the block's top edge.
-    private var pillOverflow: CGFloat { pillHeight / 2 }
 
     // MARK: - Data
 
@@ -256,7 +255,7 @@ final class CodeBlockOverlayView: NSView {
 
     private func buildView() {
         wantsLayer = true
-        layer?.masksToBounds = false  // pill must extend above block bounds
+        layer?.masksToBounds = false  // resize handle, copy button backdrop, and chevron menu may extend past bounds
 
         // Block -- single rounded background for content
         blockView.wantsLayer = true
@@ -304,28 +303,28 @@ final class CodeBlockOverlayView: NSView {
     override func layout() {
         super.layout()
 
-        let pO = pillOverflow  // 13px
-
-        // Block fills width, offset down by pill overflow
-        let blockH = max(bounds.height - pO, 50)
-        blockView.frame = CGRect(x: 0, y: pO, width: bounds.width, height: blockH)
+        // Block fills the entire overlay -- pill now sits inside, no top straddle.
+        let blockH = max(bounds.height, 50)
+        blockView.frame = CGRect(x: 0, y: 0, width: bounds.width, height: blockH)
         shellBorderView.frame = blockView.frame
 
-        // ScrollView inside block (blockView is non-flipped: y=0 at bottom)
+        // ScrollView inside block (blockView is non-flipped: y=0 at bottom).
+        // Layout from the bottom: padBottom(12) of code, then svH, then gap(12),
+        // then pill(pillHeight), then padTop(12) -- mirrors heightForData.
         let svW = max(bounds.width - blockPaddingH * 2, 40)
-        let svH = max(blockH - blockPaddingTop - blockPaddingBottom, 20)
+        let svH = max(blockH - blockPaddingTop - pillHeight - pillToContentGap - blockPaddingBottom, 20)
         scrollView.frame = CGRect(x: blockPaddingH, y: blockPaddingBottom, width: svW, height: svH)
         textView.minSize = CGSize(width: svW, height: svH)
         textView.textContainer?.containerSize = CGSize(
             width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
 
-        // Chip pill -- straddles blockView's top edge
+        // Chip pill -- inside the container at top-left (flipped overlay coords).
         langLabel.sizeToFit()
         let labelW = ceil(langLabel.frame.width) + 1
         let labelH = ceil(langLabel.frame.height)
         let chipW = pillPadding + iconSize + chipIconGap + labelW + chipChevGap + chevronSize + pillPadding
-        let chipH = pillHeight  // 26px
-        chipView.frame = CGRect(x: pillLeftOffset, y: 0, width: chipW, height: chipH)
+        let chipH = pillHeight
+        chipView.frame = CGRect(x: pillLeftOffset, y: blockPaddingTop, width: chipW, height: chipH)
         chipView.layer?.cornerRadius = chipH / 2  // capsule
 
         // Icon inside chip
@@ -382,9 +381,8 @@ final class CodeBlockOverlayView: NSView {
     /// Soft shadow on the root layer when light mode + note translucency (see LiquidPaperShadowChrome).
     /// Also drives the table-matched shell stroke on ``shellBorderView``.
     private func updatePaperShadowIfNeeded() {
-        let pO = pillOverflow
-        let blockH = max(bounds.height - pO, 50)
-        let rect = CGRect(x: 0, y: pO, width: bounds.width, height: blockH)
+        let blockH = max(bounds.height, 50)
+        let rect = CGRect(x: 0, y: 0, width: bounds.width, height: blockH)
         let path = NSBezierPath(roundedRect: rect, xRadius: blockRadius, yRadius: blockRadius).cgPath
         let enabled = LiquidPaperShadowChrome.shouldShowPaperShadow(effectiveAppearance: hostAppearance)
         LiquidPaperShadowChrome.applyPaperShadow(to: layer, path: path, enabled: enabled)
@@ -461,22 +459,24 @@ final class CodeBlockOverlayView: NSView {
         // Block background — snapshot ``CGColor`` while ``appearance`` is current so named assets match the host editor.
         blockView.layer?.backgroundColor = Self.blockBodySurfaceCGColor(isDark: dark, appearance: appearance)
 
-        // Chip pill -- always uses the DARK variant of the tinted block
-        // container so it reads as a deep, saturated pill in both light
-        // and dark app modes (matches the original "neutral-800 in both
-        // modes" design intent, plus picks up the user's hue tint).
-        chipView.layer?.backgroundColor = ThemeManager.tintedBlockContainerNS(isDark: true).cgColor
+        // Chip pill -- in dark mode an inverted white capsule with black icon/text
+        // for high contrast against the tinted code body. In light mode keep the
+        // deep tinted dark capsule (matches the original "neutral-800 in both
+        // modes" intent for light) so it still reads on a white code body.
+        let chipBg: NSColor = dark ? .white : ThemeManager.tintedBlockContainerNS(isDark: true)
+        let chipFg: NSColor = dark ? .black : .white
+        chipView.layer?.backgroundColor = chipBg.cgColor
 
         langLabel.attributedStringValue = NSAttributedString(
             string: CodeBlockData.displayName(for: codeBlockData.language),
             attributes: [
                 .font: NSFont.systemFont(ofSize: 11, weight: .regular),
-                .foregroundColor: NSColor.white
+                .foregroundColor: chipFg
             ]
         )
 
-        codeIconView.contentTintColor = .white
-        chevronView.contentTintColor  = .white
+        codeIconView.contentTintColor = chipFg
+        chevronView.contentTintColor  = chipFg
 
         // Update text view base foreground color so unstyled tokens adapt to theme
         textView.textColor = dark ? .white : .black
@@ -496,11 +496,13 @@ final class CodeBlockOverlayView: NSView {
 
     private func updateLanguageLabel() {
         let display = CodeBlockData.displayName(for: codeBlockData.language)
+        // Mirror updateAppearance(): black on the white pill in dark mode, white on the dark pill in light mode.
+        let chipFg: NSColor = isDarkMode ? .black : .white
         langLabel.attributedStringValue = NSAttributedString(
             string: display,
             attributes: [
                 .font: NSFont.systemFont(ofSize: 11, weight: .regular),
-                .foregroundColor: NSColor.white
+                .foregroundColor: chipFg
             ]
         )
         needsLayout = true
@@ -665,14 +667,14 @@ final class CodeBlockOverlayView: NSView {
 
     // MARK: - Static Height Helper
 
-    /// Content-hugging height: pillOverflow + paddingTop + codeContent + paddingBottom, capped at maxHeight.
+    /// Content-hugging height: padTop + pillHeight + pillToContentGap + codeContent + padBottom, capped at maxHeight.
     static func heightForData(_ data: CodeBlockData, width: CGFloat) -> CGFloat {
         let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
         let lineCount = max(data.code.components(separatedBy: "\n").count, 1)
         let lineHeight = ceil(font.ascender - font.descender + font.leading)
         let codeH = CGFloat(lineCount) * lineHeight
-        // pillOverflow(13) + paddingTop(24) + content(min 20) + paddingBottom(16)
-        return min(13 + 24 + max(codeH, 20) + 16, maxHeight)
+        // padTop(12) + pillH(23) + gap(12) + content(min 20) + padBottom(12)
+        return min(12 + 23 + 12 + max(codeH, 20) + 12, maxHeight)
     }
 }
 
@@ -717,12 +719,11 @@ private final class _CodeBlockShellBorderView: NSView {
 // MARK: - Copy glyph helpers
 
 fileprivate extension CodeBlockOverlayView {
-    /// Matches the code-block text area surface: `SurfaceDefaultColor` in light, neutral-900 (#171717) in dark.
+    /// Code-block text area surface — neutral-900 (`#171717`) dark / `SurfaceDefaultColor` light,
+    /// routed through `ThemeManager.tintedBlockBodyNS` so the body picks up the app-wide hue tint
+    /// alongside the language-pill chrome (which uses `tintedBlockContainerNS`).
     static func blockBodySurfaceColor(isDark: Bool) -> NSColor {
-        if isDark {
-            return NSColor(srgbRed: 23/255, green: 23/255, blue: 23/255, alpha: 1)
-        }
-        return NSColor(named: "SurfaceDefaultColor") ?? .white
+        ThemeManager.tintedBlockBodyNS(isDark: isDark)
     }
 
     /// Flattens ``blockBodySurfaceColor`` to ``CGColor`` under ``appearance`` so layer fills match the host editor.

@@ -559,6 +559,45 @@ final class ThemeManager: ObservableObject {
         }
     }
 
+    /// SwiftUI mirror of `tintedBlockBodyNS(isDark:)` for "body" / "card content" surfaces
+    /// (settings option cards, font/line-spacing preview cards, etc.). Same tint targets
+    /// and intensity contract as `tintedBlockContainer`, but the bases are white (light)
+    /// and neutral-900 `#171717` (dark) — one tier darker than block container chrome,
+    /// preserving the chrome ↔ body brightness gap while letting the surface inherit the
+    /// user's hue tint.
+    func tintedBlockBody(for colorScheme: ColorScheme) -> Color {
+        let base: Color
+        switch colorScheme {
+        case .light:
+            base = Color("SurfaceDefaultColor")
+        case .dark:
+            base = Color(nsColor: NSColor(srgbRed: 23/255, green: 23/255, blue: 23/255, alpha: 1))
+        @unknown default:
+            base = Color("SurfaceDefaultColor")
+        }
+
+        guard tintIntensity > 0 else { return base }
+
+        let target: Color
+        switch colorScheme {
+        case .light:
+            target = Color(hue: tintHue, saturation: 0.14, brightness: 0.88)
+        case .dark:
+            target = Color(hue: tintHue, saturation: 0.45, brightness: 0.22)
+        @unknown default:
+            target = Color(hue: tintHue, saturation: 0.14, brightness: 0.88)
+        }
+
+        if #available(macOS 15.0, iOS 18.0, *) {
+            return base.mix(with: target, by: tintIntensity, in: .perceptual)
+        } else {
+            let baseNS = NSColor(base).usingColorSpace(.sRGB) ?? NSColor(base)
+            let targetNS = NSColor(target).usingColorSpace(.sRGB) ?? NSColor(target)
+            let blended = baseNS.blended(withFraction: CGFloat(tintIntensity), of: targetNS) ?? baseNS
+            return Color(nsColor: blended)
+        }
+    }
+
     // MARK: - Tint (AppKit / NSView bridge)
 
     /// Read the current persisted tint hue directly from UserDefaults.
@@ -609,6 +648,30 @@ final class ThemeManager: ObservableObject {
         let base: NSColor = isDark
             ? NSColor(srgbRed: 64 / 255, green: 64 / 255, blue: 64 / 255, alpha: 1)   // #404040 neutral-700
             : NSColor(srgbRed: 212 / 255, green: 212 / 255, blue: 212 / 255, alpha: 1) // #D4D4D4 neutral-300
+
+        let intensity = currentTintIntensity()
+        guard intensity > 0 else { return base }
+
+        let hue = CGFloat(currentTintHue())
+        let target: NSColor = isDark
+            ? NSColor(hue: hue, saturation: 0.45, brightness: 0.22, alpha: 1)
+            : NSColor(hue: hue, saturation: 0.14, brightness: 0.88, alpha: 1)
+
+        let baseSRGB = base.usingColorSpace(.sRGB) ?? base
+        let targetSRGB = target.usingColorSpace(.sRGB) ?? target
+        return baseSRGB.blended(withFraction: CGFloat(intensity), of: targetSRGB) ?? baseSRGB
+    }
+
+    /// NSColor for the body / content surface of editor blocks (code-block code area,
+    /// table data cells, tabs-block content pane). Same tint **targets** and intensity
+    /// contract as `tintedBlockContainerNS`, but the dark base is **neutral-900**
+    /// (`#171717`) and the light base is `SurfaceDefaultColor` (white) — one tier
+    /// darker than block container chrome (neutral-800 `#262626`), preserving the
+    /// chrome ↔ body brightness gap while letting the body inherit the user's hue tint.
+    nonisolated static func tintedBlockBodyNS(isDark: Bool) -> NSColor {
+        let base: NSColor = isDark
+            ? NSColor(srgbRed: 23 / 255, green: 23 / 255, blue: 23 / 255, alpha: 1)   // #171717 neutral-900
+            : (NSColor(named: "SurfaceDefaultColor") ?? .white)
 
         let intensity = currentTintIntensity()
         guard intensity > 0 else { return base }

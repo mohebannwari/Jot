@@ -159,9 +159,9 @@ final class NoteTableOverlayView: NSView {
     }
     private var gridColor: NSColor { .separatorColor }
     private var cellBackgroundColor: NSColor {
-        isDarkMode
-            ? NSColor(srgbRed: 23/255, green: 23/255, blue: 23/255, alpha: 1)  // #171717 neutral-900
-            : .white
+        // Routes through the tint pipeline so the table body cells shift with the
+        // app-wide hue tint alongside the header (which uses `tintedBlockContainerNS`).
+        ThemeManager.tintedBlockBodyNS(isDark: isDarkMode)
     }
 
     private var iconSecondaryColor: NSColor {

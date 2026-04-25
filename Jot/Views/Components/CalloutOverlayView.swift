@@ -45,20 +45,19 @@ final class CalloutOverlayView: NSView {
     // -- Figma Design Tokens (node 2448:7886) --------------------------------
     /// Fixed shell corner radius (points). Same as code blocks — not derived from content height.
     private let blockRadius:        CGFloat = 22
-    private let blockPaddingTop:    CGFloat = 24   // clears pill
-    private let blockPaddingBottom: CGFloat = 16   // var(--base, 16px)
-    private let blockPaddingH:      CGFloat = 16   // var(--base, 16px)
+    private let blockPaddingTop:    CGFloat = 12   // pill sits inside, 12pt from top edge
+    private let blockPaddingBottom: CGFloat = 12
+    private let blockPaddingH:      CGFloat = 12
     private let pillPadding:        CGFloat = 4    // var(--xs2, 4px)
-    private let pillLeftOffset:     CGFloat = 18   // Figma: left: 18px
+    private let pillLeftOffset:     CGFloat = 12   // matches blockPaddingH
+    private let pillToContentGap:   CGFloat = 12   // vertical gap between pill bottom and text top
     private let chipIconGap:        CGFloat = 5
     private let chipChevGap:        CGFloat = 3
     private let iconSize:           CGFloat = 15
     private let chevronSize:        CGFloat = 15   // was 14 -- updated per Figma
 
-    /// Pill height = pillPadding(4) + iconSize(18) + pillPadding(4) = 26px
+    /// Pill height = pillPadding(4) + iconSize(15) + pillPadding(4) = 23px
     private var pillHeight: CGFloat { pillPadding * 2 + iconSize }
-    /// Half the pill extends above the block's top edge.
-    private var pillOverflow: CGFloat { pillHeight / 2 }
 
     // -- Subviews -------------------------------------------------------------
     private let blockView  = NSView()
@@ -116,7 +115,7 @@ final class CalloutOverlayView: NSView {
 
     private func buildView() {
         wantsLayer = true
-        layer?.masksToBounds = false  // pill must extend above block bounds
+        layer?.masksToBounds = false  // resize handle and chevron menu may extend past bounds
 
         // Block -- single rounded background for content
         blockView.wantsLayer = true
@@ -231,27 +230,26 @@ final class CalloutOverlayView: NSView {
     override func layout() {
         super.layout()
 
-        let pO = pillOverflow  // 13px
         let contentW = contentLayoutWidth > 0 ? contentLayoutWidth : bounds.width
 
-        // Block fills content width, offset down by pill overflow
-        let blockH = max(bounds.height - pO, 50)
-        blockView.frame = CGRect(x: 0, y: pO, width: contentW, height: blockH)
+        // Block fills the entire overlay -- pill now sits inside, no top straddle.
+        let blockH = max(bounds.height, 50)
+        blockView.frame = CGRect(x: 0, y: 0, width: contentW, height: blockH)
 
-        // Text field inside block
+        // Text field inside block (blockView is non-flipped: y=0 at bottom).
+        // Layout from the bottom: padBottom(12) of text, then textH, then gap(12),
+        // then pill(pillHeight), then padTop(12) -- mirrors heightForData.
         let tfW = max(contentW - blockPaddingH * 2, 40)
-        let tfH = max(blockH - blockPaddingTop - blockPaddingBottom, 20)
-        // blockView is non-flipped (y=0 at bottom), so y=blockPaddingBottom
-        // gives 16px from bottom, leaving 24px at the top to clear the pill
+        let tfH = max(blockH - blockPaddingTop - pillHeight - pillToContentGap - blockPaddingBottom, 20)
         textField.frame = CGRect(x: blockPaddingH, y: blockPaddingBottom, width: tfW, height: tfH)
 
-        // Chip pill -- straddles blockView's top edge
+        // Chip pill -- inside the container at top-left (flipped overlay coords).
         chipLabel.sizeToFit()
         let labelW = ceil(chipLabel.frame.width) + 1
         let labelH = ceil(chipLabel.frame.height)
         let chipW = pillPadding + iconSize + chipIconGap + labelW + chipChevGap + chevronSize + pillPadding
-        let chipH = pillHeight  // 26px
-        chipView.frame = CGRect(x: pillLeftOffset, y: 0, width: chipW, height: chipH)
+        let chipH = pillHeight
+        chipView.frame = CGRect(x: pillLeftOffset, y: blockPaddingTop, width: chipW, height: chipH)
         chipView.layer?.cornerRadius = chipH / 2  // capsule
 
         // Icon inside chip
@@ -312,17 +310,18 @@ final class CalloutOverlayView: NSView {
     }()
 
     static func heightForData(_ data: CalloutData, width: CGFloat) -> CGFloat {
-        let pillOverflow: CGFloat = 13     // half of 26px pill
-        let topPad: CGFloat = 24           // block top padding (clears pill)
-        let bottomPad: CGFloat = 16        // block bottom padding
-        let hPad: CGFloat = 16             // horizontal padding
+        let topPad: CGFloat = 12
+        let pillH: CGFloat = 23            // pillPadding(4)*2 + iconSize(15)
+        let pillGap: CGFloat = 12          // between pill bottom and text top
+        let bottomPad: CGFloat = 12
+        let hPad: CGFloat = 12
         let tfW = max(width - hPad * 2, 40)
         let text = data.content.isEmpty ? "A" : data.content
         sizingField.stringValue = text
         let cellH = sizingField.cell!.cellSize(
             forBounds: NSRect(x: 0, y: 0, width: tfW, height: .greatestFiniteMagnitude)
         ).height
-        return pillOverflow + topPad + max(ceil(cellH), 20) + bottomPad
+        return topPad + pillH + pillGap + max(ceil(cellH), 20) + bottomPad
     }
 
     // MARK: - Cursor
