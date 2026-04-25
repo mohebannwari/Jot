@@ -179,9 +179,9 @@ struct FloatingSearch: View {
         }
     }
 
-    /// Tint for internal seams in the command palette — under the search field, between the
-    /// quick actions block and LAST SEARCH, above the footer, and between commands/results in
-    /// typed-query mode. The app-wide `BorderSubtleColor` at 9% white is swallowed by this
+    /// Tint for internal seams in the command palette — under the search field, above the
+    /// footer, and between commands/results in typed-query mode. The app-wide
+    /// `BorderSubtleColor` at 9% white is swallowed by this
     /// panel's glass backdrop in dark mode, so we bump to ~15% locally. Light mode keeps the
     /// existing token since 9% black already reads well against the surface. Outer panel stroke
     /// and footer keycap separator use their own tokens.
@@ -796,9 +796,6 @@ struct FloatingSearch: View {
             .padding(8)
 
             if showLastSearchSection {
-                Rectangle()
-                    .fill(panelDividerColor)
-                    .frame(height: 0.5)
                 lastSearchSectionContent
             }
         }
