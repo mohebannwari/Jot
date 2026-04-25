@@ -1,10 +1,23 @@
 import AppKit
+import SwiftUI
 import XCTest
 
 @testable import Jot
 
 @MainActor
 final class CodeBlockOverlayViewTests: XCTestCase {
+
+    private func horizontalScrollEvent(deltaX: Int32) -> NSEvent {
+        let event = CGEvent(
+            scrollWheelEvent2Source: nil,
+            units: .pixel,
+            wheelCount: 2,
+            wheel1: 0,
+            wheel2: deltaX,
+            wheel3: 0
+        ).flatMap(NSEvent.init(cgEvent:))
+        return event!
+    }
 
     func testBlockBodyUsesDarkDetailPaneWhenHostTextViewIsDarkAqua() {
         let textView = InlineNSTextView(frame: NSRect(x: 0, y: 0, width: 640, height: 480))
@@ -44,5 +57,74 @@ final class CodeBlockOverlayViewTests: XCTestCase {
         ns.getRed(&r, green: &g, blue: &b, alpha: &a)
 
         XCTAssertGreaterThan(r + g + b, 2.4, "Light scheme body should read as a bright surface")
+    }
+
+    func testCodeBodyScrollersStayOverlayAndAutohidingWhenSystemRequestsLegacyScrollbars() {
+        let overlay = CodeBlockOverlayView(codeBlockData: CodeBlockData(
+            language: "swift",
+            code: String(repeating: "let oversizedLine = \"scroll horizontally\" ", count: 12),
+            preferredContentWidth: nil
+        ))
+
+        XCTAssertTrue(overlay.testability_codeBodyScrollViewAutohidesScrollers)
+
+        overlay.testability_forceCodeBodyScrollerStyle(.legacy)
+
+        XCTAssertEqual(overlay.testability_codeBodyScrollerStyle, .overlay)
+        XCTAssertTrue(overlay.testability_codeBodyScrollViewAutohidesScrollers)
+    }
+
+    func testHorizontalWheelOverCodeTextScrollsCodeBody() {
+        let overlay = CodeBlockOverlayView(codeBlockData: CodeBlockData(
+            language: "bash",
+            code: String(repeating: "cd /Users/mohebanwari/development/Jot && xcodebuild ", count: 12),
+            preferredContentWidth: nil
+        ))
+        overlay.frame = NSRect(x: 0, y: 0, width: 420, height: CodeBlockOverlayView.heightForData(overlay.codeBlockData, width: 420))
+        overlay.layoutSubtreeIfNeeded()
+
+        XCTAssertGreaterThan(overlay.testability_codeBodyDocumentWidth, overlay.testability_codeBodyClipWidth)
+        XCTAssertEqual(overlay.testability_codeBodyScrollOriginX, 0)
+
+        overlay.testability_scrollCodeBodyTextViewHorizontally(deltaX: -120)
+
+        XCTAssertGreaterThan(overlay.testability_codeBodyScrollOriginX, 0)
+    }
+
+    func testOuterEditorWheelInsideCodeBlockRedirectsToCodeBody() {
+        let editor = InlineNSTextView(frame: NSRect(x: 0, y: 0, width: 700, height: 240))
+        let coordinator = TodoEditorRepresentable.Coordinator(
+            text: .constant(""),
+            colorScheme: .dark,
+            focusRequestID: nil
+        )
+        editor.actionDelegate = coordinator
+
+        let overlay = CodeBlockOverlayView(codeBlockData: CodeBlockData(
+            language: "bash",
+            code: String(repeating: "cd /Users/mohebanwari/development/Jot && xcodebuild ", count: 12),
+            preferredContentWidth: nil
+        ))
+        overlay.frame = NSRect(
+            x: 40,
+            y: 30,
+            width: 420,
+            height: CodeBlockOverlayView.heightForData(overlay.codeBlockData, width: 420)
+        )
+        editor.addSubview(overlay)
+        overlay.layoutSubtreeIfNeeded()
+        coordinator.codeBlockOverlays[ObjectIdentifier(overlay)] = overlay
+
+        XCTAssertEqual(overlay.testability_codeBodyScrollOriginX, 0)
+
+        let pointInsideOverlay = CGPoint(x: overlay.frame.midX, y: overlay.frame.maxY - 18)
+        let handled = coordinator.scrollCodeBlockOverlay(
+            at: pointInsideOverlay,
+            in: editor,
+            event: horizontalScrollEvent(deltaX: -120)
+        )
+
+        XCTAssertTrue(handled)
+        XCTAssertGreaterThan(overlay.testability_codeBodyScrollOriginX, 0)
     }
 }

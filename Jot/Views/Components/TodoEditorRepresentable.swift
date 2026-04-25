@@ -2926,6 +2926,16 @@ struct TodoEditorRepresentable: NSViewRepresentable {
             return nil
         }
 
+        func scrollCodeBlockOverlay(at point: CGPoint, in textView: NSTextView, event: NSEvent) -> Bool {
+            guard event.scrollingDeltaX != 0 else { return false }
+            for overlay in codeBlockOverlays.values where overlay.superview === textView {
+                if overlay.frame.contains(point) {
+                    return overlay.scrollCodeBodyHorizontally(with: event)
+                }
+            }
+            return false
+        }
+
         let readOnly: Bool
 
         init(text: Binding<String>, noteID: UUID? = nil, colorScheme: ColorScheme, focusRequestID: UUID?, editorInstanceID: UUID? = nil, readOnly: Bool = false) {
@@ -8077,6 +8087,15 @@ final class InlineNSTextView: NSTextView, QLPreviewPanelDataSource, QLPreviewPan
     override func mouseExited(with event: NSEvent) {
         super.mouseExited(with: event)
         actionDelegate?.endAttachmentHover()
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        if actionDelegate?.scrollCodeBlockOverlay(at: point, in: self, event: event) == true {
+            return
+        }
+
+        super.scrollWheel(with: event)
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {

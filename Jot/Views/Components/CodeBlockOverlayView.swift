@@ -105,8 +105,8 @@ final class CodeBlockOverlayView: NSView {
         return iv
     }()
 
-    private let scrollView: NSScrollView = {
-        let sv = NSScrollView()
+    private let scrollView: _CodeBlockScrollView = {
+        let sv = _CodeBlockScrollView()
         sv.hasVerticalScroller   = true
         sv.hasHorizontalScroller = true
         sv.autohidesScrollers    = true
@@ -118,7 +118,7 @@ final class CodeBlockOverlayView: NSView {
     }()
 
     private let textView: NSTextView = {
-        let tv = NSTextView()
+        let tv = _CodeBlockTextView()
         tv.isEditable            = true
         tv.isSelectable          = true
         tv.allowsUndo            = true
@@ -665,6 +665,48 @@ final class CodeBlockOverlayView: NSView {
         blockBodySurfaceCGColor(isDark: isDark, appearance: appearance)
     }
 
+    internal var testability_codeBodyScrollerStyle: NSScroller.Style {
+        scrollView.scrollerStyle
+    }
+
+    internal var testability_codeBodyScrollViewAutohidesScrollers: Bool {
+        scrollView.autohidesScrollers
+    }
+
+    internal func testability_forceCodeBodyScrollerStyle(_ style: NSScroller.Style) {
+        scrollView.scrollerStyle = style
+    }
+
+    internal var testability_codeBodyScrollOriginX: CGFloat {
+        scrollView.contentView.bounds.origin.x
+    }
+
+    internal var testability_codeBodyDocumentWidth: CGFloat {
+        textView.bounds.width
+    }
+
+    internal var testability_codeBodyClipWidth: CGFloat {
+        scrollView.contentView.bounds.width
+    }
+
+    internal func testability_scrollCodeBodyTextViewHorizontally(deltaX: Int32) {
+        guard let event = CGEvent(
+            scrollWheelEvent2Source: nil,
+            units: .pixel,
+            wheelCount: 2,
+            wheel1: 0,
+            wheel2: deltaX,
+            wheel3: 0
+        ).flatMap(NSEvent.init(cgEvent:)) else {
+            return
+        }
+        textView.scrollWheel(with: event)
+    }
+
+    internal func scrollCodeBodyHorizontally(with event: NSEvent) -> Bool {
+        scrollView.scrollHorizontally(with: event)
+    }
+
     // MARK: - Static Height Helper
 
     /// Content-hugging height: padTop + pillHeight + pillToContentGap + codeContent + padBottom, capped at maxHeight.
@@ -675,6 +717,44 @@ final class CodeBlockOverlayView: NSView {
         let codeH = CGFloat(lineCount) * lineHeight
         // padTop(12) + pillH(23) + gap(12) + content(min 20) + padBottom(12)
         return min(12 + 23 + 12 + max(codeH, 20) + 12, maxHeight)
+    }
+}
+
+// MARK: - Code body scroll view
+
+private final class _CodeBlockScrollView: NSScrollView {
+    override var scrollerStyle: NSScroller.Style {
+        get { .overlay }
+        set { super.scrollerStyle = .overlay }
+    }
+
+    func scrollHorizontally(with event: NSEvent) -> Bool {
+        guard event.scrollingDeltaX != 0,
+              let documentView else {
+            return false
+        }
+
+        let maxX = max(0, documentView.bounds.width - contentView.bounds.width)
+        guard maxX > 0 else { return false }
+
+        let currentX = contentView.bounds.origin.x
+        let nextX = min(max(currentX - event.scrollingDeltaX, 0), maxX)
+        guard nextX != currentX else { return true }
+
+        contentView.scroll(to: NSPoint(x: nextX, y: contentView.bounds.origin.y))
+        reflectScrolledClipView(contentView)
+        return true
+    }
+}
+
+private final class _CodeBlockTextView: NSTextView {
+    override func scrollWheel(with event: NSEvent) {
+        if let scrollView = enclosingScrollView as? _CodeBlockScrollView,
+           scrollView.scrollHorizontally(with: event) {
+            return
+        }
+
+        super.scrollWheel(with: event)
     }
 }
 
